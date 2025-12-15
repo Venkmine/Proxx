@@ -7,10 +7,12 @@ Enforces warn-and-continue semantics.
 
 Phase 4 scope: State management only, no execution.
 Execution hooks are stubs for Phase 5+ integration.
+Phase 8: Reporting integration for job and clip diagnostics.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Dict
 from .models import Job, ClipTask, JobStatus, TaskStatus
 from .state import validate_job_transition, validate_task_transition
 from .errors import JobEngineError
@@ -272,11 +274,12 @@ class JobEngine:
         global_preset_id: str,
         preset_registry,
         output_base_dir: Optional[str] = None,
-    ) -> None:
+    ) -> Dict[str, "ExecutionResult"]:
         """
         Process all queued tasks in a job sequentially.
         
         Phase 7: Multi-clip orchestration using Phase 6 single-clip execution.
+        Phase 8: Returns ExecutionResults for reporting.
         
         Execution model:
         1. Iterate through QUEUED tasks sequentially
@@ -294,8 +297,14 @@ class JobEngine:
             global_preset_id: ID of the preset to use for all tasks
             preset_registry: Registry instance for preset lookup
             output_base_dir: Optional output directory override
+            
+        Returns:
+            Dict mapping task_id to ExecutionResult for reporting
         """
         from ..execution.results import ExecutionStatus
+        
+        # Track ExecutionResults for reporting (Phase 8)
+        execution_results: Dict[str, "ExecutionResult"] = {}
         
         # Get queued tasks (snapshot at start)
         queued_tasks = [task for task in job.tasks if task.status == TaskStatus.QUEUED]
@@ -315,6 +324,9 @@ class JobEngine:
                 preset_registry=preset_registry,
                 output_base_dir=output_base_dir,
             )
+            
+            # Store result for reporting (Phase 8)
+            execution_results[task.id] = result
             
             # Map ExecutionResult to task status
             if result.status == ExecutionStatus.SUCCESS:
@@ -336,3 +348,154 @@ class JobEngine:
         
         # Finalize job status after all tasks processed (or paused)
         self.finalize_job(job)
+        
+        return execution_results
+    
+    def execute_job(
+        self,
+        job: Job,
+        global_preset_id: str,
+        preset_registry,
+        output_base_dir: Optional[str] = None,
+        generate_reports: bool = True,
+    ) -> Optional[Dict[str, Path]]:
+        """
+        Execute a job and optionally generate reports.
+        
+        Phase 8: Public entry point with integrated reporting.
+        
+        Executes all queued tasks sequentially, respecting warn-and-continue
+        semantics. After execution completes, generates diagnostic reports
+        (CSV, JSON, TXT) documenting job and clip outcomes.
+        
+        Args:
+            job: The job to execute
+            global_preset_id: ID of the preset to use for all tasks
+            preset_registry: Registry instance for preset lookup
+            output_base_dir: Optional output directory override
+            generate_reports: Whether to generate reports after execution (default: True)
+            
+        Returns:
+            Dict mapping report format to filepath if reports generated, else None
+            
+        Raises:
+            JobEngineError: If execution or reporting fails
+        """
+        # Start the job
+        self.start_job(job)
+        
+        # Process all tasks
+        execution_results = self._process_job(
+            job=job,
+            global_preset_id=global_preset_id,
+            preset_registry=preset_registry,
+            output_base_dir=output_base_dir,
+        )
+        
+        # Generate reports if requested
+        if generate_reports:
+            return self._generate_job_reports(
+                job=job,
+                execution_results=execution_results,
+                output_base_dir=output_base_dir,
+            )
+        
+        return None
+    
+    def _generate_job_reports(
+        self,
+        job: Job,
+        execution_results: Dict[str, "ExecutionResult"],
+        output_base_dir: Optional[str] = None,
+    ) -> Dict[str, Path]:
+        """
+        Generate reports for a completed job.
+        
+        Phase 8: Observational reporting from job state and execution results.
+        
+        Creates ClipReports enriched with ExecutionResult data (output paths,
+        file sizes, durations) and writes CSV, JSON, and TXT reports to disk.
+        
+        Args:
+            job: The completed job
+            execution_results: Dict mapping task_id to ExecutionResult
+            output_base_dir: Output directory (defaults to current working directory)
+            
+        Returns:
+            Dict mapping report format to filepath
+            
+        Raises:
+            ReportWriteError: If report generation fails
+        """
+        from ..reporting.models import JobReport, ClipReport, DiagnosticsInfo
+        from ..reporting.diagnostics import (
+            get_proxx_version,
+            get_python_version,
+            get_os_version,
+            get_hostname,
+            get_resolve_info,
+        )
+        from ..reporting.writers import write_reports
+        
+        # Capture diagnostics
+        resolve_info = get_resolve_info()
+        diagnostics = DiagnosticsInfo(
+            proxx_version=get_proxx_version(),
+            python_version=get_python_version(),
+            os_version=get_os_version(),
+            hostname=get_hostname(),
+            resolve_path=resolve_info.get("path"),
+            resolve_version=resolve_info.get("version"),
+            resolve_studio=resolve_info.get("studio"),
+        )
+        
+        # Build ClipReports with execution metadata
+        clip_reports = []
+        for task in job.tasks:
+            result = execution_results.get(task.id)
+            
+            # Extract output metadata from ExecutionResult
+            output_path = None
+            output_size_bytes = None
+            execution_duration_seconds = None
+            
+            if result:
+                output_path = result.output_path
+                execution_duration_seconds = result.duration_seconds()
+                
+                # Get output file size if output exists
+                if output_path and Path(output_path).exists():
+                    output_size_bytes = Path(output_path).stat().st_size
+            
+            clip_report = ClipReport.from_task(
+                task=task,
+                output_path=output_path,
+                output_size_bytes=output_size_bytes,
+                execution_duration_seconds=execution_duration_seconds,
+            )
+            clip_reports.append(clip_report)
+        
+        # Build JobReport
+        job_report = JobReport(
+            job_id=job.id,
+            status=job.status,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            total_clips=job.total_clips,
+            completed_clips=job.completed_clips,
+            failed_clips=job.failed_clips,
+            skipped_clips=job.skipped_clips,
+            warnings_count=job.warning_count,
+            clips=clip_reports,
+            diagnostics=diagnostics,
+        )
+        
+        # Determine output directory
+        if output_base_dir:
+            report_dir = Path(output_base_dir)
+        else:
+            report_dir = Path.cwd()
+        
+        # Write reports to disk
+        return write_reports(job_report, report_dir)

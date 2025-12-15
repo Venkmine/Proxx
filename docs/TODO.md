@@ -9,10 +9,11 @@
 - Phase 5 — Resolve integration foundations (discovery, validation, command preparation)
 - Phase 6 — Execution pipeline (single clip)
 - Phase 7 — Job execution (multi-clip, sequential)
+- Phase 8 — Reporting & diagnostics (job/clip reports, CSV/JSON/TXT output)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 8 — (Next phase TBD)
+- Phase: Phase 9 — Monitoring server (read-only)
 
 ## BLOCKERS / OPEN QUESTIONS
 

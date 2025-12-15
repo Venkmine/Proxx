@@ -752,6 +752,176 @@ Location: `backend/app/execution/errors.py`
 
 Engine integration and multi-clip orchestration will be implemented in Phase 7.
 
+## Reporting & Diagnostics
+
+Phase 8 introduces job and clip-level reporting for post-execution analysis.
+
+### Design Principles
+
+- Reports are first-class outputs, not optional extras
+- Reporting is observational only—no mutation of job or task state
+- Reports capture execution truth from existing state (Job, ClipTask, ExecutionResult)
+- Machine-readable (CSV, JSON) and human-readable (TXT) formats
+- Reports written to disk alongside job outputs
+- Timestamped filenames prevent collisions
+- Silence is a failure mode—everything that happened must be recorded
+
+### Module Structure
+
+Location: `backend/app/reporting/`
+
+```
+reporting/
+├─ __init__.py
+├─ models.py        # Immutable report data structures
+├─ writers.py       # CSV, JSON, TXT report writers
+├─ diagnostics.py   # Environment and system info capture
+└─ errors.py        # Reporting-specific errors
+```
+
+### Report Data Models
+
+All report models are immutable and derived from existing state at job completion.
+
+**ClipReport** (Immutable):
+- Task ID, source path
+- Final status (COMPLETED, FAILED, SKIPPED)
+- Failure reason and warnings
+- Output path, file size, execution duration
+- Timestamps (started_at, completed_at)
+
+**JobReport** (Immutable):
+- Job ID, final status
+- Timing (created_at, started_at, completed_at, duration)
+- Summary counts (total, completed, failed, skipped, warnings)
+- Collection of ClipReports
+- DiagnosticsInfo
+
+**DiagnosticsInfo**:
+- Proxx version (git commit hash or fallback)
+- Python version, OS version, hostname
+- Resolve path, version, Studio license status
+- Report generation timestamp
+
+Location: `backend/app/reporting/models.py`
+
+### Report Generation
+
+Reports are generated at job completion via `JobEngine.execute_job()`.
+
+**Execution Flow:**
+1. `JobEngine.execute_job()` called with job and preset
+2. Job execution proceeds via `_process_job()` (Phase 7 logic)
+3. ExecutionResults collected during execution (stored in dict keyed by task_id)
+4. After job finalization, `_generate_job_reports()` invoked
+5. ClipReports constructed with metadata from ExecutionResults (output paths, durations, sizes)
+6. JobReport built with aggregated job state and diagnostics
+7. Reports written to disk in three formats
+
+**Report Outputs:**
+- `proxx_job_{job_id}_{timestamp}.csv` — Clip-level details in spreadsheet format
+- `proxx_job_{job_id}_{timestamp}.json` — Full structured data for machine parsing
+- `proxx_job_{job_id}_{timestamp}.txt` — Human-readable summary
+
+Reports written to `output_base_dir` (same location as rendered clips).
+
+Location: `backend/app/jobs/engine.py` (integration), `backend/app/reporting/writers.py` (output)
+
+### Diagnostics Capture
+
+System environment captured at report generation time:
+
+- **Proxx version**: Git commit hash via `git rev-parse --short HEAD` (fallback: hardcoded "0.1.0")
+- **Python version**: `sys.version_info`
+- **OS version**: `platform.platform()` (e.g., "macOS-14.1.1-arm64")
+- **Hostname**: `platform.node()`
+- **Resolve info**: Path, version (currently "unknown"—stubbed in Phase 5), Studio license
+
+Diagnostics are non-blocking—failures captured in report without aborting generation.
+
+Location: `backend/app/reporting/diagnostics.py`
+
+### Report Writers
+
+Three format writers implemented:
+
+**CSV Writer** (`write_csv_report`):
+- One header row
+- One row per clip
+- Columns: task_id, source_path, status, output_path, output_size_bytes, execution_duration_seconds, failure_reason, warnings, timestamps
+- Warnings joined with semicolons for single-cell storage
+
+**JSON Writer** (`write_json_report`):
+- Full JobReport model serialized to JSON
+- Pretty-printed with 2-space indentation
+- Datetime objects serialized to ISO 8601 strings
+
+**TXT Writer** (`write_text_report`):
+- Human-readable multi-line summary
+- Sections: Job summary, diagnostics, clip details
+- Durations formatted (e.g., "2m 34.5s")
+- File sizes formatted (e.g., "1.2 GB")
+- Full clip-by-clip breakdown with warnings and failures highlighted
+
+All writers handle collisions via timestamped filenames.
+
+Location: `backend/app/reporting/writers.py`
+
+### Error Handling
+
+Custom error types:
+- `ReportingError`: Base exception for reporting failures
+- `ReportWriteError`: Failed to write report to disk
+
+Reporting errors do NOT abort job execution—they are logged but non-blocking.
+
+Location: `backend/app/reporting/errors.py`
+
+### Integration with JobEngine
+
+Reporting integrated into `JobEngine.execute_job()`:
+
+```python
+def execute_job(
+    job: Job,
+    global_preset_id: str,
+    preset_registry: PresetRegistry,
+    output_base_dir: Optional[str] = None,
+    generate_reports: bool = True,
+) -> Optional[Dict[str, Path]]:
+    # Start job and execute all tasks
+    self.start_job(job)
+    execution_results = self._process_job(...)
+    
+    # Generate reports if requested
+    if generate_reports:
+        return self._generate_job_reports(job, execution_results, output_base_dir)
+    
+    return None
+```
+
+**Key Details:**
+- `_process_job()` now returns `Dict[str, ExecutionResult]` (keyed by task_id)
+- ExecutionResults provide output paths, durations, file sizes for ClipReports
+- Reports derived from Job/ClipTask state + ExecutionResult metadata
+- No mutation of Job or ClipTask models—reporting is read-only
+- Default behavior: reports always generated (can be disabled)
+
+### What Phase 8 Does NOT Include
+
+- Report persistence or archiving (reports are fire-and-forget)
+- Report serving via API (no HTTP endpoints)
+- UI integration for report viewing
+- PDF report generation
+- Email/notification system
+- Real-time progress reporting (WebSocket)
+- Report aggregation across multiple jobs
+- Failure pattern analysis or ML insights
+- Retry logic based on reports
+- Job persistence beyond report artifacts
+
+These may be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
