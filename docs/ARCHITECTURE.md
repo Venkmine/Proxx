@@ -190,6 +190,100 @@ Location: `backend/app/presets/errors.py`
 
 These will be added in future phases.
 
+## Metadata Engine
+
+Phase 3 introduces the metadata extraction and validation system.
+
+### Design Principles
+
+- Metadata extraction is read-only and non-destructive
+- ffprobe (from ffmpeg) is used for all extraction
+- Missing metadata is explicitly represented (None or empty)
+- Unknown values are never silently guessed
+- Failures produce structured warnings, not crashes
+- Filesystem is authoritative for identity metadata
+
+### Metadata Scope
+
+The metadata engine extracts and represents:
+
+**Identity:**
+- Filename, full path, parent folder
+
+**Time:**
+- Duration, frame rate, timecode start (if present)
+- Drop-frame flag, VFR flag
+
+**Image:**
+- Resolution, aspect ratio, bit depth, chroma subsampling
+
+**Codec/Container:**
+- Container format, codec name, profile/level
+- GOP type (intra vs long-GOP)
+
+**Audio:**
+- Channel count, sample rate (if audio tracks exist)
+
+**Workflow Flags:**
+- Supported/unsupported status
+- Skip reason (human-readable)
+- Validation warnings (non-blocking)
+
+### Data Models
+
+All metadata is represented using Pydantic models with strict validation.
+
+Models:
+- `MediaMetadata`: Root metadata object
+- `MediaIdentity`: File identity information
+- `MediaTime`: Time-related metadata
+- `MediaImage`: Image/video metadata
+- `MediaCodec`: Codec and container information
+- `MediaAudio`: Audio metadata (optional)
+
+Location: `backend/app/metadata/models.py`
+
+### Extraction
+
+Extraction is performed via ffprobe subprocess calls:
+- JSON output format for reliable parsing
+- Graceful failure handling with structured errors
+- No caching or persistence
+- Safe to run on arbitrary folders
+
+Main entry point: `extract_metadata(filepath)`
+
+Location: `backend/app/metadata/extractors.py`
+
+### Validation
+
+Validation provides sanity checking and recommendations:
+- Identifies unsupported files early
+- Flags unusual parameters (VFR, uncommon frame rates, etc.)
+- Produces human-readable skip reasons
+- Classifies editorial-friendliness
+- Generates processing recommendations
+
+Utilities:
+- `validate_metadata()`: Sanity checks
+- `is_editorial_friendly()`: Editorial suitability check
+- `get_processing_recommendation()`: Human-readable recommendation
+- `summarize_metadata()`: Text summary for logging
+
+Location: `backend/app/metadata/validators.py`
+
+### What Phase 3 Does NOT Include
+
+- Metadata persistence to disk
+- Metadata caching
+- Resolve integration
+- Job engine integration
+- Preset application
+- Transcoding or media modification
+- UI integration
+
+These will be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
