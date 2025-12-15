@@ -22,9 +22,26 @@ Resolve is not yet integrated at this stage.
 - React renders the UI
 - Frontend communicates with backend via HTTP
 - No stateful business logic exists in the frontend yet
+- Single page with health check demonstration
 
-Location:
+Location: `frontend/`
+
+Structure:
+```
 frontend/
+├─ electron/
+│  ├─ main.ts           # Electron main process
+│  └─ preload.ts        # Context bridge (currently empty)
+├─ src/
+│  ├─ App.tsx           # Root component with health check button
+│  └─ main.tsx          # React entry point
+├─ index.html
+├─ package.json
+├─ tsconfig.json
+├─ tsconfig.electron.json
+├─ tsconfig.node.json
+└─ vite.config.ts
+```
 
 markdown
 Copy code
@@ -37,8 +54,22 @@ Copy code
 - No background workers
 - No job engine
 
-Location:
+Location: `backend/`
+
+Structure:
+```
 backend/
+├─ app/
+│  ├─ main.py           # FastAPI app initialization
+│  └─ routes/
+│     └─ health.py      # GET /health → {"status": "ok"}
+├─ requirements.txt     # FastAPI, Uvicorn
+└─ run_dev.sh           # Dev server launcher
+```
+
+Endpoints:
+- `GET /` → Service info
+- `GET /health` → Health check (status: ok)
 
 markdown
 Copy code
@@ -46,11 +77,13 @@ Copy code
 ### IPC
 
 - Localhost HTTP calls
-- No authentication
-- No WebSockets
-- No streaming
+## Execution Model
 
-This is sufficient for early development and scaffolding.
+- Backend and frontend run as separate processes
+- Backend: `./backend/run_dev.sh` starts uvicorn on port 8000
+- Frontend: `npm run dev` in `frontend/` launches Electron + Vite
+- Combined launcher: `./scripts/dev.sh` starts both services
+- No lifecycle coupling beyond manual startupscaffolding.
 
 ## Data & State
 

@@ -2,7 +2,7 @@
 
 ## COMPLETED PHASES
 
-- Phase 1 — Project scaffolding
+- Phase 1 — Project scaffolding (Electron + React frontend, FastAPI backend, health check IPC)
 
 ## ACTIVE PHASE
 
