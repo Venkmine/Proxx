@@ -99,12 +99,102 @@ All logic is currently stateless.
 - Backend runs independently
 - No lifecycle coupling beyond manual startup
 
+## Preset System
+
+Phase 2 introduces the foundational preset system as pure data structures and validation.
+
+### Design Principles
+
+- Presets are pure data with no side effects
+- Category presets represent single concerns
+- Global presets compose category presets by reference
+- Validation is strict, deterministic, and explicit
+- No persistence, file I/O, or execution in Phase 2
+
+### Category Presets
+
+A category preset:
+- Represents exactly one concern (codec, scaling, watermark, naming, etc.)
+- Is reusable across multiple global presets
+- Has no knowledge of other categories
+- Validates its own fields strictly
+- Rejects unknown fields
+
+Categories implemented:
+- `CODEC`: Output codec configuration (ProRes, DNxHR, DNxHD)
+- `SCALING`: Resolution and scaling behavior
+- `WATERMARK`: Watermark application rules
+- `NAMING`: File naming patterns (stub)
+- `FOLDER_OUTPUT`: Output folder configuration (stub)
+- `EXCLUSIONS`: File exclusion rules (stub)
+- `DUPLICATES`: Duplicate handling (stub)
+- `QUEUE`: Queue behavior (stub)
+- `REPORTING`: Report generation (stub)
+
+Location: `backend/app/presets/schemas.py`
+
+### Global Presets
+
+A global preset:
+- References exactly one category preset per category
+- Contains NO inline category configuration
+- Acts as a recipe, not a blob
+- Validates that all referenced presets exist
+
+Validation enforces:
+- All required categories must be present
+- No unknown categories allowed
+- No duplicate category references
+- All referenced presets must exist in registry
+
+Location: `backend/app/presets/models.py`
+
+### Registry
+
+The preset registry is an in-memory store used for validation only.
+
+Responsibilities:
+- Store category presets by category and ID
+- Store global presets by ID
+- Validate referential integrity when global presets are added
+- Prevent duplicate IDs within categories
+
+Location: `backend/app/presets/registry.py`
+
+### Validation
+
+All validation uses Pydantic models with:
+- Explicit error messages
+- No silent coercion
+- No defaults beyond schema-level safety
+- Deterministic behavior
+
+Custom error types:
+- `PresetValidationError`: Base exception for all validation failures
+- `UnknownCategoryError`: Unknown category referenced
+- `DuplicateCategoryError`: Category referenced multiple times
+- `MissingCategoryError`: Required category missing
+- `PresetNotFoundError`: Referenced preset does not exist
+
+Location: `backend/app/presets/errors.py`
+
+### What Phase 2 Does NOT Include
+
+- Preset persistence to disk
+- Preset loading from files
+- UI for preset management
+- Preset application/execution
+- Resolve integration
+- Metadata handling
+- Job engine integration
+
+These will be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
 - Resolve integration
-- Preset system
 - Metadata extraction
 - Job engine
 - Watch folders
