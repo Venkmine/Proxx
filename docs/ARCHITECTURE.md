@@ -533,15 +533,234 @@ Location: `backend/app/resolve/errors.py`
 
 Execution pipelines will be implemented in Phase 6+.
 
+## Execution Pipeline (Single Clip)
+
+Phase 6 introduces the single-clip execution pipeline for end-to-end rendering.
+
+### Design Principles
+
+- Execute exactly one clip in isolation (no job loops, no multi-clip orchestration)
+- Filesystem is authoritative for all validation
+- Resolve is allowed to crash (failures are explicit and non-blocking)
+- Partial success must be reported honestly
+- Execution must never block the process indefinitely
+- Warn-and-continue semantics apply to all failure modes
+- Engine integration is deferred to Phase 7
+
+### Module Structure
+
+Location: `backend/app/execution/`
+
+Structure:
+```
+execution/
+├─ __init__.py         # Public API exports
+├─ errors.py           # Execution-specific exceptions
+├─ results.py          # ExecutionResult and ExecutionStatus models
+├─ runner.py           # Single-clip execution pipeline
+├─ resolve_api.py      # Resolve Python API wrapper
+└─ paths.py            # Output path generation
+```
+
+### Execution Pipeline
+
+The single-clip execution pipeline processes one clip through all stages:
+
+**Pipeline Stages:**
+
+1. **Pre-flight Validation:**
+   - Source path exists and is readable
+   - Output destination is writable
+   - Resolve Studio is available
+
+2. **Preset Resolution:**
+   - Retrieve global preset by ID
+   - Resolve codec preset reference
+   - Resolve duplicates preset for overwrite behavior
+
+3. **Metadata Extraction:**
+   - Extract metadata via ffprobe
+   - Check if file is supported
+   - Collect warnings (VFR, long-GOP, etc.)
+
+4. **Output Path Generation:**
+   - Generate output path using stub pattern: `{source_name}_{codec}.{ext}`
+   - Handle filename collision (overwrite or generate unique suffix)
+   - Ensure output directory exists
+
+5. **Resolve Render Invocation:**
+   - Import Resolve Python API
+   - Create temporary project (project-per-render strategy)
+   - Import source media
+   - Create timeline
+   - Apply codec settings
+   - Submit render job
+   - Monitor render progress with timeout
+   - Cleanup project
+
+6. **Post-flight Verification:**
+   - Output file exists
+   - Output file size > 0
+   - Output path matches expectation
+
+7. **Result Classification:**
+   - SUCCESS: Render completed, output verified
+   - SUCCESS_WITH_WARNINGS: Render completed but with non-blocking warnings
+   - FAILED: Execution failed at any stage (with explicit reason)
+
+**Entry Point:** `execute_single_clip(source_path, global_preset_id, preset_registry, output_base_dir)`
+
+Location: `backend/app/execution/runner.py`
+
+### Resolve API Wrapper
+
+The Resolve API wrapper provides low-level Resolve Python API invocation for rendering.
+
+**Strategy:**
+- **Project-per-render**: Each render creates and deletes a temporary project for clean isolation
+- **Timeout handling**: Renders time out after 5 minutes minimum or 2x realtime (whichever is greater)
+- **Subprocess-free**: Uses Resolve Python API directly (no CLI subprocess calls)
+
+**Process:**
+1. Discover Resolve installation
+2. Validate Studio license (optimistic detection)
+3. Import DaVinciResolveScript module (dynamic sys.path injection)
+4. Create temporary project with timestamp-based name
+5. Import source media into media pool
+6. Create timeline from imported clip
+7. Set render settings (codec, container, output path)
+8. Add render job to queue
+9. Start rendering and monitor progress (1-second poll interval)
+10. Delete project on completion or failure
+
+**Failure Modes:**
+- Resolve not found → PreFlightCheckError
+- Free detected → PreFlightCheckError
+- API import failed → PreFlightCheckError
+- Project creation failed → ResolveExecutionError
+- Media import failed → Render failure (returned as False + error message)
+- Timeline creation failed → Render failure
+- Render timeout → Render failure
+- Render job failed/cancelled → Render failure
+
+Location: `backend/app/execution/resolve_api.py`
+
+### Output Path Generation
+
+Output path generation creates filesystem paths for rendered clips based on presets and metadata.
+
+**Phase 6 Implementation:**
+- **Stub pattern**: `{source_name}_{codec}.{ext}`
+- Full pattern engine with variables (resolution, timecode, date, etc.) deferred to Phase 7+
+
+**Filename Safety:**
+- Invalid characters replaced with underscore
+- Leading/trailing spaces and dots stripped
+- Empty names replaced with "output"
+
+**Collision Handling:**
+- If `overwrite_existing` is True: Use original path (overwrite)
+- If `overwrite_existing` is False: Append numeric suffix (`_001`, `_002`, etc.)
+- Safety limit: 999 iterations before raising error
+
+Location: `backend/app/execution/paths.py`
+
+### Execution Results
+
+All execution outcomes are represented as structured `ExecutionResult` objects.
+
+**ExecutionStatus Enum:**
+- `SUCCESS`: Render completed, output verified
+- `SUCCESS_WITH_WARNINGS`: Render completed but with non-blocking warnings
+- `FAILED`: Execution failed at any stage
+
+**ExecutionResult Properties:**
+- `status`: Final execution status
+- `source_path`: Source media file processed
+- `output_path`: Output file path (if succeeded)
+- `started_at`: Execution start timestamp
+- `completed_at`: Execution completion timestamp
+- `warnings`: List of non-blocking warnings
+- `failure_reason`: Human-readable failure reason (if failed)
+
+**Methods:**
+- `duration_seconds()`: Calculate execution duration
+- `summary()`: Human-readable summary line
+
+Location: `backend/app/execution/results.py`
+
+### Failure Modes Handled
+
+All failure modes are non-blocking to the application:
+
+**Pre-flight Failures:**
+- Source file missing
+- Source file not readable
+- Source is directory, not file
+- Output directory not writable
+- Permission denied
+- Resolve not installed
+- Resolve Free detected
+- Global preset not found
+- Codec preset not found
+
+**Extraction Failures:**
+- Metadata extraction failed
+- Unsupported media format
+- ffprobe not available
+
+**Execution Failures:**
+- Resolve API import failed
+- Resolve not running
+- Project creation failed
+- Media import failed
+- Timeline creation failed
+- Render timeout exceeded
+- Render job failed/cancelled
+
+**Verification Failures:**
+- Output file not created
+- Output file zero bytes
+
+All failures produce structured `ExecutionResult` with `status=FAILED` and explicit `failure_reason`. The application continues running after any failure.
+
+### Error Hierarchy
+
+All execution errors inherit from `ExecutionError`:
+- `PreFlightCheckError`: Pre-flight validation failed
+- `ResolveExecutionError`: Resolve execution failed
+- `OutputVerificationError`: Output verification failed
+
+Location: `backend/app/execution/errors.py`
+
+### What Phase 6 Does NOT Include
+
+- Multi-clip execution
+- Job orchestration (no task loops)
+- Engine integration (no wire-up to job engine)
+- Parallel execution
+- Background workers
+- Persistence
+- UI integration
+- Watch folders
+- Retries beyond one attempt
+- Scheduling or prioritization
+- Full pattern engine (only stub pattern)
+- Watermark application
+- Scaling preset application
+- Progress reporting to UI
+
+Engine integration and multi-clip orchestration will be implemented in Phase 7.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Resolve execution (rendering, transcoding)
-- Job persistence
-- Watch folders
-- Monitoring server
-- Multi-node execution
+- Multi-clip job execution (Phase 7)
+- Job persistence (Phase 7+)
+- Watch folders (Phase 7+)
+- Monitoring server (Phase 7+)
+- Multi-node execution (Phase 8+)
 
 These will be documented when they exist.
 
