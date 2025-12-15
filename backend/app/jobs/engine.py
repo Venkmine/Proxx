@@ -235,32 +235,104 @@ class JobEngine:
     
     # Execution stubs for Phase 5+ integration
     
-    def _execute_task(self, task: ClipTask) -> None:
+    def _execute_task(
+        self,
+        task: ClipTask,
+        global_preset_id: str,
+        preset_registry,
+        output_base_dir: Optional[str] = None,
+    ):
         """
         Execute a single clip task.
         
-        STUB: This will be implemented in Phase 5+ to:
-        - Validate source file exists
-        - Extract metadata
-        - Apply preset
-        - Call Resolve or ffmpeg
-        - Verify output
+        Phase 7: Thin wrapper around Phase 6 single-clip execution.
+        Invokes execute_single_clip() and returns ExecutionResult.
         
-        For Phase 4, this is a no-op placeholder.
+        Args:
+            task: The clip task to execute
+            global_preset_id: ID of the preset to use
+            preset_registry: Registry instance for preset lookup
+            output_base_dir: Optional output directory override
+            
+        Returns:
+            ExecutionResult from the single-clip pipeline
         """
-        pass
+        from ..execution.runner import execute_single_clip
+        
+        return execute_single_clip(
+            source_path=task.source_path,
+            global_preset_id=global_preset_id,
+            preset_registry=preset_registry,
+            output_base_dir=output_base_dir,
+        )
     
-    def _process_job(self, job: Job) -> None:
+    def _process_job(
+        self,
+        job: Job,
+        global_preset_id: str,
+        preset_registry,
+        output_base_dir: Optional[str] = None,
+    ) -> None:
         """
-        Process all queued tasks in a job.
+        Process all queued tasks in a job sequentially.
         
-        STUB: This will be implemented in Phase 5+ to:
-        - Iterate through QUEUED tasks
-        - Execute each task
-        - Update task status
-        - Respect pause state
-        - Handle failures with warn-and-continue
+        Phase 7: Multi-clip orchestration using Phase 6 single-clip execution.
         
-        For Phase 4, this is a no-op placeholder.
+        Execution model:
+        1. Iterate through QUEUED tasks sequentially
+        2. Check pause state before each task
+        3. Execute task via single-clip pipeline
+        4. Map ExecutionResult to task status
+        5. Continue to next task (warn-and-continue)
+        6. Finalize job when all tasks processed
+        
+        One clip failure never blocks other clips.
+        Pause state is respected before starting each new clip.
+        
+        Args:
+            job: The job to process
+            global_preset_id: ID of the preset to use for all tasks
+            preset_registry: Registry instance for preset lookup
+            output_base_dir: Optional output directory override
         """
-        pass
+        from ..execution.results import ExecutionStatus
+        
+        # Get queued tasks (snapshot at start)
+        queued_tasks = [task for task in job.tasks if task.status == TaskStatus.QUEUED]
+        
+        for task in queued_tasks:
+            # Respect pause state before starting each clip
+            if job.status == JobStatus.PAUSED:
+                break
+            
+            # Transition task to RUNNING
+            self.update_task_status(task, TaskStatus.RUNNING)
+            
+            # Execute single clip via Phase 6 pipeline
+            result = self._execute_task(
+                task=task,
+                global_preset_id=global_preset_id,
+                preset_registry=preset_registry,
+                output_base_dir=output_base_dir,
+            )
+            
+            # Map ExecutionResult to task status
+            if result.status == ExecutionStatus.SUCCESS:
+                self.update_task_status(task, TaskStatus.COMPLETED)
+            elif result.status == ExecutionStatus.SUCCESS_WITH_WARNINGS:
+                self.update_task_status(
+                    task,
+                    TaskStatus.COMPLETED,
+                    warnings=result.warnings,
+                )
+            else:  # ExecutionStatus.FAILED
+                self.update_task_status(
+                    task,
+                    TaskStatus.FAILED,
+                    failure_reason=result.failure_reason or "Unknown execution failure",
+                )
+            
+            # Warn-and-continue: Do NOT break on failure, continue to next task
+        
+        # Finalize job status after all tasks processed (or paused)
+        self.finalize_job(job)

@@ -8,10 +8,11 @@
 - Phase 4 — Job engine foundations (job/task models, state transitions, orchestration)
 - Phase 5 — Resolve integration foundations (discovery, validation, command preparation)
 - Phase 6 — Execution pipeline (single clip)
+- Phase 7 — Job execution (multi-clip, sequential)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 7 — Job execution (multi-clip, sequential)
+- Phase: Phase 8 — (Next phase TBD)
 
 ## BLOCKERS / OPEN QUESTIONS
 
