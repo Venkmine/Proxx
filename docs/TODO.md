@@ -6,10 +6,11 @@
 - Phase 2 — Preset system foundations (data model, validation, in-memory registry)
 - Phase 3 — Metadata engine foundations (extraction, validation, workflow flags)
 - Phase 4 — Job engine foundations (job/task models, state transitions, orchestration)
+- Phase 5 — Resolve integration foundations (discovery, validation, command preparation)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 5 — Resolve integration foundations
+- Phase: Phase 6 — Execution pipeline (single clip)
 
 ## BLOCKERS / OPEN QUESTIONS
 

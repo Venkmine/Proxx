@@ -396,12 +396,148 @@ Location: `backend/app/jobs/registry.py`
 
 These will be added in future phases.
 
+## Resolve Integration
+
+Phase 5 introduces the Resolve integration boundary for capability detection and command preparation.
+
+### Design Principles
+
+- Resolve Studio is required for v1.x
+- Resolve is treated as an external system
+- Proxx must survive Resolve being missing, misconfigured, or crashing
+- Discovery and validation produce explicit, human-readable failure reasons
+- Command preparation is decoupled from execution
+- Phase 5 is detection-only—no rendering, no execution, no media modification
+
+### Module Structure
+
+Location: `backend/app/resolve/`
+
+Structure:
+```
+resolve/
+├─ __init__.py         # Public API exports
+├─ errors.py           # Resolve-specific exceptions
+├─ models.py           # Capability and command descriptor models
+├─ discovery.py        # Installation path detection
+├─ validation.py       # Studio vs Free validation
+└─ commands.py         # Render command descriptor preparation
+```
+
+### Discovery
+
+Resolve installation discovery uses platform-specific default paths with optional environment variable overrides.
+
+**Platform Defaults:**
+- **macOS**: `/Applications/DaVinci Resolve/DaVinci Resolve.app`
+- **Windows**: `C:\Program Files\Blackmagic Design\DaVinci Resolve\`
+
+**Optional Environment Overrides:**
+- `PROXX_RESOLVE_PATH`: Override Resolve installation path
+- `PROXX_RESOLVE_SCRIPT_API_PATH`: Override scripting API path (advanced)
+
+Environment variables are NOT required for normal operation. They provide an escape hatch for non-standard installations in facility environments.
+
+**Discovery Process:**
+1. Check `PROXX_RESOLVE_PATH` environment variable (if set)
+2. Check platform-specific default path
+3. Detect scripting API path (platform-specific)
+4. Detect version string (best-effort, may return None)
+5. Return `ResolveInstallation` with detected paths and metadata
+
+**Failure Mode:**
+If Resolve is not found, `discover_resolve()` raises `ResolveNotFoundError` with human-readable message including expected paths.
+
+Location: `backend/app/resolve/discovery.py`
+
+### Validation
+
+Capability validation checks whether a discovered Resolve installation meets requirements.
+
+**Checks Performed:**
+- Scripting API path exists
+- Studio vs Free license detection (best-effort, may be inconclusive)
+
+**Studio License Detection:**
+Phase 5 uses optimistic detection (assume Studio until proven otherwise). Robust license detection is deferred to execution time (Phase 6+) when the API is actually invoked. Attempting to use restricted API on Free version will fail explicitly at that point.
+
+**Version Enforcement:**
+Phase 5 does NOT enforce minimum version requirements. Version detection is performed (if possible), but all versions are accepted. Version gating may be added in Phase 6+ once execution paths exist.
+
+**Validation Result:**
+`validate_resolve_capability()` returns `ResolveCapability` indicating:
+- `is_available`: True if Resolve can be used, False otherwise
+- `installation`: Detected installation info
+- `failure_reason`: Human-readable explanation if not available
+
+This function does NOT raise exceptions—it returns structured status for safe inspection.
+
+Location: `backend/app/resolve/validation.py`
+
+### Command Descriptors
+
+Command descriptors are abstract representations of Resolve render operations WITHOUT execution logic.
+
+**ResolveCommandDescriptor:**
+- `source_path`: Absolute path to source media
+- `output_path`: Absolute path to target output
+- `render_preset_id`: Optional reference to global preset ID
+- `invocation_type`: How Resolve would be invoked ('script' or 'cli')
+
+**Preparation:**
+`prepare_render_command()` creates command descriptors without:
+- Validating source file existence
+- Validating preset existence
+- Requiring Resolve to be installed
+- Applying render settings
+- Executing anything
+
+This enables:
+- Dry-run inspection
+- Command serialization for future execution
+- Testing without Resolve installed
+- Clean separation between preparation and execution
+
+**Important Distinction:**
+Command descriptors are NOT concrete execution commands. They are structural data for Phase 6+ execution pipelines to consume. They do NOT contain:
+- Project creation logic
+- Media import logic
+- Preset application tied to jobs
+
+Think of them as "what would be invoked" rather than "how to invoke it."
+
+Location: `backend/app/resolve/commands.py`
+
+### Error Hierarchy
+
+All Resolve errors inherit from `ResolveError`:
+- `ResolveNotFoundError`: Resolve not found at expected paths
+- `ResolveFreeDetectedError`: Resolve Free detected instead of Studio
+- `ResolveValidationError`: Installation validation failed
+
+These errors are NOT fatal to the application. They indicate that Resolve operations cannot proceed, but Proxx continues running.
+
+Location: `backend/app/resolve/errors.py`
+
+### What Phase 5 Does NOT Include
+
+- Rendering or transcoding
+- Media modification
+- Job execution
+- Preset application
+- Concrete Resolve API usage
+- Project/timeline creation
+- Media import logic
+- Render progress monitoring
+- Resolve state modification
+
+Execution pipelines will be implemented in Phase 6+.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Resolve integration
-- Job execution (transcoding, rendering)
+- Resolve execution (rendering, transcoding)
 - Job persistence
 - Watch folders
 - Monitoring server
