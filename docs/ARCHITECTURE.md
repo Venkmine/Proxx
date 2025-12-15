@@ -284,13 +284,125 @@ Location: `backend/app/metadata/validators.py`
 
 These will be added in future phases.
 
+## Job Engine
+
+Phase 4 introduces the job orchestration system for batch media processing.
+
+### Design Principles
+
+- Jobs are collections of independent clip tasks
+- One clip failing must never block other clips (warn-and-continue)
+- Filesystem is authoritative (no premature validation)
+- Jobs are resumable in principle (persistence deferred to Phase 6+)
+- State modeling only—no execution, no persistence, no UI
+
+### Job Model
+
+A job represents a batch processing operation containing multiple clip tasks.
+
+**Job Properties:**
+- Unique ID (non-deterministic UUID)
+- Created/started/completed timestamps
+- Status: PENDING, RUNNING, PAUSED, COMPLETED, COMPLETED_WITH_WARNINGS, FAILED
+- Collection of ClipTasks
+- Summary counts: total, completed, skipped, failed, warnings
+
+**ClipTask Properties:**
+- Unique ID (non-deterministic UUID)
+- Source path (absolute, not validated at creation)
+- Status: QUEUED, RUNNING, COMPLETED, SKIPPED, FAILED
+- Failure reason (if applicable)
+- Warnings (non-blocking issues)
+- Retry count (stub for future use)
+
+Location: `backend/app/jobs/models.py`
+
+### State Transitions
+
+State transitions are strictly validated to ensure deterministic behavior.
+
+**Job Transitions:**
+- PENDING → RUNNING (start job)
+- RUNNING → PAUSED (pause execution)
+- PAUSED → RUNNING (resume execution)
+- RUNNING → COMPLETED (all tasks completed successfully)
+- RUNNING → COMPLETED_WITH_WARNINGS (all tasks terminal, some failed/skipped/warned)
+- PENDING/RUNNING/PAUSED → FAILED (engine failure)
+
+**Task Transitions:**
+- QUEUED → RUNNING (start processing)
+- RUNNING → COMPLETED (success)
+- RUNNING → FAILED (processing failure)
+- RUNNING → SKIPPED (skipped during processing)
+- QUEUED → SKIPPED (early skip, e.g., validation failure)
+
+Location: `backend/app/jobs/state.py`
+
+### Job Status Aggregation
+
+Job status is computed from task states using strict rules:
+
+- **FAILED**: Only if the job engine itself cannot continue
+- **COMPLETED**: All tasks in terminal states, no failures, no warnings
+- **COMPLETED_WITH_WARNINGS**: All tasks in terminal states, but some failed/skipped/warned
+- **RUNNING**: At least one task is running or queued
+- **PAUSED**: Explicitly set by user
+- **PENDING**: No tasks started yet
+
+This enforces warn-and-continue semantics: clip failures produce COMPLETED_WITH_WARNINGS, not FAILED.
+
+### Orchestration Engine
+
+The JobEngine manages job lifecycle operations:
+
+**Operations:**
+- `create_job()`: Create job from source paths (no filesystem validation)
+- `start_job()`: Transition from PENDING to RUNNING
+- `pause_job()`: Pause execution (finish current clip, don't start new ones)
+- `resume_job()`: Resume from PAUSED state
+- `cancel_job()`: Mark job as FAILED safely
+- `update_task_status()`: Update individual task state with validation
+- `compute_job_status()`: Aggregate task states into job status
+- `finalize_job()`: Compute final job status when all tasks are terminal
+
+**Execution Stubs:**
+- `_execute_task()`: Stub for Phase 5+ (Resolve/ffmpeg integration)
+- `_process_job()`: Stub for Phase 5+ (task execution loop)
+
+Location: `backend/app/jobs/engine.py`
+
+### Registry
+
+The job registry provides in-memory job tracking:
+
+**Capabilities:**
+- Add/retrieve jobs by ID
+- List all jobs (sorted by creation time)
+- Remove jobs
+- Count total jobs
+
+Location: `backend/app/jobs/registry.py`
+
+### What Phase 4 Does NOT Include
+
+- Actual transcoding or media execution
+- Resolve integration
+- Job persistence to disk
+- Watch folders or scheduling
+- Prioritization or queue management
+- UI integration
+- Metadata extraction (already exists in Phase 3)
+- Preset application (handled in Phase 5+)
+
+These will be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
 - Resolve integration
-- Metadata extraction
-- Job engine
+- Job execution (transcoding, rendering)
+- Job persistence
 - Watch folders
 - Monitoring server
 - Multi-node execution
