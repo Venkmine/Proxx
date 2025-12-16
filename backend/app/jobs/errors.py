@@ -39,3 +39,14 @@ class JobEngineError(JobError):
         self.job_id = job_id
         self.reason = reason
         super().__init__(f"Job engine failure for job {job_id}: {reason}")
+
+
+class PresetNotBoundError(JobError):
+    """Raised when attempting an operation that requires a bound preset."""
+    
+    def __init__(self, job_id: str):
+        self.job_id = job_id
+        super().__init__(
+            f"No preset bound to job {job_id}. "
+            f"Bind a preset before executing this operation."
+        )

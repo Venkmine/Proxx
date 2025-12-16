@@ -14,10 +14,11 @@
 - Phase 10 — Watch folders & unattended ingestion (polling-based discovery, stability detection, job creation)
 - Phase 11 — Preset application & execution automation (explicit binding, opt-in auto-execution, safety checks)
 - Phase 12 — Persistence & recovery (SQLite storage, explicit save/load, RECOVERY_REQUIRED status, honest recovery detection)
+- Phase 13 — Operator control & intent surfaces (CLI commands: resume, retry, cancel, rebind; explicit operator intent only)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 13 — UI & operator workflows
+- Phase: Phase 14 — Minimal operator UI (read-only + controls)
 
 ## BLOCKERS / OPEN QUESTIONS
 

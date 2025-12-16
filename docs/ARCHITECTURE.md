@@ -1527,13 +1527,143 @@ Interrupted jobs remain frozen until operator intervention.
 
 Phase 12 assumes single-process, single-operator usage.
 
+## Operator Control & Intent Surfaces (Phase 13)
+
+Phase 13 introduces explicit operator control surfaces for job lifecycle management.
+
+### Design Principles
+
+- No state transition occurs without explicit operator action
+- RECOVERY_REQUIRED is a terminal state until explicitly resumed
+- No automatic recovery, no guessing, no "safe defaults"
+- Filesystem remains authoritative
+- Partial success remains honest and visible
+- Every command prints what will happen before acting
+- Confirmation required for destructive operations
+
+If something feels "helpful", it is probably wrong.
+
+### Control Surface
+
+CLI provides the canonical operator interface.
+
+Location: `backend/app/cli/`
+
+Structure:
+```
+cli/
+├─ __init__.py       # Public API exports
+├─ errors.py         # CLI-specific error types
+└─ commands.py       # Command implementations
+```
+
+### Commands
+
+All commands enforce explicit operator intent. No silent mutations.
+
+**Resume Job** (`resume_job()`):
+- Allowed only if job.status == RECOVERY_REQUIRED or PAUSED
+- Validates Resolve availability, preset binding, output directory
+- Prints which clips will execute before proceeding
+- Does not skip previously completed clips implicitly
+- Requires confirmation for safety
+
+**Retry Failed Clips** (`retry_failed_clips()`):
+- Only FAILED clips are queued for retry
+- COMPLETED clips are NEVER re-run
+- Output collision handling is explicit (fails if file exists)
+- Job status reflects partial retry outcomes
+- Warn-and-continue semantics preserved
+
+**Cancel Job** (`cancel_job()`):
+- If RUNNING: allows current clip to finish
+- Remaining QUEUED clips marked SKIPPED with reason="cancelled"
+- Job status becomes CANCELLED (terminal state)
+- CANCELLED jobs cannot be resumed
+- Cancellation is operator intent, not a failure
+
+**Rebind Preset** (`rebind_preset()`):
+- Allowed only if job.status == PENDING or RECOVERY_REQUIRED
+- Preset must exist and validate
+- Previous binding overwritten explicitly
+- Binding persisted immediately
+- No silent rebinding ever
+
+### State Machine
+
+Phase 13 adds CANCELLED status to job lifecycle.
+
+**Legal Transitions:**
+
+```
+RECOVERY_REQUIRED → RUNNING   (resume)
+PAUSED            → RUNNING   (resume)
+FAILED            → QUEUED    (retry failed clips)
+PENDING           → RUNNING   (execute)
+RUNNING           → CANCELLED (cancel)
+PENDING           → CANCELLED (cancel)
+PAUSED            → CANCELLED (cancel)
+RECOVERY_REQUIRED → CANCELLED (cancel)
+```
+
+Any other transition is illegal and will raise `InvalidStateTransitionError`.
+
+### Error Hierarchy
+
+All CLI errors inherit from `CLIError`:
+- `ValidationError`: Pre-execution validation failed
+- `ConfirmationDenied`: Operator denied confirmation prompt
+
+CLI errors are non-fatal to the application. They indicate operation cannot proceed.
+
+Location: `backend/app/cli/errors.py`
+
+### Integration
+
+Commands integrate with existing registries and engine:
+- `JobRegistry`: Job retrieval and persistence
+- `JobPresetBindingRegistry`: Preset binding management
+- `PresetRegistry`: Preset validation
+- `JobEngine`: Job execution and state management
+
+No HTTP endpoints in Phase 13. CLI is the canonical interface.
+
+### Why Proxx Never Auto-Recovers
+
+Proxx treats process restarts as ambiguous events. When a job is interrupted:
+- Current clip state is unknown (partial render? corrupt output?)
+- Filesystem may have changed (drives remounted, files moved)
+- Resolve may have crashed or been upgraded
+- Operator may have intentionally stopped the process
+
+Automatic recovery would require guessing operator intent. Proxx refuses to guess.
+
+Instead:
+1. Jobs interrupted mid-execution marked RECOVERY_REQUIRED
+2. Operator must explicitly inspect job state
+3. Operator must explicitly resume via `resume_job()`
+4. All validation re-run before resuming
+
+This is deliberate friction. Recovery should require human decision.
+
+### What Phase 13 Does NOT Include
+
+- HTTP endpoints for control operations
+- UI for operator workflows
+- Automatic retry policies
+- Smart recovery heuristics
+- Scheduling or queue prioritization
+- Multi-operator access control
+
+These may be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Multi-node execution (Phase 13+)
-- Distributed job scheduling (Phase 13+)
-- UI for recovery workflows (Phase 13)
+- Multi-node execution (Phase 14+)
+- Distributed job scheduling (Phase 14+)
+- Operator UI (Phase 14+)
 
 These will be documented when they exist.
 

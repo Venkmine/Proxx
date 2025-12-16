@@ -32,6 +32,12 @@ _JOB_TRANSITIONS: Set[Tuple[JobStatus, JobStatus]] = {
     (JobStatus.PENDING, JobStatus.FAILED),
     (JobStatus.RUNNING, JobStatus.FAILED),
     (JobStatus.PAUSED, JobStatus.FAILED),
+    
+    # Phase 13: Cancellation (operator intent)
+    (JobStatus.PENDING, JobStatus.CANCELLED),
+    (JobStatus.RUNNING, JobStatus.CANCELLED),
+    (JobStatus.PAUSED, JobStatus.CANCELLED),
+    (JobStatus.RECOVERY_REQUIRED, JobStatus.CANCELLED),
 }
 
 
@@ -45,6 +51,9 @@ _TASK_TRANSITIONS: Set[Tuple[TaskStatus, TaskStatus]] = {
     
     # Early skip (e.g., validation failure before execution)
     (TaskStatus.QUEUED, TaskStatus.SKIPPED),
+    
+    # Phase 13: Retry failed clips (reset to queued)
+    (TaskStatus.FAILED, TaskStatus.QUEUED),
 }
 
 

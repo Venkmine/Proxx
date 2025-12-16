@@ -30,6 +30,7 @@ class JobStatus(str, Enum):
     COMPLETED_WITH_WARNINGS = "completed_with_warnings"  # All clips terminal, some failed/skipped/warned
     FAILED = "failed"  # Job engine itself cannot continue
     RECOVERY_REQUIRED = "recovery_required"  # Process restarted mid-execution, requires explicit resume
+    CANCELLED = "cancelled"  # Phase 13: Cancelled by operator (terminal)
 
 
 class TaskStatus(str, Enum):

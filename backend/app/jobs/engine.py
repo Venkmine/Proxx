@@ -157,8 +157,11 @@ class JobEngine:
         """
         Cancel a job.
         
-        Marks job as FAILED with the provided reason.
-        Safe cancellation: does not corrupt state.
+        Phase 13: Cancellation marks remaining clips as SKIPPED and sets
+        job status to CANCELLED (terminal state).
+        
+        If job is RUNNING, current clip is allowed to finish.
+        Remaining QUEUED clips are marked SKIPPED.
         
         Args:
             job: The job to cancel
@@ -167,10 +170,68 @@ class JobEngine:
         Raises:
             InvalidStateTransitionError: If job is already in a terminal state
         """
-        validate_job_transition(job.status, JobStatus.FAILED)
+        validate_job_transition(job.status, JobStatus.CANCELLED)
         
-        job.status = JobStatus.FAILED
+        # Mark all queued clips as skipped
+        for task in job.tasks:
+            if task.status == TaskStatus.QUEUED:
+                task.status = TaskStatus.SKIPPED
+                task.failure_reason = reason
+                task.completed_at = datetime.now()
+        
+        job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now()
+    
+    def retry_failed_clips(
+        self,
+        job: Job,
+        preset_registry = None,
+        output_base_dir: Optional[str] = None,
+    ) -> None:
+        """
+        Retry only FAILED clips in a job.
+        
+        Phase 13: Explicit retry of failed clips only.
+        COMPLETED clips are never re-run.
+        
+        Rules:
+        - Only FAILED clips are reset to QUEUED
+        - COMPLETED clips remain untouched
+        - Job is re-executed using existing preset binding
+        - Warn-and-continue semantics preserved
+        
+        Args:
+            job: The job containing failed clips
+            preset_registry: Registry instance for preset lookup
+            output_base_dir: Optional output directory override
+            
+        Raises:
+            ValueError: If no preset is bound to the job
+        """
+        # Identify failed clips
+        failed_clips = [task for task in job.tasks if task.status == TaskStatus.FAILED]
+        
+        if not failed_clips:
+            return  # Nothing to retry
+        
+        # Reset failed clips to QUEUED
+        for task in failed_clips:
+            # Validate transition
+            validate_task_transition(task.status, TaskStatus.QUEUED)
+            
+            # Reset task state
+            task.status = TaskStatus.QUEUED
+            task.failure_reason = None
+            task.started_at = None
+            task.completed_at = None
+            # Keep warnings from previous attempt
+        
+        # Execute job (will process only QUEUED tasks)
+        self.execute_job(
+            job=job,
+            preset_registry=preset_registry,
+            output_base_dir=output_base_dir,
+        )
     
     def update_task_status(
         self,
@@ -225,6 +286,7 @@ class JobEngine:
         
         Rules:
         - FAILED: Only if job engine itself cannot continue
+        - CANCELLED: Explicitly set by operator (terminal)
         - COMPLETED: All tasks in terminal states, no failures, no warnings
         - COMPLETED_WITH_WARNINGS: All tasks in terminal states, but some failed/skipped/warned
         - RUNNING: At least one task is running or queued
@@ -239,7 +301,13 @@ class JobEngine:
             The computed job status
         """
         # Terminal states remain unchanged
-        if job.status in (JobStatus.FAILED, JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS, JobStatus.RECOVERY_REQUIRED):
+        if job.status in (
+            JobStatus.FAILED,
+            JobStatus.COMPLETED,
+            JobStatus.COMPLETED_WITH_WARNINGS,
+            JobStatus.RECOVERY_REQUIRED,
+            JobStatus.CANCELLED,  # Phase 13: Terminal state
+        ):
             return job.status
         
         # Check if all tasks are in terminal states
