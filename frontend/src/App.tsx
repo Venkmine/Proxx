@@ -2,6 +2,20 @@ import { useState, useEffect } from 'react'
 
 const BACKEND_URL = 'http://127.0.0.1:8085'
 
+// Phase 15: TypeScript declaration for Electron IPC
+declare global {
+  interface Window {
+    electron?: {
+      openFiles: () => Promise<string[]>
+      openFolder: () => Promise<string | null>
+      showItemInFolder: (filePath: string) => Promise<void>
+    }
+  }
+}
+
+// Phase 15: Check if Electron APIs are available
+const hasElectron = typeof window !== 'undefined' && window.electron !== undefined
+
 // Types matching backend monitoring models
 interface JobSummary {
   id: string
@@ -51,6 +65,11 @@ interface ReportReference {
   modified_at: number
 }
 
+interface PresetInfo {
+  id: string
+  name: string
+}
+
 function App() {
   const [jobs, setJobs] = useState<JobSummary[]>([])
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
@@ -58,7 +77,35 @@ function App() {
   const [reports, setReports] = useState<ReportReference[]>([])
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
+  
+  // Phase 15: Multi-select state
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set())
+  
+  // Phase 15: Manual job creation state
+  const [showCreateJobPanel, setShowCreateJobPanel] = useState<boolean>(false)
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('')
+  const [outputDirectory, setOutputDirectory] = useState<string>('')
+  const [presets, setPresets] = useState<PresetInfo[]>([])
+  
+  // Phase 15: Path favorites (localStorage-backed)
+  const [pathFavorites, setPathFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('proxx_path_favorites')
+    return saved ? JSON.parse(saved) : []
+  })
 
+  // Phase 15: Fetch available presets
+  const fetchPresets = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/control/presets`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json()
+      setPresets(data.presets)
+    } catch (err) {
+      console.error('Failed to fetch presets:', err)
+    }
+  }
+  
   // Fetch job list
   const fetchJobs = async () => {
     try {
@@ -97,6 +144,112 @@ function App() {
     }
   }
 
+  // Phase 15: Manual job creation
+  const createManualJob = async () => {
+    if (!selectedFiles.length) {
+      alert('Please select at least one file')
+      return
+    }
+    if (!selectedPresetId) {
+      alert('Please select a preset')
+      return
+    }
+    
+    const message = `Create job with ${selectedFiles.length} clip(s) using preset "${selectedPresetId}"?\n\nJob will be created in PENDING state.\nNo automatic execution will occur.`
+    if (!confirmAction(message)) return
+    
+    try {
+      setError('')
+      setLoading(true)
+      const response = await fetch(`${BACKEND_URL}/control/jobs/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_paths: selectedFiles,
+          preset_id: selectedPresetId,
+          output_base_dir: outputDirectory || null
+        })
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || `HTTP ${response.status}`)
+      }
+      const result = await response.json()
+      alert(`Job created successfully\nJob ID: ${result.job_id}`)
+      
+      // Reset form and refresh jobs
+      setSelectedFiles([])
+      setSelectedPresetId('')
+      setOutputDirectory('')
+      setShowCreateJobPanel(false)
+      await fetchJobs()
+    } catch (err) {
+      setError(`Failed to create job: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  // Phase 15: File picker via Electron
+  const selectFiles = async () => {
+    if (!hasElectron) {
+      alert('File picker requires Electron runtime')
+      return
+    }
+    try {
+      const paths = await window.electron!.openFiles()
+      if (paths.length > 0) {
+        setSelectedFiles(paths)
+      }
+    } catch (err) {
+      setError(`File selection failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+  
+  // Phase 15: Folder picker via Electron
+  const selectOutputFolder = async () => {
+    if (!hasElectron) {
+      alert('Folder picker requires Electron runtime')
+      return
+    }
+    try {
+      const path = await window.electron!.openFolder()
+      if (path) {
+        setOutputDirectory(path)
+      }
+    } catch (err) {
+      setError(`Folder selection failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+  
+  // Phase 15: Reveal in Finder/Explorer
+  const revealInFolder = async (filePath: string) => {
+    if (!hasElectron) {
+      alert('Reveal in Finder requires Electron runtime')
+      return
+    }
+    try {
+      await window.electron!.showItemInFolder(filePath)
+    } catch (err) {
+      setError(`Failed to reveal file: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+  
+  // Phase 15: Path favorites management
+  const addPathFavorite = (path: string) => {
+    if (!pathFavorites.includes(path)) {
+      const updated = [...pathFavorites, path]
+      setPathFavorites(updated)
+      localStorage.setItem('proxx_path_favorites', JSON.stringify(updated))
+    }
+  }
+  
+  const removePathFavorite = (path: string) => {
+    const updated = pathFavorites.filter(p => p !== path)
+    setPathFavorites(updated)
+    localStorage.setItem('proxx_path_favorites', JSON.stringify(updated))
+  }
+  
   // Control operations with confirmation
   const confirmAction = (message: string): boolean => {
     return window.confirm(message)
@@ -179,7 +332,16 @@ function App() {
   }
 
   const rebindPreset = async (jobId: string) => {
-    const presetId = prompt('Enter new preset ID:')
+    // Phase 15: Use preset dropdown instead of prompt if presets loaded
+    let presetId: string | null = null
+    
+    if (presets.length > 0) {
+      const presetNames = presets.map(p => `${p.id} (${p.name})`).join('\n')
+      presetId = prompt(`Enter preset ID:\n\nAvailable presets:\n${presetNames}`)
+    } else {
+      presetId = prompt('Enter new preset ID:')
+    }
+    
     if (!presetId) return
 
     const message = `Rebind job ${jobId} to preset "${presetId}"?\n\nThis will OVERWRITE any existing preset binding.`
@@ -205,19 +367,62 @@ function App() {
       setLoading(false)
     }
   }
+  
+  // Phase 15: Multi-select clip operations
+  const handleClipClick = (clipId: string, event: React.MouseEvent) => {
+    if (event.shiftKey && selectedClipIds.size > 0 && jobDetail) {
+      // Range select
+      const clipIds = jobDetail.tasks.map(t => t.id)
+      const lastSelectedId = Array.from(selectedClipIds).pop()
+      const lastIndex = clipIds.indexOf(lastSelectedId!)
+      const currentIndex = clipIds.indexOf(clipId)
+      
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex)
+        const end = Math.max(lastIndex, currentIndex)
+        const rangeIds = clipIds.slice(start, end + 1)
+        setSelectedClipIds(new Set([...selectedClipIds, ...rangeIds]))
+      }
+    } else if (event.metaKey || event.ctrlKey) {
+      // Toggle select
+      const newSelection = new Set(selectedClipIds)
+      if (newSelection.has(clipId)) {
+        newSelection.delete(clipId)
+      } else {
+        newSelection.add(clipId)
+      }
+      setSelectedClipIds(newSelection)
+    } else {
+      // Single select
+      setSelectedClipIds(new Set([clipId]))
+    }
+  }
+  
+  const clearSelection = () => {
+    setSelectedClipIds(new Set())
+  }
+  
+  const selectAllClips = () => {
+    if (jobDetail) {
+      setSelectedClipIds(new Set(jobDetail.tasks.map(t => t.id)))
+    }
+  }
 
-  // Load jobs on mount
+  // Load jobs and presets on mount
   useEffect(() => {
     fetchJobs()
+    fetchPresets()
   }, [])
 
   // Load job detail when selection changes
   useEffect(() => {
     if (selectedJobId) {
       fetchJobDetail(selectedJobId)
+      setSelectedClipIds(new Set()) // Clear selection when switching jobs
     } else {
       setJobDetail(null)
       setReports([])
+      setSelectedClipIds(new Set())
     }
   }, [selectedJobId])
 
@@ -264,7 +469,10 @@ function App() {
       <div style={{
         padding: '1rem 1.5rem',
         borderBottom: '1px solid var(--border-primary)',
-        backgroundColor: 'var(--header-bg)'
+        backgroundColor: 'var(--header-bg)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
         <h1 style={{ 
           margin: 0, 
@@ -274,6 +482,21 @@ function App() {
         }}>
           Proxx — Operator Control
         </h1>
+        <button
+          onClick={() => setShowCreateJobPanel(!showCreateJobPanel)}
+          style={{
+            padding: '0.5rem 1rem',
+            fontSize: '0.875rem',
+            cursor: 'pointer',
+            border: '1px solid var(--button-primary-border)',
+            backgroundColor: showCreateJobPanel ? 'var(--button-secondary-bg)' : 'var(--button-primary-bg)',
+            color: 'var(--text-primary)',
+            borderRadius: 'var(--radius-sm)',
+            fontWeight: 500
+          }}
+        >
+          {showCreateJobPanel ? 'Hide' : 'Create Job'}
+        </button>
       </div>
 
       {/* Error Banner */}
@@ -285,6 +508,279 @@ function App() {
           borderBottom: '1px solid var(--error-border)'
         }}>
           {error}
+        </div>
+      )}
+
+      {/* Phase 15: Manual Job Creation Panel */}
+      {showCreateJobPanel && (
+        <div style={{
+          padding: '1.5rem',
+          borderBottom: '1px solid var(--border-primary)',
+          backgroundColor: 'var(--card-bg-solid)'
+        }}>
+          <h2 style={{
+            margin: '0 0 1rem 0',
+            fontSize: '1rem',
+            fontWeight: 600,
+            color: 'var(--text-primary)'
+          }}>
+            Create Manual Job (Testing)
+          </h2>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* File Selection */}
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                marginBottom: '0.5rem'
+              }}>
+                Source Files *
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button
+                  onClick={selectFiles}
+                  disabled={!hasElectron || loading}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.875rem',
+                    cursor: hasElectron && !loading ? 'pointer' : 'not-allowed',
+                    border: '1px solid var(--border-primary)',
+                    backgroundColor: 'var(--button-secondary-bg)',
+                    color: 'var(--text-primary)',
+                    borderRadius: 'var(--radius-sm)'
+                  }}
+                >
+                  Select Files...
+                </button>
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  {selectedFiles.length === 0 ? 'No files selected' : `${selectedFiles.length} file(s) selected`}
+                </span>
+              </div>
+              {selectedFiles.length > 0 && (
+                <div style={{
+                  marginTop: '0.5rem',
+                  maxHeight: '100px',
+                  overflow: 'auto',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'monospace'
+                }}>
+                  {selectedFiles.map((f, i) => <div key={i}>{f}</div>)}
+                </div>
+              )}
+            </div>
+            
+            {/* Preset Selection */}
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                marginBottom: '0.5rem'
+              }}>
+                Preset *
+              </label>
+              <select
+                value={selectedPresetId}
+                onChange={(e) => setSelectedPresetId(e.target.value)}
+                disabled={loading || presets.length === 0}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  fontSize: '0.875rem',
+                  border: '1px solid var(--border-primary)',
+                  backgroundColor: 'var(--card-bg)',
+                  color: 'var(--text-primary)',
+                  borderRadius: 'var(--radius-sm)'
+                }}
+              >
+                <option value="">Select a preset...</option>
+                {presets.map(p => (
+                  <option key={p.id} value={p.id}>{p.id} — {p.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Output Directory */}
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                marginBottom: '0.5rem'
+              }}>
+                Output Directory (optional)
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={selectOutputFolder}
+                  disabled={!hasElectron || loading}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    fontSize: '0.875rem',
+                    cursor: hasElectron && !loading ? 'pointer' : 'not-allowed',
+                    border: '1px solid var(--border-primary)',
+                    backgroundColor: 'var(--button-secondary-bg)',
+                    color: 'var(--text-primary)',
+                    borderRadius: 'var(--radius-sm)'
+                  }}
+                >
+                  Select Folder...
+                </button>
+                {pathFavorites.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => { if (e.target.value) setOutputDirectory(e.target.value) }}
+                    disabled={loading}
+                    style={{
+                      padding: '0.5rem',
+                      fontSize: '0.875rem',
+                      border: '1px solid var(--border-primary)',
+                      backgroundColor: 'var(--card-bg)',
+                      color: 'var(--text-primary)',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  >
+                    <option value="">Favorites...</option>
+                    {pathFavorites.map((path, i) => (
+                      <option key={i} value={path}>{path}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {outputDirectory && (
+                <div style={{
+                  marginTop: '0.5rem',
+                  display: 'flex',
+                  gap: '0.5rem',
+                  alignItems: 'center'
+                }}>
+                  <code style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--text-secondary)',
+                    flex: 1
+                  }}>
+                    {outputDirectory}
+                  </code>
+                  {!pathFavorites.includes(outputDirectory) && (
+                    <button
+                      onClick={() => addPathFavorite(outputDirectory)}
+                      style={{
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        border: '1px solid var(--border-primary)',
+                        backgroundColor: 'var(--button-secondary-bg)',
+                        color: 'var(--text-secondary)',
+                        borderRadius: 'var(--radius-sm)'
+                      }}
+                    >
+                      Add to Favorites
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* Favorites Management */}
+            {pathFavorites.length > 0 && (
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  color: 'var(--text-secondary)',
+                  marginBottom: '0.5rem'
+                }}>
+                  Favorite Paths
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  {pathFavorites.map((path, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      gap: '0.5rem',
+                      alignItems: 'center',
+                      padding: '0.25rem',
+                      fontSize: '0.75rem'
+                    }}>
+                      <code style={{ flex: 1, color: 'var(--text-secondary)' }}>{path}</code>
+                      <button
+                        onClick={() => removePathFavorite(path)}
+                        style={{
+                          padding: '0.125rem 0.375rem',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          border: '1px solid var(--border-primary)',
+                          backgroundColor: 'var(--button-secondary-bg)',
+                          color: 'var(--button-danger-bg)',
+                          borderRadius: 'var(--radius-sm)'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Create Button */}
+            <div style={{
+              paddingTop: '1rem',
+              borderTop: '1px solid var(--border-secondary)',
+              display: 'flex',
+              gap: '0.5rem'
+            }}>
+              <button
+                onClick={createManualJob}
+                disabled={loading || selectedFiles.length === 0 || !selectedPresetId}
+                style={{
+                  padding: '0.5rem 1.5rem',
+                  fontSize: '0.875rem',
+                  cursor: loading || selectedFiles.length === 0 || !selectedPresetId ? 'not-allowed' : 'pointer',
+                  border: '1px solid var(--button-primary-border)',
+                  backgroundColor: 'var(--button-primary-bg)',
+                  color: 'var(--text-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: 600
+                }}
+              >
+                Create PENDING Job
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedFiles([])
+                  setSelectedPresetId('')
+                  setOutputDirectory('')
+                }}
+                disabled={loading}
+                style={{
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.875rem',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  border: '1px solid var(--border-primary)',
+                  backgroundColor: 'var(--button-secondary-bg)',
+                  color: 'var(--text-secondary)',
+                  borderRadius: 'var(--radius-sm)'
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            
+            <div style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              fontStyle: 'italic'
+            }}>
+              Note: Jobs created here will be in PENDING state and require explicit execution.
+            </div>
+          </div>
         </div>
       )}
 
@@ -591,70 +1087,208 @@ function App() {
 
               {/* Clip Tasks */}
               <div>
-                <h3 style={{ 
-                  fontSize: '1rem', 
-                  fontWeight: 600, 
-                  marginBottom: '0.75rem',
-                  color: 'var(--text-primary)'
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '0.75rem'
                 }}>
-                  Clips ({jobDetail.tasks.length})
-                </h3>
+                  <h3 style={{ 
+                    fontSize: '1rem', 
+                    fontWeight: 600,
+                    margin: 0,
+                    color: 'var(--text-primary)'
+                  }}>
+                    Clips ({jobDetail.tasks.length})
+                    {selectedClipIds.size > 0 && (
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                        {' '}— {selectedClipIds.size} selected
+                      </span>
+                    )}
+                  </h3>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={selectAllClips}
+                      style={{
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        border: '1px solid var(--border-primary)',
+                        backgroundColor: 'var(--button-secondary-bg)',
+                        color: 'var(--text-secondary)',
+                        borderRadius: 'var(--radius-sm)'
+                      }}
+                    >
+                      Select All
+                    </button>
+                    {selectedClipIds.size > 0 && (
+                      <button
+                        onClick={clearSelection}
+                        style={{
+                          padding: '0.25rem 0.5rem',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          border: '1px solid var(--border-primary)',
+                          backgroundColor: 'var(--button-secondary-bg)',
+                          color: 'var(--text-secondary)',
+                          borderRadius: 'var(--radius-sm)'
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Phase 15: Batch operations toolbar */}
+                {selectedClipIds.size > 0 && (
+                  <div style={{
+                    padding: '0.75rem',
+                    marginBottom: '0.75rem',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 'var(--radius)',
+                    backgroundColor: 'var(--card-bg-solid)',
+                    display: 'flex',
+                    gap: '0.5rem',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginRight: '0.5rem' }}>
+                      Batch Actions:
+                    </span>
+                    <button
+                      onClick={() => {
+                        alert('Batch operations require backend implementation')
+                      }}
+                      disabled={true}
+                      style={{
+                        padding: '0.375rem 0.75rem',
+                        fontSize: '0.75rem',
+                        cursor: 'not-allowed',
+                        border: '1px solid var(--border-primary)',
+                        backgroundColor: 'var(--button-secondary-bg)',
+                        color: 'var(--text-muted)',
+                        borderRadius: 'var(--radius-sm)'
+                      }}
+                    >
+                      Retry Selected
+                    </button>
+                    <button
+                      onClick={() => {
+                        alert('Batch operations require backend implementation')
+                      }}
+                      disabled={true}
+                      style={{
+                        padding: '0.375rem 0.75rem',
+                        fontSize: '0.75rem',
+                        cursor: 'not-allowed',
+                        border: '1px solid var(--border-primary)',
+                        backgroundColor: 'var(--button-secondary-bg)',
+                        color: 'var(--text-muted)',
+                        borderRadius: 'var(--radius-sm)'
+                      }}
+                    >
+                      Rebind Preset
+                    </button>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', marginLeft: 'auto' }}>
+                      Note: Full batch execution deferred to future phases
+                    </div>
+                  </div>
+                )}
+                
                 <div style={{
                   border: '1px solid var(--border-primary)',
                   borderRadius: 'var(--radius)',
                   overflow: 'hidden',
                   backgroundColor: 'var(--card-bg)'
                 }}>
-                  {jobDetail.tasks.map((task, idx) => (
-                    <div
-                      key={task.id}
-                      style={{
-                        padding: '1rem',
-                        borderBottom: idx < jobDetail.tasks.length - 1 ? '1px solid var(--border-secondary)' : 'none'
-                      }}
-                    >
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                        marginBottom: '0.5rem'
-                      }}>
-                        <StatusBadge status={task.status} small />
-                        <code style={{
-                          fontSize: '0.875rem',
-                          color: 'var(--text-secondary)',
-                          flex: 1,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
+                  {jobDetail.tasks.map((task, idx) => {
+                    const isSelected = selectedClipIds.has(task.id)
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={(e) => handleClipClick(task.id, e)}
+                        style={{
+                          padding: '1rem',
+                          borderBottom: idx < jobDetail.tasks.length - 1 ? '1px solid var(--border-secondary)' : 'none',
+                          cursor: 'pointer',
+                          backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                          borderLeft: isSelected ? '3px solid var(--button-primary-bg)' : '3px solid transparent',
+                          transition: 'background-color 0.1s, border-left 0.1s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                          }
+                        }}
+                      >
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          marginBottom: '0.5rem'
                         }}>
-                          {task.source_path}
-                        </code>
+                          <StatusBadge status={task.status} small />
+                          <code style={{
+                            fontSize: '0.875rem',
+                            color: 'var(--text-secondary)',
+                            flex: 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {task.source_path}
+                          </code>
+                          {hasElectron && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                revealInFolder(task.source_path)
+                              }}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                                border: '1px solid var(--border-primary)',
+                                backgroundColor: 'var(--button-secondary-bg)',
+                                color: 'var(--text-secondary)',
+                                borderRadius: 'var(--radius-sm)'
+                              }}
+                              title="Reveal in Finder"
+                            >
+                              Reveal
+                            </button>
+                          )}
+                        </div>
+                        
+                        {task.failure_reason && (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: 'var(--status-failed-fg)',
+                            marginTop: '0.5rem',
+                            paddingLeft: '1.5rem'
+                          }}>
+                            Error: {task.failure_reason}
+                          </div>
+                        )}
+                        
+                        {task.warnings.length > 0 && (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: 'var(--status-warning-fg)',
+                            marginTop: '0.5rem',
+                            paddingLeft: '1.5rem'
+                          }}>
+                            Warnings: {task.warnings.join(', ')}
+                          </div>
+                        )}
                       </div>
-                      
-                      {task.failure_reason && (
-                        <div style={{
-                          fontSize: '0.75rem',
-                          color: 'var(--status-failed-fg)',
-                          marginTop: '0.5rem',
-                          paddingLeft: '1.5rem'
-                        }}>
-                          Error: {task.failure_reason}
-                        </div>
-                      )}
-                      
-                      {task.warnings.length > 0 && (
-                        <div style={{
-                          fontSize: '0.75rem',
-                          color: 'var(--status-warning-fg)',
-                          marginTop: '0.5rem',
-                          paddingLeft: '1.5rem'
-                        }}>
-                          Warnings: {task.warnings.join(', ')}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>

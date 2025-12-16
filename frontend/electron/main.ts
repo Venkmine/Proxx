@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 
 function createWindow() {
@@ -18,9 +18,40 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+  
+  return win
+}
+
+// Phase 15: IPC handlers for file/folder dialogs and shell operations
+function setupIpcHandlers() {
+  // File picker (multi-select)
+  ipcMain.handle('dialog:openFiles', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Media Files', extensions: ['mov', 'mxf', 'mp4', 'avi', 'mkv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return result.filePaths
+  })
+  
+  // Folder picker (single)
+  ipcMain.handle('dialog:openFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    })
+    return result.filePaths[0] || null
+  })
+  
+  // Reveal file/folder in system file manager
+  ipcMain.handle('shell:showItemInFolder', async (_, filePath: string) => {
+    shell.showItemInFolder(filePath)
+  })
 }
 
 app.whenReady().then(() => {
+  setupIpcHandlers()
   createWindow()
 
   app.on('activate', () => {

@@ -1657,175 +1657,205 @@ This is deliberate friction. Recovery should require human decision.
 
 These may be added in future phases.
 
-## Minimal Operator UI (Phase 14)
+## Manual Job Creation & Operator Ergonomics (Phase 15)
 
-Phase 14 introduces a minimal visual control surface for operators.
+Phase 15 extends the minimal operator UI with explicit manual job creation, multi-select batch operations, and filesystem convenience tools. All features maintain strict adherence to Proxx's design philosophy: no automatic execution, no silent state transitions, no guessing operator intent.
 
 ### Design Principles
 
-- UI is NOT authoritative—it reads and displays system truth
-- CLI remains the canonical source of operator intent
-- UI cannot auto-recover, auto-retry, or auto-execute
-- All state transitions require explicit confirmation
-- UI is a viewer + switchboard, nothing more
-- If it feels smooth, it is wrong
+- Manual job creation is for testing and deliberate ingestion only
+- All actions require explicit operator confirmation
+- Multi-select operations show exactly which clips are affected
+- Filesystem utilities are convenience tools, not control surfaces
+- Batch operations are honest about mixed states
+- Path favorites are local-only (no sync, no automation)
 
-### Architecture
+### Manual Job Creation
 
-The UI is composed of:
-- **Electron + React** frontend (reuses existing shell)
-- **HTTP monitoring endpoints** for read-only job/clip state
-- **HTTP control endpoints** for explicit operator actions
+**Purpose:** Test execution without scripting or watch folder configuration.
 
-The UI is replaceable without affecting system correctness.
+**Workflow:**
+1. Operator clicks "Create Job" button (header)
+2. Panel appears with file picker, preset selector, output directory selector
+3. Operator selects one or more source files via Electron file dialog
+4. Operator selects exactly one preset from dropdown (required)
+5. Operator optionally selects output directory (or uses default)
+6. Operator clicks "Create PENDING Job"
+7. Backend validates all inputs before creating job
+8. Job created with multiple clip tasks (one job, N clips)
+9. Job remains in PENDING state—no automatic execution
 
-Location: `frontend/src/App.tsx`
+**Validation Rules:**
+- At least one source file required
+- All source paths must exist and be files (not directories)
+- Preset must exist in registry
+- Output directory must be writable (if specified)
+- Invalid inputs fail job creation explicitly
 
-### Read-Only Capabilities
+**Backend Endpoint:** `POST /control/jobs/create`
 
-UI displays system truth via monitoring endpoints (Phase 9):
+Request body:
+```json
+{
+  "source_paths": ["/path/to/clip1.mov", "/path/to/clip2.mov"],
+  "preset_id": "preset_id",
+  "output_base_dir": "/optional/output/path"
+}
+```
 
-**Job List View:**
-- Job ID (truncated), status badge, creation timestamp
-- Progress summary: total, completed, failed, skipped
-- Sorted by creation time (newest first)
-- Refresh button for manual updates
+Response:
+```json
+{
+  "success": true,
+  "message": "Job created with 2 clips",
+  "job_id": "uuid"
+}
+```
 
-**Job Detail View:**
-- Full job metadata (ID, status, timestamps)
-- Progress breakdown (completed, failed, skipped, running, queued, warnings)
-- Per-clip task details (source path, status, failure reason, warnings)
-- Report references (filename, size, format)
+**Preset Binding:**
+Presets are bound at job creation time (not deferred). Backend calls `JobEngine.bind_preset()` after job creation.
 
-All data is read from existing `/monitor/*` endpoints. UI performs NO computation or aggregation—it displays exactly what the backend reports.
+**Job Structure:**
+One job with multiple ClipTask entries. This differs from watch folder behavior (which can be configured per-folder) but matches operator intent for batch ingestion.
 
-### Control Operations
+Location: `backend/app/routes/control.py` (job creation endpoint)
 
-UI exposes four explicit control operations via buttons:
+### Multi-Select Clip Operations
 
-**Resume Job** (`POST /control/jobs/{job_id}/resume`):
-- Visible when: `status == RECOVERY_REQUIRED or PAUSED`
-- Confirmation required: "Resume job? Completed clips will NOT be re-run."
-- Maps to: `cli.commands.resume_job()`
+**Purpose:** Allow batch inspection and future batch operations without repeated clicks.
 
-**Retry Failed Clips** (`POST /control/jobs/{job_id}/retry-failed`):
-- Visible when: `failed_count > 0`
-- Confirmation required: "Retry N failed clips? COMPLETED clips will NOT be re-run."
-- Maps to: `cli.commands.retry_failed_clips()`
+**Selection Mechanics:**
+- **Click**: Single select (replaces selection)
+- **Shift + Click**: Range select (from last selected to current)
+- **Cmd/Ctrl + Click**: Toggle select (add/remove from selection)
+- **Select All**: Button selects all clips in current job
+- **Clear**: Button clears selection
 
-**Cancel Job** (`POST /control/jobs/{job_id}/cancel`):
-- Visible when: `status not in (COMPLETED, COMPLETED_WITH_WARNINGS, FAILED, CANCELLED)`
-- Confirmation required: "Cancel job? Running clips will finish. Queued clips marked SKIPPED. CANNOT be undone."
-- Maps to: `cli.commands.cancel_job()`
+**Visual Feedback:**
+- Selected clips have blue background tint
+- Selected clips have blue left border
+- Selection count shown in clip header ("42 selected")
 
-**Rebind Preset** (`POST /control/jobs/{job_id}/rebind`):
-- Visible when: `status == PENDING or RECOVERY_REQUIRED`
-- Confirmation required: "Rebind to preset X? Will OVERWRITE existing binding."
-- Maps to: `cli.commands.rebind_preset()`
+**Batch Operations (Phase 15 Scope):**
+- Retry selected FAILED clips (UI placeholder—backend deferred)
+- Rebind preset for selected clips (UI placeholder—backend deferred)
+- Change output directory for selected clips (UI placeholder—backend deferred)
 
-All confirmations use native `window.confirm()` dialogs. Operator must explicitly approve before any action is sent to backend.
+**Important Limitation:**
+Phase 15 implements UI-only multi-select. Batch execution logic is deferred to future phases. Clicking batch action buttons shows "requires backend implementation" message. This is deliberate—Phase 15 establishes the interaction pattern without executing it.
 
-### Control Endpoints
+**Mixed State Handling:**
+If selection contains clips in different states (COMPLETED + FAILED), batch operations must handle this honestly. UI will show which clips are affected and which are skipped. No silent filtering.
 
-Phase 14 adds HTTP control endpoints as thin adapters over Phase 13 CLI commands.
+Location: `frontend/src/App.tsx` (clip selection state, event handlers)
+
+### Output Path Editing
+
+**Explicit Path Changes:**
+Operator can edit output base directory in two contexts:
+1. Before job execution (manual job creation panel)
+2. During retry operations (future phases)
+
+**Path Validation:**
+- Directory must exist
+- Directory must be writable
+- Writability tested via temporary file creation + deletion
+- Invalid paths fail explicitly before job creation
+
+**Collision Handling:**
+Path changes that would overwrite existing files require explicit confirmation. Backend follows existing collision behavior from Phase 6 (overwrite vs unique suffix).
+
+**Path Favorites:**
+- Add frequently-used output directories to favorites list
+- Favorites stored in localStorage (browser-local, no sync)
+- Favorites dropdown shown in output directory selector
+- Remove favorites via "Remove" button
+- "Add to Favorites" button shown when path not in favorites
+- Maximum: No enforced limit (operator responsibility)
+
+Location: `frontend/src/App.tsx` (path favorites state + localStorage)
+
+### Filesystem Convenience Utilities
+
+**Reveal in Finder/Explorer:**
+- Button shown on each clip row (when Electron runtime available)
+- Clicking reveals source file in system file manager
+- Uses Electron `shell.showItemInFolder()` API
+- Non-destructive—opens file manager without modifying filesystem
+- Works for input paths (always) and output paths (once completed)
+
+**Purpose:**
+Quick navigation to filesystem for manual inspection. Not a control surface—purely convenience.
+
+**Platform Support:**
+- macOS: Opens Finder with file selected
+- Windows: Opens Explorer with file selected
+- Linux: Opens default file manager with file selected
+
+Location: `frontend/electron/main.ts` (IPC handlers), `frontend/src/App.tsx` (UI integration)
+
+### Electron IPC Integration
+
+Phase 15 enables Electron IPC for file/folder dialogs and shell operations.
+
+**IPC Handlers (Main Process):**
+- `dialog:openFiles` → Multi-select file picker (media files filter)
+- `dialog:openFolder` → Single folder picker
+- `shell:showItemInFolder` → Reveal file in system file manager
+
+**Context Bridge (Preload):**
+Exposed via `window.electron`:
+- `openFiles(): Promise<string[]>`
+- `openFolder(): Promise<string | null>`
+- `showItemInFolder(filePath: string): Promise<void>`
+
+**Graceful Degradation:**
+If Electron APIs unavailable (e.g., running in browser), file picker buttons are disabled with "requires Electron runtime" message. App remains functional for job monitoring.
+
+Location: `frontend/electron/main.ts`, `frontend/electron/preload.ts`
+
+### Preset Listing
+
+**Backend Endpoint:** `GET /control/presets`
+
+Returns all global presets in registry with ID and name:
+```json
+{
+  "presets": [
+    {"id": "preset_id", "name": "Preset Name"},
+    ...
+  ]
+}
+```
+
+Presets sorted alphabetically by name for consistent UI display.
+
+Used by manual job creation panel (preset dropdown) and rebind preset operation (future enhancement).
 
 Location: `backend/app/routes/control.py`
 
-Structure:
-```
-control/
-└─ router (mounted at /control)
-   ├─ POST /jobs/{job_id}/resume
-   ├─ POST /jobs/{job_id}/retry-failed
-   ├─ POST /jobs/{job_id}/cancel
-   └─ POST /jobs/{job_id}/rebind (body: {preset_id})
-```
+### What Phase 15 Does NOT Include
 
-**Endpoint Behavior:**
-- Accept job_id from URL path
-- Retrieve registries from `app.state` (FastAPI dependency injection)
-- Call CLI command with `require_confirmation=False` (UI handles confirmation)
-- Return `OperationResponse` with success/message
-- Raise HTTP 400 for validation errors
-- Raise HTTP 500 for execution failures
+- Automatic job execution (manual trigger only)
+- Batch operation backend implementation (UI placeholders only)
+- Output path editing during execution (pre-execution only)
+- Clip-level preset overrides
+- Smart defaults or preset inference
+- Watch folder creation UI
+- Background polling or auto-refresh
+- Real-time progress updates (WebSocket/SSE)
+- Report downloading or serving
+- Clip trimming, watermarking, or combining (Phase 16+)
 
-Control endpoints do NOT implement new logic—they delegate to existing CLI commands. This ensures CLI remains canonical.
-
-### Integration
-
-**Backend State Initialization:**
-`backend/app/main.py` updated to initialize all registries:
-- `PersistenceManager`: SQLite storage
-- `JobRegistry`: Job tracking with persistence
-- `JobPresetBindingRegistry`: Preset bindings with persistence
-- `PresetRegistry`: Preset definitions (in-memory)
-- `JobEngine`: Orchestration engine
-
-All registries loaded from persistence at startup via explicit `load_*()` calls.
-
-Control router mounted at `/control` prefix alongside monitoring router.
-
-**Frontend Lifecycle:**
-- On mount: Fetch job list via `/monitor/jobs`
-- On job selection: Fetch job detail + reports via `/monitor/jobs/{id}` and `/monitor/jobs/{id}/reports`
-- Manual refresh: Re-fetch job list
-- After control action: Re-fetch affected job detail + job list
-
-No polling. No WebSockets. No auto-refresh. Operator must explicitly refresh.
-
-### Why UI Cannot Auto-Recover
-
-The UI cannot and will not:
-- Auto-resume RECOVERY_REQUIRED jobs
-- Auto-retry failed clips without confirmation
-- Hide partial failures
-- Infer operator intent
-- Trigger actions based on state changes
-
-RECOVERY_REQUIRED is displayed as a blocked state requiring explicit human action. This is intentional. Recovery requires operator decision.
-
-If a job is interrupted:
-1. UI shows `RECOVERY_REQUIRED` status badge (red)
-2. "Resume Job" button appears
-3. Operator must click button
-4. Operator must confirm via dialog
-5. Only then does resume occur
-
-No automatic recovery ever occurs. The system refuses to guess.
-
-### Styling
-
-Phase 14 styling is minimal and neutral:
-- System fonts (system-ui, -apple-system, sans-serif)
-- Neutral colors (grays, blues, greens, reds for status)
-- No branding or visual identity work
-- Functional layout only (no "design")
-
-Visual design deferred to Phase 15.
-
-### What Phase 14 Does NOT Include
-
-- Job creation via UI
-- Watch folder configuration
-- Preset management UI
-- Real-time progress updates (polling, WebSockets, SSE)
-- Authentication or authorization
-- Multi-user access control
-- Background execution decoupling
-- Report downloading or viewing
-- Log streaming
-- Metrics or analytics
-- Custom styling or themes
-
-Control operations are limited to the four explicit actions listed above. Everything else remains CLI-only or not yet implemented.
+Phase 15 establishes explicit operator intent patterns. Future phases will extend these patterns with execution logic while maintaining the same explicit-only philosophy.
 
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Multi-node execution (Phase 15+)
-- Distributed job scheduling (Phase 15+)
-- Visual design & operator experience (Phase 15)
+- Multi-node execution (Phase 16+)
+- Distributed job scheduling (Phase 16+)
+- Media operations (trim, watermark, combine) (Phase 16+)
 
 These will be documented when they exist.
 

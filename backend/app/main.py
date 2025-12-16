@@ -3,6 +3,7 @@ Proxx backend service — Operator control + monitoring
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.routes import health
 from app.routes import control
 from app.monitoring import server as monitoring
@@ -14,6 +15,15 @@ from app.persistence.manager import PersistenceManager
 
 app = FastAPI(title="Proxx Backend", version="0.1.0")
 
+# CORS middleware for frontend access (Phase 14, backend now on 8085)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Initialize persistence (Phase 12)
 persistence = PersistenceManager(db_path="./proxx.db")
 
@@ -21,10 +31,7 @@ persistence = PersistenceManager(db_path="./proxx.db")
 app.state.job_registry = JobRegistry(persistence_manager=persistence)
 app.state.binding_registry = JobPresetBindingRegistry(persistence_manager=persistence)
 app.state.preset_registry = PresetRegistry()
-app.state.job_engine = JobEngine(
-    job_registry=app.state.job_registry,
-    binding_registry=app.state.binding_registry
-)
+app.state.job_engine = JobEngine(binding_registry=app.state.binding_registry)
 
 # Load persisted state
 app.state.job_registry.load_all_jobs()
