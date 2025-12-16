@@ -15,10 +15,11 @@
 - Phase 11 — Preset application & execution automation (explicit binding, opt-in auto-execution, safety checks)
 - Phase 12 — Persistence & recovery (SQLite storage, explicit save/load, RECOVERY_REQUIRED status, honest recovery detection)
 - Phase 13 — Operator control & intent surfaces (CLI commands: resume, retry, cancel, rebind; explicit operator intent only)
+- Phase 14 — Minimal operator UI (read-only job/clip visibility + explicit control buttons; HTTP control endpoints; confirmation-gated actions)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 14 — Minimal operator UI (read-only + controls)
+- Phase: Phase 15 — Visual design & operator experience
 
 ## BLOCKERS / OPEN QUESTIONS
 

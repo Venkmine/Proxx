@@ -1657,13 +1657,175 @@ This is deliberate friction. Recovery should require human decision.
 
 These may be added in future phases.
 
+## Minimal Operator UI (Phase 14)
+
+Phase 14 introduces a minimal visual control surface for operators.
+
+### Design Principles
+
+- UI is NOT authoritative—it reads and displays system truth
+- CLI remains the canonical source of operator intent
+- UI cannot auto-recover, auto-retry, or auto-execute
+- All state transitions require explicit confirmation
+- UI is a viewer + switchboard, nothing more
+- If it feels smooth, it is wrong
+
+### Architecture
+
+The UI is composed of:
+- **Electron + React** frontend (reuses existing shell)
+- **HTTP monitoring endpoints** for read-only job/clip state
+- **HTTP control endpoints** for explicit operator actions
+
+The UI is replaceable without affecting system correctness.
+
+Location: `frontend/src/App.tsx`
+
+### Read-Only Capabilities
+
+UI displays system truth via monitoring endpoints (Phase 9):
+
+**Job List View:**
+- Job ID (truncated), status badge, creation timestamp
+- Progress summary: total, completed, failed, skipped
+- Sorted by creation time (newest first)
+- Refresh button for manual updates
+
+**Job Detail View:**
+- Full job metadata (ID, status, timestamps)
+- Progress breakdown (completed, failed, skipped, running, queued, warnings)
+- Per-clip task details (source path, status, failure reason, warnings)
+- Report references (filename, size, format)
+
+All data is read from existing `/monitor/*` endpoints. UI performs NO computation or aggregation—it displays exactly what the backend reports.
+
+### Control Operations
+
+UI exposes four explicit control operations via buttons:
+
+**Resume Job** (`POST /control/jobs/{job_id}/resume`):
+- Visible when: `status == RECOVERY_REQUIRED or PAUSED`
+- Confirmation required: "Resume job? Completed clips will NOT be re-run."
+- Maps to: `cli.commands.resume_job()`
+
+**Retry Failed Clips** (`POST /control/jobs/{job_id}/retry-failed`):
+- Visible when: `failed_count > 0`
+- Confirmation required: "Retry N failed clips? COMPLETED clips will NOT be re-run."
+- Maps to: `cli.commands.retry_failed_clips()`
+
+**Cancel Job** (`POST /control/jobs/{job_id}/cancel`):
+- Visible when: `status not in (COMPLETED, COMPLETED_WITH_WARNINGS, FAILED, CANCELLED)`
+- Confirmation required: "Cancel job? Running clips will finish. Queued clips marked SKIPPED. CANNOT be undone."
+- Maps to: `cli.commands.cancel_job()`
+
+**Rebind Preset** (`POST /control/jobs/{job_id}/rebind`):
+- Visible when: `status == PENDING or RECOVERY_REQUIRED`
+- Confirmation required: "Rebind to preset X? Will OVERWRITE existing binding."
+- Maps to: `cli.commands.rebind_preset()`
+
+All confirmations use native `window.confirm()` dialogs. Operator must explicitly approve before any action is sent to backend.
+
+### Control Endpoints
+
+Phase 14 adds HTTP control endpoints as thin adapters over Phase 13 CLI commands.
+
+Location: `backend/app/routes/control.py`
+
+Structure:
+```
+control/
+└─ router (mounted at /control)
+   ├─ POST /jobs/{job_id}/resume
+   ├─ POST /jobs/{job_id}/retry-failed
+   ├─ POST /jobs/{job_id}/cancel
+   └─ POST /jobs/{job_id}/rebind (body: {preset_id})
+```
+
+**Endpoint Behavior:**
+- Accept job_id from URL path
+- Retrieve registries from `app.state` (FastAPI dependency injection)
+- Call CLI command with `require_confirmation=False` (UI handles confirmation)
+- Return `OperationResponse` with success/message
+- Raise HTTP 400 for validation errors
+- Raise HTTP 500 for execution failures
+
+Control endpoints do NOT implement new logic—they delegate to existing CLI commands. This ensures CLI remains canonical.
+
+### Integration
+
+**Backend State Initialization:**
+`backend/app/main.py` updated to initialize all registries:
+- `PersistenceManager`: SQLite storage
+- `JobRegistry`: Job tracking with persistence
+- `JobPresetBindingRegistry`: Preset bindings with persistence
+- `PresetRegistry`: Preset definitions (in-memory)
+- `JobEngine`: Orchestration engine
+
+All registries loaded from persistence at startup via explicit `load_*()` calls.
+
+Control router mounted at `/control` prefix alongside monitoring router.
+
+**Frontend Lifecycle:**
+- On mount: Fetch job list via `/monitor/jobs`
+- On job selection: Fetch job detail + reports via `/monitor/jobs/{id}` and `/monitor/jobs/{id}/reports`
+- Manual refresh: Re-fetch job list
+- After control action: Re-fetch affected job detail + job list
+
+No polling. No WebSockets. No auto-refresh. Operator must explicitly refresh.
+
+### Why UI Cannot Auto-Recover
+
+The UI cannot and will not:
+- Auto-resume RECOVERY_REQUIRED jobs
+- Auto-retry failed clips without confirmation
+- Hide partial failures
+- Infer operator intent
+- Trigger actions based on state changes
+
+RECOVERY_REQUIRED is displayed as a blocked state requiring explicit human action. This is intentional. Recovery requires operator decision.
+
+If a job is interrupted:
+1. UI shows `RECOVERY_REQUIRED` status badge (red)
+2. "Resume Job" button appears
+3. Operator must click button
+4. Operator must confirm via dialog
+5. Only then does resume occur
+
+No automatic recovery ever occurs. The system refuses to guess.
+
+### Styling
+
+Phase 14 styling is minimal and neutral:
+- System fonts (system-ui, -apple-system, sans-serif)
+- Neutral colors (grays, blues, greens, reds for status)
+- No branding or visual identity work
+- Functional layout only (no "design")
+
+Visual design deferred to Phase 15.
+
+### What Phase 14 Does NOT Include
+
+- Job creation via UI
+- Watch folder configuration
+- Preset management UI
+- Real-time progress updates (polling, WebSockets, SSE)
+- Authentication or authorization
+- Multi-user access control
+- Background execution decoupling
+- Report downloading or viewing
+- Log streaming
+- Metrics or analytics
+- Custom styling or themes
+
+Control operations are limited to the four explicit actions listed above. Everything else remains CLI-only or not yet implemented.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Multi-node execution (Phase 14+)
-- Distributed job scheduling (Phase 14+)
-- Operator UI (Phase 14+)
+- Multi-node execution (Phase 15+)
+- Distributed job scheduling (Phase 15+)
+- Visual design & operator experience (Phase 15)
 
 These will be documented when they exist.
 
