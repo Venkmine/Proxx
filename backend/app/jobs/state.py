@@ -19,6 +19,9 @@ _JOB_TRANSITIONS: Set[Tuple[JobStatus, JobStatus]] = {
     (JobStatus.RUNNING, JobStatus.PAUSED),
     (JobStatus.PAUSED, JobStatus.RUNNING),
     
+    # Phase 12: Recovery resumption
+    (JobStatus.RECOVERY_REQUIRED, JobStatus.RUNNING),
+    
     # Completing successfully
     (JobStatus.RUNNING, JobStatus.COMPLETED),
     

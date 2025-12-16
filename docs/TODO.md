@@ -13,10 +13,11 @@
 - Phase 9 — Monitoring server (read-only job status visibility)
 - Phase 10 — Watch folders & unattended ingestion (polling-based discovery, stability detection, job creation)
 - Phase 11 — Preset application & execution automation (explicit binding, opt-in auto-execution, safety checks)
+- Phase 12 — Persistence & recovery (SQLite storage, explicit save/load, RECOVERY_REQUIRED status, honest recovery detection)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 12 — Persistence & recovery
+- Phase: Phase 13 — UI & operator workflows
 
 ## BLOCKERS / OPEN QUESTIONS
 

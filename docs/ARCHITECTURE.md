@@ -1377,13 +1377,163 @@ All failures are non-blocking. Jobs remain in PENDING state and can be manually 
 
 These may be added in future phases.
 
+## Persistence & Recovery (Phase 12)
+
+Phase 12 adds state persistence so Proxx can survive process restarts without losing work or silently re-running completed tasks.
+
+### Storage Strategy
+
+**Technology:** SQLite (single file)
+- One database per Proxx instance
+- Default location: `./proxx.db` (current working directory)
+- ACID guarantees for state consistency
+- Schema versioning for migrations
+
+**What is Persisted:**
+
+1. **Jobs & ClipTasks**
+   - Job ID, timestamps, status
+   - Clip source paths, status, failure reasons
+   - Task-level warnings
+
+2. **Preset Bindings**
+   - Job ID → Preset ID mappings
+   - Preset definitions remain file-based (not persisted)
+
+3. **Watch Folder Configurations**
+   - Path, enabled flag, recursive setting
+   - Preset binding, auto_execute flag
+   - Creation timestamps
+
+4. **Processed Files Tracking**
+   - File paths that have been ingested
+   - Prevents duplicate ingestion across restarts
+
+**What is NOT Persisted:**
+
+- ExecutionResult internals (transient execution data)
+- Timing/performance metrics
+- Logs (remain file-based)
+- Derived reports (already written to disk)
+
+### Persistence Model
+
+**Explicit, Not Automatic:**
+- Registries do NOT auto-persist on every mutation
+- Persistence requires explicit `save_*()` calls
+- Load operations called explicitly at startup
+
+**Registry Integration:**
+
+Each registry gains optional `PersistenceManager` injection:
+
+```python
+# Initialization (self-contained, not wired through main.py)
+persistence = PersistenceManager(db_path="./proxx.db")
+job_registry = JobRegistry(persistence_manager=persistence)
+binding_registry = JobPresetBindingRegistry(persistence_manager=persistence)
+watch_folder_registry = WatchFolderRegistry(persistence_manager=persistence)
+watch_folder_engine = WatchFolderEngine(..., persistence_manager=persistence)
+
+# Explicit save after state changes
+job_registry.save_job(job)
+binding_registry.save_binding(job.id)
+watch_folder_registry.save_folder(folder)
+watch_folder_engine.save_processed_file(folder.id, file_path)
+
+# Explicit load at startup
+job_registry.load_all_jobs()
+binding_registry.load_all_bindings()
+watch_folder_registry.load_all_folders()
+watch_folder_engine.load_processed_files()
+```
+
+Registries remain fully functional without persistence (useful for testing).
+
+### Recovery Behavior
+
+**On Process Restart:**
+
+1. Load all persisted state from SQLite
+2. Detect interrupted jobs (status was RUNNING or PAUSED)
+3. Mark interrupted jobs as `RECOVERY_REQUIRED`
+4. Do NOT auto-resume execution
+
+**RECOVERY_REQUIRED Status:**
+
+- Hard terminal state (cannot auto-transition)
+- Requires explicit operator action to resume
+- Transition: `RECOVERY_REQUIRED → RUNNING` via `resume_job()`
+- Honest acknowledgement of uncertainty
+
+**No Silent Recovery:**
+- Proxx never guesses what was running
+- Operator must explicitly resume interrupted work
+- Filesystem remains authoritative for completion verification
+
+### State Transitions
+
+Phase 12 adds one new job status:
+
+```
+RECOVERY_REQUIRED: Process restarted mid-execution, requires explicit resume
+```
+
+**Legal Transitions:**
+- `RECOVERY_REQUIRED → RUNNING` (explicit resume only)
+
+Interrupted jobs remain frozen until operator intervention.
+
+### Schema Management
+
+**Versioning:**
+- `schema_version` table tracks applied migrations
+- Current version: 1
+- Migrations applied atomically on startup
+
+**Migration Strategy:**
+- Check current version on PersistenceManager init
+- Apply missing migrations in order
+- Fail loudly on migration errors (no silent degradation)
+
+### Failure Modes
+
+**Database Corruption:**
+- PersistenceManager raises `PersistenceError`
+- Application startup fails loudly
+- Operator must resolve (restore from backup, delete DB, etc.)
+
+**Missing Database:**
+- Fresh database created automatically
+- Empty state (no jobs, no bindings)
+- Normal startup proceeds
+
+**Schema Version Mismatch:**
+- Older schema: Migrations applied automatically
+- Newer schema: Application refuses to start (prevents downgrade corruption)
+
+### Performance Characteristics
+
+**SQLite Benefits:**
+- Single-file simplicity (easy backup/restore)
+- No server process required
+- Sufficient for single-operator workloads
+- Write performance adequate for job-level operations (not per-frame)
+
+**Not Suitable For:**
+- Multi-node/distributed execution (Phase 13+)
+- High-frequency writes (e.g., frame-level progress)
+- Concurrent multi-process access
+
+Phase 12 assumes single-process, single-operator usage.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Persistent preset bindings (Phase 12)
-- Job persistence and recovery (Phase 12)
 - Multi-node execution (Phase 13+)
+- Distributed job scheduling (Phase 13+)
+- UI for recovery workflows (Phase 13)
 
 These will be documented when they exist.
 

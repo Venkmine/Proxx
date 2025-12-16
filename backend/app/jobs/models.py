@@ -29,6 +29,7 @@ class JobStatus(str, Enum):
     COMPLETED = "completed"  # All clips completed, no failures or warnings
     COMPLETED_WITH_WARNINGS = "completed_with_warnings"  # All clips terminal, some failed/skipped/warned
     FAILED = "failed"  # Job engine itself cannot continue
+    RECOVERY_REQUIRED = "recovery_required"  # Process restarted mid-execution, requires explicit resume
 
 
 class TaskStatus(str, Enum):

@@ -1,18 +1,17 @@
 """
 Watch folder registry.
 
-In-memory storage for watch folder configurations. Follows the same pattern
-as PresetRegistry and JobRegistry.
-
-Phase 10: In-memory only, no persistence.
-Phase 11+: Persistence via SQLite or JSON.
+In-memory storage for watch folder configurations.
+Phase 10: In-memory only.
+Phase 12: Explicit persistence support.
 """
 
 from typing import Dict, List, Optional
 from pathlib import Path
+from datetime import datetime
 
-from watchfolders.models import WatchFolder
-from watchfolders.errors import (
+from .models import WatchFolder
+from .errors import (
     DuplicateWatchFolderError,
     WatchFolderNotFoundError,
     InvalidWatchFolderPathError,
@@ -23,11 +22,18 @@ class WatchFolderRegistry:
     """
     In-memory registry for watch folder configurations.
 
-    Provides add/get/list/remove operations with duplicate detection.
+    Phase 12: Explicit persistence via save/load methods.
     """
 
-    def __init__(self):
+    def __init__(self, persistence_manager=None):
+        """
+        Initialize registry.
+        
+        Args:
+            persistence_manager: Optional PersistenceManager for explicit save/load
+        """
         self._folders: Dict[str, WatchFolder] = {}
+        self._persistence = persistence_manager
 
     def add_folder(self, folder: WatchFolder) -> None:
         """
@@ -133,3 +139,60 @@ class WatchFolderRegistry:
         Used primarily for testing.
         """
         self._folders.clear()
+    
+    # Phase 12: Explicit persistence operations
+    
+    def save_folder(self, folder: WatchFolder) -> None:
+        """
+        Explicitly save a watch folder to persistent storage.
+        
+        Must be called manually after add_folder() or updates.
+        
+        Args:
+            folder: The watch folder to persist
+            
+        Raises:
+            ValueError: If persistence_manager is not configured
+        """
+        if not self._persistence:
+            raise ValueError("No persistence_manager configured for WatchFolderRegistry")
+        
+        folder_data = {
+            "id": folder.id,
+            "path": folder.path,
+            "enabled": folder.enabled,
+            "recursive": folder.recursive,
+            "preset_id": folder.preset_id,
+            "auto_execute": folder.auto_execute,
+            "created_at": folder.created_at.isoformat(),
+        }
+        
+        self._persistence.save_watch_folder(folder_data)
+    
+    def load_all_folders(self) -> None:
+        """
+        Load all watch folders from persistent storage into memory.
+        
+        Called explicitly at startup to restore state.
+        Does NOT re-validate filesystem paths (may have changed).
+        
+        Raises:
+            ValueError: If persistence_manager is not configured
+        """
+        if not self._persistence:
+            raise ValueError("No persistence_manager configured for WatchFolderRegistry")
+        
+        folder_datas = self._persistence.load_all_watch_folders()
+        
+        for folder_data in folder_datas:
+            folder = WatchFolder(
+                id=folder_data["id"],
+                path=folder_data["path"],
+                enabled=folder_data["enabled"],
+                recursive=folder_data["recursive"],
+                preset_id=folder_data["preset_id"],
+                auto_execute=folder_data["auto_execute"],
+                created_at=datetime.fromisoformat(folder_data["created_at"]),
+            )
+            
+            self._folders[folder.id] = folder

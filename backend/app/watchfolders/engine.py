@@ -53,6 +53,7 @@ class WatchFolderEngine:
         job_engine: JobEngine,
         binding_registry: JobPresetBindingRegistry,
         automation_mediator: Optional["ExecutionAutomation"] = None,
+        persistence_manager = None,
     ):
         """
         Initialize watch folder engine.
@@ -62,11 +63,13 @@ class WatchFolderEngine:
             job_engine: Job engine for creating jobs
             binding_registry: Registry for job-preset bindings
             automation_mediator: Optional mediator for auto-execution
+            persistence_manager: Optional PersistenceManager for processed files tracking
         """
         self.watch_folder_registry = watch_folder_registry
         self.job_engine = job_engine
         self.binding_registry = binding_registry
         self.automation_mediator = automation_mediator
+        self._persistence = persistence_manager
 
         # Initialize scanner and stability checker
         self.scanner = FileScanner(skip_hidden=True, follow_symlinks=False)
@@ -274,3 +277,42 @@ class WatchFolderEngine:
             Set of absolute paths that have been ingested
         """
         return self._processed_files.copy()
+    
+    # Phase 12: Explicit persistence operations
+    
+    def save_processed_file(self, watch_folder_id: str, file_path: str) -> None:
+        """
+        Explicitly save a processed file marker to persistent storage.
+        
+        Must be called manually after marking a file as processed.
+        
+        Args:
+            watch_folder_id: Watch folder ID
+            file_path: Absolute path to the processed file
+            
+        Raises:
+            ValueError: If persistence_manager is not configured
+        """
+        if not self._persistence:
+            raise ValueError("No persistence_manager configured for WatchFolderEngine")
+        
+        self._persistence.save_processed_file(watch_folder_id, file_path)
+    
+    def load_processed_files(self, watch_folder_id: Optional[str] = None) -> None:
+        """
+        Load processed files from persistent storage into memory.
+        
+        Called explicitly at startup to restore duplicate prevention state.
+        
+        Args:
+            watch_folder_id: Optional filter by watch folder
+            
+        Raises:
+            ValueError: If persistence_manager is not configured
+        """
+        if not self._persistence:
+            raise ValueError("No persistence_manager configured for WatchFolderEngine")
+        
+        loaded_files = self._persistence.load_processed_files(watch_folder_id)
+        self._processed_files.update(loaded_files)
+        logger.info(f"Loaded {len(loaded_files)} processed files from storage")

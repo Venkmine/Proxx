@@ -136,16 +136,18 @@ class JobEngine:
     
     def resume_job(self, job: Job) -> None:
         """
-        Resume a paused job.
+        Resume a paused or recovery-required job.
         
-        Transitions job from PAUSED back to RUNNING.
+        Transitions job from PAUSED or RECOVERY_REQUIRED back to RUNNING.
         Only remaining QUEUED tasks will be processed.
+        
+        Phase 12: Explicit operator action required to resume interrupted jobs.
         
         Args:
             job: The job to resume
             
         Raises:
-            InvalidStateTransitionError: If job is not in PAUSED state
+            InvalidStateTransitionError: If job is not in PAUSED or RECOVERY_REQUIRED state
         """
         validate_job_transition(job.status, JobStatus.RUNNING)
         
@@ -227,6 +229,7 @@ class JobEngine:
         - COMPLETED_WITH_WARNINGS: All tasks in terminal states, but some failed/skipped/warned
         - RUNNING: At least one task is running or queued
         - PAUSED: Explicitly set by user
+        - RECOVERY_REQUIRED: Explicitly set after process restart (terminal until resume)
         - PENDING: No tasks started yet
         
         Args:
@@ -236,7 +239,7 @@ class JobEngine:
             The computed job status
         """
         # Terminal states remain unchanged
-        if job.status in (JobStatus.FAILED, JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS):
+        if job.status in (JobStatus.FAILED, JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS, JobStatus.RECOVERY_REQUIRED):
             return job.status
         
         # Check if all tasks are in terminal states

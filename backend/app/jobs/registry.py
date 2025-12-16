@@ -2,18 +2,18 @@
 In-memory job registry.
 
 Phase 4 scope: Store and retrieve jobs by ID.
-No persistence. No file I/O. No databases.
+Phase 12: Explicit persistence support.
 
 The registry provides:
 - Job storage and retrieval by ID
 - Listing all jobs
 - Basic job lifecycle management
-
-Full persistence will be implemented in Phase 6+.
+- Explicit save/load operations (no auto-persist)
 """
 
 from typing import Dict, List, Optional
-from .models import Job
+from datetime import datetime
+from .models import Job, JobStatus, ClipTask, TaskStatus
 from .errors import JobNotFoundError
 
 
@@ -22,13 +22,19 @@ class JobRegistry:
     In-memory registry for job tracking.
     
     Stores jobs and provides retrieval by ID.
-    Jobs are kept in memory only (no persistence).
+    Phase 12: Explicit persistence via save/load methods.
     """
     
-    def __init__(self):
-        """Initialize empty registry."""
+    def __init__(self, persistence_manager=None):
+        """
+        Initialize registry.
+        
+        Args:
+            persistence_manager: Optional PersistenceManager for explicit save/load
+        """
         # job_id -> Job
         self._jobs: Dict[str, Job] = {}
+        self._persistence = persistence_manager
     
     def add_job(self, job: Job) -> None:
         """
@@ -117,3 +123,92 @@ class JobRegistry:
             Number of jobs
         """
         return len(self._jobs)
+    
+    # Phase 12: Explicit persistence operations
+    
+    def save_job(self, job: Job) -> None:
+        """
+        Explicitly save a job to persistent storage.
+        
+        Must be called manually after job state changes.
+        Does not auto-persist on mutations.
+        
+        Args:
+            job: The job to persist
+            
+        Raises:
+            ValueError: If persistence_manager is not configured
+        """
+        if not self._persistence:
+            raise ValueError("No persistence_manager configured for JobRegistry")
+        
+        # Serialize job to dict
+        job_data = {
+            "id": job.id,
+            "created_at": job.created_at.isoformat(),
+            "started_at": job.started_at.isoformat() if job.started_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "status": job.status.value,
+            "tasks": [
+                {
+                    "id": task.id,
+                    "source_path": task.source_path,
+                    "status": task.status.value,
+                    "started_at": task.started_at.isoformat() if task.started_at else None,
+                    "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                    "failure_reason": task.failure_reason,
+                    "warnings": task.warnings,
+                    "retry_count": task.retry_count,
+                }
+                for task in job.tasks
+            ],
+        }
+        
+        self._persistence.save_job(job_data)
+    
+    def load_all_jobs(self) -> None:
+        """
+        Load all jobs from persistent storage into memory.
+        
+        Called explicitly at startup to restore state.
+        Detects jobs requiring recovery (RUNNING/PAUSED become RECOVERY_REQUIRED).
+        
+        Raises:
+            ValueError: If persistence_manager is not configured
+        """
+        if not self._persistence:
+            raise ValueError("No persistence_manager configured for JobRegistry")
+        
+        job_datas = self._persistence.load_all_jobs()
+        
+        for job_data in job_datas:
+            # Deserialize tasks
+            tasks = [
+                ClipTask(
+                    id=task_data["id"],
+                    source_path=task_data["source_path"],
+                    status=TaskStatus(task_data["status"]),
+                    started_at=datetime.fromisoformat(task_data["started_at"]) if task_data["started_at"] else None,
+                    completed_at=datetime.fromisoformat(task_data["completed_at"]) if task_data["completed_at"] else None,
+                    failure_reason=task_data["failure_reason"],
+                    warnings=task_data["warnings"],
+                    retry_count=task_data["retry_count"],
+                )
+                for task_data in job_data["tasks"]
+            ]
+            
+            # Deserialize job
+            job = Job(
+                id=job_data["id"],
+                created_at=datetime.fromisoformat(job_data["created_at"]),
+                started_at=datetime.fromisoformat(job_data["started_at"]) if job_data["started_at"] else None,
+                completed_at=datetime.fromisoformat(job_data["completed_at"]) if job_data["completed_at"] else None,
+                status=JobStatus(job_data["status"]),
+                tasks=tasks,
+            )
+            
+            # Recovery detection: RUNNING or PAUSED at startup means interrupted
+            if job.status in (JobStatus.RUNNING, JobStatus.PAUSED):
+                job.status = JobStatus.RECOVERY_REQUIRED
+            
+            self._jobs[job.id] = job
