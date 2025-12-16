@@ -2,20 +2,26 @@
 Watch folder engine — orchestration for unattended ingestion.
 
 Coordinates filesystem scanning, stability checking, and job creation.
+Phase 11: Integrated with execution automation for opt-in auto-execution.
+
 This is the main entry point for watch folder processing.
 """
 
 import logging
 from pathlib import Path
-from typing import List, Set, Optional
+from typing import List, Set, Optional, TYPE_CHECKING
 
 from jobs.engine import JobEngine
 from jobs.models import Job
+from jobs.bindings import JobPresetBindingRegistry
 from watchfolders.models import WatchFolder
 from watchfolders.registry import WatchFolderRegistry
 from watchfolders.scanner import FileScanner
 from watchfolders.stability import FileStabilityChecker
 from watchfolders.errors import WatchFolderError
+
+if TYPE_CHECKING:
+    from jobs.automation import ExecutionAutomation
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +35,24 @@ class WatchFolderEngine:
     2. File stability detection (via FileStabilityChecker)
     3. Duplicate prevention (in-memory tracking)
     4. Job creation (via JobEngine)
+    5. Optional auto-execution (via ExecutionAutomation mediator)
 
-    Phase 10 behavior:
-    - Creates jobs in PENDING state only
-    - NO auto-execution
-    - NO preset application
-    - One job per file
+    Phase 11 behavior:
+    - Creates jobs in PENDING state by default
+    - Binds presets to jobs if watch folder has preset_id configured
+    - MAY auto-execute if watch folder has auto_execute=True
+    - Auto-execution is mediated through ExecutionAutomation (safety checks)
 
-    Jobs are created without presets. Preset application is deferred to Phase 11+.
+    Jobs are created without preset application by default.
+    Automation requires explicit opt-in via watch folder configuration.
     """
 
     def __init__(
         self,
         watch_folder_registry: WatchFolderRegistry,
         job_engine: JobEngine,
+        binding_registry: JobPresetBindingRegistry,
+        automation_mediator: Optional["ExecutionAutomation"] = None,
     ):
         """
         Initialize watch folder engine.
@@ -50,9 +60,13 @@ class WatchFolderEngine:
         Args:
             watch_folder_registry: Registry of watch folder configurations
             job_engine: Job engine for creating jobs
+            binding_registry: Registry for job-preset bindings
+            automation_mediator: Optional mediator for auto-execution
         """
         self.watch_folder_registry = watch_folder_registry
         self.job_engine = job_engine
+        self.binding_registry = binding_registry
+        self.automation_mediator = automation_mediator
 
         # Initialize scanner and stability checker
         self.scanner = FileScanner(skip_hidden=True, follow_symlinks=False)
@@ -183,26 +197,51 @@ class WatchFolderEngine:
         self, file_path: Path, watch_folder: WatchFolder
     ) -> Job:
         """
-        Create a PENDING job for a single file.
+        Create a job for a single file.
 
-        Phase 10 behavior:
+        Phase 11 behavior:
         - One job per file
-        - NO preset application (presets deferred to Phase 11)
-        - Job left in PENDING state (no auto-execution)
+        - Bind preset if watch_folder.preset_id is set
+        - Optionally auto-execute if watch_folder.auto_execute=True
+        - Job left in PENDING state if not auto-executed
+
+        Auto-execution is mediated and subject to safety checks.
 
         Args:
             file_path: Absolute path to stable file
             watch_folder: Watch folder configuration
 
         Returns:
-            New job in PENDING state
+            New job (PENDING or post-execution state)
         """
         # Create job with single source file
         job = self.job_engine.create_job(source_paths=[str(file_path)])
 
-        # Job is already in PENDING state (default from create_job)
-        # No preset is applied
-        # No execution is triggered
+        # Bind preset if configured
+        if watch_folder.preset_id:
+            self.binding_registry.bind_preset(job.id, watch_folder.preset_id)
+            logger.debug(
+                f"Bound preset '{watch_folder.preset_id}' to job {job.id}"
+            )
+
+        # Attempt auto-execution if enabled
+        if watch_folder.auto_execute and self.automation_mediator:
+            if not watch_folder.preset_id:
+                logger.warning(
+                    f"Watch folder '{watch_folder.id}' has auto_execute=True "
+                    "but no preset_id configured. Skipping auto-execution."
+                )
+            else:
+                success, error = self.automation_mediator.auto_execute_job(
+                    job=job,
+                    preset_id=watch_folder.preset_id,
+                )
+                
+                if not success:
+                    logger.warning(
+                        f"Auto-execution failed for job {job.id} "
+                        f"(watch folder: {watch_folder.id}): {error}"
+                    )
 
         return job
 

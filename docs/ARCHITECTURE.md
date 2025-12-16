@@ -1232,14 +1232,158 @@ No new endpoints or routes—watch folders are backend plumbing only in Phase 10
 
 These features may be added in future phases (Phase 11+).
 
+## Preset Binding & Execution Automation
+
+Phase 11 introduces explicit preset binding and opt-in execution automation for jobs.
+
+### Design Principles
+
+- Presets are bound explicitly, never inferred
+- Auto-execution requires explicit opt-in and is reversible
+- Watch folder ingestion remains non-executing by default
+- Automation is mediated and subject to safety checks
+- Default behavior remains manual
+- Bindings are stored externally (not on Job models)
+
+### Module Structure
+
+Location: `backend/app/jobs/`, `backend/app/watchfolders/`
+
+New files:
+```
+jobs/
+├─ bindings.py       # JobPresetBindingRegistry (external storage for job→preset mappings)
+└─ automation.py     # ExecutionAutomation mediator (safety checks, auto-execution logic)
+```
+
+Modified files:
+```
+jobs/
+└─ engine.py         # Updated to support binding_registry, optional preset parameter
+
+watchfolders/
+├─ models.py         # Added preset_id and auto_execute fields
+└─ engine.py         # Integrated with automation mediator
+```
+
+### Job-Preset Binding
+
+Jobs do NOT store preset IDs directly. Preset bindings are tracked externally via `JobPresetBindingRegistry`.
+
+**JobPresetBindingRegistry** (`backend/app/jobs/bindings.py`):
+- In-memory mapping: `job_id → preset_id`
+- Methods: `bind_preset()`, `get_preset_id()`, `unbind_preset()`, `has_binding()`
+- Persistence deferred to Phase 12
+
+**Explicit Binding** via `JobEngine.bind_preset()`:
+- Validates preset existence (optional)
+- Stores binding in registry
+- Does NOT start execution
+
+**Implicit Binding** via watch folders:
+- If `WatchFolder.preset_id` is set, jobs created from that folder are automatically bound
+
+### Execution Trigger
+
+Jobs can be executed via `JobEngine.execute_job()` (existing method, now enhanced):
+
+**Updated Behavior:**
+- If `binding_registry` is available, checks for bound preset
+- Falls back to `global_preset_id` parameter if no binding exists
+- Raises `ValueError` if no preset available (neither bound nor provided)
+- Validates preset exists in registry before execution
+
+**Manual Execution:**
+```python
+# Option 1: Bind preset, then execute
+job_engine.bind_preset(job, "my_preset_id", preset_registry)
+job_engine.execute_job(job, preset_registry=preset_registry)
+
+# Option 2: Pass preset directly (no binding)
+job_engine.execute_job(job, global_preset_id="my_preset_id", preset_registry=preset_registry)
+```
+
+### Optional Auto-Execution
+
+Watch folders support optional auto-execution via `auto_execute` flag.
+
+**WatchFolder Configuration:**
+- `preset_id`: Optional global preset ID to bind to created jobs
+- `auto_execute`: Boolean flag (default: False)
+
+**Behavior:**
+- If `auto_execute=False`: Jobs created in PENDING state (manual trigger required)
+- If `auto_execute=True` AND `preset_id` is set: Auto-execution attempted via mediator
+- If `auto_execute=True` BUT `preset_id` is missing: Warning logged, no auto-execution
+
+**Safety:**
+Auto-execution is not guaranteed even when enabled. It requires:
+1. Explicit opt-in (`auto_execute=True`)
+2. Preset configured (`preset_id` set)
+3. All safety checks pass (disk space, concurrency)
+
+### Execution Automation Mediator
+
+Auto-execution is mediated by `ExecutionAutomation` class to enforce safety.
+
+**ExecutionAutomation** (`backend/app/jobs/automation.py`):
+- Deliberate layer between job creation and execution
+- Enforces safety checks before execution
+- Does NOT guess—only proceeds when intent is explicit
+
+**Safety Checks (hard-coded in Phase 11):**
+1. Job must be in PENDING state
+2. Preset must be configured (bound or provided)
+3. Preset must exist in registry
+4. Disk space check: Minimum 10GB free space
+5. Concurrency check: Maximum 1 concurrent job
+
+**Methods:**
+- `can_auto_execute()`: Safety check only (no side effects)
+- `auto_execute_job()`: Perform checks, then delegate to `JobEngine.execute_job()`
+
+**Integration:**
+- `WatchFolderEngine` receives optional `automation_mediator` parameter
+- If auto-execution enabled, engine calls `automation_mediator.auto_execute_job()`
+- Failures logged as warnings (warn-and-continue)
+
+### Safety Guarantees
+
+Phase 11 automation is deliberately restrictive:
+
+**Hard Limits:**
+- Minimum disk space: 10GB (hard-coded)
+- Maximum concurrent jobs: 1 (hard-coded)
+
+**Failure Modes:**
+- Missing preset: Job left in PENDING with warning
+- Invalid preset: Job left in PENDING with warning
+- Disk space too low: Job left in PENDING with warning
+- Concurrency limit exceeded: Job left in PENDING with warning
+
+All failures are non-blocking. Jobs remain in PENDING state and can be manually triggered later.
+
+### What Phase 11 Does NOT Include
+
+- UI for preset binding or auto-execution configuration
+- Heuristic preset inference (e.g., from filenames or folders)
+- Scheduling or queue prioritization
+- Smart disk space calculation (per-job requirements)
+- Dynamic concurrency limits
+- Retry logic
+- Persistence of bindings (in-memory only)
+- Watch folder preset templates
+- Per-clip preset overrides
+
+These may be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Auto-execution of watch folder jobs (Phase 11)
-- Preset application during ingestion (Phase 11)
-- Watch folder persistence (Phase 11)
-- Multi-node execution (Phase 11+)
+- Persistent preset bindings (Phase 12)
+- Job persistence and recovery (Phase 12)
+- Multi-node execution (Phase 13+)
 
 These will be documented when they exist.
 

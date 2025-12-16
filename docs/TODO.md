@@ -12,10 +12,11 @@
 - Phase 8 — Reporting & diagnostics (job/clip reports, CSV/JSON/TXT output)
 - Phase 9 — Monitoring server (read-only job status visibility)
 - Phase 10 — Watch folders & unattended ingestion (polling-based discovery, stability detection, job creation)
+- Phase 11 — Preset application & execution automation (explicit binding, opt-in auto-execution, safety checks)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 11 — Preset application & execution automation
+- Phase: Phase 12 — Persistence & recovery
 
 ## BLOCKERS / OPEN QUESTIONS
 

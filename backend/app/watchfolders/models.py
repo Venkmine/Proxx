@@ -15,10 +15,14 @@ class WatchFolder(BaseModel):
     Watch folder configuration.
 
     A watch folder monitors a directory for new media files and creates
-    PENDING jobs automatically. Jobs are never auto-executed in Phase 10.
+    jobs automatically.
 
-    NO preset is applied during job creation. Preset application is deferred
-    to Phase 11 (execution automation).
+    Phase 11: Added preset binding and optional auto-execution.
+    - preset_id: Optional global preset to bind to created jobs
+    - auto_execute: If True AND preset_id is set, jobs may auto-execute
+    
+    Auto-execution requires explicit opt-in and is subject to safety checks.
+    Default behavior remains manual (auto_execute=False).
     """
 
     model_config = {"extra": "forbid"}
@@ -30,6 +34,14 @@ class WatchFolder(BaseModel):
     )
     recursive: bool = Field(
         default=True, description="Whether to monitor subdirectories"
+    )
+    preset_id: Optional[str] = Field(
+        default=None, 
+        description="Global preset ID to bind to jobs created from this folder"
+    )
+    auto_execute: bool = Field(
+        default=False,
+        description="Whether to automatically execute jobs (requires preset_id)"
     )
     created_at: datetime = Field(default_factory=datetime.now)
 

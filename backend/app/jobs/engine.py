@@ -12,10 +12,15 @@ Phase 8: Reporting integration for job and clip diagnostics.
 
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, TYPE_CHECKING
 from .models import Job, ClipTask, JobStatus, TaskStatus
 from .state import validate_job_transition, validate_task_transition
 from .errors import JobEngineError
+
+if TYPE_CHECKING:
+    from .bindings import JobPresetBindingRegistry
+    from ..presets.registry import PresetRegistry
+    from ..execution.results import ExecutionResult
 
 
 class JobEngine:
@@ -24,7 +29,18 @@ class JobEngine:
     
     Manages job lifecycle and aggregates task outcomes.
     Does NOT execute transcoding or call Resolve (Phase 5+).
+    
+    Phase 11: Supports explicit preset binding (stored externally).
     """
+    
+    def __init__(self, binding_registry: Optional["JobPresetBindingRegistry"] = None):
+        """
+        Initialize job engine.
+        
+        Args:
+            binding_registry: Optional registry for job-preset bindings
+        """
+        self.binding_registry = binding_registry
     
     def create_job(self, source_paths: List[str]) -> Job:
         """
@@ -52,6 +68,36 @@ class JobEngine:
         job = Job(tasks=tasks)
         
         return job
+    
+    def bind_preset(
+        self, job: Job, preset_id: str, preset_registry: Optional["PresetRegistry"] = None
+    ) -> None:
+        """
+        Explicitly bind a preset to a job.
+        
+        Phase 11: Binding is stored externally via binding_registry.
+        Preset validation is optional but recommended.
+        
+        Args:
+            job: The job to bind
+            preset_id: Global preset ID
+            preset_registry: Optional registry to validate preset existence
+            
+        Raises:
+            ValueError: If binding_registry is not configured
+            ValueError: If preset does not exist (when registry provided)
+        """
+        if not self.binding_registry:
+            raise ValueError("JobEngine has no binding_registry configured")
+        
+        # Optional validation
+        if preset_registry:
+            preset = preset_registry.get_global_preset(preset_id)
+            if not preset:
+                raise ValueError(f"Global preset '{preset_id}' not found in registry")
+        
+        # Store binding externally
+        self.binding_registry.bind_preset(job.id, preset_id)
     
     def start_job(self, job: Job) -> None:
         """
@@ -354,8 +400,8 @@ class JobEngine:
     def execute_job(
         self,
         job: Job,
-        global_preset_id: str,
-        preset_registry,
+        global_preset_id: Optional[str] = None,
+        preset_registry = None,
         output_base_dir: Optional[str] = None,
         generate_reports: bool = True,
     ) -> Optional[Dict[str, Path]]:
@@ -363,6 +409,7 @@ class JobEngine:
         Execute a job and optionally generate reports.
         
         Phase 8: Public entry point with integrated reporting.
+        Phase 11: Uses bound preset if available, falls back to parameter.
         
         Executes all queued tasks sequentially, respecting warn-and-continue
         semantics. After execution completes, generates diagnostic reports
@@ -370,7 +417,7 @@ class JobEngine:
         
         Args:
             job: The job to execute
-            global_preset_id: ID of the preset to use for all tasks
+            global_preset_id: Optional preset ID (fallback if no binding exists)
             preset_registry: Registry instance for preset lookup
             output_base_dir: Optional output directory override
             generate_reports: Whether to generate reports after execution (default: True)
@@ -380,14 +427,36 @@ class JobEngine:
             
         Raises:
             JobEngineError: If execution or reporting fails
+            ValueError: If no preset is available (neither bound nor provided)
         """
+        # Resolve effective preset ID
+        effective_preset_id = None
+        
+        if self.binding_registry:
+            effective_preset_id = self.binding_registry.get_preset_id(job.id)
+        
+        if not effective_preset_id:
+            effective_preset_id = global_preset_id
+        
+        if not effective_preset_id:
+            raise ValueError(
+                f"No preset available for job {job.id}. "
+                "Preset must be bound via binding_registry or provided as parameter."
+            )
+        
+        # Validate preset exists
+        if preset_registry:
+            preset = preset_registry.get_global_preset(effective_preset_id)
+            if not preset:
+                raise ValueError(f"Global preset '{effective_preset_id}' not found in registry")
+        
         # Start the job
         self.start_job(job)
         
         # Process all tasks
         execution_results = self._process_job(
             job=job,
-            global_preset_id=global_preset_id,
+            global_preset_id=effective_preset_id,
             preset_registry=preset_registry,
             output_base_dir=output_base_dir,
         )
@@ -482,10 +551,10 @@ class JobEngine:
             created_at=job.created_at,
             started_at=job.started_at,
             completed_at=job.completed_at,
-            total_clips=job.total_clips,
-            completed_clips=job.completed_clips,
-            failed_clips=job.failed_clips,
-            skipped_clips=job.skipped_clips,
+            total_clips=job.total_tasks,
+            completed_clips=job.completed_count,
+            failed_clips=job.failed_count,
+            skipped_clips=job.skipped_count,
             warnings_count=job.warning_count,
             clips=clip_reports,
             diagnostics=diagnostics,
