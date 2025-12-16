@@ -11,10 +11,11 @@
 - Phase 7 — Job execution (multi-clip, sequential)
 - Phase 8 — Reporting & diagnostics (job/clip reports, CSV/JSON/TXT output)
 - Phase 9 — Monitoring server (read-only job status visibility)
+- Phase 10 — Watch folders & unattended ingestion (polling-based discovery, stability detection, job creation)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 10 — Watch folders & unattended ingestion
+- Phase: Phase 11 — Preset application & execution automation
 
 ## BLOCKERS / OPEN QUESTIONS
 

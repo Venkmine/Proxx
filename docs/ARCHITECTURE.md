@@ -1068,12 +1068,177 @@ Location: `backend/app/monitoring/utils.py`
 
 Control operations and advanced monitoring features may be added in future phases.
 
+## Watch Folders & Unattended Ingestion
+
+Phase 10 introduces watch folder functionality for automatic media file discovery and job creation.
+
+### Design Principles
+
+- Watch folders create jobs but NEVER auto-execute them
+- File stability must be verified before ingestion (poll-based)
+- Duplicate ingestion must be prevented
+- Drive disappearance must pause ingestion, not crash
+- Safety over convenience: cautious, slightly annoying is correct
+
+### Module Structure
+
+Watch folders are backend-only plumbing (no HTTP routes in Phase 10).
+
+Location: `backend/app/watchfolders/`
+
+Structure:
+```
+watchfolders/
+├─ __init__.py       # Public API exports
+├─ errors.py         # WatchFolderError hierarchy
+├─ models.py         # WatchFolder, FileStabilityCheck Pydantic models
+├─ registry.py       # In-memory WatchFolderRegistry
+├─ scanner.py        # Filesystem scanning with extension filtering
+├─ stability.py      # File size polling for copy completion detection
+└─ engine.py         # Orchestration: scan → stability → job creation
+```
+
+### Watch Folder Configuration
+
+A watch folder:
+- Monitors a directory for new media files (.mov, .mxf, .mp4, .avi, .mkv)
+- Can be recursive or top-level only
+- Can be enabled/disabled
+- Does NOT specify a preset (presets deferred to Phase 11)
+- Is configured programmatically (no UI or HTTP endpoints in Phase 10)
+
+Configuration stored in `WatchFolderRegistry` (in-memory only, no persistence).
+
+Location: `backend/app/watchfolders/models.py`, `backend/app/watchfolders/registry.py`
+
+### File Discovery
+
+File scanning uses `FileScanner`:
+- Recursive or non-recursive directory traversal
+- Extension whitelist: `.mov`, `.mxf`, `.mp4`, `.avi`, `.mkv`
+- Skips hidden files (starting with `.`)
+- Skips symlinks (for safety)
+- Returns candidate files sorted deterministically
+
+Location: `backend/app/watchfolders/scanner.py`
+
+### File Stability Detection
+
+Files must be stable before ingestion to avoid processing partial copies.
+
+Stability detection uses polling via `FileStabilityChecker`:
+- Poll file size every 5 seconds
+- File considered stable after 3 consecutive unchanged size checks (~15 seconds)
+- Minimum age requirement: 10 seconds from modification time
+- Total stability time: ~25 seconds from file creation
+
+A file is considered stable when:
+1. File exists and is readable
+2. File is at least 10 seconds old (modification time)
+3. File size unchanged for 3 consecutive polls (15 seconds)
+
+Files that fail stability checks are skipped with warnings (warn-and-continue).
+
+Location: `backend/app/watchfolders/stability.py`
+
+### Duplicate Prevention
+
+In-memory tracking prevents same file from being ingested twice.
+
+Mechanism:
+- `WatchFolderEngine` maintains set of processed file paths
+- Before creating job, check if file path already processed
+- Limitation: Tracking lost on application restart (acceptable for Phase 10)
+
+Future phases: Migrate to persistent database tracking (SQLite).
+
+Location: `backend/app/watchfolders/engine.py`
+
+### Job Creation
+
+Jobs are created via `WatchFolderEngine.scan_folder()`:
+
+Process:
+1. Scan watch folder for candidate files (via `FileScanner`)
+2. Check stability for each file (via `FileStabilityChecker`)
+3. Skip already-processed files (duplicate prevention)
+4. Create one PENDING job per stable file (via `JobEngine.create_job()`)
+5. Mark file as processed
+
+Jobs created from watch folders:
+- Contain single ClipTask with source file path
+- Left in PENDING state (no auto-execution)
+- Have NO preset applied (preset application deferred to Phase 11)
+- Follow existing job model from Phase 4
+
+Execution must be triggered manually via `JobEngine.start_job()` (Phase 11+ will add auto-execution with safeguards).
+
+Location: `backend/app/watchfolders/engine.py`
+
+### Orchestration
+
+Main entry point: `WatchFolderEngine.scan_all_folders()`
+
+Orchestration flow:
+1. Retrieve all enabled watch folders from registry
+2. For each watch folder:
+   - Scan filesystem for candidate files
+   - Check stability for each file
+   - Create jobs for stable, unprocessed files
+3. Return list of newly created jobs
+
+Warn-and-continue semantics: Individual folder or file failures do not block processing of other folders/files.
+
+Call `scan_all_folders()` periodically (e.g., every 15-30 seconds via external scheduler or background worker) to detect and ingest new files.
+
+### Error Handling
+
+Custom error types:
+- `WatchFolderError`: Base exception for watch folder failures
+- `FileStabilityError`: File not stable for processing
+- `WatchFolderNotFoundError`: Watch folder path does not exist
+- `DuplicateWatchFolderError`: Watch folder ID already exists
+- `InvalidWatchFolderPathError`: Path is not a directory or not readable
+
+All errors are non-fatal to application. They indicate operation failure but Proxx continues running.
+
+Location: `backend/app/watchfolders/errors.py`
+
+### Integration with Job Engine
+
+Watch folder engine uses existing `JobEngine.create_job()` for job creation:
+- No changes to job engine required
+- Jobs created follow existing Phase 4 job model
+- Jobs can be executed via existing Phase 7 multi-clip orchestration
+- Reports generated via existing Phase 8 reporting system
+
+No new endpoints or routes—watch folders are backend plumbing only in Phase 10.
+
+### What Phase 10 Does NOT Include
+
+- Auto-execution of jobs (manual trigger only)
+- Preset application during ingestion (presets deferred to Phase 11)
+- HTTP endpoints or UI for watch folder management
+- Persistence of watch folder configurations (in-memory only)
+- Database tracking of processed files (in-memory only)
+- Event-based file watching (polling only)
+- Rate limiting or throttling
+- Disk space monitoring
+- Network mount health checks
+- Retry logic for failed stability checks
+- Watch folder pause/resume via UI
+- Per-folder execution history
+- Metrics/telemetry
+
+These features may be added in future phases (Phase 11+).
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Watch folders (Phase 10)
-- Unattended ingestion (Phase 10)
+- Auto-execution of watch folder jobs (Phase 11)
+- Preset application during ingestion (Phase 11)
+- Watch folder persistence (Phase 11)
 - Multi-node execution (Phase 11+)
 
 These will be documented when they exist.
