@@ -10,10 +10,11 @@
 - Phase 6 — Execution pipeline (single clip)
 - Phase 7 — Job execution (multi-clip, sequential)
 - Phase 8 — Reporting & diagnostics (job/clip reports, CSV/JSON/TXT output)
+- Phase 9 — Monitoring server (read-only job status visibility)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 9 — Monitoring server (read-only)
+- Phase: Phase 10 — Watch folders & unattended ingestion
 
 ## BLOCKERS / OPEN QUESTIONS
 

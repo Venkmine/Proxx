@@ -922,15 +922,159 @@ def execute_job(
 
 These may be added in future phases.
 
+## Monitoring Server (Read-Only)
+
+Phase 9 introduces a read-only HTTP monitoring server for remote job status visibility.
+
+### Design Principles
+
+- Strictly read-only—no mutation of jobs, tasks, presets, or execution state
+- Observation only—no control operations (start, stop, pause, retry)
+- Trusted LAN access—no authentication required
+- Crash-independent—monitoring failure does not affect job execution
+- Filesystem scanning for reports—no in-memory report tracking required
+- Explicit errors—missing data returns clear messages, never silent failures
+
+### Module Structure
+
+Location: `backend/app/monitoring/`
+
+Structure:
+```
+monitoring/
+├─ __init__.py         # Module exports
+├─ server.py           # FastAPI router with endpoints
+├─ models.py           # Response schemas
+├─ queries.py          # Read-only JobRegistry access layer
+├─ errors.py           # Monitoring-specific exceptions
+└─ utils.py            # Report discovery and path formatting
+```
+
+### Endpoints
+
+All endpoints return JSON responses.
+
+**GET /monitor/health**
+- Health check endpoint
+- Returns: `{"status": "ok"}`
+
+**GET /monitor/jobs**
+- List all known jobs with summary information
+- Jobs sorted by creation time (newest first)
+- Returns: `JobListResponse` with job summaries (ID, status, timestamps, progress counts)
+
+**GET /monitor/jobs/{job_id}**
+- Retrieve detailed information about a specific job
+- Includes all clip task details, timestamps, warnings, and failure reasons
+- Returns: `JobDetail` with complete job state
+- Raises 404 if job not found
+
+**GET /monitor/jobs/{job_id}/reports**
+- Retrieve references to all report files for a specific job
+- Scans filesystem for matching report artifacts (CSV, JSON, TXT)
+- Returns: `JobReportsResponse` with filename, path, size, and modified timestamp for each report
+- Returns empty list if no reports have been generated yet
+- Raises 404 if job not found
+
+### Data Sources
+
+The monitoring server reads from:
+
+1. **In-memory JobRegistry**: Job and task state accessed via `app.state.job_registry`
+2. **Filesystem**: Report artifacts scanned via pattern matching `proxx_job_{job_id[:8]}_{timestamp}.{csv|json|txt}`
+
+The monitoring server does NOT:
+- Trigger job execution
+- Generate reports
+- Recompute state
+- Modify any data structures
+- Store additional state beyond the shared JobRegistry
+
+### Integration
+
+The monitoring router is mounted at `/monitor` prefix in `backend/app/main.py`.
+
+**Shared State:**
+- `app.state.job_registry`: JobRegistry instance shared between monitoring and execution logic
+- JobRegistry is initialized at application startup
+- All monitoring endpoints access registry via FastAPI request context
+
+**Lifecycle:**
+- Monitoring router lifecycle tied to FastAPI application
+- If monitoring server crashes, jobs continue (same process, but logic decoupled)
+- No background workers or separate processes
+- No persistence—all state in-memory
+
+### Response Models
+
+All response models use Pydantic with strict validation (`extra="forbid"`).
+
+**HealthResponse**: Status indicator
+**JobSummary**: High-level job view (status, timestamps, progress counts)
+**JobDetail**: Complete job view (includes all ClipTaskDetail entries)
+**ClipTaskDetail**: Individual task view (source, status, timestamps, warnings, failure reason)
+**ReportReference**: Report file metadata (filename, path, size, modified timestamp)
+**JobReportsResponse**: Collection of ReportReference objects for a job
+**JobListResponse**: Collection of JobSummary objects with total count
+
+Location: `backend/app/monitoring/models.py`
+
+### Error Handling
+
+Custom error types:
+- `MonitoringError`: Base exception for monitoring operations
+- `JobNotFoundError`: Raised when requested job ID does not exist
+- `ReportsNotAvailableError`: Raised when reports requested but not available (currently unused—empty list returned instead)
+
+All HTTP errors mapped to appropriate status codes:
+- 404: Job not found
+- 500: Internal server error (unexpected failures)
+
+No silent failures—all missing data produces explicit error responses.
+
+Location: `backend/app/monitoring/errors.py`
+
+### Report Discovery
+
+Report discovery uses filesystem scanning via `find_job_reports()`:
+
+**Process:**
+1. Extract first 8 characters of job ID
+2. Scan output directory (defaults to current working directory)
+3. Match files against pattern: `proxx_job_{job_id[:8]}_{timestamp}.{csv|json|txt}`
+4. Return list of matching Path objects sorted by modification time (newest first)
+
+**Collision Safety:**
+- Uses same filename pattern as report writers (Phase 8)
+- Scans actual filesystem—no in-memory state required
+- Returns empty list if output directory missing or no reports found
+
+Location: `backend/app/monitoring/utils.py`
+
+### What Phase 9 Does NOT Include
+
+- Job control endpoints (start, stop, pause, resume, cancel)
+- Authentication or authorization
+- WebSocket or SSE for real-time progress
+- UI for monitoring
+- Report downloading or serving
+- Report aggregation or analysis
+- Job submission or creation
+- Preset management
+- Background execution decoupling (monitoring and execution share process lifecycle)
+- Persistent monitoring state
+- Alerting or notifications
+- Multi-user access control
+
+Control operations and advanced monitoring features may be added in future phases.
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:
 
-- Multi-clip job execution (Phase 7)
-- Job persistence (Phase 7+)
-- Watch folders (Phase 7+)
-- Monitoring server (Phase 7+)
-- Multi-node execution (Phase 8+)
+- Watch folders (Phase 10)
+- Unattended ingestion (Phase 10)
+- Multi-node execution (Phase 11+)
 
 These will be documented when they exist.
 
