@@ -1,0 +1,36 @@
+{
+  "job_id": "60bfd0e5-65b2-40fd-87fc-7b60728b5ab3",
+  "status": "completed",
+  "created_at": "2025-12-18T22:41:36.209075",
+  "started_at": "2025-12-18T22:43:49.544470",
+  "completed_at": "2025-12-18T22:43:59.911292",
+  "total_clips": 1,
+  "completed_clips": 1,
+  "failed_clips": 0,
+  "skipped_clips": 0,
+  "warnings_count": 0,
+  "clips": [
+    {
+      "task_id": "77932821-ad2f-4989-8c79-65e7550f5e7b",
+      "source_path": "/Users/leon.grant/Desktop/Craft reeel jan 21.mp4",
+      "status": "completed",
+      "failure_reason": null,
+      "warnings": [],
+      "output_path": "/Users/leon.grant/Desktop/Craft reeel jan 21__proxx.mp4",
+      "output_size_bytes": 44965217,
+      "execution_duration_seconds": 10.366613,
+      "started_at": "2025-12-18T22:43:49.544482",
+      "completed_at": "2025-12-18T22:43:59.911265"
+    }
+  ],
+  "diagnostics": {
+    "proxx_version": "dev+b392564",
+    "python_version": "3.14.0",
+    "os_version": "macOS-15.7.1-arm64-arm-64bit-Mach-O",
+    "hostname": "Administrators-MacBook-Pro.local",
+    "resolve_path": null,
+    "resolve_version": "unknown",
+    "resolve_studio": null,
+    "generated_at": "2025-12-18T22:43:59.917293"
+  }
+}

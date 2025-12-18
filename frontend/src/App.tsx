@@ -66,6 +66,11 @@ interface ClipTaskDetail {
   duration: string | null
   audio_channels: string | null
   color_space: string | null
+  // Phase 16.1: Output path for reveal
+  output_path: string | null
+  // Phase 16.4: Progress tracking
+  progress_percent: number
+  eta_seconds: number | null
 }
 
 interface JobDetail {
@@ -229,6 +234,22 @@ function App() {
     fetchEngines()  // Phase 16
   }, [])
 
+  // Phase 16.1: Auto-refresh job state every 1.5 seconds
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      fetchJobs()
+      // Also refresh details for running jobs
+      jobs.forEach(job => {
+        const status = job.status.toUpperCase()
+        if (status === 'RUNNING' || status === 'PAUSED' || status === 'RECOVERY_REQUIRED') {
+          fetchJobDetail(job.id)
+        }
+      })
+    }, 1500)
+    
+    return () => clearInterval(refreshInterval)
+  }, [jobs])
+
   useEffect(() => {
     // Fetch details for all jobs
     jobs.forEach(job => {
@@ -245,9 +266,7 @@ function App() {
   const confirmAction = (message: string): boolean => window.confirm(message)
 
   const resumeJob = async (jobId: string) => {
-    const message = `Resume job?\n\nThis will continue execution from where it stopped.\nCompleted clips will NOT be re-run.`
-    if (!confirmAction(message)) return
-
+    // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/resume`, { method: 'POST' })
@@ -268,9 +287,7 @@ function App() {
     const detail = jobDetails.get(jobId)
     if (!detail) return
 
-    const message = `Retry ${detail.failed_count} failed clips?\n\nCOMPLETED clips will NOT be re-run.\nOnly FAILED clips will be retried.`
-    if (!confirmAction(message)) return
-
+    // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/retry-failed`, { method: 'POST' })
@@ -341,9 +358,7 @@ function App() {
   // ============================================
 
   const startJob = async (jobId: string) => {
-    const message = `Start rendering job?\n\nThis will begin processing all clips.`
-    if (!confirmAction(message)) return
-
+    // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/start`, { method: 'POST' })
@@ -361,9 +376,7 @@ function App() {
   }
 
   const pauseJob = async (jobId: string) => {
-    const message = `Pause job?\n\nCurrent clip will finish.\nRemaining clips will wait.`
-    if (!confirmAction(message)) return
-
+    // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/pause`, { method: 'POST' })
@@ -407,13 +420,10 @@ function App() {
   const renderAllJobs = async () => {
     const pendingJobs = jobs.filter(j => j.status.toUpperCase() === 'PENDING')
     if (pendingJobs.length === 0) {
-      alert('No pending jobs to render.')
-      return
+      return  // No pending jobs, silently return
     }
 
-    const message = `Render ${pendingJobs.length} pending job(s)?\n\nJobs will be processed in queue order.`
-    if (!confirmAction(message)) return
-
+    // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
       // Start jobs in order
@@ -447,20 +457,26 @@ function App() {
       return
     }
 
-    const engineName = engines.find(e => e.type === selectedEngine)?.name || selectedEngine
-    const message = `Create job with ${selectedFiles.length} clip(s)?\n\nPreset: ${selectedPresetId}\nEngine: ${engineName}\n\nJob will be created in PENDING state.`
-    if (!confirmAction(message)) return
-
+    // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
+      
+      // Phase 16.4: Build job settings
+      const jobSettings = {
+        output_dir: outputDirectory || null,
+        naming_template: "{source_name}__proxx",  // Default template
+        watermark_enabled: false,
+        watermark_text: null,
+      }
+      
       const response = await fetch(`${BACKEND_URL}/control/jobs/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           source_paths: selectedFiles,
           preset_id: selectedPresetId,
-          output_base_dir: outputDirectory || null,
-          engine: selectedEngine,  // Phase 16: Include engine
+          engine: selectedEngine,
+          settings: jobSettings,
         }),
       })
       if (!response.ok) {
@@ -468,14 +484,17 @@ function App() {
         throw new Error(errorData.detail || `HTTP ${response.status}`)
       }
       const result = await response.json()
-      alert(`Job created successfully\nJob ID: ${result.job_id}\nEngine: ${engineName}`)
-
+      
+      // Phase 16.4: No success alert - just refresh and auto-scroll to new job
       // Clear form BUT keep panel open (per design requirements)
       setSelectedFiles([])
       setSelectedPresetId('')
       setOutputDirectory('')
-      // NOTE: Do NOT hide panel - setShowCreateJobPanel(false)
+      
+      // Fetch jobs and select the newly created one
       await fetchJobs()
+      setSelectedJobId(result.job_id)
+      
     } catch (err) {
       setError(`Failed to create job: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {

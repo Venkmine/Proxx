@@ -36,6 +36,25 @@ class RebindPresetRequest(BaseModel):
     preset_id: str
 
 
+class JobSettingsRequest(BaseModel):
+    """
+    Job settings for Phase 16.4.
+    
+    Controls output path, naming, watermark for a job.
+    """
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    output_dir: Optional[str] = None
+    naming_template: str = "{source_name}__proxx"
+    file_prefix: Optional[str] = None
+    file_suffix: Optional[str] = None
+    preserve_source_dirs: bool = False
+    preserve_dir_levels: int = 0
+    watermark_enabled: bool = False
+    watermark_text: Optional[str] = None
+
+
 class CreateJobRequest(BaseModel):
     """Request body for manual job creation (Phase 15, enhanced in Phase 16)."""
     
@@ -43,8 +62,11 @@ class CreateJobRequest(BaseModel):
     
     source_paths: List[str]
     preset_id: str
-    output_base_dir: Optional[str] = None
+    output_base_dir: Optional[str] = None  # Deprecated: use settings.output_dir
     engine: str = "ffmpeg"  # Phase 16: Explicit engine binding ("ffmpeg" or "resolve")
+    
+    # Phase 16.4: Full job settings
+    settings: Optional[JobSettingsRequest] = None
 
 
 class PresetInfo(BaseModel):
@@ -241,18 +263,25 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
                 detail=f"Invalid source paths: {', '.join(invalid_paths)}"
             )
         
+        # Phase 16.4: Determine output directory from settings or legacy field
+        output_dir = None
+        if body.settings and body.settings.output_dir:
+            output_dir = body.settings.output_dir
+        elif body.output_base_dir:
+            output_dir = body.output_base_dir
+        
         # Validation: output directory must be writable if specified
-        if body.output_base_dir:
-            output_path = Path(body.output_base_dir)
+        if output_dir:
+            output_path = Path(output_dir)
             if not output_path.exists():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Output directory does not exist: {body.output_base_dir}"
+                    detail=f"Output directory does not exist: {output_dir}"
                 )
             if not output_path.is_dir():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Output path is not a directory: {body.output_base_dir}"
+                    detail=f"Output path is not a directory: {output_dir}"
                 )
             # Test writability
             try:
@@ -262,7 +291,7 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
             except Exception as e:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Output directory not writable: {body.output_base_dir}"
+                    detail=f"Output directory not writable: {output_dir}"
                 )
         
         # Create job with multiple clip tasks and engine binding
@@ -270,6 +299,29 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
             source_paths=body.source_paths,
             engine=engine_type_str,
         )
+        
+        # Phase 16.4: Apply job settings
+        from app.jobs.settings import JobSettings
+        
+        if body.settings:
+            job_settings = JobSettings(
+                output_dir=body.settings.output_dir,
+                naming_template=body.settings.naming_template,
+                file_prefix=body.settings.file_prefix,
+                file_suffix=body.settings.file_suffix,
+                preserve_source_dirs=body.settings.preserve_source_dirs,
+                preserve_dir_levels=body.settings.preserve_dir_levels,
+                watermark_enabled=body.settings.watermark_enabled,
+                watermark_text=body.settings.watermark_text,
+            )
+        elif output_dir:
+            # Legacy: only output_base_dir was provided
+            job_settings = JobSettings(output_dir=output_dir)
+        else:
+            # Use defaults
+            job_settings = JobSettings()
+        
+        job.settings_dict = job_settings.to_dict()
         
         # Register the job
         job_registry.add_job(job)
@@ -279,7 +331,8 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
         
         logger.info(
             f"Manual job {job.id} created with {len(body.source_paths)} clips, "
-            f"preset '{body.preset_id}' bound, engine '{engine_type_str}'"
+            f"preset '{body.preset_id}' bound, engine '{engine_type_str}', "
+            f"output_dir='{output_dir or 'source parent'}'"
         )
         
         return CreateJobResponse(
@@ -396,6 +449,119 @@ async def retry_failed_clips_endpoint(job_id: str, request: Request):
     except Exception as e:
         logger.error(f"Retry failed for job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Retry failed: {e}")
+
+
+@router.put("/jobs/{job_id}/settings", response_model=OperationResponse)
+async def update_job_settings_endpoint(
+    job_id: str,
+    body: JobSettingsRequest,
+    request: Request,
+):
+    """
+    Update job settings.
+    
+    Phase 16.4: Settings can ONLY be modified while job.status == PENDING.
+    Once render starts (any clip enters RUNNING), settings are frozen.
+    
+    Args:
+        job_id: Job identifier
+        body: New job settings
+        
+    Returns:
+        Operation result
+        
+    Raises:
+        400: Job not in PENDING state
+        404: Job not found
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        
+        # Phase 16.4: Enforce immutability after render starts
+        from app.jobs.models import JobStatus
+        if job.status != JobStatus.PENDING:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job settings cannot be modified after render has started. "
+                       f"Current status: {job.status.value}"
+            )
+        
+        # Create new settings
+        from app.jobs.settings import JobSettings
+        
+        new_settings = JobSettings(
+            output_dir=body.output_dir,
+            naming_template=body.naming_template,
+            file_prefix=body.file_prefix,
+            file_suffix=body.file_suffix,
+            preserve_source_dirs=body.preserve_source_dirs,
+            preserve_dir_levels=body.preserve_dir_levels,
+            watermark_enabled=body.watermark_enabled,
+            watermark_text=body.watermark_text,
+        )
+        
+        # Apply via update_settings (also enforces PENDING check)
+        job.update_settings(new_settings)
+        
+        logger.info(f"Job {job_id} settings updated: output_dir='{body.output_dir}'")
+        
+        return OperationResponse(
+            success=True,
+            message=f"Job settings updated successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Settings update failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Settings update failed: {e}")
+
+
+@router.get("/jobs/{job_id}/settings")
+async def get_job_settings_endpoint(job_id: str, request: Request):
+    """
+    Get current job settings.
+    
+    Phase 16.4: Returns the current settings for a job.
+    
+    Args:
+        job_id: Job identifier
+        
+    Returns:
+        Current job settings
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        
+        settings = job.settings
+        
+        return {
+            "output_dir": settings.output_dir,
+            "naming_template": settings.naming_template,
+            "file_prefix": settings.file_prefix,
+            "file_suffix": settings.file_suffix,
+            "preserve_source_dirs": settings.preserve_source_dirs,
+            "preserve_dir_levels": settings.preserve_dir_levels,
+            "watermark_enabled": settings.watermark_enabled,
+            "watermark_text": settings.watermark_text,
+            "is_editable": job.status.value == "pending",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get settings failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Get settings failed: {e}")
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=OperationResponse)
@@ -689,3 +855,184 @@ async def delete_job_endpoint(job_id: str, request: Request):
     except Exception as e:
         logger.error(f"Delete failed for job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
+
+
+# =============================================================================
+# Phase 16.1: Clip-level control endpoints
+# =============================================================================
+
+
+class ClipRevealResponse(BaseModel):
+    """Response for clip reveal endpoint."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    success: bool
+    path: Optional[str] = None
+    message: str
+
+
+@router.get("/clips/{task_id}/reveal", response_model=ClipRevealResponse)
+async def reveal_clip_endpoint(task_id: str, request: Request):
+    """
+    Get the output path for a completed clip to reveal in file manager.
+    
+    Phase 16.1: Returns output_path for COMPLETED or FAILED clips with output.
+    Disabled (returns null path) for clips without output.
+    
+    Args:
+        task_id: Clip task identifier
+        
+    Returns:
+        Path to reveal, or null if not available
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        # Find task across all jobs
+        for job in job_registry.list_jobs():
+            for task in job.tasks:
+                if task.id == task_id:
+                    # Only return path if output exists
+                    if task.output_path:
+                        path_obj = Path(task.output_path)
+                        if path_obj.exists():
+                            return ClipRevealResponse(
+                                success=True,
+                                path=task.output_path,
+                                message="Output file ready for reveal"
+                            )
+                        else:
+                            return ClipRevealResponse(
+                                success=False,
+                                path=None,
+                                message="Output file no longer exists"
+                            )
+                    else:
+                        return ClipRevealResponse(
+                            success=False,
+                            path=None,
+                            message="No output file available (clip not completed or failed)"
+                        )
+        
+        raise HTTPException(status_code=404, detail=f"Clip task not found: {task_id}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reveal failed for clip {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Reveal failed: {e}")
+
+
+@router.post("/clips/{task_id}/cancel", response_model=OperationResponse)
+async def cancel_clip_endpoint(task_id: str, request: Request):
+    """
+    Cancel a running or queued clip.
+    
+    Phase 16.1: Sets clip to SKIPPED status.
+    If clip is RUNNING, signals the engine to terminate the process.
+    
+    Args:
+        task_id: Clip task identifier
+        
+    Returns:
+        Operation result
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        engine_registry = request.app.state.engine_registry
+        
+        # Find task across all jobs
+        for job in job_registry.list_jobs():
+            for task in job.tasks:
+                if task.id == task_id:
+                    if task.status == TaskStatus.COMPLETED:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Cannot cancel completed clip"
+                        )
+                    if task.status in (TaskStatus.FAILED, TaskStatus.SKIPPED):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Clip already in terminal state: {task.status.value}"
+                        )
+                    
+                    # If running, signal engine to cancel
+                    if task.status == TaskStatus.RUNNING and job.engine:
+                        from app.execution.base import EngineType
+                        engine_type = EngineType(job.engine)
+                        engine = engine_registry.get_available_engine(engine_type)
+                        if hasattr(engine, '_cancelled_tasks'):
+                            engine._cancelled_tasks.add(task_id)
+                    
+                    # Mark as skipped
+                    from datetime import datetime
+                    task.status = TaskStatus.SKIPPED
+                    task.failure_reason = "Cancelled by user"
+                    task.completed_at = datetime.now()
+                    
+                    logger.info(f"Clip {task_id} cancelled via control endpoint")
+                    
+                    return OperationResponse(
+                        success=True,
+                        message=f"Clip {task_id} cancelled"
+                    )
+        
+        raise HTTPException(status_code=404, detail=f"Clip task not found: {task_id}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cancel failed for clip {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Cancel failed: {e}")
+
+
+@router.post("/clips/{task_id}/retry", response_model=OperationResponse)
+async def retry_clip_endpoint(task_id: str, request: Request):
+    """
+    Retry a failed clip.
+    
+    Phase 16.1: Resets FAILED clip to QUEUED.
+    Does NOT re-execute automatically - job must be started/resumed.
+    
+    Args:
+        task_id: Clip task identifier
+        
+    Returns:
+        Operation result
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        # Find task across all jobs
+        for job in job_registry.list_jobs():
+            for task in job.tasks:
+                if task.id == task_id:
+                    if task.status != TaskStatus.FAILED:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Can only retry FAILED clips. Current status: {task.status.value}"
+                        )
+                    
+                    # Reset to queued
+                    task.status = TaskStatus.QUEUED
+                    task.failure_reason = None
+                    task.started_at = None
+                    task.completed_at = None
+                    task.output_path = None
+                    task.retry_count += 1
+                    
+                    logger.info(f"Clip {task_id} reset to QUEUED for retry (attempt {task.retry_count})")
+                    
+                    return OperationResponse(
+                        success=True,
+                        message=f"Clip {task_id} queued for retry"
+                    )
+        
+        raise HTTPException(status_code=404, detail=f"Clip task not found: {task_id}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Retry failed for clip {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Retry failed: {e}")

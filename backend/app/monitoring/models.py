@@ -54,6 +54,9 @@ class ClipTaskDetail(BaseModel):
     Detailed view of a single clip task.
     
     Used in job detail responses to show per-clip status.
+    Phase 16: Includes media metadata for UI display.
+    Phase 16.1: Includes output_path for Reveal in Finder.
+    Phase 16.4: Includes progress_percent and eta_seconds for live progress.
     """
     
     model_config = ConfigDict(extra="forbid")
@@ -69,9 +72,24 @@ class ClipTaskDetail(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
+    # Output (Phase 16.1)
+    output_path: Optional[str] = None  # Absolute path to rendered output
+    
+    # Phase 16.4: Progress tracking
+    progress_percent: float = 0.0  # 0.0 - 100.0
+    eta_seconds: Optional[float] = None  # Estimated seconds remaining
+    
     # Outcome
     failure_reason: Optional[str] = None
     warnings: List[str]
+    
+    # Phase 16: Media metadata for UI display
+    resolution: Optional[str] = None       # e.g., "1920x1080"
+    codec: Optional[str] = None            # e.g., "ProRes 422 HQ"
+    frame_rate: Optional[str] = None       # e.g., "23.976 fps"
+    duration: Optional[str] = None         # e.g., "00:02:35"
+    audio_channels: Optional[str] = None   # e.g., "stereo" or "5.1"
+    color_space: Optional[str] = None      # e.g., "Rec. 709"
 
 
 class JobDetail(BaseModel):

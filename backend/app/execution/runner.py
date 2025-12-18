@@ -36,7 +36,7 @@ from .paths import (
 from ..metadata.extractors import extract_metadata
 from ..metadata.errors import (
     MetadataExtractionError,
-    UnsupportedMediaError,
+    UnsupportedFileError,
 )
 from ..presets.schemas import CodecPreset, ScalingPreset
 from ..presets.models import PresetCategory, GlobalPreset
@@ -185,7 +185,7 @@ def execute_single_clip(
         
         try:
             metadata = extract_metadata(source_path)
-        except UnsupportedMediaError as e:
+        except UnsupportedFileError as e:
             result.failure_reason = f"Unsupported media format: {e}"
             result.completed_at = datetime.now()
             return result

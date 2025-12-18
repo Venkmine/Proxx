@@ -73,12 +73,31 @@ class ClipTask(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
+    # Output
+    # Phase 16.4: output_path is resolved ONCE before render and stored here
+    # Engine receives this path verbatim - never recomputed
+    output_path: Optional[str] = None  # Absolute path to output file
+    output_filename: Optional[str] = None  # Resolved filename without extension
+    
+    # Phase 16.4: Progress tracking (0.0 - 100.0)
+    progress_percent: float = 0.0
+    eta_seconds: Optional[float] = None  # Estimated time remaining
+    
     # Outcome
     failure_reason: Optional[str] = None  # Set when status is FAILED or SKIPPED
     warnings: List[str] = Field(default_factory=list)  # Non-blocking warnings
     
     # Future-proofing (stub only, no behavior)
     retry_count: int = 0
+    
+    # Media metadata (populated at ingest, Phase 16.1)
+    width: Optional[int] = None
+    height: Optional[int] = None
+    codec: Optional[str] = None
+    frame_rate: Optional[str] = None
+    duration: Optional[float] = None  # Duration in seconds
+    audio_channels: Optional[int] = None
+    audio_sample_rate: Optional[int] = None
 
 
 class Job(BaseModel):
@@ -108,6 +127,34 @@ class Job(BaseModel):
     
     # State
     status: JobStatus = JobStatus.PENDING
+    
+    # Phase 16.4: Job settings (output dir, naming, watermark)
+    # Stored as dict for Pydantic compatibility, accessed via property
+    settings_dict: Dict[str, Any] = Field(default_factory=dict)
+    
+    @property
+    def settings(self) -> JobSettings:
+        """Get JobSettings from stored dict."""
+        if not self.settings_dict:
+            return DEFAULT_JOB_SETTINGS
+        return JobSettings.from_dict(self.settings_dict)
+    
+    def update_settings(self, new_settings: JobSettings) -> None:
+        """
+        Update job settings.
+        
+        Phase 16.4: Settings are ONLY editable while job.status == PENDING.
+        Once any clip enters RUNNING, settings are frozen.
+        
+        Raises:
+            ValueError: If job is not in PENDING state
+        """
+        if self.status != JobStatus.PENDING:
+            raise ValueError(
+                f"Job settings cannot be modified after render has started. "
+                f"Current status: {self.status.value}"
+            )
+        self.settings_dict = new_settings.to_dict()
     
     # Clip tasks
     tasks: List[ClipTask] = Field(default_factory=list)

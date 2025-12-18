@@ -9,6 +9,10 @@ Design rules:
 - No engine fallback or auto-switching
 - Presets are engine-scoped
 - Engine at JOB level only, not clip level
+
+Phase 16.1: Engines receive ResolvedPresetParams ONLY.
+- CategoryPreset reaching an engine is a fatal EngineValidationError
+- No preset_registry or preset_id in run_clip()
 """
 
 from abc import ABC, abstractmethod
@@ -19,6 +23,7 @@ if TYPE_CHECKING:
     from ..jobs.models import Job, ClipTask
     from ..presets.registry import PresetRegistry
     from .results import ExecutionResult
+    from .resolved_params import ResolvedPresetParams
 
 
 class EngineType(str, Enum):
@@ -119,18 +124,19 @@ class ExecutionEngine(ABC):
     def run_clip(
         self,
         task: "ClipTask",
-        preset_registry: "PresetRegistry",
-        preset_id: str,
+        resolved_params: "ResolvedPresetParams",
         output_base_dir: Optional[str] = None,
     ) -> "ExecutionResult":
         """
         Execute a single clip.
         
+        CRITICAL: Engines receive ResolvedPresetParams ONLY.
+        If a CategoryPreset or GlobalPreset is passed, raise EngineValidationError.
+        
         Args:
             task: ClipTask to execute
-            preset_registry: Registry for preset lookup
-            preset_id: Bound preset ID
-            output_base_dir: Output directory (defaults to source dir)
+            resolved_params: Fully resolved preset parameters (no CategoryPreset!)
+            output_base_dir: Output directory (defaults to source dir if None)
             
         Returns:
             ExecutionResult with status, output path, timing

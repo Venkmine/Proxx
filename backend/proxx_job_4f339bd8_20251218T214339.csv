@@ -1,0 +1,2 @@
+task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
+b024172e-ff61-42d1-94e2-049ebdb900e2,/Users/leon.grant/Desktop/Craft reeel jan 21.mp4,failed,,,2e-06,Engine execution failed: 'CategoryPreset' object has no attribute 'codec',,2025-12-18T21:43:39.859281,2025-12-18T21:43:39.859572

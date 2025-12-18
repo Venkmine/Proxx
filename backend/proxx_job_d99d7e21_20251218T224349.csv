@@ -1,0 +1,3 @@
+task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
+e0802e9a-8a20-465b-ba67-3725cbdd6b7c,/Users/leon.grant/Desktop/Craft reeel jan 21.mp4,completed,/Users/leon.grant/Desktop/Craft reeel jan 21__proxx.mp4,44965217,10.252638,,,2025-12-18T22:43:29.877040,2025-12-18T22:43:40.129854
+253d8ddf-56f0-439d-8828-c6717f47de99,/Users/leon.grant/Desktop/Craft reeel jan 21__proxx.mp4,completed,/Users/leon.grant/Desktop/Craft reeel jan 21__proxx__proxx.mp4,41928821,9.405511,,,2025-12-18T22:43:40.129861,2025-12-18T22:43:49.535629

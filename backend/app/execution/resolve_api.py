@@ -22,8 +22,8 @@ from typing import Optional, Tuple
 from datetime import datetime
 
 from ..resolve.discovery import discover_resolve
-from ..resolve.validation import validate_resolve_installation
-from ..resolve.errors import ResolveNotFoundError, ResolveStudioRequiredError
+from ..resolve.validation import validate_resolve_capability
+from ..resolve.errors import ResolveNotFoundError, ResolveFreeDetectedError
 from .errors import PreFlightCheckError, ResolveExecutionError
 
 
@@ -129,7 +129,7 @@ def render_single_clip(
     # Step 1: Discover and validate Resolve
     try:
         installation = discover_resolve()
-        validation_result = validate_resolve_installation(installation)
+        validation_result = validate_resolve_capability(installation)
         
         if not validation_result.is_available:
             raise PreFlightCheckError(
@@ -148,7 +148,7 @@ def render_single_clip(
         
     except ResolveNotFoundError as e:
         raise PreFlightCheckError(f"Resolve not found: {e}")
-    except ResolveStudioRequiredError as e:
+    except ResolveFreeDetectedError as e:
         raise PreFlightCheckError(f"Resolve Studio required: {e}")
     
     # Step 2: Import Resolve API

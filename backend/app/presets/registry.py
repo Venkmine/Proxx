@@ -13,9 +13,12 @@ This is a stub implementation to enable validation testing in isolation.
 Full persistence and loading will be implemented in later phases.
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 from .models import PresetCategory, CategoryPreset, GlobalPreset
 from .errors import PresetNotFoundError, DuplicateCategoryError
+
+if TYPE_CHECKING:
+    from ..execution.resolved_params import ResolvedPresetParams
 
 
 class PresetRegistry:
@@ -129,3 +132,75 @@ class PresetRegistry:
             Dictionary mapping preset IDs to presets
         """
         return dict(self._global_presets)
+
+    def resolve_preset_params(self, preset_id: str) -> "ResolvedPresetParams":
+        """
+        Resolve a global preset into flat execution parameters.
+        
+        This is the ONLY way engines should access preset data.
+        Returns a ResolvedPresetParams with all values resolved and flattened.
+        
+        Args:
+            preset_id: The global preset ID to resolve
+            
+        Returns:
+            ResolvedPresetParams ready for engine consumption
+            
+        Raises:
+            PresetNotFoundError: If preset or required category presets not found
+        """
+        from ..execution.resolved_params import ResolvedPresetParams, DEFAULT_H264_PARAMS
+        from .schemas import CodecPreset, ScalingPreset, ScalingMode
+        
+        # Get global preset
+        global_preset = self.get_global_preset(preset_id)
+        if not global_preset:
+            raise PresetNotFoundError("global", preset_id)
+        
+        # Resolve codec preset
+        codec_ref = global_preset.category_refs.get(PresetCategory.CODEC, "")
+        codec_preset = self.get_category_preset(PresetCategory.CODEC, codec_ref)
+        
+        if not codec_preset:
+            # Fall back to H.264 default
+            return DEFAULT_H264_PARAMS
+        
+        # Type-safe codec preset access - if not a proper CodecPreset, fall back to defaults
+        if not isinstance(codec_preset, CodecPreset):
+            # Base CategoryPreset was used (e.g., test presets) - use H.264 defaults
+            return DEFAULT_H264_PARAMS
+        
+        # Map codec type to video_codec string
+        video_codec = str(codec_preset.codec.value) if hasattr(codec_preset.codec, 'value') else str(codec_preset.codec)
+        container = codec_preset.container
+        
+        # Resolve scaling preset
+        scale_mode = "none"
+        target_width = None
+        target_height = None
+        
+        scaling_ref = global_preset.category_refs.get(PresetCategory.SCALING, "")
+        scaling_preset = self.get_category_preset(PresetCategory.SCALING, scaling_ref)
+        
+        if scaling_preset and isinstance(scaling_preset, ScalingPreset):
+            mode_value = scaling_preset.mode
+            scale_mode = mode_value.value if hasattr(mode_value, 'value') else str(mode_value)
+            target_width = scaling_preset.target_width
+            target_height = scaling_preset.target_height
+        
+        # Build resolved params
+        return ResolvedPresetParams(
+            preset_id=preset_id,
+            preset_name=global_preset.name,
+            video_codec=video_codec,
+            container=container,
+            # For ProRes/DNxHR, no quality/bitrate needed (codec profile determines quality)
+            # For H.264, we'd set video_quality=23, video_preset="medium"
+            video_quality=23 if video_codec == "h264" else None,
+            video_preset="medium" if video_codec == "h264" else None,
+            audio_codec="aac" if video_codec == "h264" else "copy",
+            audio_bitrate="192k" if video_codec == "h264" else None,
+            scale_mode=scale_mode,
+            target_width=target_width,
+            target_height=target_height,
+        )

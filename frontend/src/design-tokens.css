@@ -1,4 +1,8 @@
 :root {
+  /* Typography */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
   /* Background Gradients */
   --gradient-base: linear-gradient(
     135deg,
@@ -51,45 +55,47 @@
   --error-fg: #fca5a5;
   --error-border: rgba(220, 38, 38, 0.4);
 
-  /* Status: RUNNING */
-  --status-running-fg: #60a5fa;
-  --status-running-bg: rgba(23, 37, 84, 0.4);
-  --status-running-glow: 0 0 8px rgba(59, 130, 246, 0.2);
+  /* Status: RUNNING - Animated pulse (blue-green) */
+  --status-running-fg: #22d3ee;
+  --status-running-bg: rgba(14, 116, 144, 0.25);
+  --status-running-glow: 0 0 12px rgba(34, 211, 238, 0.35);
+  --status-running-border: rgba(34, 211, 238, 0.5);
 
   /* Status: RECOVERY_REQUIRED */
   --status-recovery-fg: #fbbf24;
   --status-recovery-bg: rgba(66, 32, 6, 0.35);
   --status-recovery-glow: 0 0 8px rgba(245, 158, 11, 0.25);
 
-  /* Status: COMPLETED */
+  /* Status: COMPLETED - Green (success) */
   --status-completed-fg: #10b981;
-  --status-completed-bg: rgba(6, 44, 32, 0.25);
-  --status-completed-glow: 0 0 8px rgba(16, 185, 129, 0.15);
+  --status-completed-bg: rgba(6, 78, 59, 0.3);
+  --status-completed-glow: 0 0 8px rgba(16, 185, 129, 0.2);
 
-  /* Status: FAILED */
-  --status-failed-fg: #ef4444;
-  --status-failed-bg: rgba(69, 10, 10, 0.35);
-  --status-failed-glow: 0 0 8px rgba(239, 68, 68, 0.25);
+  /* Status: FAILED - Red (error) */
+  --status-failed-fg: #f87171;
+  --status-failed-bg: rgba(127, 29, 29, 0.35);
+  --status-failed-glow: 0 0 10px rgba(248, 113, 113, 0.3);
 
-  /* Status: PENDING */
-  --status-pending-fg: #94a3b8;
-  --status-pending-bg: rgba(30, 41, 59, 0.6);
+  /* Status: PENDING - Amber (ready to render) */
+  --status-pending-fg: #fbbf24;
+  --status-pending-bg: rgba(120, 53, 15, 0.35);
 
-  /* Status: CANCELLED */
-  --status-cancelled-fg: #64748b;
-  --status-cancelled-bg: rgba(30, 41, 59, 0.4);
+  /* Status: CANCELLED - Neutral grey */
+  --status-cancelled-fg: #94a3b8;
+  --status-cancelled-bg: rgba(51, 65, 85, 0.35);
+  --status-cancelled-opacity: 0.6;
 
-  /* Status: PAUSED */
+  /* Status: PAUSED - Orange */
   --status-paused-fg: #fb923c;
   --status-paused-bg: rgba(67, 20, 7, 0.35);
 
-  /* Status: QUEUED */
-  --status-queued-fg: #94a3b8;
-  --status-queued-bg: rgba(30, 41, 59, 0.5);
+  /* Status: QUEUED - Muted blue (Resolve-inspired) */
+  --status-queued-fg: #60a5fa;
+  --status-queued-bg: rgba(30, 58, 138, 0.25);
 
-  /* Status: SKIPPED */
-  --status-skipped-fg: #71717a;
-  --status-skipped-bg: rgba(39, 39, 42, 0.4);
+  /* Status: SKIPPED - Amber */
+  --status-skipped-fg: #fbbf24;
+  --status-skipped-bg: rgba(120, 53, 15, 0.25);
 
   /* Status: COMPLETED_WITH_WARNINGS */
   --status-warning-fg: #fb923c;
@@ -121,4 +127,130 @@
   /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* ==============================================
+   TYPOGRAPHY SYSTEM (Enforced at Root Level)
+   Matches v0 design: Inter + JetBrains Mono
+   ============================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  background: var(--gradient-base);
+  color: var(--text-primary);
+}
+
+/* Headings - consistent weight and spacing */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.125rem; }
+h3 { font-size: 1rem; }
+h4 { font-size: 0.9375rem; }
+h5, h6 { font-size: 0.875rem; }
+
+/* Labels - uppercase, tight spacing */
+label {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* Buttons - semibold, consistent sizing */
+button {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+/* Monospace - code, paths, IDs */
+code, pre, .monospace,
+[style*="font-family: monospace"],
+[style*="font-family: var(--font-mono)"] {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 0.8125em;
+  letter-spacing: -0.02em;
+}
+
+/* Form inputs */
+input, select, textarea {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Small text */
+small {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Status: Running animation - smooth blue-green pulse */
+@keyframes statusRunningPulse {
+  0%, 100% {
+    background-color: rgba(14, 116, 144, 0.25);
+    box-shadow: 0 0 8px rgba(34, 211, 238, 0.2);
+  }
+  50% {
+    background-color: rgba(14, 116, 144, 0.4);
+    box-shadow: 0 0 16px rgba(34, 211, 238, 0.5);
+  }
+}
+
+@keyframes statusRunningGlow {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Button gradient animations */
+@keyframes buttonShine {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
 }

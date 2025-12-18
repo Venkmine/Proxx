@@ -63,6 +63,7 @@ class JobEngine:
         Validation happens at execution time.
         
         Phase 16: Engine is bound at job creation.
+        Phase 16.1: Metadata is extracted at ingest time.
         
         Args:
             source_paths: List of absolute paths to source files
@@ -77,8 +78,43 @@ class JobEngine:
         if not source_paths:
             raise ValueError("Cannot create job with empty source paths list")
         
-        # Create a task for each source file
-        tasks = [ClipTask(source_path=path) for path in source_paths]
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Create a task for each source file with metadata extraction
+        tasks = []
+        for path in source_paths:
+            task = ClipTask(source_path=path)
+            
+            # Phase 16.1: Extract metadata at ingest time
+            try:
+                from ..metadata.extractors import extract_metadata
+                metadata = extract_metadata(path)
+                
+                # Populate task with extracted metadata
+                if metadata.image:
+                    task.width = metadata.image.width
+                    task.height = metadata.image.height
+                
+                if metadata.codec:
+                    codec_name = metadata.codec.codec_name or ""
+                    codec_profile = metadata.codec.profile or ""
+                    task.codec = f"{codec_name} {codec_profile}".strip() if codec_name else None
+                
+                if metadata.time:
+                    task.frame_rate = metadata.time.frame_rate
+                    task.duration = metadata.time.duration_seconds
+                
+                if metadata.audio:
+                    task.audio_channels = metadata.audio.channels
+                    task.audio_sample_rate = metadata.audio.sample_rate
+                    
+            except Exception as e:
+                # Metadata extraction failure is non-fatal
+                logger.warning(f"Metadata extraction failed for {path}: {e}")
+                # Leave metadata fields as None (will show "Unknown" in UI)
+            
+            tasks.append(task)
         
         # Create the job with engine binding
         job = Job(tasks=tasks, engine=engine)
@@ -382,31 +418,55 @@ class JobEngine:
         Execute a single clip task.
         
         Phase 16: Uses execution engine based on job's engine binding.
-        Falls back to legacy Resolve runner if no engine specified.
+        Phase 16.1: Resolves preset to ResolvedPresetParams before calling engine.
+        Phase 16.4: Output path resolved ONCE and stored on task BEFORE engine call.
+                   Engine receives resolved output_path verbatim - NEVER constructs paths.
+        
+        CRITICAL: Engines receive:
+        - ResolvedPresetParams ONLY (not CategoryPreset)
+        - Fully resolved output_path (from task.output_path)
+        - Watermark text from job.settings if enabled
         
         Args:
-            task: The clip task to execute
-            job: Parent job (for engine binding)
+            task: The clip task to execute (with output_path already resolved)
+            job: Parent job (for engine binding and settings)
             global_preset_id: ID of the preset to use
             preset_registry: Registry instance for preset lookup
-            output_base_dir: Optional output directory override
+            output_base_dir: Optional output directory override (legacy, use job.settings)
             
         Returns:
             ExecutionResult from the engine or legacy pipeline
         """
-        # Phase 16: Use engine if bound to job
+        # Phase 16.1: Use engine if bound to job
         if job.engine and self.engine_registry:
             from ..execution.base import EngineType
+            from ..execution.resolved_params import ResolvedPresetParams, DEFAULT_H264_PARAMS
             
             try:
                 engine_type = EngineType(job.engine)
                 engine = self.engine_registry.get_available_engine(engine_type)
                 
+                # CRITICAL: Resolve preset to ResolvedPresetParams BEFORE calling engine
+                try:
+                    resolved_params = preset_registry.resolve_preset_params(global_preset_id)
+                except Exception as e:
+                    # If preset resolution fails, use H.264 default
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Preset resolution failed for '{global_preset_id}': {e}. Using H.264 default.")
+                    resolved_params = DEFAULT_H264_PARAMS
+                
+                # Phase 16.4: Get watermark text from job settings
+                settings = job.settings
+                watermark_text = settings.watermark_text if settings.watermark_enabled else None
+                
+                # Phase 16.4: Engine receives resolved output_path from task
+                # Output path was resolved in _resolve_clip_outputs() before execution started
                 return engine.run_clip(
                     task=task,
-                    preset_registry=preset_registry,
-                    preset_id=global_preset_id,
-                    output_base_dir=output_base_dir,
+                    resolved_params=resolved_params,
+                    output_path=task.output_path,  # Already resolved, stored on task
+                    watermark_text=watermark_text,
                 )
             except Exception as e:
                 # If engine execution fails, return a failed result
@@ -430,6 +490,76 @@ class JobEngine:
             output_base_dir=output_base_dir,
         )
     
+    def _resolve_clip_outputs(
+        self,
+        job: Job,
+        preset_registry,
+        global_preset_id: str,
+    ) -> None:
+        """
+        Resolve output paths for all clips BEFORE render starts.
+        
+        Phase 16.4: Output paths are computed ONCE and stored on ClipTask.
+        Engines receive resolved paths - they NEVER construct paths.
+        
+        This method must be called before _process_job().
+        Once paths are resolved, job.settings becomes immutable.
+        
+        Args:
+            job: Job with clips to resolve
+            preset_registry: Registry for preset resolution
+            global_preset_id: Preset ID for codec/extension info
+        """
+        from ..execution.naming import resolve_filename
+        from ..execution.output_paths import resolve_output_path
+        from ..execution.resolved_params import DEFAULT_H264_PARAMS
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Resolve preset params for extension info
+        try:
+            resolved_params = preset_registry.resolve_preset_params(global_preset_id)
+        except Exception as e:
+            logger.warning(f"Preset resolution failed: {e}. Using H.264 default.")
+            resolved_params = DEFAULT_H264_PARAMS
+        
+        settings = job.settings
+        
+        for task in job.tasks:
+            # Skip if already resolved (retry case)
+            if task.output_path:
+                continue
+            
+            try:
+                # Step 1: Resolve filename from naming template
+                resolved_name = resolve_filename(
+                    template=settings.naming_template,
+                    clip=task,
+                    job=job,
+                    resolved_params=resolved_params,
+                    preset_id=global_preset_id,
+                )
+                task.output_filename = resolved_name
+                
+                # Step 2: Resolve full output path
+                output_path = resolve_output_path(
+                    job=job,
+                    clip=task,
+                    resolved_params=resolved_params,
+                    resolved_filename=resolved_name,
+                )
+                task.output_path = str(output_path)
+                
+                logger.debug(f"Resolved output path for {task.id}: {task.output_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to resolve output path for {task.id}: {e}")
+                # Mark task as failed before execution even starts
+                task.failure_reason = f"Output path resolution failed: {e}"
+                task.status = TaskStatus.FAILED
+                task.completed_at = datetime.now()
+    
     def _process_job(
         self,
         job: Job,
@@ -443,14 +573,16 @@ class JobEngine:
         Phase 7: Multi-clip orchestration using single-clip execution.
         Phase 8: Returns ExecutionResults for reporting.
         Phase 16: Uses execution engine based on job's engine binding.
+        Phase 16.4: Resolves output paths BEFORE execution starts.
         
         Execution model:
-        1. Iterate through QUEUED tasks sequentially
-        2. Check pause state before each task
-        3. Execute task via engine (or legacy pipeline)
-        4. Map ExecutionResult to task status
-        5. Continue to next task (warn-and-continue)
-        6. Finalize job when all tasks processed
+        1. Resolve output paths for all clips BEFORE any execution
+        2. Iterate through QUEUED tasks sequentially
+        3. Check pause state before each task
+        4. Execute task via engine (or legacy pipeline)
+        5. Map ExecutionResult to task status
+        6. Continue to next task (warn-and-continue)
+        7. Finalize job when all tasks processed
         
         One clip failure never blocks other clips.
         Pause state is respected before starting each new clip.
@@ -459,7 +591,7 @@ class JobEngine:
             job: The job to process
             global_preset_id: ID of the preset to use for all tasks
             preset_registry: Registry instance for preset lookup
-            output_base_dir: Optional output directory override
+            output_base_dir: Optional output directory override (legacy)
             
         Returns:
             Dict mapping task_id to ExecutionResult for reporting
@@ -476,7 +608,11 @@ class JobEngine:
         engine_name = job.engine or "resolve (legacy)"
         logger.info(f"Processing job {job.id} with engine: {engine_name}")
         
-        # Get queued tasks (snapshot at start)
+        # Phase 16.4: Resolve ALL output paths BEFORE any execution starts
+        # This ensures paths are computed once and stored on tasks
+        self._resolve_clip_outputs(job, preset_registry, global_preset_id)
+        
+        # Get queued tasks (snapshot at start - some may have failed during path resolution)
         queued_tasks = [task for task in job.tasks if task.status == TaskStatus.QUEUED]
         
         for task in queued_tasks:
@@ -499,6 +635,10 @@ class JobEngine:
             
             # Store result for reporting (Phase 8)
             execution_results[task.id] = result
+            
+            # Store output path on task for UI access (Phase 16.1)
+            if result.output_path:
+                task.output_path = result.output_path
             
             # Map ExecutionResult to task status
             if result.status == ExecutionStatus.SUCCESS:

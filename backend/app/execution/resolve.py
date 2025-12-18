@@ -24,6 +24,7 @@ from .results import ExecutionResult, ExecutionStatus
 if TYPE_CHECKING:
     from ..jobs.models import Job, ClipTask
     from ..presets.registry import PresetRegistry
+    from .resolved_params import ResolvedPresetParams
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +87,13 @@ class ResolveEngine(ExecutionEngine):
     def run_clip(
         self,
         task: "ClipTask",
-        preset_registry: "PresetRegistry",
-        preset_id: str,
+        resolved_params: "ResolvedPresetParams",
         output_base_dir: Optional[str] = None,
     ) -> ExecutionResult:
         """
         Execution stub - returns FAILED result.
+        
+        Phase 16.1: Updated signature to use ResolvedPresetParams.
         """
         from datetime import datetime
         

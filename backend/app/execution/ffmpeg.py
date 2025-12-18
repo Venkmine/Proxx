@@ -2,33 +2,40 @@
 FFmpeg execution engine.
 
 Phase 16: Real transcoding via subprocess.Popen.
+Phase 16.1: Uses ResolvedPresetParams only - no CategoryPreset leakage.
+Phase 16.4: Progress parsing, resolved output paths, watermark support.
 
 Design rules:
 - One subprocess per clip
 - Capture stdout + stderr for audit
-- Persist full command string
+- Real-time progress parsing from FFmpeg stderr
 - Non-zero exit code = FAILED
 - SIGTERM → SIGKILL escalation for cancellation
-- No progress parsing (state-only: RUNNING → COMPLETED/FAILED)
+- Engine receives RESOLVED output_path - NEVER constructs paths
+- Watermark via drawtext filter if enabled in JobSettings
 """
 
 import logging
 import os
+import select
 import signal
 import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, TYPE_CHECKING
+from typing import Optional, Dict, List, Callable, TYPE_CHECKING
+
+from .progress import ProgressParser, ProgressInfo
 
 from .base import (
     ExecutionEngine,
     EngineType,
     EngineCapability,
     EngineExecutionError,
+    EngineValidationError,
 )
 from .results import ExecutionResult, ExecutionStatus
-from .paths import generate_output_path
+from .resolved_params import ResolvedPresetParams, DEFAULT_H264_PARAMS
 
 if TYPE_CHECKING:
     from ..jobs.models import Job, ClipTask
@@ -37,28 +44,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# FFmpeg codec mappings
-FFMPEG_CODEC_MAP: Dict[str, str] = {
+# FFmpeg codec mappings: video_codec string -> ffmpeg arguments
+FFMPEG_CODEC_MAP: Dict[str, List[str]] = {
+    # H.264 (via libx264)
+    "h264": ["-c:v", "libx264"],
+    
     # ProRes variants
-    "prores_proxy": "prores_ks -profile:v 0",
-    "prores_lt": "prores_ks -profile:v 1",
-    "prores_422": "prores_ks -profile:v 2",
-    "prores_422_hq": "prores_ks -profile:v 3",
+    "prores_proxy": ["-c:v", "prores_ks", "-profile:v", "0"],
+    "prores_lt": ["-c:v", "prores_ks", "-profile:v", "1"],
+    "prores_422": ["-c:v", "prores_ks", "-profile:v", "2"],
+    "prores_422_hq": ["-c:v", "prores_ks", "-profile:v", "3"],
+    "prores_4444": ["-c:v", "prores_ks", "-profile:v", "4"],
+    
     # DNxHR variants
-    "dnxhr_lb": "dnxhd -profile:v dnxhr_lb",
-    "dnxhr_sq": "dnxhd -profile:v dnxhr_sq",
-    "dnxhr_hq": "dnxhd -profile:v dnxhr_hq",
+    "dnxhr_lb": ["-c:v", "dnxhd", "-profile:v", "dnxhr_lb"],
+    "dnxhr_sq": ["-c:v", "dnxhd", "-profile:v", "dnxhr_sq"],
+    "dnxhr_hq": ["-c:v", "dnxhd", "-profile:v", "dnxhr_hq"],
+    "dnxhr_hqx": ["-c:v", "dnxhd", "-profile:v", "dnxhr_hqx"],
+    "dnxhr_444": ["-c:v", "dnxhd", "-profile:v", "dnxhr_444"],
+    
     # DNxHD variants (specific bitrates)
-    "dnxhd_36": "dnxhd -b:v 36M",
-    "dnxhd_145": "dnxhd -b:v 145M",
-    "dnxhd_220": "dnxhd -b:v 220M",
+    "dnxhd_36": ["-c:v", "dnxhd", "-b:v", "36M"],
+    "dnxhd_145": ["-c:v", "dnxhd", "-b:v", "145M"],
+    "dnxhd_220": ["-c:v", "dnxhd", "-b:v", "220M"],
 }
 
-# Container to extension mapping
-CONTAINER_EXTENSION_MAP: Dict[str, str] = {
-    "mov": "mov",
-    "mxf": "mxf",
+# Audio codec mappings
+FFMPEG_AUDIO_MAP: Dict[str, List[str]] = {
+    "copy": ["-c:a", "copy"],
+    "aac": ["-c:a", "aac"],
+    "pcm_s16le": ["-c:a", "pcm_s16le"],
+    "pcm_s24le": ["-c:a", "pcm_s24le"],
 }
+
+# Maximum lines of stderr to store in clip.error
+MAX_STDERR_LINES = 20
 
 
 class FFmpegEngine(ExecutionEngine):
@@ -67,12 +87,14 @@ class FFmpegEngine(ExecutionEngine):
     
     Uses subprocess.Popen for real transcoding.
     State-only tracking (no progress parsing).
+    
+    Phase 16.1: Uses ResolvedPresetParams only.
     """
     
     def __init__(self):
         """Initialize FFmpeg engine."""
         self._active_processes: Dict[str, subprocess.Popen] = {}
-        self._cancelled_jobs: set[str] = set()
+        self._cancelled_tasks: set[str] = set()
         self._ffmpeg_path: Optional[str] = None
     
     @property
@@ -126,7 +148,12 @@ class FFmpegEngine(ExecutionEngine):
         preset_registry: "PresetRegistry",
         preset_id: str,
     ) -> tuple[bool, Optional[str]]:
-        """Validate job can be executed by FFmpeg."""
+        """
+        Validate job can be executed by FFmpeg.
+        
+        This validation runs BEFORE preset resolution, so it still
+        uses preset_registry for existence checks.
+        """
         from ..presets.models import PresetCategory
         
         # Check FFmpeg availability
@@ -138,16 +165,22 @@ class FFmpegEngine(ExecutionEngine):
         if not preset:
             return False, f"Preset '{preset_id}' not found"
         
-        # Validate codec preset compatibility
+        # Validate codec preset exists and is compatible
         codec_ref = preset.category_refs.get(PresetCategory.CODEC, "")
-        codec_preset = preset_registry.get_category_preset(PresetCategory.CODEC, codec_ref) if codec_ref else None
+        if not codec_ref:
+            return False, "No codec preset reference in global preset"
+        
+        codec_preset = preset_registry.get_category_preset(PresetCategory.CODEC, codec_ref)
         if not codec_preset:
-            return False, "No codec preset configured"
+            return False, f"Codec preset '{codec_ref}' not found"
         
         # Check codec is supported by FFmpeg
         codec_type = getattr(codec_preset, "codec", None)
-        if codec_type and str(codec_type) not in FFMPEG_CODEC_MAP:
-            return False, f"Codec '{codec_type}' is not supported by FFmpeg engine"
+        if codec_type:
+            codec_str = codec_type.value if hasattr(codec_type, 'value') else str(codec_type)
+            # Allow h264 explicitly
+            if codec_str not in FFMPEG_CODEC_MAP and codec_str != "h264":
+                return False, f"Codec '{codec_str}' is not supported by FFmpeg engine"
         
         # Validate source files exist
         missing_files = []
@@ -156,21 +189,33 @@ class FFmpegEngine(ExecutionEngine):
                 missing_files.append(task.source_path)
         
         if missing_files:
-            return False, f"Missing source files: {', '.join(missing_files[:3])}" + \
-                (f" and {len(missing_files) - 3} more" if len(missing_files) > 3 else "")
+            preview = ', '.join(missing_files[:3])
+            suffix = f" and {len(missing_files) - 3} more" if len(missing_files) > 3 else ""
+            return False, f"Missing source files: {preview}{suffix}"
         
         return True, None
+    
+    def _truncate_stderr(self, stderr: str) -> str:
+        """Truncate stderr to last MAX_STDERR_LINES lines for storage."""
+        lines = stderr.strip().split('\n')
+        if len(lines) <= MAX_STDERR_LINES:
+            return stderr.strip()
+        return '\n'.join(lines[-MAX_STDERR_LINES:])
     
     def _build_ffmpeg_command(
         self,
         source_path: str,
         output_path: str,
-        preset_registry: "PresetRegistry",
-        preset_id: str,
-    ) -> list[str]:
-        """Build FFmpeg command line arguments."""
-        from ..presets.models import PresetCategory
+        resolved_params: ResolvedPresetParams,
+        watermark_text: Optional[str] = None,
+    ) -> List[str]:
+        """
+        Build FFmpeg command line arguments from ResolvedPresetParams.
         
+        Phase 16.4: This method receives ONLY ResolvedPresetParams.
+        Engine NEVER constructs output paths - receives resolved path verbatim.
+        Watermark text is applied via drawtext filter if provided.
+        """
         ffmpeg_path = self._find_ffmpeg()
         if not ffmpeg_path:
             raise EngineExecutionError(
@@ -184,46 +229,66 @@ class FFmpegEngine(ExecutionEngine):
         # Input file
         cmd.extend(["-i", source_path])
         
-        # Get preset
-        preset = preset_registry.get_global_preset(preset_id)
-        if preset:
-            # Get codec settings
-            codec_ref = preset.category_refs.get(PresetCategory.CODEC, "")
-            codec_preset = preset_registry.get_category_preset(PresetCategory.CODEC, codec_ref) if codec_ref else None
-            
-            if codec_preset:
-                codec_type = str(getattr(codec_preset, "codec", "prores_422"))
-                codec_args = FFMPEG_CODEC_MAP.get(codec_type, "prores_ks -profile:v 2")
-                cmd.extend(["-c:v"] + codec_args.split())
-            
-            # Get scaling settings
-            scaling_ref = preset.category_refs.get(PresetCategory.SCALING, "")
-            scaling_preset = preset_registry.get_category_preset(PresetCategory.SCALING, scaling_ref) if scaling_ref else None
-            
-            if scaling_preset:
-                mode = getattr(scaling_preset, "mode", "none")
-                if mode != "none":
-                    target_width = getattr(scaling_preset, "target_width", None)
-                    target_height = getattr(scaling_preset, "target_height", None)
-                    if target_width and target_height:
-                        if mode == "fit":
-                            # Scale to fit within dimensions, maintain aspect ratio
-                            cmd.extend([
-                                "-vf",
-                                f"scale='min({target_width},iw)':'min({target_height},ih)':force_original_aspect_ratio=decrease"
-                            ])
-                        elif mode == "fill":
-                            # Scale to fill dimensions, crop if needed
-                            cmd.extend([
-                                "-vf",
-                                f"scale={target_width}:{target_height}:force_original_aspect_ratio=increase,crop={target_width}:{target_height}"
-                            ])
-                        elif mode == "stretch":
-                            # Stretch to exact dimensions
-                            cmd.extend(["-vf", f"scale={target_width}:{target_height}"])
+        # Video codec
+        video_codec = resolved_params.video_codec
+        if video_codec in FFMPEG_CODEC_MAP:
+            cmd.extend(FFMPEG_CODEC_MAP[video_codec])
+        elif video_codec == "h264":
+            # H.264 with quality settings
+            cmd.extend(["-c:v", "libx264"])
+            if resolved_params.video_quality is not None:
+                cmd.extend(["-crf", str(resolved_params.video_quality)])
+            if resolved_params.video_preset:
+                cmd.extend(["-preset", resolved_params.video_preset])
+        else:
+            # Fallback to H.264
+            logger.warning(f"Unknown codec '{video_codec}', falling back to H.264")
+            cmd.extend(["-c:v", "libx264", "-crf", "23", "-preset", "medium"])
         
-        # Audio passthrough (copy audio as-is)
-        cmd.extend(["-c:a", "copy"])
+        # Build video filter chain
+        filters: List[str] = []
+        
+        # Scaling filter
+        if resolved_params.scale_mode != "none":
+            target_width = resolved_params.target_width
+            target_height = resolved_params.target_height
+            if target_width and target_height:
+                if resolved_params.scale_mode == "fit":
+                    filters.append(
+                        f"scale='min({target_width},iw)':'min({target_height},ih)':force_original_aspect_ratio=decrease"
+                    )
+                elif resolved_params.scale_mode == "fill":
+                    filters.append(
+                        f"scale={target_width}:{target_height}:force_original_aspect_ratio=increase,crop={target_width}:{target_height}"
+                    )
+                elif resolved_params.scale_mode == "stretch":
+                    filters.append(f"scale={target_width}:{target_height}")
+        
+        # Phase 16.4: Watermark via drawtext filter
+        if watermark_text:
+            # Escape special characters for FFmpeg drawtext
+            escaped_text = watermark_text.replace("'", "'\\\\\''")
+            escaped_text = escaped_text.replace(":", "\\\\:")
+            # Fixed position: bottom-right corner, white text, semi-transparent
+            filters.append(
+                f"drawtext=text='{escaped_text}':fontsize=24:fontcolor=white@0.7:"
+                f"x=w-tw-20:y=h-th-20"
+            )
+        
+        # Apply filter chain if any
+        if filters:
+            cmd.extend(["-vf", ",".join(filters)])
+        
+        # Audio codec
+        audio_codec = resolved_params.audio_codec
+        if audio_codec in FFMPEG_AUDIO_MAP:
+            cmd.extend(FFMPEG_AUDIO_MAP[audio_codec])
+        else:
+            cmd.extend(["-c:a", audio_codec])
+        
+        # Audio bitrate (only if not copy)
+        if audio_codec != "copy" and resolved_params.audio_bitrate:
+            cmd.extend(["-b:a", resolved_params.audio_bitrate])
         
         # Output file
         cmd.append(output_path)
@@ -233,62 +298,69 @@ class FFmpegEngine(ExecutionEngine):
     def run_clip(
         self,
         task: "ClipTask",
-        preset_registry: "PresetRegistry",
-        preset_id: str,
-        output_base_dir: Optional[str] = None,
+        resolved_params: ResolvedPresetParams,
+        output_path: Optional[str] = None,
+        watermark_text: Optional[str] = None,
+        on_progress: Optional[Callable[[ProgressInfo], None]] = None,
     ) -> ExecutionResult:
         """
         Execute a single clip with FFmpeg.
         
-        Returns ExecutionResult with status, output path, timing.
+        Phase 16.4: CRITICAL DESIGN RULES
+        - Engine receives RESOLVED output_path - NEVER constructs paths
+        - output_path must be provided - no fallback to source directory
+        - Progress is parsed from FFmpeg stderr in real-time
+        - Watermark applied via drawtext filter if text provided
+        
+        Args:
+            task: ClipTask with source path and metadata
+            resolved_params: ResolvedPresetParams (NOT CategoryPreset)
+            output_path: RESOLVED output path - engine uses verbatim
+            watermark_text: Optional watermark text to overlay
+            on_progress: Optional callback for progress updates
+            
+        Returns:
+            ExecutionResult with status, output path, timing.
         """
-        from ..presets.models import PresetCategory
-        from ..presets.schemas import CodecPreset
+        # Type guard: reject CategoryPreset or GlobalPreset if somehow passed
+        if not isinstance(resolved_params, ResolvedPresetParams):
+            raise EngineValidationError(
+                EngineType.FFMPEG,
+                f"CategoryPreset or GlobalPreset leaked to engine! "
+                f"Received {type(resolved_params).__name__} instead of ResolvedPresetParams. "
+                f"This is a bug in the caller - presets must be resolved before reaching engine."
+            )
         
         start_time = datetime.now()
         source_path_str = task.source_path
-        source_path = Path(source_path_str)
         
-        # Generate output path using codec preset
-        preset = preset_registry.get_global_preset(preset_id)
-        codec_preset: Optional[CodecPreset] = None
+        # Phase 16.4: Engine MUST receive resolved output_path
+        # Fallback to task.output_path if not provided as argument
+        if output_path is None:
+            output_path = task.output_path
         
-        if preset:
-            codec_ref = preset.category_refs.get(PresetCategory.CODEC, "")
-            codec_preset = preset_registry.get_category_preset(PresetCategory.CODEC, codec_ref) if codec_ref else None
-        
-        # Create a minimal codec preset if none found for path generation
-        if not codec_preset:
-            # Default to ProRes 422 in MOV container
-            codec_preset = CodecPreset(
-                id="default",
-                name="Default ProRes",
-                codec="prores_422",
-                container="mov",
+        if output_path is None:
+            return ExecutionResult(
+                status=ExecutionStatus.FAILED,
+                source_path=source_path_str,
+                output_path=None,
+                failure_reason="No output path provided. Caller must resolve output path before engine invocation.",
+                started_at=start_time,
+                completed_at=datetime.now(),
             )
         
-        # Determine output directory
-        output_dir = Path(output_base_dir) if output_base_dir else source_path.parent
-        
-        output_path = generate_output_path(
-            source_path=source_path,
-            output_dir=output_dir,
-            codec_preset=codec_preset,
-        )
-        
-        # Convert to strings for subprocess and result
-        output_path_str = str(output_path)
+        output_path_obj = Path(output_path)
         
         # Ensure output directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
         
         # Build command
         try:
             cmd = self._build_ffmpeg_command(
                 source_path=source_path_str,
-                output_path=output_path_str,
-                preset_registry=preset_registry,
-                preset_id=preset_id,
+                output_path=output_path,
+                resolved_params=resolved_params,
+                watermark_text=watermark_text,
             )
         except Exception as e:
             return ExecutionResult(
@@ -304,7 +376,15 @@ class FFmpegEngine(ExecutionEngine):
         cmd_string = " ".join(cmd)
         logger.info(f"[FFmpeg] Executing: {cmd_string}")
         
-        # Execute via subprocess
+        # Initialize progress parser
+        duration = task.duration if task.duration else 0.0
+        progress_parser = ProgressParser(
+            clip_id=task.id,
+            duration=duration,
+            on_progress=on_progress,
+        )
+        
+        # Execute via subprocess with non-blocking stderr for progress
         try:
             process = subprocess.Popen(
                 cmd,
@@ -318,9 +398,43 @@ class FFmpegEngine(ExecutionEngine):
             
             logger.info(f"[FFmpeg] Started PID {process.pid} for clip {task.id}")
             
-            # Wait for completion
-            stdout, stderr = process.communicate()
+            # Read stderr line by line for progress (with select for non-blocking)
+            stderr_lines = []
+            if process.stderr:
+                # Use select to read stderr non-blocking on Unix
+                import fcntl
+                fd = process.stderr.fileno()
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                
+                while True:
+                    # Check if process has terminated
+                    poll_result = process.poll()
+                    
+                    try:
+                        readable, _, _ = select.select([process.stderr], [], [], 0.1)
+                        if readable:
+                            line = process.stderr.readline()
+                            if line:
+                                stderr_lines.append(line.rstrip())
+                                # Parse progress from this line
+                                progress_parser.parse_line(line)
+                    except (OSError, ValueError):
+                        # Handle closed file descriptors
+                        pass
+                    
+                    if poll_result is not None:
+                        # Process finished, read remaining stderr
+                        remaining = process.stderr.read()
+                        if remaining:
+                            for line in remaining.split('\n'):
+                                if line.strip():
+                                    stderr_lines.append(line)
+                                    progress_parser.parse_line(line)
+                        break
+            
             exit_code = process.returncode
+            stderr = '\n'.join(stderr_lines)
             
             # Remove from active processes
             self._active_processes.pop(task.id, None)
@@ -329,9 +443,13 @@ class FFmpegEngine(ExecutionEngine):
             
             logger.info(f"[FFmpeg] PID {process.pid} exited with code {exit_code}")
             
+            # Log full stderr for debugging (before truncation)
+            if stderr:
+                logger.debug(f"[FFmpeg] Full stderr for {task.id}:\n{stderr}")
+            
             # Check for cancellation
-            if task.id in self._cancelled_jobs:
-                self._cancelled_jobs.discard(task.id)
+            if task.id in self._cancelled_tasks:
+                self._cancelled_tasks.discard(task.id)
                 return ExecutionResult(
                     status=ExecutionStatus.FAILED,
                     source_path=source_path_str,
@@ -343,7 +461,9 @@ class FFmpegEngine(ExecutionEngine):
             
             # Non-zero exit = FAILED
             if exit_code != 0:
-                failure_reason = stderr.strip() if stderr else f"FFmpeg exited with code {exit_code}"
+                # Truncate stderr to last N lines for storage
+                truncated_stderr = self._truncate_stderr(stderr) if stderr else ""
+                failure_reason = truncated_stderr if truncated_stderr else f"FFmpeg exited with code {exit_code}"
                 logger.error(f"[FFmpeg] Failed: {failure_reason}")
                 return ExecutionResult(
                     status=ExecutionStatus.FAILED,
@@ -355,7 +475,7 @@ class FFmpegEngine(ExecutionEngine):
                 )
             
             # Verify output exists
-            if not output_path.is_file():
+            if not output_path_obj.is_file():
                 return ExecutionResult(
                     status=ExecutionStatus.FAILED,
                     source_path=source_path_str,
@@ -366,11 +486,11 @@ class FFmpegEngine(ExecutionEngine):
                 )
             
             # Success
-            logger.info(f"[FFmpeg] Completed: {output_path_str}")
+            logger.info(f"[FFmpeg] Completed: {output_path}")
             return ExecutionResult(
                 status=ExecutionStatus.SUCCESS,
                 source_path=source_path_str,
-                output_path=output_path_str,
+                output_path=output_path,
                 started_at=start_time,
                 completed_at=end_time,
             )
@@ -400,7 +520,7 @@ class FFmpegEngine(ExecutionEngine):
         # Mark all clips in this job as cancelled
         for task in job.tasks:
             if task.status == TaskStatus.RUNNING:
-                self._cancelled_jobs.add(task.id)
+                self._cancelled_tasks.add(task.id)
                 
                 # Find and terminate the process
                 process = self._active_processes.get(task.id)
