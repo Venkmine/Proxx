@@ -138,6 +138,15 @@ function App() {
   // Clip selection
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set())
 
+  // Settings dialog
+  const [settingsDialogJobId, setSettingsDialogJobId] = useState<string | null>(null)
+  const [settingsForm, setSettingsForm] = useState({
+    output_dir: '',
+    naming_template: '{source_name}__proxx',
+    watermark_enabled: false,
+    watermark_text: ''
+  })
+
   // Create Job panel state
   const [showCreateJobPanel, setShowCreateJobPanel] = useState<boolean>(true) // Visible by default
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
@@ -324,30 +333,43 @@ function App() {
     }
   }
 
-  const rebindPreset = async (jobId: string) => {
-    const presetId = presets.length > 0
-      ? prompt(`Enter preset ID:\n\nAvailable presets:\n${presets.map(p => `${p.id} (${p.name})`).join('\n')}`)
-      : prompt('Enter new preset ID:')
+  const openJobSettings = async (jobId: string) => {
+    try {
+      // Fetch current settings
+      const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/settings`)
+      if (response.ok) {
+        const settings = await response.json()
+        setSettingsForm({
+          output_dir: settings.output_dir || '',
+          naming_template: settings.naming_template || '{source_name}__proxx',
+          watermark_enabled: settings.watermark_enabled || false,
+          watermark_text: settings.watermark_text || ''
+        })
+      }
+      setSettingsDialogJobId(jobId)
+    } catch (err) {
+      setError(`Failed to load settings: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
 
-    if (!presetId) return
-
-    const message = `Rebind job to preset "${presetId}"?\n\nThis will OVERWRITE any existing preset binding.`
-    if (!confirmAction(message)) return
+  const saveJobSettings = async () => {
+    if (!settingsDialogJobId) return
 
     try {
       setLoading(true)
-      const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/rebind`, {
-        method: 'POST',
+      const response = await fetch(`${BACKEND_URL}/control/jobs/${settingsDialogJobId}/settings`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preset_id: presetId }),
+        body: JSON.stringify(settingsForm),
       })
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.detail || `HTTP ${response.status}`)
       }
-      await fetchJobDetail(jobId)
+      setSettingsDialogJobId(null)
+      await fetchJobDetail(settingsDialogJobId)
     } catch (err) {
-      setError(`Failed to rebind preset: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(`Failed to save settings: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
@@ -999,7 +1021,7 @@ function App() {
                   onRetryFailed={() => retryFailedClips(job.id)}
                   onCancel={() => cancelJob(job.id)}
                   onDelete={() => deleteJob(job.id)}
-                  onRebindPreset={() => rebindPreset(job.id)}
+                  onRebindPreset={() => openJobSettings(job.id)}
                   onDragStart={handleJobDragStart(job.id)}
                   onDragOver={handleJobDragOver(job.id)}
                   onDrop={handleJobDrop(job.id)}
@@ -1015,6 +1037,157 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* Settings Dialog */}
+      {settingsDialogJobId && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setSettingsDialogJobId(null)}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-primary)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: '8px',
+              padding: '1.5rem',
+              minWidth: '500px',
+              maxWidth: '600px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem', fontWeight: 600 }}>
+              Job Settings
+            </h2>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Output Directory */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                  Output Directory
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    value={settingsForm.output_dir}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, output_dir: e.target.value })}
+                    placeholder="Leave empty to use source directory"
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-secondary)',
+                      borderRadius: '4px',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.875rem',
+                    }}
+                  />
+                  {hasElectron && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={async () => {
+                        const path = await window.electron!.openFolder()
+                        if (path) {
+                          setSettingsForm({ ...settingsForm, output_dir: path })
+                        }
+                      }}
+                    >
+                      Browse
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Naming Template */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                  Naming Template
+                </label>
+                <input
+                  type="text"
+                  value={settingsForm.naming_template}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, naming_template: e.target.value })}
+                  placeholder="{source_name}__proxx"
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-secondary)',
+                    borderRadius: '4px',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.875rem',
+                  }}
+                />
+                <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Available tokens: {'{source_name}'}, {'{width}'}, {'{height}'}, {'{codec}'}, {'{preset}'}
+                </div>
+              </div>
+
+              {/* Watermark */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.watermark_enabled}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, watermark_enabled: e.target.checked })}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  Enable Watermark
+                </label>
+                {settingsForm.watermark_enabled && (
+                  <input
+                    type="text"
+                    value={settingsForm.watermark_text}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, watermark_text: e.target.value })}
+                    placeholder="Watermark text"
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-secondary)',
+                      borderRadius: '4px',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.875rem',
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setSettingsDialogJobId(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={saveJobSettings}
+                  disabled={loading}
+                >
+                  Save Settings
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

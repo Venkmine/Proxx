@@ -14,11 +14,14 @@ Phase 16: Engine binding at JOB level only (not clip level).
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from ..execution.base import EngineType
+
+# JobSettings is defined in jobs/settings.py; import here for the `settings` property
+from .settings import JobSettings, DEFAULT_JOB_SETTINGS
 
 
 class JobStatus(str, Enum):
