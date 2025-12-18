@@ -7,13 +7,18 @@ One clip failing must never block other clips.
 
 All models use Pydantic for validation.
 State transitions are validated externally (see state.py).
+
+Phase 16: Engine binding at JOB level only (not clip level).
 """
 
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from ..execution.base import EngineType
 
 
 class JobStatus(str, Enum):
@@ -82,12 +87,19 @@ class Job(BaseModel):
     
     Jobs orchestrate independent clip tasks.
     Job status is derived from aggregate task states.
+    
+    Phase 16: Engine binding at JOB level.
+    All clips in a job use the SAME engine. No mixed-engine jobs.
     """
     
     model_config = ConfigDict(extra="forbid")
     
     # Identity
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    
+    # Phase 16: Engine binding (explicit, no default, no inference)
+    # Engine is set at job creation and cannot be changed
+    engine: Optional[str] = None  # EngineType value: "ffmpeg" or "resolve"
     
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.now)

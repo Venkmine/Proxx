@@ -8,6 +8,7 @@ Enforces warn-and-continue semantics.
 Phase 4 scope: State management only, no execution.
 Execution hooks are stubs for Phase 5+ integration.
 Phase 8: Reporting integration for job and clip diagnostics.
+Phase 16: Execution engine integration (FFmpeg first).
 """
 
 from datetime import datetime
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from .bindings import JobPresetBindingRegistry
     from ..presets.registry import PresetRegistry
     from ..execution.results import ExecutionResult
+    from ..execution.base import EngineType
+    from ..execution.engine_registry import EngineRegistry
 
 
 class JobEngine:
@@ -28,29 +31,42 @@ class JobEngine:
     Job orchestration engine.
     
     Manages job lifecycle and aggregates task outcomes.
-    Does NOT execute transcoding or call Resolve (Phase 5+).
     
     Phase 11: Supports explicit preset binding (stored externally).
+    Phase 16: Supports explicit engine binding at job level.
     """
     
-    def __init__(self, binding_registry: Optional["JobPresetBindingRegistry"] = None):
+    def __init__(
+        self,
+        binding_registry: Optional["JobPresetBindingRegistry"] = None,
+        engine_registry: Optional["EngineRegistry"] = None,
+    ):
         """
         Initialize job engine.
         
         Args:
             binding_registry: Optional registry for job-preset bindings
+            engine_registry: Optional registry for execution engines
         """
         self.binding_registry = binding_registry
+        self.engine_registry = engine_registry
     
-    def create_job(self, source_paths: List[str]) -> Job:
+    def create_job(
+        self,
+        source_paths: List[str],
+        engine: Optional[str] = None,
+    ) -> Job:
         """
         Create a new job from a list of source file paths.
         
         Source paths are accepted blindly without filesystem validation.
-        Validation happens at execution time (Phase 5+).
+        Validation happens at execution time.
+        
+        Phase 16: Engine is bound at job creation.
         
         Args:
             source_paths: List of absolute paths to source files
+            engine: Engine type string ("ffmpeg" or "resolve")
             
         Returns:
             A new Job in PENDING state with QUEUED tasks
@@ -64,8 +80,8 @@ class JobEngine:
         # Create a task for each source file
         tasks = [ClipTask(source_path=path) for path in source_paths]
         
-        # Create the job
-        job = Job(tasks=tasks)
+        # Create the job with engine binding
+        job = Job(tasks=tasks, engine=engine)
         
         return job
     
@@ -353,10 +369,11 @@ class JobEngine:
             job.completed_at = datetime.now()
     
     # Execution stubs for Phase 5+ integration
-    
+
     def _execute_task(
         self,
         task: ClipTask,
+        job: Job,
         global_preset_id: str,
         preset_registry,
         output_base_dir: Optional[str] = None,
@@ -364,18 +381,46 @@ class JobEngine:
         """
         Execute a single clip task.
         
-        Phase 7: Thin wrapper around Phase 6 single-clip execution.
-        Invokes execute_single_clip() and returns ExecutionResult.
+        Phase 16: Uses execution engine based on job's engine binding.
+        Falls back to legacy Resolve runner if no engine specified.
         
         Args:
             task: The clip task to execute
+            job: Parent job (for engine binding)
             global_preset_id: ID of the preset to use
             preset_registry: Registry instance for preset lookup
             output_base_dir: Optional output directory override
             
         Returns:
-            ExecutionResult from the single-clip pipeline
+            ExecutionResult from the engine or legacy pipeline
         """
+        # Phase 16: Use engine if bound to job
+        if job.engine and self.engine_registry:
+            from ..execution.base import EngineType
+            
+            try:
+                engine_type = EngineType(job.engine)
+                engine = self.engine_registry.get_available_engine(engine_type)
+                
+                return engine.run_clip(
+                    task=task,
+                    preset_registry=preset_registry,
+                    preset_id=global_preset_id,
+                    output_base_dir=output_base_dir,
+                )
+            except Exception as e:
+                # If engine execution fails, return a failed result
+                from ..execution.results import ExecutionResult, ExecutionStatus
+                return ExecutionResult(
+                    status=ExecutionStatus.FAILED,
+                    source_path=task.source_path,
+                    output_path=None,
+                    failure_reason=f"Engine execution failed: {e}",
+                    started_at=datetime.now(),
+                    completed_at=datetime.now(),
+                )
+        
+        # Legacy: Use Resolve runner (for backwards compatibility)
         from ..execution.runner import execute_single_clip
         
         return execute_single_clip(
@@ -395,13 +440,14 @@ class JobEngine:
         """
         Process all queued tasks in a job sequentially.
         
-        Phase 7: Multi-clip orchestration using Phase 6 single-clip execution.
+        Phase 7: Multi-clip orchestration using single-clip execution.
         Phase 8: Returns ExecutionResults for reporting.
+        Phase 16: Uses execution engine based on job's engine binding.
         
         Execution model:
         1. Iterate through QUEUED tasks sequentially
         2. Check pause state before each task
-        3. Execute task via single-clip pipeline
+        3. Execute task via engine (or legacy pipeline)
         4. Map ExecutionResult to task status
         5. Continue to next task (warn-and-continue)
         6. Finalize job when all tasks processed
@@ -419,9 +465,16 @@ class JobEngine:
             Dict mapping task_id to ExecutionResult for reporting
         """
         from ..execution.results import ExecutionStatus
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         # Track ExecutionResults for reporting (Phase 8)
         execution_results: Dict[str, "ExecutionResult"] = {}
+        
+        # Log engine info
+        engine_name = job.engine or "resolve (legacy)"
+        logger.info(f"Processing job {job.id} with engine: {engine_name}")
         
         # Get queued tasks (snapshot at start)
         queued_tasks = [task for task in job.tasks if task.status == TaskStatus.QUEUED]
@@ -429,14 +482,16 @@ class JobEngine:
         for task in queued_tasks:
             # Respect pause state before starting each clip
             if job.status == JobStatus.PAUSED:
+                logger.info(f"Job {job.id} paused, stopping at clip {task.id}")
                 break
             
             # Transition task to RUNNING
             self.update_task_status(task, TaskStatus.RUNNING)
             
-            # Execute single clip via Phase 6 pipeline
+            # Execute single clip via engine
             result = self._execute_task(
                 task=task,
+                job=job,
                 global_preset_id=global_preset_id,
                 preset_registry=preset_registry,
                 output_base_dir=output_base_dir,
@@ -481,6 +536,7 @@ class JobEngine:
         
         Phase 8: Public entry point with integrated reporting.
         Phase 11: Uses bound preset if available, falls back to parameter.
+        Phase 16: Validates engine availability before execution.
         
         Executes all queued tasks sequentially, respecting warn-and-continue
         semantics. After execution completes, generates diagnostic reports
@@ -499,7 +555,11 @@ class JobEngine:
         Raises:
             JobEngineError: If execution or reporting fails
             ValueError: If no preset is available (neither bound nor provided)
+            ValueError: If engine is not available
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Resolve effective preset ID
         effective_preset_id = None
         
@@ -520,6 +580,29 @@ class JobEngine:
             preset = preset_registry.get_global_preset(effective_preset_id)
             if not preset:
                 raise ValueError(f"Global preset '{effective_preset_id}' not found in registry")
+        
+        # Phase 16: Validate engine availability
+        if job.engine and self.engine_registry:
+            from ..execution.base import EngineType, EngineNotAvailableError
+            
+            try:
+                engine_type = EngineType(job.engine)
+                engine = self.engine_registry.get_available_engine(engine_type)
+                
+                # Validate job before execution
+                is_valid, error_msg = engine.validate_job(
+                    job=job,
+                    preset_registry=preset_registry,
+                    preset_id=effective_preset_id,
+                )
+                
+                if not is_valid:
+                    raise ValueError(f"Job validation failed: {error_msg}")
+                
+                logger.info(f"Job {job.id} will use {engine.name} engine")
+                
+            except EngineNotAvailableError as e:
+                raise ValueError(f"Engine not available: {e}")
         
         # Start the job
         self.start_job(job)

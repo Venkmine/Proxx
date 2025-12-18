@@ -17,10 +17,11 @@
 - Phase 13 — Operator control & intent surfaces (CLI commands: resume, retry, cancel, rebind; explicit operator intent only)
 - Phase 14 — Minimal operator UI (read-only job/clip visibility + explicit control buttons; HTTP control endpoints; confirmation-gated actions)
 - Phase 15 — Manual job creation & operator ergonomics (explicit manual job creation, multi-select UI, filesystem utilities, path favorites)
+- Phase 16 — Execution Engines (FFmpeg first) (engine abstraction, FFmpegEngine with subprocess, engine binding at job level, FIFO scheduler, UI engine selector)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 16 — Media Operations (Trim, Watermark, Combine)
+- Phase: Phase 17 — Resolve Engine Integration
 
 ## BLOCKERS / OPEN QUESTIONS
 

@@ -1849,6 +1849,132 @@ Location: `backend/app/routes/control.py`
 
 Phase 15 establishes explicit operator intent patterns. Future phases will extend these patterns with execution logic while maintaining the same explicit-only philosophy.
 
+## Execution Engines (Phase 16)
+
+Phase 16 introduces a formal **execution engine abstraction** that enables Proxx to actually transcode media. The first real implementation is FFmpeg, with DaVinci Resolve planned for a future phase.
+
+### Core Design
+
+Engine binding follows these non-negotiable rules:
+
+- Each job binds to **exactly one engine** at creation time
+- Engine binding is explicit (no inference, no fallback)
+- Presets are engine-scoped (validation at job creation)
+- No background retries or silent failure recovery
+- If an engine fails, the clip FAILS. Period.
+
+### Engine Abstraction
+
+```python
+class ExecutionEngine(ABC):
+    @property
+    def engine_type(self) -> EngineType: ...
+    @property
+    def available(self) -> bool: ...
+    def validate_job(self, job, preset_registry, preset_id) -> tuple[bool, str]: ...
+    def run_clip(self, task, preset_registry, preset_id, output_base_dir) -> ExecutionResult: ...
+    def cancel_job(self, job) -> None: ...
+```
+
+### Available Engines
+
+| Engine | Status | Description |
+|--------|--------|-------------|
+| `FFmpegEngine` | ✅ Active | Real transcoding via `subprocess.Popen` |
+| `ResolveEngine` | ⏳ Stub | Coming in Phase 17 |
+
+### FFmpeg Engine
+
+The FFmpeg engine provides real media transcoding:
+
+**Execution Model:**
+- Uses `subprocess.Popen` for per-clip execution
+- Captures stdout + stderr for audit
+- Persists full command string for debugging
+- Updates clip states: QUEUED → RUNNING → COMPLETED/FAILED
+
+**Failure Handling:**
+- Non-zero exit code = FAILED (no retry)
+- stderr captured as `failure_reason`
+- Job status updates correctly when all clips resolve
+
+**Cancellation:**
+- SIGTERM sent first (graceful shutdown)
+- Escalates to SIGKILL after 5 second timeout
+- Remaining clips marked SKIPPED
+- Job becomes CANCELLED
+
+**Codec Mapping:**
+- ProRes variants: `prores_proxy`, `prores_lt`, `prores_422`, `prores_422_hq`
+- DNxHR variants: `dnxhr_lb`, `dnxhr_sq`, `dnxhr_hq`
+- DNxHD variants: `dnxhd_36`, `dnxhd_145`, `dnxhd_220`
+
+### Engine Registry
+
+Engines are registered centrally and accessed via `EngineRegistry`:
+
+```python
+engine_registry = get_engine_registry()
+engine = engine_registry.get_available_engine(EngineType.FFMPEG)
+```
+
+The registry provides:
+- Engine lookup by type
+- Availability checking
+- Engine listing for UI display
+
+### Scheduler
+
+Phase 16 introduces a minimal FIFO scheduler:
+
+- Single-node only
+- Max concurrent clips = 1
+- FIFO order (first in, first out)
+- No prioritization (deferred to Phase 17+)
+
+### UI Changes
+
+The Create Job panel now includes:
+- **Engine Selector**: FFmpeg (active), Resolve (disabled, "coming soon")
+- Engine is bound at job creation, not changeable after
+
+Job actions available per status:
+- PENDING: **Render** (start), Cancel, Delete
+- RUNNING: **Pause**, Cancel
+- PAUSED: **Resume**, Cancel
+- COMPLETED/FAILED: Delete, Retry Failed
+
+### API Changes
+
+**New Endpoints:**
+- `GET /control/engines` - List available engines with status
+
+**Modified Endpoints:**
+- `POST /control/jobs/create` - Now accepts `engine` field (default: "ffmpeg")
+
+### Job Model Changes
+
+Jobs now include engine binding:
+
+```python
+class Job(BaseModel):
+    id: str
+    engine: Optional[str] = None  # "ffmpeg" or "resolve"
+    status: JobStatus
+    tasks: List[ClipTask]
+    # ...
+```
+
+Engine is set at creation and cannot be changed. All clips in a job use the same engine (no mixed-engine jobs).
+
+### Not Yet Implemented
+
+The following are deferred to future phases:
+- Progress parsing (Phase 17+)
+- Resolve engine integration (Phase 17)
+- Parallel clip execution (Phase 17+)
+- Multi-node distribution (Phase 20+)
+
 ## Out of Scope (Current)
 
 The following systems are intentionally not implemented yet:

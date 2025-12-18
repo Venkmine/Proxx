@@ -21,7 +21,7 @@ from app.cli.commands import (
     rebind_preset
 )
 from app.cli.errors import ValidationError, ConfirmationDenied
-from app.jobs.models import JobStatus
+from app.jobs.models import JobStatus, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +37,14 @@ class RebindPresetRequest(BaseModel):
 
 
 class CreateJobRequest(BaseModel):
-    """Request body for manual job creation (Phase 15)."""
+    """Request body for manual job creation (Phase 15, enhanced in Phase 16)."""
     
     model_config = ConfigDict(extra="forbid")
     
     source_paths: List[str]
     preset_id: str
     output_base_dir: Optional[str] = None
+    engine: str = "ffmpeg"  # Phase 16: Explicit engine binding ("ffmpeg" or "resolve")
 
 
 class PresetInfo(BaseModel):
@@ -53,6 +54,24 @@ class PresetInfo(BaseModel):
     
     id: str
     name: str
+
+
+class EngineInfo(BaseModel):
+    """Engine summary for UI display (Phase 16)."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    type: str
+    name: str
+    available: bool
+
+
+class EngineListResponse(BaseModel):
+    """Response for engine listing (Phase 16)."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    engines: List[EngineInfo]
 
 
 class PresetListResponse(BaseModel):
@@ -112,23 +131,57 @@ async def list_presets_endpoint(request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to list presets: {e}")
 
 
+@router.get("/engines", response_model=EngineListResponse)
+async def list_engines_endpoint(request: Request):
+    """
+    List all available execution engines.
+    
+    Phase 16: For manual job creation engine selection.
+    
+    Returns:
+        List of engines with availability status
+    """
+    try:
+        engine_registry = request.app.state.engine_registry
+        
+        engine_list = engine_registry.list_engines()
+        
+        engines = [
+            EngineInfo(
+                type=e["type"],
+                name=e["name"],
+                available=e["available"],
+            )
+            for e in engine_list
+        ]
+        
+        # Sort by name, available first
+        engines.sort(key=lambda e: (not e.available, e.name.lower()))
+        
+        return EngineListResponse(engines=engines)
+        
+    except Exception as e:
+        logger.error(f"Failed to list engines: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list presets: {e}")
+
+
 @router.post("/jobs/create", response_model=CreateJobResponse)
 async def create_job_endpoint(body: CreateJobRequest, request: Request):
     """
-    Create a new PENDING job manually (Phase 15).
+    Create a new PENDING job manually (Phase 15, enhanced in Phase 16).
     
     Creates one job with multiple clip tasks from selected files.
     Job is left in PENDING state - no automatic execution.
-    Preset is bound at creation time.
+    Preset and engine are bound at creation time.
     
     Args:
-        body: Job creation request with source paths, preset ID, output directory
+        body: Job creation request with source paths, preset ID, output directory, engine
         
     Returns:
         Created job details
         
     Raises:
-        400: Validation failed (empty paths, invalid preset, invalid paths)
+        400: Validation failed (empty paths, invalid preset, invalid paths, engine unavailable)
         404: Preset not found
         500: Job creation failed
     """
@@ -137,6 +190,7 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
         binding_registry = request.app.state.binding_registry
         preset_registry = request.app.state.preset_registry
         job_engine = request.app.state.job_engine
+        engine_registry = request.app.state.engine_registry
         
         # Validation: at least one source path required
         if not body.source_paths:
@@ -146,6 +200,31 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
         preset = preset_registry.get_global_preset(body.preset_id)
         if not preset:
             raise HTTPException(status_code=404, detail=f"Preset '{body.preset_id}' not found")
+        
+        # Phase 16: Validate engine
+        from app.execution.base import EngineType, EngineNotAvailableError
+        
+        engine_type_str = body.engine or "ffmpeg"  # Default to ffmpeg
+        try:
+            engine_type = EngineType(engine_type_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid engine type: '{engine_type_str}'. Must be 'ffmpeg' or 'resolve'"
+            )
+        
+        # Check engine availability
+        if not engine_registry.is_available(engine_type):
+            if engine_type == EngineType.RESOLVE:
+                raise HTTPException(
+                    status_code=400,
+                    detail="DaVinci Resolve engine is not yet available (coming soon)"
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Engine '{engine_type.value}' is not available on this system"
+                )
         
         # Validation: all source paths must exist and be files
         invalid_paths = []
@@ -186,23 +265,26 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
                     detail=f"Output directory not writable: {body.output_base_dir}"
                 )
         
-        # Create job with multiple clip tasks
+        # Create job with multiple clip tasks and engine binding
         job = job_engine.create_job(
             source_paths=body.source_paths,
-            output_base_dir=body.output_base_dir
+            engine=engine_type_str,
         )
+        
+        # Register the job
+        job_registry.add_job(job)
         
         # Bind preset explicitly at creation time
         job_engine.bind_preset(job, body.preset_id, preset_registry)
         
         logger.info(
             f"Manual job {job.id} created with {len(body.source_paths)} clips, "
-            f"preset '{body.preset_id}' bound"
+            f"preset '{body.preset_id}' bound, engine '{engine_type_str}'"
         )
         
         return CreateJobResponse(
             success=True,
-            message=f"Job created with {len(body.source_paths)} clips",
+            message=f"Job created with {len(body.source_paths)} clips using {engine_type_str} engine",
             job_id=job.id
         )
         
@@ -410,3 +492,200 @@ async def rebind_preset_endpoint(job_id: str, body: RebindPresetRequest, request
     except Exception as e:
         logger.error(f"Rebind failed for job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Rebind failed: {e}")
+
+
+# =============================================================================
+# Phase 16: Start, Pause, Delete endpoints for full operator control
+# =============================================================================
+
+
+@router.post("/jobs/{job_id}/start", response_model=OperationResponse)
+async def start_job_endpoint(job_id: str, request: Request):
+    """
+    Start a PENDING job - transitions to RUNNING and begins execution.
+    
+    Phase 16: Critical endpoint to actually execute jobs.
+    This is the trigger that moves jobs from PENDING into the execution pipeline.
+    
+    Args:
+        job_id: Job identifier
+        
+    Returns:
+        Operation result
+        
+    Raises:
+        400: Validation failed (job not in PENDING state)
+        404: Job not found
+        500: Execution failed
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        binding_registry = request.app.state.binding_registry
+        preset_registry = request.app.state.preset_registry
+        job_engine = request.app.state.job_engine
+        
+        # Retrieve job
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        
+        # Validate job status - only PENDING jobs can be started
+        if job.status != JobStatus.PENDING:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job {job_id} cannot be started. "
+                       f"Current status: {job.status.value}. "
+                       f"Only PENDING jobs can be started."
+            )
+        
+        # Validate preset binding exists
+        preset_id = binding_registry.get_preset_id(job_id)
+        if not preset_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No preset bound to job {job_id}. Cannot start without preset."
+            )
+        
+        # Validate preset exists
+        preset = preset_registry.get_global_preset(preset_id)
+        if not preset:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bound preset '{preset_id}' not found. Rebind a valid preset."
+            )
+        
+        # Execute the job (this transitions PENDING → RUNNING and processes all clips)
+        job_engine.execute_job(
+            job=job,
+            preset_registry=preset_registry,
+            generate_reports=True,
+        )
+        
+        logger.info(f"Job {job_id} started via control endpoint")
+        
+        return OperationResponse(
+            success=True,
+            message=f"Job {job_id} started successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        logger.warning(f"Start validation failed for job {job_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Start failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Start failed: {e}")
+
+
+@router.post("/jobs/{job_id}/pause", response_model=OperationResponse)
+async def pause_job_endpoint(job_id: str, request: Request):
+    """
+    Pause a RUNNING job.
+    
+    Phase 16: Pause will finish the current clip, then stop processing.
+    Job can be resumed later with /resume endpoint.
+    
+    Args:
+        job_id: Job identifier
+        
+    Returns:
+        Operation result
+        
+    Raises:
+        400: Validation failed (job not in RUNNING state)
+        404: Job not found
+        500: Pause failed
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        job_engine = request.app.state.job_engine
+        
+        # Retrieve job
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        
+        # Validate job status - only RUNNING jobs can be paused
+        if job.status != JobStatus.RUNNING:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job {job_id} cannot be paused. "
+                       f"Current status: {job.status.value}. "
+                       f"Only RUNNING jobs can be paused."
+            )
+        
+        # Pause the job
+        job_engine.pause_job(job)
+        
+        logger.info(f"Job {job_id} paused via control endpoint")
+        
+        return OperationResponse(
+            success=True,
+            message=f"Job {job_id} paused successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Pause failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Pause failed: {e}")
+
+
+@router.delete("/jobs/{job_id}", response_model=OperationResponse)
+async def delete_job_endpoint(job_id: str, request: Request):
+    """
+    Delete a job from the queue.
+    
+    Phase 16: Removes job completely from registry.
+    Only PENDING, COMPLETED, COMPLETED_WITH_WARNINGS, FAILED, or CANCELLED jobs can be deleted.
+    RUNNING or PAUSED jobs must be cancelled first.
+    
+    Args:
+        job_id: Job identifier
+        
+    Returns:
+        Operation result
+        
+    Raises:
+        400: Validation failed (job in RUNNING or PAUSED state)
+        404: Job not found
+        500: Delete failed
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        binding_registry = request.app.state.binding_registry
+        
+        # Retrieve job
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        
+        # Validate job status - cannot delete RUNNING or PAUSED jobs
+        if job.status in (JobStatus.RUNNING, JobStatus.PAUSED):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job {job_id} cannot be deleted. "
+                       f"Current status: {job.status.value}. "
+                       f"Cancel the job first before deleting."
+            )
+        
+        # Remove preset binding if exists
+        if binding_registry:
+            binding_registry.unbind_preset(job_id)
+        
+        # Remove job from registry
+        job_registry.remove_job(job_id)
+        
+        logger.info(f"Job {job_id} deleted via control endpoint")
+        
+        return OperationResponse(
+            success=True,
+            message=f"Job {job_id} deleted successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
