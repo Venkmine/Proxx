@@ -63,6 +63,8 @@ class VideoSettingsRequest(BaseModel):
     quality: Optional[int] = None
     bitrate: Optional[str] = None
     preset: Optional[str] = None
+    # Phase 17.1: Frontend sends pixel_aspect_ratio
+    pixel_aspect_ratio: Optional[str] = None
 
 
 class AudioSettingsRequest(BaseModel):

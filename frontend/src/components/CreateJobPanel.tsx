@@ -3,14 +3,14 @@ import { Button } from './Button'
 import { Select } from './Select'
 
 /**
- * CreateJobPanel component - persists after job creation.
+ * CreateJobPanel component - Source & Intake panel (Phase 19).
  * 
  * Per design requirements:
- * - MUST NOT disappear after job creation
- * - Remains open until explicitly hidden by the user
- * - Uses same gradient system as main UI (not black background)
- * - Uses chevron toggle to hide (not "Hide" button)
+ * - Renamed from "Add to Render Queue" to "Source & Intake"
+ * - Full height left column
  * - Supports drag & drop for files and folders
+ * - Watch folders stubbed as "Coming next"
+ * - Favorites moved to collapsible utility section
  */
 
 interface PresetInfo {
@@ -192,7 +192,7 @@ export function CreateJobPanel({
             letterSpacing: '-0.01em',
           }}
         >
-          Add to Render Queue
+          Source & Intake
         </h2>
         
         {/* Chevron toggle to hide panel */}
@@ -549,24 +549,26 @@ export function CreateJobPanel({
           )}
         </div>
 
-        {/* Favorites Management */}
+        {/* Favorites Management - Collapsible Utility Section (Phase 19) */}
         {pathFavorites.length > 0 && (
-          <div>
-            <label
+          <details style={{ marginTop: '0.5rem' }}>
+            <summary
               style={{
-                display: 'block',
+                display: 'flex',
+                alignItems: 'center',
                 fontSize: '0.75rem',
                 fontWeight: 500,
-                color: 'var(--text-secondary)',
-                marginBottom: '0.375rem',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
                 fontFamily: 'var(--font-sans)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
+                padding: '0.25rem 0',
+                listStyle: 'none',
               }}
             >
-              Favorite Paths
-            </label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ marginRight: '0.5rem', fontSize: '0.625rem' }}>▶</span>
+              Saved Paths ({pathFavorites.length})
+            </summary>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem', marginTop: '0.25rem' }}>
               {pathFavorites.map((path, i) => (
                 <div
                   key={i}
@@ -574,10 +576,11 @@ export function CreateJobPanel({
                     display: 'flex',
                     gap: '0.5rem',
                     alignItems: 'center',
-                    padding: '0.25rem 0',
+                    padding: '0.125rem 0',
                   }}
                 >
-                  <code
+                  <button
+                    onClick={() => onOutputDirectoryChange(path)}
                     style={{
                       flex: 1,
                       fontSize: '0.6875rem',
@@ -586,26 +589,34 @@ export function CreateJobPanel({
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      background: 'none',
+                      border: 'none',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      padding: 0,
                     }}
+                    title={`Use: ${path}`}
                   >
                     {path}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
+                  </button>
+                  <button
                     onClick={() => onRemoveFavorite(path)}
-                    style={{ 
-                      fontSize: '0.625rem', 
-                      color: 'var(--button-danger-bg)',
-                      padding: '0.125rem 0.375rem',
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-dim)',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      padding: '0 0.25rem',
                     }}
+                    title="Remove"
                   >
-                    Remove
-                  </Button>
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
-          </div>
+          </details>
         )}
 
         {/* Action Buttons */}
@@ -624,7 +635,7 @@ export function CreateJobPanel({
             disabled={!canCreate}
             loading={loading}
           >
-            + Add to Render Queue
+            + Add to Queue
           </Button>
           <Button
             variant="secondary"
@@ -636,15 +647,46 @@ export function CreateJobPanel({
           </Button>
         </div>
 
+        {/* Coming Next: Watch Folders (Phase 19 stub) */}
         <div
           style={{
+            marginTop: '1rem',
+            padding: '0.75rem',
+            backgroundColor: 'rgba(59, 130, 246, 0.05)',
+            border: '1px dashed var(--border-primary)',
+            borderRadius: 'var(--radius-sm)',
+          }}
+        >
+          <div style={{
+            fontSize: '0.6875rem',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-sans)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            marginBottom: '0.25rem',
+          }}>
+            Coming next
+          </div>
+          <div style={{
+            fontSize: '0.75rem',
+            color: 'var(--text-secondary)',
+            fontFamily: 'var(--font-sans)',
+          }}>
+            📂 Watch Folders — Auto-queue files from monitored directories
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: '0.75rem',
             fontSize: '0.6875rem',
             color: 'var(--text-dim)',
             fontFamily: 'var(--font-sans)',
             fontStyle: 'italic',
           }}
         >
-          Jobs are added to the queue and can be rendered individually or all at once.
+          Drag & drop files or select manually. Jobs render in queue order.
         </div>
       </div>
     </div>

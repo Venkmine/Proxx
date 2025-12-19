@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 // import electron from 'vite-plugin-electron'
 
 export default defineConfig({
+  // CRITICAL: Use relative paths for Electron production builds (file:// protocol)
+  base: './',
   plugins: [
     react(),
     // Electron plugin temporarily disabled for web-only development
@@ -27,5 +29,7 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    host: '0.0.0.0', // Listen on all interfaces (both IPv4 and IPv6)
+    strictPort: true, // Fail if port is already in use
   },
 })

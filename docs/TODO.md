@@ -19,10 +19,12 @@
 - Phase 15 — Manual job creation & operator ergonomics (explicit manual job creation, multi-select UI, filesystem utilities, path favorites)
 - Phase 16 — Execution Engines (FFmpeg first) (engine abstraction, FFmpegEngine with subprocess, engine binding at job level, FIFO scheduler, UI engine selector)
 - Phase 17 — Deliver Capability Model (full Resolve Deliver parity: DeliverSettings, VideoCapabilities, AudioCapabilities, FileCapabilities, MetadataCapabilities, OverlayCapabilities; engine mapping layer; metadata passthrough defaults ON; token-based naming; persistent Control Panel UI; 2-column layout with authoritative Deliver panel; presets initialize settings; jobs own settings; UI always reflects backend state)
+- Phase 18 — Resolve Engine Integration
+- Phase 19 — Queue Authority, Panel Rebalance, Keyboard Control, Error Correction (3-column layout: Source & Intake LEFT, Render Queue CENTER, Deliver RIGHT; Finder-style keyboard shortcuts: Cmd+Z/Cmd+Shift+Z undo/redo, Cmd+A select all, Esc clear, Delete removes; memory-only undo stack with floating toast; NO confirmation prompts anywhere; global drag & drop with full-viewport scrim; improved error handling preventing [object Object]; requeue job action; Coming next stubs for Watch Folders UI and Overlay Preview)
 
 ## ACTIVE PHASE
 
-- Phase 18 — Resolve Engine Integration
+- Phase 20 — Stability & Polish
 
 ## BLOCKERS / OPEN QUESTIONS
 

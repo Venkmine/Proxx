@@ -58,11 +58,12 @@ interface JobGroupProps {
   onSelect?: () => void
   onRevealClip?: (path: string) => void
   
-  // Actions (Phase 16: Full operator control)
+  // Actions (Phase 16: Full operator control, Phase 19: Requeue)
   onStart?: () => void
   onPause?: () => void
   onResume?: () => void
   onRetryFailed?: () => void
+  onRequeue?: () => void  // Phase 19: Requeue entire job
   onCancel?: () => void
   onDelete?: () => void
   onRebindPreset?: () => void
@@ -105,6 +106,7 @@ export function JobGroup({
   onPause,
   onResume,
   onRetryFailed,
+  onRequeue,  // Phase 19
   onCancel,
   onDelete,
   onRebindPreset,
@@ -155,6 +157,7 @@ export function JobGroup({
   const showPause = normalizedStatus === 'RUNNING'
   const showResume = normalizedStatus === 'RECOVERY_REQUIRED' || normalizedStatus === 'PAUSED'
   const showRetryFailed = failedCount > 0 && ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED'].includes(normalizedStatus)
+  const showRequeue = ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)  // Phase 19
   const showCancel = ['PENDING', 'RUNNING', 'PAUSED', 'RECOVERY_REQUIRED'].includes(normalizedStatus)
   const showDelete = ['PENDING', 'COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
   const showRebind = normalizedStatus === 'PENDING' || normalizedStatus === 'RECOVERY_REQUIRED'
@@ -400,6 +403,17 @@ export function JobGroup({
                     disabled={loading}
                   >
                     🔁 Retry Failed
+                  </Button>
+                )}
+                {showRequeue && onRequeue && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onRequeue}
+                    disabled={loading}
+                    title="Create new job with same settings"
+                  >
+                    ↺ Requeue
                   </Button>
                 )}
                 {showCancel && (

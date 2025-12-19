@@ -19,7 +19,8 @@ app = FastAPI(title="Proxx Backend", version="0.1.0")
 # CORS middleware for frontend access (Phase 14, backend now on 8085)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    # Allow both localhost and 127.0.0.1 forms used by different dev workflows
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # Vite dev server
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

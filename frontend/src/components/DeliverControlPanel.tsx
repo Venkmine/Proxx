@@ -422,7 +422,7 @@ export function DeliverControlPanel({
       width: '340px',
       minWidth: '340px',
       backgroundColor: 'var(--card-bg-solid, rgba(16, 18, 20, 0.95))',
-      borderLeft: '2px solid var(--button-primary-bg, #3B82F6)',
+      /* Removed prominent blue divider to the left of the panel (UX request) */
       boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.25)',
       overflow: 'hidden',
     }}>
@@ -1047,6 +1047,35 @@ export function DeliverControlPanel({
               No text overlays configured
             </div>
           )}
+          
+          {/* Coming Next: Overlay Preview (Phase 19 stub) */}
+          <div
+            style={{
+              marginTop: '0.75rem',
+              padding: '0.5rem 0.75rem',
+              backgroundColor: 'rgba(59, 130, 246, 0.05)',
+              border: '1px dashed var(--border-primary)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+          >
+            <div style={{
+              fontSize: '0.625rem',
+              fontWeight: 600,
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-sans)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              Coming next
+            </div>
+            <div style={{
+              fontSize: '0.6875rem',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
+            }}>
+              🖼️ Graphical preview positioning
+            </div>
+          </div>
         </Section>
       </div>
       
