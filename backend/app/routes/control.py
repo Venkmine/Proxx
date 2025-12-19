@@ -36,11 +36,120 @@ class RebindPresetRequest(BaseModel):
     preset_id: str
 
 
+# ============================================================================
+# DELIVER SETTINGS API MODELS (Phase 17)
+# ============================================================================
+
+class VideoSettingsRequest(BaseModel):
+    """Video capability settings for API."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    codec: str = "prores_422"
+    profile: Optional[str] = None
+    level: Optional[str] = None
+    pixel_format: Optional[str] = None
+    resolution_policy: str = "source"
+    width: Optional[int] = None
+    height: Optional[int] = None
+    scaling_filter: str = "auto"
+    frame_rate_policy: str = "source"
+    frame_rate: Optional[str] = None
+    field_order: str = "progressive"
+    color_space: str = "source"
+    gamma: str = "source"
+    data_levels: str = "source"
+    hdr_metadata_passthrough: bool = True
+    quality: Optional[int] = None
+    bitrate: Optional[str] = None
+    preset: Optional[str] = None
+
+
+class AudioSettingsRequest(BaseModel):
+    """Audio capability settings for API."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    codec: str = "copy"
+    bitrate: Optional[str] = None
+    channels: Optional[int] = None
+    layout: str = "source"
+    sample_rate: Optional[int] = None
+    passthrough: bool = False
+
+
+class FileSettingsRequest(BaseModel):
+    """File output settings for API."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    container: str = "mov"
+    extension: Optional[str] = None
+    naming_template: str = "{source_name}__proxx"
+    prefix: Optional[str] = None
+    suffix: Optional[str] = None
+    overwrite_policy: str = "never"
+    preserve_source_dirs: bool = False
+    preserve_dir_levels: int = 0
+
+
+class MetadataSettingsRequest(BaseModel):
+    """Metadata passthrough settings for API."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    strip_all_metadata: bool = False
+    passthrough_all_container_metadata: bool = True
+    passthrough_timecode: bool = True
+    passthrough_reel_name: bool = True
+    passthrough_camera_metadata: bool = True
+    passthrough_color_metadata: bool = True
+
+
+class TextOverlayRequest(BaseModel):
+    """Text overlay settings for API."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    text: str
+    position: str = "bottom_left"
+    font_size: int = 24
+    opacity: float = 1.0
+    enabled: bool = True
+
+
+class OverlaySettingsRequest(BaseModel):
+    """Overlay settings for API."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    text_layers: List[TextOverlayRequest] = []
+
+
+class DeliverSettingsRequest(BaseModel):
+    """
+    Full DeliverSettings for API (Phase 17).
+    
+    Replaces legacy JobSettingsRequest with complete capability model.
+    """
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    video: Optional[VideoSettingsRequest] = None
+    audio: Optional[AudioSettingsRequest] = None
+    file: Optional[FileSettingsRequest] = None
+    metadata: Optional[MetadataSettingsRequest] = None
+    overlay: Optional[OverlaySettingsRequest] = None
+    output_dir: Optional[str] = None
+
+
+# DEPRECATED: Legacy JobSettingsRequest for backward compatibility
 class JobSettingsRequest(BaseModel):
     """
-    Job settings for Phase 16.4.
+    DEPRECATED: Use DeliverSettingsRequest instead.
     
-    Controls output path, naming, watermark for a job.
+    Legacy job settings for Phase 16.4 compatibility.
+    Will be removed in a future version.
     """
     
     model_config = ConfigDict(extra="forbid")
@@ -56,16 +165,19 @@ class JobSettingsRequest(BaseModel):
 
 
 class CreateJobRequest(BaseModel):
-    """Request body for manual job creation (Phase 15, enhanced in Phase 16)."""
+    """Request body for manual job creation (Phase 15, enhanced in Phase 17)."""
     
     model_config = ConfigDict(extra="forbid")
     
     source_paths: List[str]
     preset_id: str
-    output_base_dir: Optional[str] = None  # Deprecated: use settings.output_dir
-    engine: str = "ffmpeg"  # Phase 16: Explicit engine binding ("ffmpeg" or "resolve")
+    output_base_dir: Optional[str] = None  # Deprecated: use deliver_settings.output_dir
+    engine: str = "ffmpeg"
     
-    # Phase 16.4: Full job settings
+    # Phase 17: Full DeliverSettings
+    deliver_settings: Optional[DeliverSettingsRequest] = None
+    
+    # DEPRECATED: Legacy settings (Phase 16.4 compatibility)
     settings: Optional[JobSettingsRequest] = None
 
 
@@ -300,28 +412,130 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
             engine=engine_type_str,
         )
         
-        # Phase 16.4: Apply job settings
-        from app.jobs.settings import JobSettings
+        # Phase 17: Build DeliverSettings from request
+        from app.deliver.settings import DeliverSettings
+        from app.deliver.capabilities import (
+            VideoCapabilities, AudioCapabilities, FileCapabilities,
+            MetadataCapabilities, OverlayCapabilities, TextOverlay,
+            ResolutionPolicy, FrameRatePolicy, FieldOrder, ColorSpace,
+            GammaTransfer, DataLevels, ScalingFilter, AudioCodec,
+            AudioChannelLayout, OverwritePolicy, TextPosition,
+        )
         
-        if body.settings:
-            job_settings = JobSettings(
+        deliver_settings: DeliverSettings
+        
+        if body.deliver_settings:
+            # New Phase 17 format
+            ds = body.deliver_settings
+            
+            # Build video capabilities
+            video = VideoCapabilities(
+                codec=ds.video.codec if ds.video else "prores_422",
+                profile=ds.video.profile if ds.video else None,
+                level=ds.video.level if ds.video else None,
+                pixel_format=ds.video.pixel_format if ds.video else None,
+                resolution_policy=ResolutionPolicy(ds.video.resolution_policy) if ds.video else ResolutionPolicy.SOURCE,
+                width=ds.video.width if ds.video else None,
+                height=ds.video.height if ds.video else None,
+                scaling_filter=ScalingFilter(ds.video.scaling_filter) if ds.video else ScalingFilter.AUTO,
+                frame_rate_policy=FrameRatePolicy(ds.video.frame_rate_policy) if ds.video else FrameRatePolicy.SOURCE,
+                frame_rate=ds.video.frame_rate if ds.video else None,
+                field_order=FieldOrder(ds.video.field_order) if ds.video else FieldOrder.PROGRESSIVE,
+                color_space=ColorSpace(ds.video.color_space) if ds.video else ColorSpace.SOURCE,
+                gamma=GammaTransfer(ds.video.gamma) if ds.video else GammaTransfer.SOURCE,
+                data_levels=DataLevels(ds.video.data_levels) if ds.video else DataLevels.SOURCE,
+                hdr_metadata_passthrough=ds.video.hdr_metadata_passthrough if ds.video else True,
+                quality=ds.video.quality if ds.video else None,
+                bitrate=ds.video.bitrate if ds.video else None,
+                preset=ds.video.preset if ds.video else None,
+            ) if ds.video else VideoCapabilities()
+            
+            # Build audio capabilities
+            audio = AudioCapabilities(
+                codec=AudioCodec(ds.audio.codec) if ds.audio else AudioCodec.COPY,
+                bitrate=ds.audio.bitrate if ds.audio else None,
+                channels=ds.audio.channels if ds.audio else None,
+                layout=AudioChannelLayout(ds.audio.layout) if ds.audio else AudioChannelLayout.SOURCE,
+                sample_rate=ds.audio.sample_rate if ds.audio else None,
+                passthrough=ds.audio.passthrough if ds.audio else False,
+            ) if ds.audio else AudioCapabilities()
+            
+            # Build file capabilities
+            file_caps = FileCapabilities(
+                container=ds.file.container if ds.file else "mov",
+                extension=ds.file.extension if ds.file else None,
+                naming_template=ds.file.naming_template if ds.file else "{source_name}__proxx",
+                prefix=ds.file.prefix if ds.file else None,
+                suffix=ds.file.suffix if ds.file else None,
+                overwrite_policy=OverwritePolicy(ds.file.overwrite_policy) if ds.file else OverwritePolicy.NEVER,
+                preserve_source_dirs=ds.file.preserve_source_dirs if ds.file else False,
+                preserve_dir_levels=ds.file.preserve_dir_levels if ds.file else 0,
+            ) if ds.file else FileCapabilities()
+            
+            # Build metadata capabilities
+            metadata = MetadataCapabilities(
+                strip_all_metadata=ds.metadata.strip_all_metadata if ds.metadata else False,
+                passthrough_all_container_metadata=ds.metadata.passthrough_all_container_metadata if ds.metadata else True,
+                passthrough_timecode=ds.metadata.passthrough_timecode if ds.metadata else True,
+                passthrough_reel_name=ds.metadata.passthrough_reel_name if ds.metadata else True,
+                passthrough_camera_metadata=ds.metadata.passthrough_camera_metadata if ds.metadata else True,
+                passthrough_color_metadata=ds.metadata.passthrough_color_metadata if ds.metadata else True,
+            ) if ds.metadata else MetadataCapabilities()
+            
+            # Build overlay capabilities
+            text_layers: tuple[TextOverlay, ...] = ()
+            if ds.overlay and ds.overlay.text_layers:
+                text_layers = tuple(
+                    TextOverlay(
+                        text=layer.text,
+                        position=TextPosition(layer.position),
+                        font_size=layer.font_size,
+                        opacity=layer.opacity,
+                        enabled=layer.enabled,
+                    )
+                    for layer in ds.overlay.text_layers
+                )
+            overlay = OverlayCapabilities(text_layers=text_layers)
+            
+            deliver_settings = DeliverSettings(
+                video=video,
+                audio=audio,
+                file=file_caps,
+                metadata=metadata,
+                overlay=overlay,
+                output_dir=ds.output_dir,
+            )
+        elif body.settings:
+            # Legacy Phase 16.4 format - convert to DeliverSettings
+            text_layers: tuple[TextOverlay, ...] = ()
+            if body.settings.watermark_enabled and body.settings.watermark_text:
+                text_layers = (
+                    TextOverlay(
+                        text=body.settings.watermark_text,
+                        position=TextPosition.BOTTOM_LEFT,
+                        enabled=True,
+                    ),
+                )
+            
+            deliver_settings = DeliverSettings(
+                file=FileCapabilities(
+                    naming_template=body.settings.naming_template,
+                    prefix=body.settings.file_prefix,
+                    suffix=body.settings.file_suffix,
+                    preserve_source_dirs=body.settings.preserve_source_dirs,
+                    preserve_dir_levels=body.settings.preserve_dir_levels,
+                ),
+                overlay=OverlayCapabilities(text_layers=text_layers),
                 output_dir=body.settings.output_dir,
-                naming_template=body.settings.naming_template,
-                file_prefix=body.settings.file_prefix,
-                file_suffix=body.settings.file_suffix,
-                preserve_source_dirs=body.settings.preserve_source_dirs,
-                preserve_dir_levels=body.settings.preserve_dir_levels,
-                watermark_enabled=body.settings.watermark_enabled,
-                watermark_text=body.settings.watermark_text,
             )
         elif output_dir:
             # Legacy: only output_base_dir was provided
-            job_settings = JobSettings(output_dir=output_dir)
+            deliver_settings = DeliverSettings(output_dir=output_dir)
         else:
             # Use defaults
-            job_settings = JobSettings()
+            deliver_settings = DeliverSettings()
         
-        job.settings_dict = job_settings.to_dict()
+        job.settings_dict = deliver_settings.to_dict()
         
         # Register the job
         job_registry.add_job(job)
@@ -486,22 +700,37 @@ async def update_job_settings_endpoint(
         if job.status != JobStatus.PENDING:
             raise HTTPException(
                 status_code=400,
-                detail=f"Job settings cannot be modified after render has started. "
+                detail=f"DeliverSettings cannot be modified after render has started. "
                        f"Current status: {job.status.value}"
             )
         
-        # Create new settings
-        from app.jobs.settings import JobSettings
+        # Phase 17: Convert legacy JobSettingsRequest to DeliverSettings
+        from app.deliver.settings import DeliverSettings
+        from app.deliver.capabilities import (
+            FileCapabilities, OverlayCapabilities, TextOverlay, TextPosition,
+        )
         
-        new_settings = JobSettings(
+        # Build text overlays from legacy watermark
+        text_layers: tuple[TextOverlay, ...] = ()
+        if body.watermark_enabled and body.watermark_text:
+            text_layers = (
+                TextOverlay(
+                    text=body.watermark_text,
+                    position=TextPosition.BOTTOM_LEFT,
+                    enabled=True,
+                ),
+            )
+        
+        new_settings = DeliverSettings(
+            file=FileCapabilities(
+                naming_template=body.naming_template,
+                prefix=body.file_prefix,
+                suffix=body.file_suffix,
+                preserve_source_dirs=body.preserve_source_dirs,
+                preserve_dir_levels=body.preserve_dir_levels,
+            ),
+            overlay=OverlayCapabilities(text_layers=text_layers),
             output_dir=body.output_dir,
-            naming_template=body.naming_template,
-            file_prefix=body.file_prefix,
-            file_suffix=body.file_suffix,
-            preserve_source_dirs=body.preserve_source_dirs,
-            preserve_dir_levels=body.preserve_dir_levels,
-            watermark_enabled=body.watermark_enabled,
-            watermark_text=body.watermark_text,
         )
         
         # Apply via update_settings (also enforces PENDING check)
@@ -523,18 +752,208 @@ async def update_job_settings_endpoint(
         raise HTTPException(status_code=500, detail=f"Settings update failed: {e}")
 
 
+@router.put("/jobs/{job_id}/deliver-settings", response_model=OperationResponse)
+async def update_deliver_settings_endpoint(
+    job_id: str,
+    body: DeliverSettingsRequest,
+    request: Request,
+):
+    """
+    Update job DeliverSettings (Phase 17).
+    
+    Settings can ONLY be modified while job.status == PENDING.
+    Backend enforcement: mutation attempts on non-PENDING jobs are rejected.
+    
+    Args:
+        job_id: Job identifier
+        body: New deliver settings
+        
+    Returns:
+        Operation result
+        
+    Raises:
+        400: Job not in PENDING state (immutability violation)
+        404: Job not found
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        
+        # BACKEND ENFORCEMENT: Immutability after render starts
+        from app.jobs.models import JobStatus
+        if job.status != JobStatus.PENDING:
+            raise HTTPException(
+                status_code=400,
+                detail=f"DeliverSettings cannot be modified after render has started. "
+                       f"Current status: {job.status.value}"
+            )
+        
+        # Build DeliverSettings from request
+        from app.deliver.settings import DeliverSettings
+        from app.deliver.capabilities import (
+            VideoCapabilities, AudioCapabilities, FileCapabilities,
+            MetadataCapabilities, OverlayCapabilities, TextOverlay,
+            ResolutionPolicy, FrameRatePolicy, FieldOrder, ColorSpace,
+            GammaTransfer, DataLevels, ScalingFilter, AudioCodec,
+            AudioChannelLayout, OverwritePolicy, TextPosition,
+        )
+        
+        # Build video capabilities
+        video = VideoCapabilities(
+            codec=body.video.codec if body.video else "prores_422",
+            profile=body.video.profile if body.video else None,
+            level=body.video.level if body.video else None,
+            pixel_format=body.video.pixel_format if body.video else None,
+            resolution_policy=ResolutionPolicy(body.video.resolution_policy) if body.video else ResolutionPolicy.SOURCE,
+            width=body.video.width if body.video else None,
+            height=body.video.height if body.video else None,
+            scaling_filter=ScalingFilter(body.video.scaling_filter) if body.video else ScalingFilter.AUTO,
+            frame_rate_policy=FrameRatePolicy(body.video.frame_rate_policy) if body.video else FrameRatePolicy.SOURCE,
+            frame_rate=body.video.frame_rate if body.video else None,
+            field_order=FieldOrder(body.video.field_order) if body.video else FieldOrder.PROGRESSIVE,
+            color_space=ColorSpace(body.video.color_space) if body.video else ColorSpace.SOURCE,
+            gamma=GammaTransfer(body.video.gamma) if body.video else GammaTransfer.SOURCE,
+            data_levels=DataLevels(body.video.data_levels) if body.video else DataLevels.SOURCE,
+            hdr_metadata_passthrough=body.video.hdr_metadata_passthrough if body.video else True,
+            quality=body.video.quality if body.video else None,
+            bitrate=body.video.bitrate if body.video else None,
+            preset=body.video.preset if body.video else None,
+        ) if body.video else VideoCapabilities()
+        
+        # Build audio capabilities
+        audio = AudioCapabilities(
+            codec=AudioCodec(body.audio.codec) if body.audio else AudioCodec.COPY,
+            bitrate=body.audio.bitrate if body.audio else None,
+            channels=body.audio.channels if body.audio else None,
+            layout=AudioChannelLayout(body.audio.layout) if body.audio else AudioChannelLayout.SOURCE,
+            sample_rate=body.audio.sample_rate if body.audio else None,
+            passthrough=body.audio.passthrough if body.audio else False,
+        ) if body.audio else AudioCapabilities()
+        
+        # Build file capabilities
+        file_caps = FileCapabilities(
+            container=body.file.container if body.file else "mov",
+            extension=body.file.extension if body.file else None,
+            naming_template=body.file.naming_template if body.file else "{source_name}__proxx",
+            prefix=body.file.prefix if body.file else None,
+            suffix=body.file.suffix if body.file else None,
+            overwrite_policy=OverwritePolicy(body.file.overwrite_policy) if body.file else OverwritePolicy.NEVER,
+            preserve_source_dirs=body.file.preserve_source_dirs if body.file else False,
+            preserve_dir_levels=body.file.preserve_dir_levels if body.file else 0,
+        ) if body.file else FileCapabilities()
+        
+        # Build metadata capabilities
+        metadata = MetadataCapabilities(
+            strip_all_metadata=body.metadata.strip_all_metadata if body.metadata else False,
+            passthrough_all_container_metadata=body.metadata.passthrough_all_container_metadata if body.metadata else True,
+            passthrough_timecode=body.metadata.passthrough_timecode if body.metadata else True,
+            passthrough_reel_name=body.metadata.passthrough_reel_name if body.metadata else True,
+            passthrough_camera_metadata=body.metadata.passthrough_camera_metadata if body.metadata else True,
+            passthrough_color_metadata=body.metadata.passthrough_color_metadata if body.metadata else True,
+        ) if body.metadata else MetadataCapabilities()
+        
+        # Build overlay capabilities
+        text_layers: tuple[TextOverlay, ...] = ()
+        if body.overlay and body.overlay.text_layers:
+            text_layers = tuple(
+                TextOverlay(
+                    text=layer.text,
+                    position=TextPosition(layer.position),
+                    font_size=layer.font_size,
+                    opacity=layer.opacity,
+                    enabled=layer.enabled,
+                )
+                for layer in body.overlay.text_layers
+            )
+        overlay = OverlayCapabilities(text_layers=text_layers)
+        
+        new_settings = DeliverSettings(
+            video=video,
+            audio=audio,
+            file=file_caps,
+            metadata=metadata,
+            overlay=overlay,
+            output_dir=body.output_dir,
+        )
+        
+        # Apply settings (update_settings also enforces PENDING check)
+        job.update_settings(new_settings)
+        
+        logger.info(f"Job {job_id} DeliverSettings updated: output_dir='{body.output_dir}'")
+        
+        return OperationResponse(
+            success=True,
+            message=f"DeliverSettings updated successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"DeliverSettings update failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"DeliverSettings update failed: {e}")
+
+
 @router.get("/jobs/{job_id}/settings")
 async def get_job_settings_endpoint(job_id: str, request: Request):
     """
-    Get current job settings.
+    Get current job settings (legacy format).
     
-    Phase 16.4: Returns the current settings for a job.
+    DEPRECATED: Use GET /jobs/{job_id}/deliver-settings instead.
     
     Args:
         job_id: Job identifier
         
     Returns:
-        Current job settings
+        Current job settings in legacy format
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        
+        settings = job.settings
+        
+        # Convert DeliverSettings to legacy format for backward compatibility
+        # Check for text overlays to simulate watermark
+        watermark_enabled = len(settings.overlay.text_layers) > 0
+        watermark_text = settings.overlay.text_layers[0].text if watermark_enabled else None
+        
+        return {
+            "output_dir": settings.output_dir,
+            "naming_template": settings.file.naming_template,
+            "file_prefix": settings.file.prefix,
+            "file_suffix": settings.file.suffix,
+            "preserve_source_dirs": settings.file.preserve_source_dirs,
+            "preserve_dir_levels": settings.file.preserve_dir_levels,
+            "watermark_enabled": watermark_enabled,
+            "watermark_text": watermark_text,
+            "is_editable": job.status.value == "pending",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get settings failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Get settings failed: {e}")
+
+
+@router.get("/jobs/{job_id}/deliver-settings")
+async def get_deliver_settings_endpoint(job_id: str, request: Request):
+    """
+    Get current DeliverSettings for a job (Phase 17).
+    
+    Args:
+        job_id: Job identifier
+        
+    Returns:
+        Full DeliverSettings structure
     """
     try:
         job_registry = request.app.state.job_registry
@@ -546,22 +965,73 @@ async def get_job_settings_endpoint(job_id: str, request: Request):
         settings = job.settings
         
         return {
+            "video": {
+                "codec": settings.video.codec,
+                "profile": settings.video.profile,
+                "level": settings.video.level,
+                "pixel_format": settings.video.pixel_format,
+                "resolution_policy": settings.video.resolution_policy.value,
+                "width": settings.video.width,
+                "height": settings.video.height,
+                "scaling_filter": settings.video.scaling_filter.value,
+                "frame_rate_policy": settings.video.frame_rate_policy.value,
+                "frame_rate": settings.video.frame_rate,
+                "field_order": settings.video.field_order.value,
+                "color_space": settings.video.color_space.value,
+                "gamma": settings.video.gamma.value,
+                "data_levels": settings.video.data_levels.value,
+                "hdr_metadata_passthrough": settings.video.hdr_metadata_passthrough,
+                "quality": settings.video.quality,
+                "bitrate": settings.video.bitrate,
+                "preset": settings.video.preset,
+            },
+            "audio": {
+                "codec": settings.audio.codec.value,
+                "bitrate": settings.audio.bitrate,
+                "channels": settings.audio.channels,
+                "layout": settings.audio.layout.value,
+                "sample_rate": settings.audio.sample_rate,
+                "passthrough": settings.audio.passthrough,
+            },
+            "file": {
+                "container": settings.file.container,
+                "extension": settings.file.extension,
+                "naming_template": settings.file.naming_template,
+                "prefix": settings.file.prefix,
+                "suffix": settings.file.suffix,
+                "overwrite_policy": settings.file.overwrite_policy.value,
+                "preserve_source_dirs": settings.file.preserve_source_dirs,
+                "preserve_dir_levels": settings.file.preserve_dir_levels,
+            },
+            "metadata": {
+                "strip_all_metadata": settings.metadata.strip_all_metadata,
+                "passthrough_all_container_metadata": settings.metadata.passthrough_all_container_metadata,
+                "passthrough_timecode": settings.metadata.passthrough_timecode,
+                "passthrough_reel_name": settings.metadata.passthrough_reel_name,
+                "passthrough_camera_metadata": settings.metadata.passthrough_camera_metadata,
+                "passthrough_color_metadata": settings.metadata.passthrough_color_metadata,
+            },
+            "overlay": {
+                "text_layers": [
+                    {
+                        "text": layer.text,
+                        "position": layer.position.value,
+                        "font_size": layer.font_size,
+                        "opacity": layer.opacity,
+                        "enabled": layer.enabled,
+                    }
+                    for layer in settings.overlay.text_layers
+                ],
+            },
             "output_dir": settings.output_dir,
-            "naming_template": settings.naming_template,
-            "file_prefix": settings.file_prefix,
-            "file_suffix": settings.file_suffix,
-            "preserve_source_dirs": settings.preserve_source_dirs,
-            "preserve_dir_levels": settings.preserve_dir_levels,
-            "watermark_enabled": settings.watermark_enabled,
-            "watermark_text": settings.watermark_text,
             "is_editable": job.status.value == "pending",
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Get settings failed for job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Get settings failed: {e}")
+        logger.error(f"Get DeliverSettings failed for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Get DeliverSettings failed: {e}")
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=OperationResponse)

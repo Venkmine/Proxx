@@ -9,6 +9,7 @@ All models use Pydantic for validation.
 State transitions are validated externally (see state.py).
 
 Phase 16: Engine binding at JOB level only (not clip level).
+Phase 17: DeliverSettings replaces JobSettings (breaking rename).
 """
 
 import uuid
@@ -20,8 +21,9 @@ from pydantic import BaseModel, ConfigDict, Field
 if TYPE_CHECKING:
     from ..execution.base import EngineType
 
-# JobSettings is defined in jobs/settings.py; import here for the `settings` property
-from .settings import JobSettings, DEFAULT_JOB_SETTINGS
+# DeliverSettings is the canonical settings type (Phase 17)
+# Legacy JobSettings alias maintained in settings.py for migration
+from .settings import DeliverSettings, DEFAULT_DELIVER_SETTINGS
 
 
 class JobStatus(str, Enum):
@@ -131,30 +133,37 @@ class Job(BaseModel):
     # State
     status: JobStatus = JobStatus.PENDING
     
-    # Phase 16.4: Job settings (output dir, naming, watermark)
+    # Phase 17: DeliverSettings (output dir, naming, metadata, overlays)
     # Stored as dict for Pydantic compatibility, accessed via property
+    # BREAKING RENAME: settings_dict contains DeliverSettings, not JobSettings
     settings_dict: Dict[str, Any] = Field(default_factory=dict)
     
     @property
-    def settings(self) -> JobSettings:
-        """Get JobSettings from stored dict."""
+    def settings(self) -> DeliverSettings:
+        """Get DeliverSettings from stored dict."""
         if not self.settings_dict:
-            return DEFAULT_JOB_SETTINGS
-        return JobSettings.from_dict(self.settings_dict)
+            return DEFAULT_DELIVER_SETTINGS
+        # Handle legacy JobSettings format during migration
+        if "video" not in self.settings_dict and "naming_template" in self.settings_dict:
+            return DeliverSettings.from_legacy_job_settings(self.settings_dict)
+        return DeliverSettings.from_dict(self.settings_dict)
     
-    def update_settings(self, new_settings: JobSettings) -> None:
+    def update_settings(self, new_settings: DeliverSettings) -> None:
         """
         Update job settings.
         
-        Phase 16.4: Settings are ONLY editable while job.status == PENDING.
+        Phase 17: Settings are ONLY editable while job.status == PENDING.
         Once any clip enters RUNNING, settings are frozen.
+        
+        BACKEND ENFORCEMENT: This is the authoritative guard.
+        UI disabling alone is insufficient.
         
         Raises:
             ValueError: If job is not in PENDING state
         """
         if self.status != JobStatus.PENDING:
             raise ValueError(
-                f"Job settings cannot be modified after render has started. "
+                f"DeliverSettings cannot be modified after render has started. "
                 f"Current status: {self.status.value}"
             )
         self.settings_dict = new_settings.to_dict()

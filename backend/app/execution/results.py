@@ -18,11 +18,15 @@ class ExecutionStatus(str, Enum):
     SUCCESS: Render completed, output verified
     SUCCESS_WITH_WARNINGS: Render completed but with non-blocking warnings
     FAILED: Execution failed at any stage
+    CANCELLED: Execution was cancelled by operator
+    COMPLETED: Alias for SUCCESS (legacy compatibility)
     """
     
     SUCCESS = "success"
     SUCCESS_WITH_WARNINGS = "success_with_warnings"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"  # Legacy alias for SUCCESS
 
 
 class ExecutionResult(BaseModel):
@@ -77,7 +81,7 @@ class ExecutionResult(BaseModel):
             if duration is not None:
                 duration_str = f" ({duration:.1f}s)"
         
-        if self.status == ExecutionStatus.SUCCESS:
+        if self.status in (ExecutionStatus.SUCCESS, ExecutionStatus.COMPLETED):
             return f"SUCCESS{duration_str}: {self.source_path} → {self.output_path}"
         
         elif self.status == ExecutionStatus.SUCCESS_WITH_WARNINGS:
@@ -87,4 +91,7 @@ class ExecutionResult(BaseModel):
         elif self.status == ExecutionStatus.FAILED:
             return f"FAILED{duration_str}: {self.source_path} - {self.failure_reason}"
         
-        return f"{self.status.upper()}: {self.source_path}"
+        elif self.status == ExecutionStatus.CANCELLED:
+            return f"CANCELLED{duration_str}: {self.source_path}"
+        
+        return f"{self.status.value.upper()}: {self.source_path}"

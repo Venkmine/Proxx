@@ -1967,13 +1967,270 @@ class Job(BaseModel):
 
 Engine is set at creation and cannot be changed. All clips in a job use the same engine (no mixed-engine jobs).
 
-### Not Yet Implemented
+### Not Yet Implemented (Phase 16)
 
 The following are deferred to future phases:
 - Progress parsing (Phase 17+)
-- Resolve engine integration (Phase 17)
-- Parallel clip execution (Phase 17+)
+- Resolve engine integration (Phase 18)
+- Parallel clip execution (Phase 18+)
 - Multi-node distribution (Phase 20+)
+
+## Deliver Capability Model (Phase 17)
+
+Phase 17 introduces a **canonical Deliver capability model** that achieves functional parity with DaVinci Resolve's Deliver page while remaining engine-agnostic. The system follows four non-negotiable principles:
+
+- **Explicit**: No feature without explicit operator configuration
+- **Deterministic**: Same inputs always produce same outputs
+- **Operator-controlled**: Operators decide everything, system decides nothing
+- **Engine-agnostic (FFmpeg first)**: Capabilities are pure data, engines interpret them
+
+### DeliverCapabilities
+
+All capabilities are **frozen dataclasses** (immutable) representing pure data with no engine-specific content:
+
+```python
+@dataclass(frozen=True)
+class VideoCapabilities:
+    codec: str = "prores"
+    codec_variant: str = "422"
+    resolution_mode: str = "source"
+    # ... width, height, scaling_algorithm
+
+@dataclass(frozen=True)
+class AudioCapabilities:
+    codec: str = "pcm"
+    sample_rate: int = 48000
+    channels: str = "source"
+    # ... bit_depth, passthrough_audio
+
+@dataclass(frozen=True)
+class FileCapabilities:
+    container: str = "mov"
+    naming_template: str = "{source_name}_proxy"
+    folder_rule: str = "single_folder"
+    # ... subfolder_pattern, handle_existing
+
+@dataclass(frozen=True)
+class MetadataCapabilities:
+    # All passthrough flags default TRUE (operator must opt-out)
+    strip_all_metadata: bool = False  # Master override
+    passthrough_timecode: bool = True
+    passthrough_reel_name: bool = True
+    passthrough_camera_metadata: bool = True
+    passthrough_color_metadata: bool = True
+    passthrough_audio_metadata: bool = True
+
+@dataclass(frozen=True)
+class OverlayCapabilities:
+    enabled: bool = False
+    text_overlays: Tuple[TextOverlay, ...] = ()
+    # Image overlays and safe guides deferred to future phase
+```
+
+Location: `backend/app/deliver/capabilities.py`
+
+### DeliverSettings
+
+`DeliverSettings` composes all capability models into a single configuration object:
+
+```python
+@dataclass(frozen=True)
+class DeliverSettings:
+    video: VideoCapabilities
+    audio: AudioCapabilities
+    file: FileCapabilities
+    metadata: MetadataCapabilities
+    overlay: OverlayCapabilities
+    output_dir: str = ""
+```
+
+Key methods:
+- `to_dict()` / `from_dict()`: Serialization for persistence
+- `with_updates()`: Creates new instance with partial updates (immutable)
+- `from_legacy_job_settings()`: Migration from Phase 16 JobSettings format
+
+Location: `backend/app/deliver/settings.py`
+
+### Engine Mapping Layer
+
+The **only place** where engine-specific interpretation happens. Engines never read UI state or guess settings.
+
+```python
+class FFmpegEngineMapper:
+    """Translates DeliverCapabilities → FFmpeg CLI arguments."""
+    
+    def map_to_ffmpeg(
+        settings: DeliverSettings,
+        source_path: str,
+        output_path: str
+    ) -> FFmpegMappingResult:
+        # Returns command args + warnings for unsupported capabilities
+```
+
+Supported mappings:
+- Video codec (ProRes, DNxHR, DNxHD, H.264)
+- Audio codec (PCM, AAC)
+- Metadata passthrough flags → `-map_metadata`, `-movflags use_metadata_tags`
+- Text overlays → `drawtext` filter
+- Resolution/scaling → scale filter
+
+Location: `backend/app/deliver/engine_mapping.py`
+
+### Token-Based Naming Resolution
+
+Naming resolution and path resolution are **separate steps** (Amendment C):
+
+**Step 1 - Naming** (`naming.py`):
+```python
+SUPPORTED_TOKENS = [
+    "{source_name}",     # Original filename without extension
+    "{date}",            # YYYYMMDD
+    "{time}",            # HHMMSS
+    "{resolution}",      # e.g., "1920x1080"
+    "{codec}",           # e.g., "prores_422"
+    "{job_id}",          # Short job ID
+    "{clip_index}",      # 0-padded index
+]
+
+def resolve_filename(template: str, context: NamingContext) -> str:
+    """Resolves naming template → final filename (no extension)."""
+```
+
+**Step 2 - Paths** (`paths.py`):
+```python
+def resolve_output_path(
+    settings: DeliverSettings,
+    source_path: str,
+    context: PathContext
+) -> str:
+    """Combines naming + folder rules → full output path."""
+```
+
+Location: `backend/app/deliver/naming.py`, `backend/app/deliver/paths.py`
+
+### Metadata Passthrough
+
+**Metadata passthrough is ON by default** (Amendment E). Operators must explicitly opt-out.
+
+Behavior:
+- `strip_all_metadata=False` (default): All passthrough flags respected
+- `strip_all_metadata=True`: Overrides all passthrough flags, strips everything
+
+FFmpeg mapping:
+- Timecode: `-timecode`, `-metadata:s:v:0 timecode=`
+- Color metadata: `-colorspace`, `-color_primaries`, `-color_trc`
+- Audio metadata: `-map_metadata:s:a`
+- General: `-map_metadata 0`, `-movflags use_metadata_tags`
+
+**No silent metadata loss** (Amendment F): If a capability cannot be honored by the engine, the mapping layer emits a warning that surfaces to operator.
+
+### Immutability Enforcement
+
+**DeliverSettings are immutable after render starts** (Amendment B). Backend enforces this:
+
+```python
+@router.put("/jobs/{job_id}/deliver-settings")
+async def update_deliver_settings(job_id: str, request: DeliverSettingsRequest):
+    job = get_job(job_id)
+    if job.status != JobStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail="DeliverSettings cannot be modified after render has started"
+        )
+    # ... update settings
+```
+
+Frontend shows read-only display for non-PENDING jobs.
+
+### Breaking Rename: JobSettings → DeliverSettings
+
+**In-place rename, no legacy API support** (Amendment D):
+
+- `backend/app/jobs/settings.py` re-exports `DeliverSettings` with legacy alias
+- Job model's `settings` property returns `DeliverSettings`, auto-migrates legacy format
+- No `/api/v1/job-settings` endpoint maintained
+
+### Persistent Control Panel UI
+
+Replaces modal dialogs with an always-visible control surface:
+
+```
+┌─ Deliver Control Panel ────────────────────────────┐
+│ Job: abc123 (PENDING)                              │
+├─ Video ────────────────────────────────────────────┤
+│ Codec: ProRes 422    Resolution: Source            │
+├─ Audio ────────────────────────────────────────────┤
+│ Codec: PCM           Sample Rate: 48000Hz          │
+├─ File ─────────────────────────────────────────────┤
+│ Container: MOV       Naming: {source_name}_proxy   │
+├─ Metadata ─────────────────────────────────────────┤
+│ ✓ Timecode  ✓ Reel Name  ✓ Camera  ✓ Color  ✓ Audio│
+│ ☐ Strip All Metadata (overrides above)             │
+├─ Overlays ─────────────────────────────────────────┤
+│ ☐ Enable Overlays    [Add Text Overlay]            │
+└────────────────────────────────────────────────────┘
+```
+
+Location: `frontend/src/components/DeliverControlPanel.tsx`
+
+### API Changes
+
+**New Endpoints:**
+- `GET /jobs/{job_id}/deliver-settings` - Get current settings
+- `PUT /jobs/{job_id}/deliver-settings` - Update settings (PENDING only)
+
+**Request Models:**
+```python
+class VideoSettingsRequest(BaseModel):
+    codec: Optional[str] = None
+    codec_variant: Optional[str] = None
+    resolution_mode: Optional[str] = None
+    # ... partial updates allowed
+
+class DeliverSettingsRequest(BaseModel):
+    video: Optional[VideoSettingsRequest] = None
+    audio: Optional[AudioSettingsRequest] = None
+    file: Optional[FileSettingsRequest] = None
+    metadata: Optional[MetadataSettingsRequest] = None
+    output_dir: Optional[str] = None
+```
+
+### FFmpeg Engine Integration
+
+FFmpegEngine updated with new method:
+
+```python
+def run_clip_with_deliver_settings(
+    self,
+    task: ClipTask,
+    settings: DeliverSettings,
+    context: PathContext
+) -> ExecutionResult:
+    # Uses engine_mapping for translation
+    # Emits warnings for unsupported capabilities
+    # Returns COMPLETED, FAILED, or CANCELLED
+```
+
+### Overlay Scope Lock (Amendment G)
+
+Phase 17 implements **text overlays only**:
+- Position (x, y)
+- Text content (static or token-based)
+- Font, size, color, opacity
+
+**Deferred to future phase:**
+- Image overlays / burn-in logos
+- Safe area guides
+- Timecode burn-in (separate from text overlays)
+
+### What Phase 17 Does NOT Include
+
+- Resolve engine integration (Phase 18)
+- Image overlays and burn-in logos
+- Safe area guides
+- Timecode burn-in as distinct feature
+- Multi-node distribution
+- Progress parsing with deliver settings
 
 ## Out of Scope (Current)
 

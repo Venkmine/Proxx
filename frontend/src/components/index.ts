@@ -21,5 +21,8 @@ export { ClipRow } from './ClipRow'
 export { JobGroup } from './JobGroup'
 export { CreateJobPanel } from './CreateJobPanel'
 
+// Phase 17: Deliver Control Panel (replaces modal settings)
+export { DeliverControlPanel } from './DeliverControlPanel'
+
 // Electron components
 export { TitleBar } from './TitleBar'

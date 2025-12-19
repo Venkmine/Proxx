@@ -4,6 +4,7 @@ FFmpeg execution engine.
 Phase 16: Real transcoding via subprocess.Popen.
 Phase 16.1: Uses ResolvedPresetParams only - no CategoryPreset leakage.
 Phase 16.4: Progress parsing, resolved output paths, watermark support.
+Phase 17: DeliverSettings integration with engine_mapping layer.
 
 Design rules:
 - One subprocess per clip
@@ -12,7 +13,9 @@ Design rules:
 - Non-zero exit code = FAILED
 - SIGTERM → SIGKILL escalation for cancellation
 - Engine receives RESOLVED output_path - NEVER constructs paths
-- Watermark via drawtext filter if enabled in JobSettings
+- Engine receives DeliverSettings via engine_mapping translation
+- Metadata passthrough is ON by default (editor-trust-critical)
+- Text overlays via drawtext filter (Phase 17 scope: text only)
 """
 
 import logging
@@ -40,6 +43,7 @@ from .resolved_params import ResolvedPresetParams, DEFAULT_H264_PARAMS
 if TYPE_CHECKING:
     from ..jobs.models import Job, ClipTask
     from ..presets.registry import PresetRegistry
+    from ..deliver.settings import DeliverSettings
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +298,259 @@ class FFmpegEngine(ExecutionEngine):
         cmd.append(output_path)
         
         return cmd
+    
+    def _build_command_from_deliver_settings(
+        self,
+        source_path: str,
+        output_path: str,
+        deliver_settings: "DeliverSettings",
+        source_width: Optional[int] = None,
+        source_height: Optional[int] = None,
+        source_timecode: Optional[str] = None,
+    ) -> tuple[List[str], List[str]]:
+        """
+        Build FFmpeg command from DeliverSettings via engine_mapping.
+        
+        Phase 17: This method uses the engine_mapping layer to translate
+        DeliverSettings into FFmpeg arguments. This is the preferred method
+        for new code.
+        
+        Args:
+            source_path: Path to source file
+            output_path: Resolved output path (engine uses verbatim)
+            deliver_settings: Complete DeliverSettings
+            source_width: Source video width for scaling
+            source_height: Source video height for scaling
+            source_timecode: Source timecode for burn-in
+            
+        Returns:
+            (command_list, warnings_list) - FFmpeg command and any mapping warnings
+        """
+        from ..deliver.engine_mapping import map_to_ffmpeg
+        
+        # Map settings to FFmpeg arguments
+        mapping_result = map_to_ffmpeg(
+            settings=deliver_settings,
+            source_width=source_width,
+            source_height=source_height,
+            source_timecode=source_timecode,
+        )
+        
+        # Log any warnings
+        warnings = []
+        for warning in mapping_result.warnings:
+            warning_msg = f"{warning.capability}: {warning.message}"
+            if warning.fallback:
+                warning_msg += f" (fallback: {warning.fallback})"
+            logger.warning(f"[FFmpeg] Capability warning: {warning_msg}")
+            warnings.append(warning_msg)
+        
+        # Build complete command
+        ffmpeg_path = self._find_ffmpeg()
+        if not ffmpeg_path:
+            raise EngineExecutionError(
+                EngineType.FFMPEG,
+                "unknown",
+                stderr="FFmpeg not found"
+            )
+        
+        cmd = mapping_result.build_command(ffmpeg_path, source_path, output_path)
+        
+        return cmd, warnings
+    
+    def run_clip_with_deliver_settings(
+        self,
+        task: "ClipTask",
+        deliver_settings: "DeliverSettings",
+        output_path: str,
+        on_progress: Optional[Callable[[ProgressInfo], None]] = None,
+    ) -> ExecutionResult:
+        """
+        Execute a clip using DeliverSettings (Phase 17).
+        
+        This is the preferred method for executing clips with the full
+        capability model. Uses engine_mapping for translation.
+        
+        Args:
+            task: ClipTask with source path and metadata
+            deliver_settings: Complete DeliverSettings
+            output_path: Resolved output path (engine uses verbatim)
+            on_progress: Optional progress callback
+            
+        Returns:
+            ExecutionResult with status, warnings, timing
+        """
+        start_time = datetime.now()
+        source_path = task.source_path
+        
+        # Ensure output directory exists
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Build command from DeliverSettings
+        try:
+            cmd, warnings = self._build_command_from_deliver_settings(
+                source_path=source_path,
+                output_path=output_path,
+                deliver_settings=deliver_settings,
+                source_width=task.width,
+                source_height=task.height,
+                source_timecode=None,  # TODO: Extract from metadata
+            )
+        except Exception as e:
+            return ExecutionResult(
+                status=ExecutionStatus.FAILED,
+                source_path=source_path,
+                output_path=None,
+                failure_reason=f"Failed to build FFmpeg command: {e}",
+                started_at=start_time,
+                completed_at=datetime.now(),
+            )
+        
+        # Execute using existing subprocess infrastructure
+        return self._execute_ffmpeg_command(
+            task=task,
+            cmd=cmd,
+            output_path=output_path,
+            start_time=start_time,
+            on_progress=on_progress,
+            warnings=warnings,
+        )
+    
+    def _execute_ffmpeg_command(
+        self,
+        task: "ClipTask",
+        cmd: List[str],
+        output_path: str,
+        start_time: datetime,
+        on_progress: Optional[Callable[[ProgressInfo], None]] = None,
+        warnings: Optional[List[str]] = None,
+    ) -> ExecutionResult:
+        """
+        Execute an FFmpeg command and handle output/progress.
+        
+        Internal method that handles subprocess execution, progress parsing,
+        and result construction. Used by both legacy and DeliverSettings paths.
+        """
+        warnings = warnings or []
+        
+        # Log the command for audit
+        cmd_string = " ".join(cmd)
+        logger.info(f"[FFmpeg] Executing: {cmd_string}")
+        
+        # Initialize progress parser
+        duration = task.duration if task.duration else 0.0
+        progress_parser = ProgressParser(
+            clip_id=task.id,
+            duration=duration,
+            on_progress=on_progress,
+        )
+        
+        # Execute via subprocess
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            
+            self._active_processes[task.id] = process
+            logger.info(f"[FFmpeg] Started PID {process.pid} for clip {task.id}")
+            
+            # Read stderr for progress
+            stderr_lines = []
+            if process.stderr:
+                import fcntl
+                fd = process.stderr.fileno()
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                
+                while True:
+                    poll_result = process.poll()
+                    
+                    try:
+                        readable, _, _ = select.select([process.stderr], [], [], 0.1)
+                        if readable:
+                            line = process.stderr.readline()
+                            if line:
+                                stderr_lines.append(line.rstrip())
+                                progress_parser.parse_line(line)
+                    except (OSError, ValueError):
+                        pass
+                    
+                    if poll_result is not None:
+                        remaining = process.stderr.read()
+                        if remaining:
+                            for line in remaining.split('\n'):
+                                if line.strip():
+                                    stderr_lines.append(line)
+                                    progress_parser.parse_line(line)
+                        break
+            
+            exit_code = process.returncode
+            stderr = '\n'.join(stderr_lines)
+            
+            self._active_processes.pop(task.id, None)
+            end_time = datetime.now()
+            
+            logger.info(f"[FFmpeg] PID {process.pid} exited with code {exit_code}")
+            
+            # Check for cancellation
+            if task.id in self._cancelled_tasks:
+                self._cancelled_tasks.discard(task.id)
+                return ExecutionResult(
+                    status=ExecutionStatus.CANCELLED,
+                    source_path=task.source_path,
+                    output_path=output_path,
+                    failure_reason="Cancelled by operator",
+                    started_at=start_time,
+                    completed_at=end_time,
+                    warnings=warnings,
+                )
+            
+            if exit_code == 0:
+                # Verify output exists
+                if Path(output_path).is_file():
+                    return ExecutionResult(
+                        status=ExecutionStatus.COMPLETED,
+                        source_path=task.source_path,
+                        output_path=output_path,
+                        started_at=start_time,
+                        completed_at=end_time,
+                        warnings=warnings,
+                    )
+                else:
+                    return ExecutionResult(
+                        status=ExecutionStatus.FAILED,
+                        source_path=task.source_path,
+                        output_path=output_path,
+                        failure_reason="FFmpeg exited successfully but output file not found",
+                        started_at=start_time,
+                        completed_at=end_time,
+                        warnings=warnings,
+                    )
+            else:
+                return ExecutionResult(
+                    status=ExecutionStatus.FAILED,
+                    source_path=task.source_path,
+                    output_path=output_path,
+                    failure_reason=f"FFmpeg exited with code {exit_code}\n{self._truncate_stderr(stderr)}",
+                    started_at=start_time,
+                    completed_at=end_time,
+                    warnings=warnings,
+                )
+                
+        except Exception as e:
+            self._active_processes.pop(task.id, None)
+            return ExecutionResult(
+                status=ExecutionStatus.FAILED,
+                source_path=task.source_path,
+                output_path=output_path,
+                failure_reason=f"FFmpeg execution error: {e}",
+                started_at=start_time,
+                completed_at=datetime.now(),
+                warnings=warnings,
+            )
     
     def run_clip(
         self,

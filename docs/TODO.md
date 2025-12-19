@@ -18,10 +18,11 @@
 - Phase 14 — Minimal operator UI (read-only job/clip visibility + explicit control buttons; HTTP control endpoints; confirmation-gated actions)
 - Phase 15 — Manual job creation & operator ergonomics (explicit manual job creation, multi-select UI, filesystem utilities, path favorites)
 - Phase 16 — Execution Engines (FFmpeg first) (engine abstraction, FFmpegEngine with subprocess, engine binding at job level, FIFO scheduler, UI engine selector)
+- Phase 17 — Deliver Capability Model (full Resolve Deliver parity: DeliverSettings, VideoCapabilities, AudioCapabilities, FileCapabilities, MetadataCapabilities, OverlayCapabilities; engine mapping layer; metadata passthrough defaults ON; token-based naming; persistent Control Panel UI)
 
 ## ACTIVE PHASE
 
-- Phase: Phase 17 — Resolve Engine Integration
+- Phase 18 — Resolve Engine Integration
 
 ## BLOCKERS / OPEN QUESTIONS
 
