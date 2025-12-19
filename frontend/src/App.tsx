@@ -9,7 +9,7 @@ import { UndoToast, useUndoStack } from './components/UndoToast'
 import { GlobalDropZone } from './components/GlobalDropZone'
 
 /**
- * Proxx Operator Control - Grouped Queue View
+ * Fabric Operator Control - Grouped Queue View
  * 
  * STRUCTURAL UI REFACTOR: Operator-first interaction model inspired by DaVinci Resolve's Render Queue.
  * 
@@ -111,6 +111,8 @@ interface ClipTaskDetail {
   // Phase 16.4: Progress tracking
   progress_percent: number
   eta_seconds: number | null
+  // Phase 20: Thumbnail preview
+  thumbnail: string | null
 }
 
 interface JobDetail {
@@ -196,7 +198,7 @@ function App() {
 
   // Path favorites (localStorage-backed)
   const [pathFavorites, setPathFavorites] = useState<string[]>(() => {
-    const saved = localStorage.getItem('proxx_path_favorites')
+    const saved = localStorage.getItem('fabric_path_favorites')
     return saved ? JSON.parse(saved) : []
   })
 
@@ -391,6 +393,60 @@ function App() {
     fetchJobs()
     fetchPresets()
     fetchEngines()  // Phase 16
+  }, [])
+
+  // Phase 20: Global document-level drag/drop handlers for authoritative file intake
+  // Ensures drops work EVERYWHERE in the app, not just on specific elements
+  useEffect(() => {
+    const handleDocumentDragOver = (e: DragEvent) => {
+      // Prevent browser default (which would open the file)
+      e.preventDefault()
+      if (e.dataTransfer?.types.includes('Files')) {
+        setIsDraggingFiles(true)
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    }
+
+    const handleDocumentDragLeave = (e: DragEvent) => {
+      // Only hide overlay if leaving the window entirely
+      if (e.relatedTarget === null) {
+        setIsDraggingFiles(false)
+      }
+    }
+
+    const handleDocumentDrop = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDraggingFiles(false)
+
+      const newPaths: string[] = []
+      const files = e.dataTransfer?.files
+      if (files) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const path = (file as any).path
+          if (path) {
+            newPaths.push(path)
+          }
+        }
+      }
+
+      if (newPaths.length > 0) {
+        console.log('Document drop: Adding files to intake:', newPaths)
+        setSelectedFiles(prev => [...new Set([...prev, ...newPaths])])
+        setSelectedJobId(null)
+      }
+    }
+
+    document.addEventListener('dragover', handleDocumentDragOver)
+    document.addEventListener('dragleave', handleDocumentDragLeave)
+    document.addEventListener('drop', handleDocumentDrop)
+
+    return () => {
+      document.removeEventListener('dragover', handleDocumentDragOver)
+      document.removeEventListener('dragleave', handleDocumentDragLeave)
+      document.removeEventListener('drop', handleDocumentDrop)
+    }
   }, [])
 
   // Phase 16.1: Auto-refresh job state every 1.5 seconds
@@ -813,14 +869,14 @@ function App() {
     if (!pathFavorites.includes(path)) {
       const updated = [...pathFavorites, path]
       setPathFavorites(updated)
-      localStorage.setItem('proxx_path_favorites', JSON.stringify(updated))
+      localStorage.setItem('fabric_path_favorites', JSON.stringify(updated))
     }
   }
 
   const removePathFavorite = (path: string) => {
     const updated = pathFavorites.filter(p => p !== path)
     setPathFavorites(updated)
-    localStorage.setItem('proxx_path_favorites', JSON.stringify(updated))
+    localStorage.setItem('fabric_path_favorites', JSON.stringify(updated))
   }
 
   // ============================================
@@ -1045,7 +1101,7 @@ function App() {
       newOrder.splice(targetIndex, 0, draggedJobId)
 
       // Persist to localStorage for session continuity
-      localStorage.setItem('proxx_job_order', JSON.stringify(newOrder))
+      localStorage.setItem('fabric_job_order', JSON.stringify(newOrder))
 
       return newOrder
     })
@@ -1082,18 +1138,22 @@ function App() {
 
     const newPaths: string[] = []
     
-    // Extract file paths from drop
+    // Phase 20: Authoritative drop handler - extract file paths robustly
+    // Works in Electron where file.path contains absolute path
     const items = e.dataTransfer.items
-    if (items) {
+    if (items && items.length > 0) {
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
         if (item.kind === 'file') {
           const file = item.getAsFile()
           if (file) {
             // In Electron, file.path contains the absolute path
-            const path = (file as any).path || file.name
-            if (path && path !== file.name) { // Only use if real path available
+            const path = (file as any).path
+            if (path) {
               newPaths.push(path)
+            } else {
+              // Fallback: use file name if no absolute path (web context)
+              console.warn('Drop: No absolute path available for:', file.name)
             }
           }
         }
@@ -1103,18 +1163,27 @@ function App() {
       const files = e.dataTransfer.files
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
-        const path = (file as any).path || file.name
-        if (path && path !== file.name) {
+        const path = (file as any).path
+        if (path) {
           newPaths.push(path)
         }
       }
     }
 
+    console.log('GlobalDrop: Extracted paths:', newPaths)
+
     if (newPaths.length > 0) {
       // Add dropped files to selected files
-      setSelectedFiles(prev => [...prev, ...newPaths])
+      setSelectedFiles(prev => {
+        const combined = [...prev, ...newPaths]
+        // Deduplicate
+        return [...new Set(combined)]
+      })
       // Clear any job selection - we're now in "create new job" mode
       setSelectedJobId(null)
+      console.log(`GlobalDrop: Added ${newPaths.length} file(s) to intake`)
+    } else {
+      console.warn('GlobalDrop: No valid file paths extracted from drop')
     }
   }, [])
 
@@ -1239,7 +1308,7 @@ function App() {
             letterSpacing: '-0.02em',
           }}
         >
-          Proxx — Operator Control
+          Fabric — Operator Control
         </h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {pendingJobCount > 0 && (

@@ -1,0 +1,2 @@
+task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
+088e928d-f52e-424e-a28a-99dbc9f520f5,/Users/leon.grant/Desktop/__TEST_FILES/Craft reeel jan 21__proxx.mp4,completed,/Users/leon.grant/Desktop/__TEST_FILES/OUTPUT/Craft reeel jan 21_proxx_proxy.mp4,41928821,9.486532,,,2025-12-19T23:09:53.233522,2025-12-19T23:10:02.720462

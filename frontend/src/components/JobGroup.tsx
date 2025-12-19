@@ -34,6 +34,8 @@ interface ClipTask {
   // Phase 16.4: Progress tracking
   progress_percent?: number
   eta_seconds?: number | null
+  // Phase 20: Thumbnail preview
+  thumbnail?: string | null
 }
 
 interface JobGroupProps {
@@ -519,6 +521,8 @@ export function JobGroup({
                       // Phase 16.4: Progress tracking
                       progressPercent={task.progress_percent || 0}
                       etaSeconds={task.eta_seconds}
+                      // Phase 20: Thumbnail preview
+                      thumbnail={task.thumbnail}
                     />
                   </div>
                 )

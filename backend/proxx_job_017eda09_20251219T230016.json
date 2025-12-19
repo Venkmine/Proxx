@@ -1,0 +1,36 @@
+{
+  "job_id": "017eda09-0061-4b69-97da-61ad74ad99f9",
+  "status": "completed_with_warnings",
+  "created_at": "2025-12-19T23:00:11.931161",
+  "started_at": "2025-12-19T23:00:16.670279",
+  "completed_at": "2025-12-19T23:00:16.672875",
+  "total_clips": 1,
+  "completed_clips": 0,
+  "failed_clips": 1,
+  "skipped_clips": 0,
+  "warnings_count": 0,
+  "clips": [
+    {
+      "task_id": "cd0b4d79-e28f-4cce-9e64-1021788d46c1",
+      "source_path": "/Users/leon.grant/projects/Proxx/test_media/test_input.mp4",
+      "status": "failed",
+      "failure_reason": "Output path resolution failed: argument of type 'float' is not a container or iterable",
+      "warnings": [],
+      "output_path": null,
+      "output_size_bytes": null,
+      "execution_duration_seconds": null,
+      "started_at": null,
+      "completed_at": "2025-12-19T23:00:16.672856"
+    }
+  ],
+  "diagnostics": {
+    "proxx_version": "dev+4b8740d",
+    "python_version": "3.14.0",
+    "os_version": "macOS-15.7.1-arm64-arm-64bit-Mach-O",
+    "hostname": "Administrators-MacBook-Pro.local",
+    "resolve_path": null,
+    "resolve_version": "unknown",
+    "resolve_studio": null,
+    "generated_at": "2025-12-19T23:00:16.696685"
+  }
+}

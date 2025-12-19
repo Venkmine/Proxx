@@ -125,11 +125,25 @@ def _get_frame_count(clip: "ClipTask") -> str:
         return ""
     
     try:
-        # Parse frame rate (e.g., "23.976", "24", "29.97")
-        fps = float(clip.frame_rate.split("/")[0]) if "/" not in clip.frame_rate else eval(clip.frame_rate)
+        # Parse frame rate - handle both float and string formats
+        # e.g., 23.976 (float), "23.976" (string), "24000/1001" (fraction string)
+        frame_rate = clip.frame_rate
+        
+        if isinstance(frame_rate, (int, float)):
+            fps = float(frame_rate)
+        elif isinstance(frame_rate, str):
+            if "/" in frame_rate:
+                # Fraction format like "24000/1001"
+                num, den = frame_rate.split("/")
+                fps = float(num) / float(den)
+            else:
+                fps = float(frame_rate)
+        else:
+            return ""
+        
         frame_count = int(clip.duration * fps)
         return str(frame_count)
-    except (ValueError, ZeroDivisionError):
+    except (ValueError, ZeroDivisionError, TypeError):
         return ""
 
 

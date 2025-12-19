@@ -1,0 +1,36 @@
+{
+  "job_id": "400c2c5b-c097-433c-a968-6e7dfd762da6",
+  "status": "completed_with_warnings",
+  "created_at": "2025-12-19T21:48:50.902252",
+  "started_at": "2025-12-19T21:51:28.325628",
+  "completed_at": "2025-12-19T21:51:28.325979",
+  "total_clips": 1,
+  "completed_clips": 0,
+  "failed_clips": 1,
+  "skipped_clips": 0,
+  "warnings_count": 0,
+  "clips": [
+    {
+      "task_id": "2a9c643f-6791-4824-9914-97bb249f0884",
+      "source_path": "/Users/leon.grant/Library/CloudStorage/OneDrive-Interpublic/Video_Files/DJI_Action_4/20240727_x3_days/DJI_001/DJI_20240717181133_0001_D_001.MP4",
+      "status": "failed",
+      "failure_reason": "Output path resolution failed: 'DeliverSettings' object has no attribute 'naming_template'",
+      "warnings": [],
+      "output_path": null,
+      "output_size_bytes": null,
+      "execution_duration_seconds": null,
+      "started_at": null,
+      "completed_at": "2025-12-19T21:51:28.325947"
+    }
+  ],
+  "diagnostics": {
+    "proxx_version": "dev+4b8740d",
+    "python_version": "3.14.0",
+    "os_version": "macOS-15.7.1-arm64-arm-64bit-Mach-O",
+    "hostname": "Administrators-MacBook-Pro.local",
+    "resolve_path": null,
+    "resolve_version": "unknown",
+    "resolve_studio": null,
+    "generated_at": "2025-12-19T21:51:28.340655"
+  }
+}

@@ -103,6 +103,9 @@ class ClipTask(BaseModel):
     duration: Optional[float] = None  # Duration in seconds
     audio_channels: Optional[int] = None
     audio_sample_rate: Optional[int] = None
+    
+    # Phase 20: Thumbnail preview (base64 data URI)
+    thumbnail: Optional[str] = None  # Base64 data URI for preview image
 
 
 class Job(BaseModel):

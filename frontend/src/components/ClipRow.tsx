@@ -41,6 +41,8 @@ interface ClipRowProps {
   // Phase 16.4: Progress tracking
   progressPercent?: number
   etaSeconds?: number | null
+  // Phase 20: Thumbnail preview
+  thumbnail?: string | null
 }
 
 // Extract filename from full path
@@ -93,6 +95,7 @@ export function ClipRow({
   onSettingsClick,
   progressPercent = 0,
   etaSeconds,
+  thumbnail,
 }: ClipRowProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -129,6 +132,30 @@ export function ClipRow({
           gap: '0.75rem',
         }}
       >
+        {/* Phase 20: Thumbnail preview */}
+        {thumbnail && (
+          <div
+            style={{
+              width: '48px',
+              height: '32px',
+              borderRadius: '4px',
+              overflow: 'hidden',
+              flexShrink: 0,
+              backgroundColor: 'var(--bg-tertiary)',
+            }}
+          >
+            <img
+              src={thumbnail}
+              alt=""
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+              }}
+            />
+          </div>
+        )}
+        
         <StatusBadge status={status} size="sm" />
         
         <div style={{ flex: 1, minWidth: 0 }}>

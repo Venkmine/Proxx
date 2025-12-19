@@ -1,0 +1,2 @@
+task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
+d21007dd-d09d-4ae9-a793-a6275b988b29,/Users/leon.grant/Library/CloudStorage/OneDrive-Interpublic/Video_Files/DJI_Action_4/20240727_x3_days/DJI_001/DJI_20240717181133_0001_D_001.MP4,failed,,,,Output path resolution failed: 'DeliverSettings' object has no attribute 'naming_template',,,2025-12-19T21:44:50.449822

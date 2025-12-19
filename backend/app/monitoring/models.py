@@ -57,6 +57,7 @@ class ClipTaskDetail(BaseModel):
     Phase 16: Includes media metadata for UI display.
     Phase 16.1: Includes output_path for Reveal in Finder.
     Phase 16.4: Includes progress_percent and eta_seconds for live progress.
+    Phase 20: Includes thumbnail preview.
     """
     
     model_config = ConfigDict(extra="forbid")
@@ -90,6 +91,9 @@ class ClipTaskDetail(BaseModel):
     duration: Optional[str] = None         # e.g., "00:02:35"
     audio_channels: Optional[str] = None   # e.g., "stereo" or "5.1"
     color_space: Optional[str] = None      # e.g., "Rec. 709"
+    
+    # Phase 20: Thumbnail preview
+    thumbnail: Optional[str] = None  # Base64 data URI
 
 
 class JobDetail(BaseModel):

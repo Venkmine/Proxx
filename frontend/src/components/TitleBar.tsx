@@ -52,7 +52,7 @@ export function TitleBar() {
           letterSpacing: '0.02em',
         }}
       >
-        Proxx
+        Fabric
       </div>
 
       {/* Window Controls (non-draggable) */}

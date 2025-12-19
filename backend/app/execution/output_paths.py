@@ -69,18 +69,20 @@ def resolve_output_path(
         output_dir = source_path.parent
     
     # Handle directory structure preservation
-    if settings.preserve_source_dirs and settings.preserve_dir_levels > 0:
+    # Phase 20: Use settings.file.* for nested FileCapabilities attributes
+    if settings.file.preserve_source_dirs and settings.file.preserve_dir_levels > 0:
         output_dir = _apply_directory_preservation(
             output_dir=output_dir,
             source_path=source_path,
-            preserve_levels=settings.preserve_dir_levels,
+            preserve_levels=settings.file.preserve_dir_levels,
         )
     
     # Build final filename with prefix/suffix
+    # Phase 20: Use settings.file.prefix/suffix (not flat settings.file_prefix/file_suffix)
     final_filename = _apply_prefix_suffix(
         filename=resolved_filename,
-        prefix=settings.file_prefix,
-        suffix=settings.file_suffix,
+        prefix=settings.file.prefix,
+        suffix=settings.file.suffix,
     )
     
     # Append extension

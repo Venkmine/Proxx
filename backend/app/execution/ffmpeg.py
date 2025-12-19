@@ -53,12 +53,20 @@ FFMPEG_CODEC_MAP: Dict[str, List[str]] = {
     # H.264 (via libx264)
     "h264": ["-c:v", "libx264"],
     
+    # Phase 20: H.265/HEVC (via libx265)
+    "h265": ["-c:v", "libx265", "-tag:v", "hvc1"],
+    "hevc": ["-c:v", "libx265", "-tag:v", "hvc1"],
+    
+    # Phase 20: AV1 (via libaom-av1, software fallback)
+    "av1": ["-c:v", "libaom-av1", "-cpu-used", "4"],  # cpu-used 4 for reasonable speed
+    
     # ProRes variants
     "prores_proxy": ["-c:v", "prores_ks", "-profile:v", "0"],
     "prores_lt": ["-c:v", "prores_ks", "-profile:v", "1"],
     "prores_422": ["-c:v", "prores_ks", "-profile:v", "2"],
     "prores_422_hq": ["-c:v", "prores_ks", "-profile:v", "3"],
     "prores_4444": ["-c:v", "prores_ks", "-profile:v", "4"],
+    "prores_4444_xq": ["-c:v", "prores_ks", "-profile:v", "5"],  # Phase 20: ProRes 4444 XQ
     
     # DNxHR variants
     "dnxhr_lb": ["-c:v", "dnxhd", "-profile:v", "dnxhr_lb"],
@@ -237,8 +245,19 @@ class FFmpegEngine(ExecutionEngine):
         video_codec = resolved_params.video_codec
         if video_codec in FFMPEG_CODEC_MAP:
             cmd.extend(FFMPEG_CODEC_MAP[video_codec])
+            
+            # Phase 20: Add quality settings for codecs that support CRF
+            if video_codec in ("h264", "h265", "hevc"):
+                if resolved_params.video_quality is not None:
+                    cmd.extend(["-crf", str(resolved_params.video_quality)])
+                if resolved_params.video_preset:
+                    cmd.extend(["-preset", resolved_params.video_preset])
+            elif video_codec == "av1":
+                # AV1 uses crf for quality control
+                if resolved_params.video_quality is not None:
+                    cmd.extend(["-crf", str(resolved_params.video_quality)])
         elif video_codec == "h264":
-            # H.264 with quality settings
+            # H.264 with quality settings (legacy path)
             cmd.extend(["-c:v", "libx264"])
             if resolved_params.video_quality is not None:
                 cmd.extend(["-crf", str(resolved_params.video_quality)])

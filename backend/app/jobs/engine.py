@@ -64,6 +64,7 @@ class JobEngine:
         
         Phase 16: Engine is bound at job creation.
         Phase 16.1: Metadata is extracted at ingest time.
+        Phase 20: Thumbnails are generated at ingest time.
         
         Args:
             source_paths: List of absolute paths to source files
@@ -113,6 +114,17 @@ class JobEngine:
                 # Metadata extraction failure is non-fatal
                 logger.warning(f"Metadata extraction failed for {path}: {e}")
                 # Leave metadata fields as None (will show "Unknown" in UI)
+            
+            # Phase 20: Generate thumbnail at ingest time
+            try:
+                from ..execution.thumbnails import generate_thumbnail_sync, thumbnail_to_base64
+                thumb_path = generate_thumbnail_sync(path)
+                if thumb_path:
+                    task.thumbnail = thumbnail_to_base64(thumb_path)
+                    logger.debug(f"Generated thumbnail for {path}")
+            except Exception as e:
+                # Thumbnail generation failure is non-fatal
+                logger.warning(f"Thumbnail generation failed for {path}: {e}")
             
             tasks.append(task)
         
@@ -456,9 +468,16 @@ class JobEngine:
                     logger.warning(f"Preset resolution failed for '{global_preset_id}': {e}. Using H.264 default.")
                     resolved_params = DEFAULT_H264_PARAMS
                 
-                # Phase 16.4: Get watermark text from job settings
+                # Phase 20: Get watermark text from DeliverSettings overlay
+                # Legacy: settings.watermark_enabled/text are now settings.overlay.text_layers
                 settings = job.settings
-                watermark_text = settings.watermark_text if settings.watermark_enabled else None
+                watermark_text = None
+                if settings.overlay and settings.overlay.text_layers:
+                    # Get first enabled text overlay
+                    for layer in settings.overlay.text_layers:
+                        if layer.enabled and layer.text:
+                            watermark_text = layer.text
+                            break
                 
                 # Phase 16.4: Engine receives resolved output_path from task
                 # Output path was resolved in _resolve_clip_outputs() before execution started
@@ -533,8 +552,9 @@ class JobEngine:
             
             try:
                 # Step 1: Resolve filename from naming template
+                # Phase 20: Use settings.file.naming_template (not flat settings.naming_template)
                 resolved_name = resolve_filename(
-                    template=settings.naming_template,
+                    template=settings.file.naming_template,
                     clip=task,
                     job=job,
                     resolved_params=resolved_params,

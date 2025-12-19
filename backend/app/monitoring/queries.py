@@ -239,6 +239,7 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
             duration=duration,
             audio_channels=audio_channels,
             color_space=None,  # Not extracted at ingest currently
+            thumbnail=task.thumbnail,  # Phase 20: Thumbnail preview
         ))
     
     return JobDetail(

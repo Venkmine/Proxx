@@ -1,7 +1,7 @@
 /**
- * Proxx UI Components
+ * Fabric UI Components
  * 
- * Reusable component library for the Proxx Operator Control interface.
+ * Reusable component library for the Fabric Operator Control interface.
  * Implements operator-first design inspired by DaVinci Resolve's Render Queue.
  */
 

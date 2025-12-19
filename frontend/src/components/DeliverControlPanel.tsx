@@ -105,15 +105,25 @@ interface DeliverControlPanelProps {
 // ============================================================================
 
 const VIDEO_CODECS = [
+  // ProRes family
   { value: 'prores_proxy', label: 'ProRes Proxy' },
   { value: 'prores_lt', label: 'ProRes LT' },
   { value: 'prores_422', label: 'ProRes 422' },
   { value: 'prores_422_hq', label: 'ProRes 422 HQ' },
   { value: 'prores_4444', label: 'ProRes 4444' },
+  { value: 'prores_4444_xq', label: 'ProRes 4444 XQ' },  // Phase 20
+  
+  // DNxHR family
   { value: 'dnxhr_lb', label: 'DNxHR LB' },
   { value: 'dnxhr_sq', label: 'DNxHR SQ' },
   { value: 'dnxhr_hq', label: 'DNxHR HQ' },
-  { value: 'h264', label: 'H.264' },
+  { value: 'dnxhr_hqx', label: 'DNxHR HQX' },  // Phase 20
+  { value: 'dnxhr_444', label: 'DNxHR 444' },  // Phase 20
+  
+  // Delivery codecs
+  { value: 'h264', label: 'H.264 / AVC' },
+  { value: 'h265', label: 'H.265 / HEVC' },  // Phase 20
+  { value: 'av1', label: 'AV1' },  // Phase 20
 ]
 
 const AUDIO_CODECS = [
@@ -127,12 +137,26 @@ const CONTAINERS = [
   { value: 'mov', label: 'QuickTime (.mov)' },
   { value: 'mxf', label: 'MXF (.mxf)' },
   { value: 'mp4', label: 'MP4 (.mp4)' },
+  { value: 'mkv', label: 'Matroska (.mkv)' },  // Phase 20: For H.265/AV1
+  { value: 'webm', label: 'WebM (.webm)' },  // Phase 20: For AV1
 ]
 
 const RESOLUTION_POLICIES = [
   { value: 'source', label: 'Source Resolution' },
-  { value: 'scale', label: 'Scale to Target' },
   { value: 'custom', label: 'Custom Dimensions' },
+]
+
+// Phase 20: Resolution presets for common formats
+const RESOLUTION_PRESETS = [
+  { value: '', label: 'Select preset...', width: 0, height: 0 },
+  { value: 'pal', label: 'PAL (720×576)', width: 720, height: 576 },
+  { value: 'ntsc', label: 'NTSC (720×486)', width: 720, height: 486 },
+  { value: '720p', label: '720p HD (1280×720)', width: 1280, height: 720 },
+  { value: '1080p', label: '1080p Full HD (1920×1080)', width: 1920, height: 1080 },
+  { value: '2k_dci', label: '2K DCI (2048×1080)', width: 2048, height: 1080 },
+  { value: 'uhd', label: 'UHD 4K (3840×2160)', width: 3840, height: 2160 },
+  { value: '4k_dci', label: '4K DCI (4096×2160)', width: 4096, height: 2160 },
+  { value: '8k', label: '8K UHD (7680×4320)', width: 7680, height: 4320 },
 ]
 
 const OVERWRITE_POLICIES = [
@@ -520,53 +544,75 @@ export function DeliverControlPanel({
           </FieldRow>
           
           {settings.video.resolution_policy !== 'source' && (
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <FieldRow label="Width">
-                <input
-                  type="number"
-                  value={settings.video.width || ''}
-                  onChange={(e) => updateVideoSettings({ width: parseInt(e.target.value) || undefined })}
-                  disabled={isReadOnly}
-                  placeholder="1920"
-                  style={{
-                    width: '100%',
-                    padding: '0.375rem 0.5rem',
-                    fontSize: '0.75rem',
-                    background: 'var(--input-bg)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
+            <>
+              {/* Phase 20: Resolution preset dropdown */}
+              <FieldRow label="Preset">
+                <Select
+                  value=""
+                  onChange={(v) => {
+                    const preset = RESOLUTION_PRESETS.find(p => p.value === v)
+                    if (preset && preset.width > 0) {
+                      updateVideoSettings({ 
+                        width: preset.width, 
+                        height: preset.height 
+                      })
+                    }
                   }}
+                  options={RESOLUTION_PRESETS.map(p => ({ value: p.value, label: p.label }))}
+                  disabled={isReadOnly}
+                  fullWidth
                 />
               </FieldRow>
-              <FieldRow label="Height">
-                <input
-                  type="number"
-                  value={settings.video.height || ''}
-                  onChange={(e) => updateVideoSettings({ height: parseInt(e.target.value) || undefined })}
-                  disabled={isReadOnly}
-                  placeholder="1080"
-                  style={{
-                    width: '100%',
-                    padding: '0.375rem 0.5rem',
-                    fontSize: '0.75rem',
-                    background: 'var(--input-bg)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                  }}
-                />
-              </FieldRow>
-            </div>
+              
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <FieldRow label="Width">
+                  <input
+                    type="number"
+                    value={settings.video.width || ''}
+                    onChange={(e) => updateVideoSettings({ width: parseInt(e.target.value) || undefined })}
+                    disabled={isReadOnly}
+                    placeholder="1920"
+                    style={{
+                      width: '100%',
+                      padding: '0.375rem 0.5rem',
+                      fontSize: '0.75rem',
+                      background: 'var(--input-bg)',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="Height">
+                  <input
+                    type="number"
+                    value={settings.video.height || ''}
+                    onChange={(e) => updateVideoSettings({ height: parseInt(e.target.value) || undefined })}
+                    disabled={isReadOnly}
+                    placeholder="1080"
+                    style={{
+                      width: '100%',
+                      padding: '0.375rem 0.5rem',
+                      fontSize: '0.75rem',
+                      background: 'var(--input-bg)',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                </FieldRow>
+              </div>
+            </>
           )}
           
-          {settings.video.codec === 'h264' && (
+          {/* Phase 20: Quality slider for H.264, H.265, and AV1 */}
+          {(settings.video.codec === 'h264' || settings.video.codec === 'h265' || settings.video.codec === 'av1') && (
             <>
               <FieldRow label="Quality (CRF)" description="Lower = better quality, larger file">
                 <input
                   type="range"
                   min="0"
-                  max="51"
+                  max={settings.video.codec === 'av1' ? 63 : 51}
                   value={settings.video.quality || 23}
                   onChange={(e) => updateVideoSettings({ quality: parseInt(e.target.value) })}
                   disabled={isReadOnly}
