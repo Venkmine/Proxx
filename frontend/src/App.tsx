@@ -7,6 +7,7 @@ import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { GlobalDropZone } from './components/GlobalDropZone'
+import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
 
 /**
  * Fabric Operator Control - Grouped Queue View
@@ -111,7 +112,9 @@ interface ClipTaskDetail {
   // Phase 16.4: Progress tracking
   progress_percent: number
   eta_seconds: number | null
-  // Phase 20: Thumbnail preview
+  // Phase 20: Enhanced progress
+  encode_fps: number | null
+  phase: string | null  // PREPARING | ENCODING | FINALIZING
   thumbnail: string | null
 }
 
@@ -207,6 +210,9 @@ function App() {
   
   // Drag state for file drop
   const [isDraggingFiles, setIsDraggingFiles] = useState<boolean>(false)
+
+  // Phase 20: Copilot Prompt window state
+  const [showCopilotPrompt, setShowCopilotPrompt] = useState<boolean>(false)
 
   // ============================================
   // Phase 17: DeliverSettings State (Authoritative)
@@ -449,8 +455,12 @@ function App() {
     }
   }, [])
 
-  // Phase 16.1: Auto-refresh job state every 1.5 seconds
+  // Phase 16.1 + Phase 20: Auto-refresh job state
+  // Phase 20: 500ms for active encodes, 1.5s for idle
   useEffect(() => {
+    const hasActiveEncode = jobs.some(job => job.status.toUpperCase() === 'RUNNING')
+    const intervalMs = hasActiveEncode ? 500 : 1500
+    
     const refreshInterval = setInterval(() => {
       fetchJobs()
       // Also refresh details for running jobs
@@ -460,7 +470,7 @@ function App() {
           fetchJobDetail(job.id)
         }
       })
-    }, 1500)
+    }, intervalMs)
     
     return () => clearInterval(refreshInterval)
   }, [jobs])
@@ -1306,11 +1316,21 @@ function App() {
             fontWeight: 600,
             color: 'var(--text-primary)',
             letterSpacing: '-0.02em',
+            fontFamily: 'var(--font-sans)',
           }}
         >
-          Fabric — Operator Control
+          Fabric
         </h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Phase 20: Copilot Prompt button */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowCopilotPrompt(true)}
+            title="Open Copilot Prompt window"
+          >
+            ✦ Copilot Prompt
+          </Button>
           {pendingJobCount > 0 && (
             <Button 
               variant="success" 
@@ -1321,11 +1341,49 @@ function App() {
               ▶ Render All ({pendingJobCount})
             </Button>
           )}
-          <Button variant="secondary" size="sm" onClick={fetchJobs}>
-            Refresh
-          </Button>
         </div>
       </header>
+      
+      {/* Phase 20: Modular Tab Bar */}
+      <nav
+        style={{
+          display: 'flex',
+          gap: '0',
+          borderBottom: '1px solid var(--border-primary)',
+          background: 'rgba(20, 24, 32, 0.95)',
+          paddingLeft: '1rem',
+        }}
+      >
+        {[
+          { id: 'sources', label: 'Sources', enabled: false },
+          { id: 'proxies', label: 'Proxies', enabled: true },
+          { id: 'deliver', label: 'Deliver', enabled: false },
+          { id: 'qc', label: 'QC', enabled: false },
+          { id: 'automation', label: 'Automation', enabled: false },
+          { id: 'settings', label: 'Settings', enabled: false },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            title={tab.enabled ? tab.label : 'Module coming soon'}
+            disabled={!tab.enabled}
+            style={{
+              padding: '0.75rem 1.25rem',
+              background: tab.enabled ? 'transparent' : 'transparent',
+              border: 'none',
+              borderBottom: tab.enabled ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+              color: tab.enabled ? 'var(--text-primary)' : 'var(--text-dim)',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              fontFamily: 'var(--font-sans)',
+              cursor: tab.enabled ? 'pointer' : 'not-allowed',
+              opacity: tab.enabled ? 1 : 0.5,
+              transition: 'all 0.15s',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
       {/* Error Banner */}
       {error && (
@@ -1348,7 +1406,7 @@ function App() {
         </div>
       )}
 
-      {/* Phase 19: Three-Column Layout (LEFT: Source & Intake, CENTER: Queue, RIGHT: Deliver) */}
+      {/* Phase 20: Three-Column Layout (LEFT: Sources, CENTER: Queue, RIGHT: Deliver) */}
       <div 
         ref={appContainerRef}
         tabIndex={0}
@@ -1368,7 +1426,7 @@ function App() {
           onDragLeave={handleGlobalDragLeave}
         />
         
-        {/* LEFT Column: Source & Intake (full height) */}
+        {/* LEFT Column: Sources (full height) */}
         <aside style={{
           width: '280px',
           minWidth: '260px',
@@ -1581,6 +1639,14 @@ function App() {
         onDismiss={undoStack.clearToast}
         duration={5000}
       />
+      
+      {/* Phase 20: Copilot Prompt Window */}
+      {showCopilotPrompt && (
+        <>
+          <CopilotPromptBackdrop onClick={() => setShowCopilotPrompt(false)} />
+          <CopilotPromptWindow onClose={() => setShowCopilotPrompt(false)} />
+        </>
+      )}
     </div>
   )
 }

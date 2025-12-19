@@ -237,6 +237,84 @@ class OperationResponse(BaseModel):
     message: str
 
 
+# ============================================================================
+# CODEC SPECS API (Phase 20)
+# ============================================================================
+
+@router.get("/codecs")
+async def list_codecs_endpoint():
+    """
+    List all codec specifications.
+    
+    Phase 20: Codec-driven UI authority.
+    
+    Returns complete codec specs that drive UI generation.
+    Frontend MUST use these to determine which controls to show.
+    
+    Returns:
+        Dict of codec_id -> CodecSpec
+    """
+    from app.deliver.codec_specs import get_all_codecs
+    return {"codecs": get_all_codecs()}
+
+
+@router.get("/codecs/{codec_id}")
+async def get_codec_endpoint(codec_id: str):
+    """
+    Get a single codec specification.
+    
+    Phase 20: For detailed codec capability lookup.
+    
+    Returns:
+        CodecSpec for the requested codec
+        
+    Raises:
+        404: Codec not found
+    """
+    from app.deliver.codec_specs import get_codec_spec
+    spec = get_codec_spec(codec_id)
+    if not spec:
+        raise HTTPException(status_code=404, detail=f"Codec not found: {codec_id}")
+    return spec.to_dict()
+
+
+@router.get("/codecs/for-container/{container}")
+async def get_codecs_for_container_endpoint(container: str):
+    """
+    Get all codecs valid for a container.
+    
+    Phase 20: Container ↔ codec enforcement.
+    
+    Used by UI to filter codec dropdown based on selected container.
+    
+    Returns:
+        List of CodecSpec dicts valid for this container
+    """
+    from app.deliver.codec_specs import get_codecs_for_container
+    codecs = get_codecs_for_container(container)
+    return {"container": container, "codecs": [c.to_dict() for c in codecs]}
+
+
+@router.get("/containers/for-codec/{codec_id}")
+async def get_containers_for_codec_endpoint(codec_id: str):
+    """
+    Get all containers valid for a codec.
+    
+    Phase 20: Container ↔ codec enforcement.
+    
+    Used by UI to filter container dropdown based on selected codec.
+    
+    Returns:
+        List of container strings valid for this codec
+    """
+    from app.deliver.codec_specs import get_containers_for_codec, get_codec_spec
+    spec = get_codec_spec(codec_id)
+    if not spec:
+        raise HTTPException(status_code=404, detail=f"Codec not found: {codec_id}")
+    containers = get_containers_for_codec(codec_id)
+    return {"codec_id": codec_id, "containers": containers, "default_container": spec.default_container}
+
+
 @router.get("/presets", response_model=PresetListResponse)
 async def list_presets_endpoint(request: Request):
     """

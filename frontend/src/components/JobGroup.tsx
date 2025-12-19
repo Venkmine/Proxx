@@ -34,7 +34,9 @@ interface ClipTask {
   // Phase 16.4: Progress tracking
   progress_percent?: number
   eta_seconds?: number | null
-  // Phase 20: Thumbnail preview
+  // Phase 20: Enhanced progress
+  encode_fps?: number | null
+  phase?: string | null  // PREPARING | ENCODING | FINALIZING
   thumbnail?: string | null
 }
 
@@ -518,10 +520,11 @@ export function JobGroup({
                           ? () => onRevealClip(task.output_path!) 
                           : undefined
                       }
-                      // Phase 16.4: Progress tracking
+                      // Phase 16.4 + Phase 20: Progress tracking
                       progressPercent={task.progress_percent || 0}
                       etaSeconds={task.eta_seconds}
-                      // Phase 20: Thumbnail preview
+                      encodeFps={task.encode_fps}
+                      phase={task.phase}
                       thumbnail={task.thumbnail}
                     />
                   </div>

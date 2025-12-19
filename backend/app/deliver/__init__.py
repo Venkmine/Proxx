@@ -50,6 +50,19 @@ from .settings import (
     DEFAULT_DELIVER_SETTINGS,
 )
 
+from .codec_specs import (
+    CodecSpec,
+    CODEC_REGISTRY,
+    CONTAINER_CODEC_MAP,
+    get_codecs_for_container,
+    get_containers_for_codec,
+    validate_codec_container,
+    get_all_codecs,
+    get_codec_spec,
+    RateControlMode,
+    BitratePreset,
+)
+
 __all__ = [
     # Video
     "VideoCapabilities",
@@ -79,4 +92,16 @@ __all__ = [
     # Settings
     "DeliverSettings",
     "DEFAULT_DELIVER_SETTINGS",
+    
+    # Codec Specs (Phase 20)
+    "CodecSpec",
+    "CODEC_REGISTRY",
+    "CONTAINER_CODEC_MAP",
+    "get_codecs_for_container",
+    "get_containers_for_codec",
+    "validate_codec_container",
+    "get_all_codecs",
+    "get_codec_spec",
+    "RateControlMode",
+    "BitratePreset",
 ]

@@ -3,14 +3,20 @@ import { Button } from './Button'
 import { Select } from './Select'
 
 /**
- * CreateJobPanel component - Source & Intake panel (Phase 19).
+ * CreateJobPanel component - Sources panel (Phase 20).
  * 
  * Per design requirements:
- * - Renamed from "Add to Render Queue" to "Source & Intake"
+ * - Renamed from "Source & Intake" to "Sources" (Phase 20)
  * - Full height left column
  * - Supports drag & drop for files and folders
  * - Watch folders stubbed as "Coming next"
  * - Favorites moved to collapsible utility section
+ * 
+ * IMPORTANT: This panel is ONLY for:
+ * - File selection
+ * - Watch folders (later)
+ * - Source validation
+ * - Nothing render-related (no Deliver/codec/metadata logic)
  */
 
 interface PresetInfo {
@@ -192,7 +198,7 @@ export function CreateJobPanel({
             letterSpacing: '-0.01em',
           }}
         >
-          Source & Intake
+          Sources
         </h2>
         
         {/* Chevron toggle to hide panel */}

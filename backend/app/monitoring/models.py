@@ -57,7 +57,7 @@ class ClipTaskDetail(BaseModel):
     Phase 16: Includes media metadata for UI display.
     Phase 16.1: Includes output_path for Reveal in Finder.
     Phase 16.4: Includes progress_percent and eta_seconds for live progress.
-    Phase 20: Includes thumbnail preview.
+    Phase 20: Includes thumbnail preview, encode_fps, and phase.
     """
     
     model_config = ConfigDict(extra="forbid")
@@ -79,6 +79,10 @@ class ClipTaskDetail(BaseModel):
     # Phase 16.4: Progress tracking
     progress_percent: float = 0.0  # 0.0 - 100.0
     eta_seconds: Optional[float] = None  # Estimated seconds remaining
+    
+    # Phase 20: Enhanced progress
+    encode_fps: Optional[float] = None  # Current encoding speed (frames per second)
+    phase: Optional[str] = None  # PREPARING | ENCODING | FINALIZING
     
     # Outcome
     failure_reason: Optional[str] = None

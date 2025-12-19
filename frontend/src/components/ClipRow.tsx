@@ -41,7 +41,9 @@ interface ClipRowProps {
   // Phase 16.4: Progress tracking
   progressPercent?: number
   etaSeconds?: number | null
-  // Phase 20: Thumbnail preview
+  // Phase 20: Enhanced progress
+  encodeFps?: number | null
+  phase?: string | null  // PREPARING | ENCODING | FINALIZING
   thumbnail?: string | null
 }
 
@@ -95,6 +97,8 @@ export function ClipRow({
   onSettingsClick,
   progressPercent = 0,
   etaSeconds,
+  encodeFps,
+  phase,
   thumbnail,
 }: ClipRowProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -207,9 +211,26 @@ export function ClipRow({
             )}
           </div>
           
-          {/* Phase 16.4: Progress bar for running clips */}
+          {/* Phase 16.4 + Phase 20: Progress bar for running clips */}
           {isRunning && (
             <div style={{ marginTop: '0.5rem' }}>
+              {/* Phase 20: Status phase indicator */}
+              {phase && (
+                <div
+                  style={{
+                    marginBottom: '0.25rem',
+                    fontSize: '0.625rem',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 600,
+                    color: phase === 'ENCODING' ? 'var(--button-primary-bg)' : 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  {phase}
+                </div>
+              )}
+              
               <div
                 style={{
                   display: 'flex',
@@ -252,19 +273,29 @@ export function ClipRow({
                 </span>
               </div>
               
-              {/* ETA */}
-              {etaSeconds != null && etaSeconds > 0 && (
-                <div
-                  style={{
-                    marginTop: '0.25rem',
-                    fontSize: '0.625rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-dim)',
-                  }}
-                >
-                  ~{formatEta(etaSeconds)} remaining
-                </div>
-              )}
+              {/* Phase 20: Enhanced progress display */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '1rem',
+                  marginTop: '0.25rem',
+                  fontSize: '0.625rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--text-dim)',
+                }}
+              >
+                {/* ETA */}
+                {etaSeconds != null && etaSeconds > 0 && (
+                  <span>~{formatEta(etaSeconds)} remaining</span>
+                )}
+                
+                {/* Encode FPS */}
+                {encodeFps != null && encodeFps > 0 && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {encodeFps.toFixed(1)} fps
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>

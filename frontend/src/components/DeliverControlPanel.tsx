@@ -1,11 +1,17 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
 
 /**
- * DeliverControlPanel — Persistent Control Surface (Phase 17)
+ * DeliverControlPanel — Persistent Control Surface (Phase 17 + Phase 20)
  * 
- * Replaces modal settings dialogs with a persistent embedded panel.
+ * Phase 20: Codec-driven UI authority.
+ * - All codec options fetched from backend CodecSpec registry
+ * - UI dynamically reconfigures based on codec capabilities
+ * - CRF and Bitrate are mutually exclusive
+ * - Container ↔ codec enforcement
+ * - Invalid UI states are architecturally impossible
+ * 
  * Content is driven by selection context:
  * - Pre-job files: Editable DeliverSettings
  * - Job (PENDING): Editable DeliverSettings
@@ -27,8 +33,10 @@ export interface VideoSettings {
   frame_rate?: string
   pixel_aspect_ratio?: string
   color_space?: string
-  quality?: number
+  quality?: number  // CRF value
   bitrate?: string
+  rate_control_mode?: 'crf' | 'bitrate'  // Phase 20: Explicit mode selection
+  bitrate_preset?: 'low' | 'medium' | 'high' | 'broadcast'  // Phase 20: Preset selection
   preset?: string
 }
 
@@ -66,10 +74,22 @@ export interface TextOverlay {
   font_size: number
   opacity: number
   enabled: boolean
+  // Phase 20: Normalized coordinates (0-1) for graphical positioning
+  x?: number
+  y?: number
 }
 
 export interface OverlaySettings {
   text_layers: TextOverlay[]
+}
+
+// Phase 20: Colour settings
+export interface ColourSettings {
+  mode: 'passthrough' | 'apply_lut' | 'simple_transform'
+  lut_file?: string  // filename from LUT library
+  // Simple transform controls
+  gamma?: number      // 0.5 - 2.0, default 1.0
+  contrast?: number   // 0.5 - 2.0, default 1.0
 }
 
 export interface DeliverSettings {
@@ -78,6 +98,7 @@ export interface DeliverSettings {
   file: FileSettings
   metadata: MetadataSettings
   overlay: OverlaySettings
+  colour?: ColourSettings  // Phase 20
   output_dir?: string
 }
 
@@ -90,6 +111,38 @@ export type SelectionContext =
   | { type: 'multiple-jobs'; jobIds: string[] }
   | { type: 'clip'; jobId: string; clipId: string }
 
+// Phase 20: CodecSpec from backend
+interface BitratePresets {
+  low: string
+  medium: string
+  high: string
+  broadcast: string
+}
+
+interface CodecSpec {
+  name: string
+  codec_id: string
+  category: string
+  supports_crf: boolean
+  supports_bitrate: boolean
+  supports_constant_qp: boolean
+  default_rate_control: 'crf' | 'bitrate' | null
+  crf_min: number
+  crf_max: number
+  crf_default: number
+  bitrate_presets: BitratePresets | null
+  supported_containers: string[]
+  default_container: string
+  supported_pixel_formats: string[]
+  default_pixel_format: string
+  supported_color_spaces: string[]
+  supports_lut: boolean
+  supports_hdr_metadata: boolean
+  is_lossless: boolean
+  is_intraframe: boolean
+  notes: string
+}
+
 interface DeliverControlPanelProps {
   context: SelectionContext
   settings: DeliverSettings
@@ -101,30 +154,8 @@ interface DeliverControlPanelProps {
 }
 
 // ============================================================================
-// CODEC & FORMAT OPTIONS
+// STATIC OPTIONS (non-codec-dependent)
 // ============================================================================
-
-const VIDEO_CODECS = [
-  // ProRes family
-  { value: 'prores_proxy', label: 'ProRes Proxy' },
-  { value: 'prores_lt', label: 'ProRes LT' },
-  { value: 'prores_422', label: 'ProRes 422' },
-  { value: 'prores_422_hq', label: 'ProRes 422 HQ' },
-  { value: 'prores_4444', label: 'ProRes 4444' },
-  { value: 'prores_4444_xq', label: 'ProRes 4444 XQ' },  // Phase 20
-  
-  // DNxHR family
-  { value: 'dnxhr_lb', label: 'DNxHR LB' },
-  { value: 'dnxhr_sq', label: 'DNxHR SQ' },
-  { value: 'dnxhr_hq', label: 'DNxHR HQ' },
-  { value: 'dnxhr_hqx', label: 'DNxHR HQX' },  // Phase 20
-  { value: 'dnxhr_444', label: 'DNxHR 444' },  // Phase 20
-  
-  // Delivery codecs
-  { value: 'h264', label: 'H.264 / AVC' },
-  { value: 'h265', label: 'H.265 / HEVC' },  // Phase 20
-  { value: 'av1', label: 'AV1' },  // Phase 20
-]
 
 const AUDIO_CODECS = [
   { value: 'copy', label: 'Copy (Passthrough)' },
@@ -133,12 +164,12 @@ const AUDIO_CODECS = [
   { value: 'pcm_s24le', label: 'PCM 24-bit' },
 ]
 
-const CONTAINERS = [
-  { value: 'mov', label: 'QuickTime (.mov)' },
-  { value: 'mxf', label: 'MXF (.mxf)' },
-  { value: 'mp4', label: 'MP4 (.mp4)' },
-  { value: 'mkv', label: 'Matroska (.mkv)' },  // Phase 20: For H.265/AV1
-  { value: 'webm', label: 'WebM (.webm)' },  // Phase 20: For AV1
+// Audio bitrate presets (for lossy codecs only)
+const AUDIO_BITRATE_PRESETS = [
+  { value: '128k', label: '128 kbps (Low)' },
+  { value: '192k', label: '192 kbps (Medium)' },
+  { value: '256k', label: '256 kbps (High)' },
+  { value: '320k', label: '320 kbps (Broadcast)' },
 ]
 
 const RESOLUTION_POLICIES = [
@@ -165,7 +196,8 @@ const OVERWRITE_POLICIES = [
   { value: 'increment', label: 'Auto-Increment Suffix' },
 ]
 
-const TEXT_POSITIONS = [
+// Phase 20: Watermark positions (renamed from TEXT_POSITIONS)
+const WATERMARK_POSITIONS = [
   { value: 'top_left', label: 'Top Left' },
   { value: 'top_center', label: 'Top Center' },
   { value: 'top_right', label: 'Top Right' },
@@ -173,6 +205,13 @@ const TEXT_POSITIONS = [
   { value: 'bottom_center', label: 'Bottom Center' },
   { value: 'bottom_right', label: 'Bottom Right' },
   { value: 'center', label: 'Center' },
+]
+
+// Phase 20: Colour modes
+const COLOUR_MODES = [
+  { value: 'passthrough', label: 'Passthrough (No Change)' },
+  { value: 'apply_lut', label: 'Apply LUT' },
+  { value: 'simple_transform', label: 'Simple Transform' },
 ]
 
 // ============================================================================
@@ -334,8 +373,7 @@ export function DeliverControlPanel({
   onSettingsChange,
   onApply,
   isReadOnly = false,
-  // backendUrl reserved for future API calls
-  backendUrl: _backendUrl,
+  backendUrl = 'http://127.0.0.1:8085',
   appliedPresetName,
 }: DeliverControlPanelProps) {
   // Section visibility state
@@ -343,8 +381,116 @@ export function DeliverControlPanel({
     new Set(['video', 'file'])
   )
   
-  // Suppress unused variable warning
-  void _backendUrl
+  // Phase 20: Codec specs from backend (single source of truth)
+  const [codecSpecs, setCodecSpecs] = useState<Record<string, CodecSpec>>({})
+  const [codecsLoading, setCodecsLoading] = useState(true)
+  const [codecsError, setCodecsError] = useState<string | null>(null)
+  
+  // Phase 20: Available LUTs from backend
+  const [availableLuts, setAvailableLuts] = useState<string[]>([])
+  
+  // Fetch codec specs on mount
+  useEffect(() => {
+    const fetchCodecSpecs = async () => {
+      try {
+        setCodecsLoading(true)
+        const response = await fetch(`${backendUrl}/control/codecs`)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json()
+        setCodecSpecs(data.codecs || {})
+        setCodecsError(null)
+      } catch (err) {
+        console.error('Failed to fetch codec specs:', err)
+        setCodecsError(err instanceof Error ? err.message : 'Unknown error')
+      } finally {
+        setCodecsLoading(false)
+      }
+    }
+    fetchCodecSpecs()
+  }, [backendUrl])
+  
+  // Fetch available LUTs
+  useEffect(() => {
+    const fetchLuts = async () => {
+      try {
+        const response = await fetch(`${backendUrl}/control/luts`)
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableLuts(data.luts || [])
+        }
+      } catch (err) {
+        // LUT endpoint may not exist yet - that's OK
+        console.warn('LUT endpoint not available yet')
+      }
+    }
+    fetchLuts()
+  }, [backendUrl])
+  
+  // Get current codec spec
+  const currentCodecSpec = useMemo(() => {
+    return codecSpecs[settings.video.codec] || null
+  }, [codecSpecs, settings.video.codec])
+  
+  // Generate video codec options from specs (grouped by category)
+  const videoCodecOptions = useMemo(() => {
+    const categories: Record<string, { value: string; label: string }[]> = {
+      prores: [],
+      dnx: [],
+      delivery: [],
+    }
+    
+    Object.entries(codecSpecs).forEach(([codecId, spec]) => {
+      const option = { value: codecId, label: spec.name }
+      if (spec.category in categories) {
+        categories[spec.category].push(option)
+      } else {
+        categories.delivery.push(option)
+      }
+    })
+    
+    // Flatten with group headers
+    const result: { value: string; label: string; disabled?: boolean }[] = []
+    if (categories.prores.length > 0) {
+      result.push({ value: '', label: '── ProRes ──', disabled: true })
+      result.push(...categories.prores)
+    }
+    if (categories.dnx.length > 0) {
+      result.push({ value: '', label: '── DNx ──', disabled: true })
+      result.push(...categories.dnx)
+    }
+    if (categories.delivery.length > 0) {
+      result.push({ value: '', label: '── Delivery ──', disabled: true })
+      result.push(...categories.delivery)
+    }
+    
+    return result.length > 0 ? result : [
+      { value: 'h264', label: 'H.264 / AVC' },
+      { value: 'prores_422', label: 'ProRes 422' },
+    ]
+  }, [codecSpecs])
+  
+  // Generate container options filtered by current codec
+  const containerOptions = useMemo(() => {
+    if (!currentCodecSpec) {
+      return [
+        { value: 'mov', label: 'QuickTime (.mov)' },
+        { value: 'mp4', label: 'MP4 (.mp4)' },
+      ]
+    }
+    
+    const containerLabels: Record<string, string> = {
+      mov: 'QuickTime (.mov)',
+      mxf: 'MXF (.mxf)',
+      mp4: 'MP4 (.mp4)',
+      mkv: 'Matroska (.mkv)',
+      webm: 'WebM (.webm)',
+    }
+    
+    return currentCodecSpec.supported_containers.map(c => ({
+      value: c,
+      label: containerLabels[c] || c.toUpperCase(),
+    }))
+  }, [currentCodecSpec])
   
   const toggleSection = (section: string) => {
     setOpenSections(prev => {
@@ -403,9 +549,55 @@ export function DeliverControlPanel({
   
   // Helper to update nested settings
   const updateVideoSettings = (updates: Partial<VideoSettings>) => {
-    onSettingsChange({
-      video: { ...settings.video, ...updates }
-    })
+    const newVideoSettings = { ...settings.video, ...updates }
+    
+    // Phase 20: When codec changes, enforce container compatibility
+    if (updates.codec && updates.codec !== settings.video.codec) {
+      const newCodecSpec = codecSpecs[updates.codec]
+      if (newCodecSpec) {
+        // If current container is not valid for new codec, switch to default
+        if (!newCodecSpec.supported_containers.includes(settings.file.container)) {
+          onSettingsChange({
+            video: newVideoSettings,
+            file: { ...settings.file, container: newCodecSpec.default_container }
+          })
+          return
+        }
+        
+        // Set default rate control mode for the new codec
+        if (newCodecSpec.supports_crf || newCodecSpec.supports_bitrate) {
+          newVideoSettings.rate_control_mode = newCodecSpec.default_rate_control as 'crf' | 'bitrate' || 'crf'
+          if (newCodecSpec.supports_crf) {
+            newVideoSettings.quality = newCodecSpec.crf_default
+          }
+          if (newCodecSpec.supports_bitrate && !newCodecSpec.supports_crf) {
+            newVideoSettings.bitrate_preset = 'medium'
+          }
+        } else {
+          // Codec doesn't support rate control (e.g., ProRes)
+          newVideoSettings.rate_control_mode = undefined
+          newVideoSettings.quality = undefined
+          newVideoSettings.bitrate = undefined
+          newVideoSettings.bitrate_preset = undefined
+        }
+      }
+    }
+    
+    // Phase 20: CRF and Bitrate are mutually exclusive
+    if (updates.rate_control_mode === 'crf') {
+      newVideoSettings.bitrate = undefined
+      newVideoSettings.bitrate_preset = undefined
+    } else if (updates.rate_control_mode === 'bitrate') {
+      newVideoSettings.quality = undefined
+    }
+    
+    // When bitrate preset changes, update the actual bitrate value
+    if (updates.bitrate_preset && currentCodecSpec?.bitrate_presets) {
+      const presets = currentCodecSpec.bitrate_presets
+      newVideoSettings.bitrate = presets[updates.bitrate_preset as keyof typeof presets]
+    }
+    
+    onSettingsChange({ video: newVideoSettings })
   }
   
   const updateAudioSettings = (updates: Partial<AudioSettings>) => {
@@ -415,9 +607,20 @@ export function DeliverControlPanel({
   }
   
   const updateFileSettings = (updates: Partial<FileSettings>) => {
-    onSettingsChange({
-      file: { ...settings.file, ...updates }
-    })
+    const newFileSettings = { ...settings.file, ...updates }
+    
+    // Phase 20: When container changes, validate codec compatibility
+    if (updates.container && updates.container !== settings.file.container) {
+      const codecSpec = codecSpecs[settings.video.codec]
+      if (codecSpec && !codecSpec.supported_containers.includes(updates.container)) {
+        // Container not valid for current codec - don't allow change
+        // (UI should prevent this, but this is defensive)
+        console.warn(`Container ${updates.container} not valid for codec ${settings.video.codec}`)
+        return
+      }
+    }
+    
+    onSettingsChange({ file: newFileSettings })
   }
   
   const updateMetadataSettings = (updates: Partial<MetadataSettings>) => {
@@ -429,6 +632,13 @@ export function DeliverControlPanel({
   const updateOverlaySettings = (updates: Partial<OverlaySettings>) => {
     onSettingsChange({
       overlay: { ...settings.overlay, ...updates }
+    })
+  }
+  
+  // Phase 20: Colour settings update
+  const updateColourSettings = (updates: Partial<ColourSettings>) => {
+    onSettingsChange({
+      colour: { ...(settings.colour || { mode: 'passthrough' }), ...updates }
     })
   }
   
@@ -523,25 +733,148 @@ export function DeliverControlPanel({
           onToggle={() => toggleSection('video')}
           badge={settings.video.codec.toUpperCase()}
         >
-          <FieldRow label="Codec">
-            <Select
-              value={settings.video.codec}
-              onChange={(v) => updateVideoSettings({ codec: v })}
-              options={VIDEO_CODECS}
-              disabled={isReadOnly}
-              fullWidth
-            />
-          </FieldRow>
-          
-          <FieldRow label="Resolution">
-            <Select
-              value={settings.video.resolution_policy}
-              onChange={(v) => updateVideoSettings({ resolution_policy: v })}
-              options={RESOLUTION_POLICIES}
-              disabled={isReadOnly}
-              fullWidth
-            />
-          </FieldRow>
+          {codecsLoading ? (
+            <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Loading codec specs...
+            </div>
+          ) : codecsError ? (
+            <div style={{ padding: '0.5rem', color: 'var(--status-failed-fg)', fontSize: '0.75rem' }}>
+              ⚠️ Failed to load codecs: {codecsError}
+            </div>
+          ) : (
+            <>
+              <FieldRow label="Codec">
+                <Select
+                  value={settings.video.codec}
+                  onChange={(v) => updateVideoSettings({ codec: v })}
+                  options={videoCodecOptions}
+                  disabled={isReadOnly}
+                  fullWidth
+                />
+              </FieldRow>
+              
+              {/* Phase 20: Codec info tooltip */}
+              {currentCodecSpec?.notes && (
+                <div style={{
+                  padding: '0.375rem 0.5rem',
+                  marginBottom: '0.75rem',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-muted)',
+                  backgroundColor: 'rgba(51, 65, 85, 0.2)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontStyle: 'italic',
+                }}>
+                  ℹ️ {currentCodecSpec.notes}
+                </div>
+              )}
+              
+              {/* Phase 20: Rate control - CRF or Bitrate (mutually exclusive) */}
+              {currentCodecSpec && (currentCodecSpec.supports_crf || currentCodecSpec.supports_bitrate) && (
+                <>
+                  <FieldRow label="Rate Control">
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      {currentCodecSpec.supports_crf && (
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.375rem',
+                          cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                          opacity: isReadOnly ? 0.5 : 1,
+                        }}>
+                          <input
+                            type="radio"
+                            name="rate_control"
+                            checked={settings.video.rate_control_mode === 'crf' || (!settings.video.rate_control_mode && currentCodecSpec.default_rate_control === 'crf')}
+                            onChange={() => updateVideoSettings({ rate_control_mode: 'crf' })}
+                            disabled={isReadOnly}
+                          />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>CRF (Quality)</span>
+                        </label>
+                      )}
+                      {currentCodecSpec.supports_bitrate && (
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.375rem',
+                          cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                          opacity: isReadOnly ? 0.5 : 1,
+                        }}>
+                          <input
+                            type="radio"
+                            name="rate_control"
+                            checked={settings.video.rate_control_mode === 'bitrate' || (!settings.video.rate_control_mode && currentCodecSpec.default_rate_control === 'bitrate')}
+                            onChange={() => updateVideoSettings({ rate_control_mode: 'bitrate' })}
+                            disabled={isReadOnly}
+                          />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Bitrate</span>
+                        </label>
+                      )}
+                    </div>
+                  </FieldRow>
+                  
+                  {/* CRF Slider (only if CRF mode selected and codec supports it) */}
+                  {currentCodecSpec.supports_crf && 
+                   (settings.video.rate_control_mode === 'crf' || (!settings.video.rate_control_mode && currentCodecSpec.default_rate_control === 'crf')) && (
+                    <FieldRow label="Quality (CRF)" description="Lower = better quality, larger file">
+                      <input
+                        type="range"
+                        min={currentCodecSpec.crf_min}
+                        max={currentCodecSpec.crf_max}
+                        value={settings.video.quality ?? currentCodecSpec.crf_default}
+                        onChange={(e) => updateVideoSettings({ quality: parseInt(e.target.value) })}
+                        disabled={isReadOnly}
+                        style={{ width: '100%' }}
+                      />
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        CRF {settings.video.quality ?? currentCodecSpec.crf_default}
+                      </span>
+                    </FieldRow>
+                  )}
+                  
+                  {/* Bitrate Preset (only if Bitrate mode selected and codec supports it) */}
+                  {currentCodecSpec.supports_bitrate && currentCodecSpec.bitrate_presets &&
+                   settings.video.rate_control_mode === 'bitrate' && (
+                    <FieldRow label="Bitrate Preset" description="No free-text entry. Presets ensure optimal quality.">
+                      <Select
+                        value={settings.video.bitrate_preset || 'medium'}
+                        onChange={(v) => updateVideoSettings({ bitrate_preset: v as 'low' | 'medium' | 'high' | 'broadcast' })}
+                        options={[
+                          { value: 'low', label: `Low (${currentCodecSpec.bitrate_presets.low})` },
+                          { value: 'medium', label: `Medium (${currentCodecSpec.bitrate_presets.medium})` },
+                          { value: 'high', label: `High (${currentCodecSpec.bitrate_presets.high})` },
+                          { value: 'broadcast', label: `Broadcast (${currentCodecSpec.bitrate_presets.broadcast})` },
+                        ]}
+                        disabled={isReadOnly}
+                        fullWidth
+                      />
+                    </FieldRow>
+                  )}
+                </>
+              )}
+              
+              {/* Intraframe codec indicator */}
+              {currentCodecSpec?.is_intraframe && (
+                <div style={{
+                  padding: '0.375rem 0.5rem',
+                  marginBottom: '0.75rem',
+                  fontSize: '0.6875rem',
+                  color: 'var(--status-completed-fg)',
+                  backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                  borderRadius: 'var(--radius-sm)',
+                }}>
+                  ✓ Intraframe codec (no temporal compression)
+                </div>
+              )}
+              
+              <FieldRow label="Resolution">
+                <Select
+                  value={settings.video.resolution_policy}
+                  onChange={(v) => updateVideoSettings({ resolution_policy: v })}
+                  options={RESOLUTION_POLICIES}
+                  disabled={isReadOnly}
+                  fullWidth
+                />
+              </FieldRow>
           
           {settings.video.resolution_policy !== 'source' && (
             <>
@@ -605,26 +938,6 @@ export function DeliverControlPanel({
             </>
           )}
           
-          {/* Phase 20: Quality slider for H.264, H.265, and AV1 */}
-          {(settings.video.codec === 'h264' || settings.video.codec === 'h265' || settings.video.codec === 'av1') && (
-            <>
-              <FieldRow label="Quality (CRF)" description="Lower = better quality, larger file">
-                <input
-                  type="range"
-                  min="0"
-                  max={settings.video.codec === 'av1' ? 63 : 51}
-                  value={settings.video.quality || 23}
-                  onChange={(e) => updateVideoSettings({ quality: parseInt(e.target.value) })}
-                  disabled={isReadOnly}
-                  style={{ width: '100%' }}
-                />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  CRF {settings.video.quality || 23}
-                </span>
-              </FieldRow>
-            </>
-          )}
-          
           <FieldRow label="Frame Rate">
             <Select
               value={settings.video.frame_rate_policy}
@@ -673,6 +986,8 @@ export function DeliverControlPanel({
               fullWidth
             />
           </FieldRow>
+          </>
+          )}
         </Section>
         
         {/* Audio Section */}
@@ -701,21 +1016,12 @@ export function DeliverControlPanel({
           
           {!settings.audio.passthrough && settings.audio.codec !== 'copy' && (
             <FieldRow label="Bitrate">
-              <input
-                type="text"
-                value={settings.audio.bitrate || ''}
-                onChange={(e) => updateAudioSettings({ bitrate: e.target.value || undefined })}
+              <Select
+                value={settings.audio.bitrate || '192k'}
+                onChange={(v) => updateAudioSettings({ bitrate: v })}
+                options={AUDIO_BITRATE_PRESETS}
                 disabled={isReadOnly}
-                placeholder="192k"
-                style={{
-                  width: '100%',
-                  padding: '0.375rem 0.5rem',
-                  fontSize: '0.75rem',
-                  background: 'var(--input-bg)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                }}
+                fullWidth
               />
             </FieldRow>
           )}
@@ -757,11 +1063,11 @@ export function DeliverControlPanel({
           onToggle={() => toggleSection('file')}
           badge={settings.file.container.toUpperCase()}
         >
-          <FieldRow label="Container">
+          <FieldRow label="Container" description={currentCodecSpec ? `Valid for ${currentCodecSpec.name}` : undefined}>
             <Select
               value={settings.file.container}
               onChange={(v) => updateFileSettings({ container: v })}
-              options={CONTAINERS}
+              options={containerOptions}
               disabled={isReadOnly}
               fullWidth
             />
@@ -930,9 +1236,98 @@ export function DeliverControlPanel({
           )}
         </Section>
         
-        {/* Overlays Section */}
+        {/* Colour Section (Phase 20) */}
         <Section
-          title="Overlays"
+          title="Colour"
+          isOpen={openSections.has('colour')}
+          onToggle={() => toggleSection('colour')}
+          badge={(settings.colour?.mode || 'passthrough').toUpperCase()}
+        >
+          <FieldRow label="Colour Mode">
+            <Select
+              value={settings.colour?.mode || 'passthrough'}
+              onChange={(v) => updateColourSettings({ mode: v as 'passthrough' | 'apply_lut' | 'simple_transform' })}
+              options={COLOUR_MODES}
+              disabled={isReadOnly || !currentCodecSpec?.supports_lut}
+              fullWidth
+            />
+          </FieldRow>
+          
+          {!currentCodecSpec?.supports_lut && (
+            <div style={{
+              padding: '0.375rem 0.5rem',
+              marginBottom: '0.75rem',
+              fontSize: '0.6875rem',
+              color: 'var(--text-muted)',
+              backgroundColor: 'rgba(51, 65, 85, 0.2)',
+              borderRadius: 'var(--radius-sm)',
+            }}>
+              ℹ️ Selected codec does not support colour transforms
+            </div>
+          )}
+          
+          {/* LUT Selection (only if Apply LUT mode) */}
+          {settings.colour?.mode === 'apply_lut' && currentCodecSpec?.supports_lut && (
+            <FieldRow label="LUT File" description=".cube files from ~/Library/Application Support/Fabric/LUTs">
+              <Select
+                value={settings.colour?.lut_file || ''}
+                onChange={(v) => updateColourSettings({ lut_file: v })}
+                options={[
+                  { value: '', label: 'Select LUT...' },
+                  ...availableLuts.map(lut => ({ value: lut, label: lut }))
+                ]}
+                disabled={isReadOnly}
+                fullWidth
+              />
+              {availableLuts.length === 0 && (
+                <div style={{ marginTop: '0.25rem', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  No LUTs available. Add .cube files to the LUT folder.
+                </div>
+              )}
+            </FieldRow>
+          )}
+          
+          {/* Simple Transform (gamma/contrast only) */}
+          {settings.colour?.mode === 'simple_transform' && currentCodecSpec?.supports_lut && (
+            <>
+              <FieldRow label="Gamma">
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.05"
+                  value={settings.colour?.gamma ?? 1.0}
+                  onChange={(e) => updateColourSettings({ gamma: parseFloat(e.target.value) })}
+                  disabled={isReadOnly}
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  {(settings.colour?.gamma ?? 1.0).toFixed(2)}
+                </span>
+              </FieldRow>
+              
+              <FieldRow label="Contrast">
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.05"
+                  value={settings.colour?.contrast ?? 1.0}
+                  onChange={(e) => updateColourSettings({ contrast: parseFloat(e.target.value) })}
+                  disabled={isReadOnly}
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  {(settings.colour?.contrast ?? 1.0).toFixed(2)}
+                </span>
+              </FieldRow>
+            </>
+          )}
+        </Section>
+        
+        {/* Watermarks Section (renamed from Overlays) */}
+        <Section
+          title="Watermarks"
           isOpen={openSections.has('overlay')}
           onToggle={() => toggleSection('overlay')}
           badge={activeOverlays > 0 ? `${activeOverlays} ACTIVE` : 'NONE'}
@@ -951,7 +1346,7 @@ export function DeliverControlPanel({
               }}
               disabled={isReadOnly}
             >
-              + Add Text Overlay
+              + Add Watermark
             </Button>
           </div>
           
@@ -1029,7 +1424,7 @@ export function DeliverControlPanel({
                     newLayers[index] = { ...layer, position: v }
                     updateOverlaySettings({ text_layers: newLayers })
                   }}
-                  options={TEXT_POSITIONS}
+                  options={WATERMARK_POSITIONS}
                   disabled={isReadOnly}
                   fullWidth
                 />
@@ -1090,38 +1485,9 @@ export function DeliverControlPanel({
               color: 'var(--text-dim)',
               fontFamily: 'var(--font-sans)',
             }}>
-              No text overlays configured
+              No watermarks configured
             </div>
           )}
-          
-          {/* Coming Next: Overlay Preview (Phase 19 stub) */}
-          <div
-            style={{
-              marginTop: '0.75rem',
-              padding: '0.5rem 0.75rem',
-              backgroundColor: 'rgba(59, 130, 246, 0.05)',
-              border: '1px dashed var(--border-primary)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-          >
-            <div style={{
-              fontSize: '0.625rem',
-              fontWeight: 600,
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-sans)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-            }}>
-              Coming next
-            </div>
-            <div style={{
-              fontSize: '0.6875rem',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-sans)',
-            }}>
-              🖼️ Graphical preview positioning
-            </div>
-          </div>
         </Section>
       </div>
       
