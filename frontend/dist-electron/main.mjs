@@ -16,7 +16,7 @@ process.on('unhandledRejection', (reason) => {
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error(reason);
 });
-async function loadDevWithRetries(win, url, retries = 12, delayMs = 500) {
+async function loadDevWithRetries(win, url, retries = 12, delayMs = 800) {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             console.log(`Attempt ${attempt}/${retries} to load ${url}`);
@@ -28,7 +28,10 @@ async function loadDevWithRetries(win, url, retries = 12, delayMs = 500) {
             console.error(`loadURL failed (attempt ${attempt}/${retries}):`, err);
             if (attempt === retries)
                 throw err;
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            // Exponential backoff: increase delay for each retry
+            const backoffDelay = delayMs * Math.min(attempt, 3);
+            console.log(`⏳ Waiting ${backoffDelay}ms before retry...`);
+            await new Promise((resolve) => setTimeout(resolve, backoffDelay));
         }
     }
 }
