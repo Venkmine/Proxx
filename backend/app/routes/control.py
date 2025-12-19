@@ -265,6 +265,73 @@ async def list_presets_endpoint(request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to list presets: {e}")
 
 
+@router.get("/presets/{preset_id}/deliver-settings")
+async def get_preset_deliver_settings_endpoint(preset_id: str, request: Request):
+    """
+    Get DeliverSettings for a preset.
+    
+    Phase 17: Presets are one-time initializers for the Deliver panel.
+    Returns default DeliverSettings that the preset would apply.
+    
+    Note: In Phase 17, presets don't yet have custom deliver settings stored.
+    This endpoint returns sensible defaults based on the preset's category refs.
+    Future phases will add preset-specific deliver settings storage.
+    """
+    try:
+        preset_registry = request.app.state.preset_registry
+        
+        global_presets = preset_registry.list_global_presets()
+        preset = global_presets.get(preset_id)
+        
+        if not preset:
+            raise HTTPException(status_code=404, detail=f"Preset not found: {preset_id}")
+        
+        # Phase 17: Return sensible defaults
+        # Future: Load preset-specific deliver settings
+        # For now, return ProRes 422 HQ defaults (common proxy workflow)
+        deliver_settings = {
+            "video": {
+                "codec": "prores_422_hq",
+                "resolution_policy": "source",
+                "frame_rate_policy": "source",
+                "pixel_aspect_ratio": "square",
+                "quality": None,
+            },
+            "audio": {
+                "codec": "pcm_s24le",
+                "layout": "source",
+                "sample_rate": 48000,
+                "passthrough": False,
+            },
+            "file": {
+                "container": "mov",
+                "naming_template": "{source_name}_proxy",
+                "overwrite_policy": "increment",
+                "preserve_source_dirs": False,
+                "preserve_dir_levels": 0,
+            },
+            "metadata": {
+                "strip_all_metadata": False,
+                "passthrough_all_container_metadata": True,
+                "passthrough_timecode": True,
+                "passthrough_reel_name": True,
+                "passthrough_camera_metadata": True,
+                "passthrough_color_metadata": True,
+            },
+            "overlay": {
+                "text_layers": [],
+            },
+        }
+        
+        return deliver_settings
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get preset deliver settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get preset deliver settings: {e}")
+
+
 @router.get("/engines", response_model=EngineListResponse)
 async def list_engines_endpoint(request: Request):
     """

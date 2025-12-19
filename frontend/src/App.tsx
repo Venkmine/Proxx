@@ -4,6 +4,7 @@ import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
 import { CreateJobPanel } from './components/CreateJobPanel'
 import { QueueFilterBar } from './components/QueueFilterBar'
+import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 
 /**
  * Proxx Operator Control - Grouped Queue View
@@ -174,6 +175,70 @@ function App() {
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
 
   // ============================================
+  // Phase 17: DeliverSettings State (Authoritative)
+  // ============================================
+  
+  // Default DeliverSettings - matches backend DeliverCapabilities
+  const getDefaultDeliverSettings = (): DeliverSettings => ({
+    video: {
+      codec: 'h264',
+      resolution_policy: 'source',
+      frame_rate_policy: 'source',
+      pixel_aspect_ratio: 'square',
+      quality: 23,
+    },
+    audio: {
+      codec: 'aac',
+      layout: 'source',
+      sample_rate: 48000,
+      passthrough: true,
+    },
+    file: {
+      container: 'mp4',
+      naming_template: '{source_name}_proxy',
+      overwrite_policy: 'increment',
+      preserve_source_dirs: false,
+      preserve_dir_levels: 0,
+    },
+    metadata: {
+      strip_all_metadata: false,
+      passthrough_all_container_metadata: true,
+      passthrough_timecode: true,
+      passthrough_reel_name: true,
+      passthrough_camera_metadata: true,
+      passthrough_color_metadata: true,
+    },
+    overlay: {
+      text_layers: [],
+    },
+    output_dir: '',
+  })
+  
+  const [deliverSettings, setDeliverSettings] = useState<DeliverSettings>(getDefaultDeliverSettings())
+  
+  // Track if preset was applied (for UI indicator)
+  const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
+  
+  // Derive Deliver panel context from selection state
+  const getDeliverContext = (): SelectionContext => {
+    if (selectedJobId) {
+      const job = jobs.find(j => j.id === selectedJobId)
+      if (!job) return { type: 'none' as const }
+      const status = job.status.toUpperCase()
+      if (status === 'PENDING') return { type: 'job-pending' as const, jobId: selectedJobId }
+      if (status === 'RUNNING' || status === 'PAUSED') return { type: 'job-running' as const, jobId: selectedJobId }
+      return { type: 'job-completed' as const, jobId: selectedJobId }
+    }
+    if (selectedFiles.length > 0) {
+      return { type: 'pre-job' as const, files: selectedFiles }
+    }
+    return { type: 'none' as const }
+  }
+  
+  const deliverContext = getDeliverContext()
+  const isDeliverReadOnly = deliverContext.type === 'job-running' || deliverContext.type === 'job-completed'
+
+  // ============================================
   // Data Fetching
   // ============================================
 
@@ -187,6 +252,59 @@ function App() {
     } catch (err) {
       const msg = `Failed to load presets: ${err instanceof Error ? err.message : 'Unknown error'}`
       setPresetError(msg)
+    }
+  }
+
+  // Phase 17: Fetch DeliverSettings for a preset (populates Deliver panel)
+  const fetchPresetDeliverSettings = async (presetId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/control/presets/${presetId}/deliver-settings`)
+      if (!response.ok) {
+        // Fallback: preset may not have deliver settings endpoint yet
+        console.warn(`Preset ${presetId} deliver-settings not available, using defaults`)
+        return false
+      }
+      const data = await response.json()
+      // Apply preset settings to panel (preset is starting point, not authority)
+      setDeliverSettings(prev => ({
+        ...prev,
+        video: { ...prev.video, ...data.video },
+        audio: { ...prev.audio, ...data.audio },
+        file: { ...prev.file, ...data.file },
+        metadata: { ...prev.metadata, ...data.metadata },
+        overlay: data.overlay || prev.overlay,
+      }))
+      // Track applied preset for UI indicator
+      const preset = presets.find(p => p.id === presetId)
+      setAppliedPresetName(preset?.name || presetId)
+      return true
+    } catch (err) {
+      console.error(`Failed to fetch preset deliver settings: ${err}`)
+      return false
+    }
+  }
+
+  // Phase 17: Fetch DeliverSettings for a job (syncs panel with backend truth)
+  const fetchJobDeliverSettings = async (jobId: string) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/jobs/${jobId}/deliver-settings`)
+      if (!response.ok) {
+        // Fallback for older jobs without deliver-settings
+        console.warn(`Job ${jobId} deliver-settings not available`)
+        return
+      }
+      const data = await response.json()
+      setDeliverSettings({
+        video: data.video || getDefaultDeliverSettings().video,
+        audio: data.audio || getDefaultDeliverSettings().audio,
+        file: data.file || getDefaultDeliverSettings().file,
+        metadata: data.metadata || getDefaultDeliverSettings().metadata,
+        overlay: data.overlay || getDefaultDeliverSettings().overlay,
+        output_dir: data.output_dir || '',
+      })
+      setAppliedPresetName(null) // Job owns settings, not preset
+    } catch (err) {
+      console.error(`Failed to fetch job deliver settings: ${err}`)
     }
   }
 
@@ -267,6 +385,18 @@ function App() {
       }
     })
   }, [jobs])
+
+  // Phase 17: Fetch DeliverSettings when a job is selected (sync panel with backend truth)
+  useEffect(() => {
+    if (selectedJobId) {
+      fetchJobDeliverSettings(selectedJobId)
+    } else if (selectedFiles.length === 0) {
+      // No job or files selected, reset to defaults
+      setDeliverSettings(getDefaultDeliverSettings())
+      setAppliedPresetName(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId])
 
   // ============================================
   // Job Actions
@@ -479,16 +609,19 @@ function App() {
       return
     }
 
-    // Phase 16.4: No confirmation for routine actions
+    // Phase 17: No confirmation for routine actions
     try {
       setLoading(true)
       
-      // Phase 16.4: Build job settings
-      const jobSettings = {
-        output_dir: outputDirectory || null,
-        naming_template: "{source_name}__proxx",  // Default template
-        watermark_enabled: false,
-        watermark_text: null,
+      // Phase 17: Use DeliverSettings from the Deliver panel (not hardcoded defaults)
+      // The panel is the source of truth for what the job runs with
+      const jobDeliverSettings = {
+        output_dir: outputDirectory || deliverSettings.output_dir || null,
+        video: deliverSettings.video,
+        audio: deliverSettings.audio,
+        file: deliverSettings.file,
+        metadata: deliverSettings.metadata,
+        overlay: deliverSettings.overlay,
       }
       
       const response = await fetch(`${BACKEND_URL}/control/jobs/create`, {
@@ -498,7 +631,7 @@ function App() {
           source_paths: selectedFiles,
           preset_id: selectedPresetId,
           engine: selectedEngine,
-          settings: jobSettings,
+          deliver_settings: jobDeliverSettings,
         }),
       })
       if (!response.ok) {
@@ -507,11 +640,11 @@ function App() {
       }
       const result = await response.json()
       
-      // Phase 16.4: No success alert - just refresh and auto-scroll to new job
-      // Clear form BUT keep panel open (per design requirements)
+      // Phase 17: Clear form but keep Deliver panel values as starting point for next job
       setSelectedFiles([])
       setSelectedPresetId('')
       setOutputDirectory('')
+      setAppliedPresetName(null)
       
       // Fetch jobs and select the newly created one
       await fetchJobs()
@@ -583,6 +716,40 @@ function App() {
     const updated = pathFavorites.filter(p => p !== path)
     setPathFavorites(updated)
     localStorage.setItem('proxx_path_favorites', JSON.stringify(updated))
+  }
+
+  // ============================================
+  // Phase 17: Preset Selection → Deliver Panel Sync
+  // ============================================
+  
+  const handlePresetChange = async (presetId: string) => {
+    setSelectedPresetId(presetId)
+    if (presetId) {
+      // Fetch preset's deliver settings and populate panel
+      // Preset is a one-time initializer, not authority
+      await fetchPresetDeliverSettings(presetId)
+    } else {
+      // No preset selected, clear applied indicator
+      setAppliedPresetName(null)
+    }
+  }
+  
+  // Handle deliver settings changes from the panel
+  const handleDeliverSettingsChange = (updates: Partial<typeof deliverSettings>) => {
+    setDeliverSettings(prev => {
+      const newSettings = { ...prev }
+      if (updates.video) newSettings.video = { ...prev.video, ...updates.video }
+      if (updates.audio) newSettings.audio = { ...prev.audio, ...updates.audio }
+      if (updates.file) newSettings.file = { ...prev.file, ...updates.file }
+      if (updates.metadata) newSettings.metadata = { ...prev.metadata, ...updates.metadata }
+      if (updates.overlay) newSettings.overlay = { ...prev.overlay, ...updates.overlay }
+      if (updates.output_dir !== undefined) newSettings.output_dir = updates.output_dir
+      return newSettings
+    })
+    // Clear preset indicator on any manual edit
+    if (appliedPresetName && deliverContext.type !== 'job-pending') {
+      setAppliedPresetName(null)
+    }
   }
 
   // ============================================
@@ -880,7 +1047,7 @@ function App() {
         onSelectFilesClick={selectFiles}
         presets={presets}
         selectedPresetId={selectedPresetId}
-        onPresetChange={setSelectedPresetId}
+        onPresetChange={handlePresetChange}
         presetError={presetError}
         // Phase 16: Engine selection
         engines={engines}
@@ -897,40 +1064,47 @@ function App() {
           setSelectedFiles([])
           setSelectedPresetId('')
           setOutputDirectory('')
+          setAppliedPresetName(null)
         }}
         loading={loading}
         hasElectron={hasElectron}
         backendUrl={BACKEND_URL}
       />
 
-      {/* Main Content - Grouped Queue View */}
-      <main
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '0',
-        }}
-      >
-        {/* Global Filter Bar */}
-        <QueueFilterBar
-          activeStatusFilters={globalStatusFilters}
-          onToggleStatusFilter={toggleGlobalStatusFilter}
-          onClearStatusFilters={clearGlobalStatusFilters}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          dateFilter={dateFilter}
-          onDateFilterChange={setDateFilter}
-          statusCounts={statusCounts}
-        />
-
-        {/* Queue Header */}
-        <div
+      {/* Phase 17: Two-Column Layout (Queue + Deliver Panel) */}
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        overflow: 'hidden',
+      }}>
+        {/* Left Column: Queue */}
+        <main
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '0.75rem 1.5rem',
-            borderBottom: '1px solid var(--border-secondary)',
+            flex: 1,
+            overflow: 'auto',
+            padding: '0',
+          }}
+        >
+          {/* Global Filter Bar */}
+          <QueueFilterBar
+            activeStatusFilters={globalStatusFilters}
+            onToggleStatusFilter={toggleGlobalStatusFilter}
+            onClearStatusFilters={clearGlobalStatusFilters}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            dateFilter={dateFilter}
+            onDateFilterChange={setDateFilter}
+            statusCounts={statusCounts}
+          />
+
+          {/* Queue Header */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '0.75rem 1.5rem',
+              borderBottom: '1px solid var(--border-secondary)',
           }}
         >
           <h2
@@ -1036,9 +1210,20 @@ function App() {
             })
           )}
         </div>
-      </main>
+        </main>
+        
+        {/* Right Column: Deliver Panel (always visible) */}
+        <DeliverControlPanel
+          context={deliverContext}
+          settings={deliverSettings}
+          onSettingsChange={handleDeliverSettingsChange}
+          isReadOnly={isDeliverReadOnly}
+          backendUrl={BACKEND_URL}
+          appliedPresetName={appliedPresetName}
+        />
+      </div>
 
-      {/* Settings Dialog */}
+      {/* Settings Dialog - DEPRECATED: Remove in Phase 17.1 */}
       {settingsDialogJobId && (
         <div
           style={{

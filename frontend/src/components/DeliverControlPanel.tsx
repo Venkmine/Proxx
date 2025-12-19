@@ -15,22 +15,24 @@ import { Select } from './Select'
  */
 
 // ============================================================================
-// TYPES
+// TYPES (Exported for use in App.tsx)
 // ============================================================================
 
-interface VideoSettings {
+export interface VideoSettings {
   codec: string
   resolution_policy: string
   width?: number
   height?: number
   frame_rate_policy: string
   frame_rate?: string
+  pixel_aspect_ratio?: string
+  color_space?: string
   quality?: number
   bitrate?: string
   preset?: string
 }
 
-interface AudioSettings {
+export interface AudioSettings {
   codec: string
   bitrate?: string
   channels?: number
@@ -39,7 +41,7 @@ interface AudioSettings {
   passthrough: boolean
 }
 
-interface FileSettings {
+export interface FileSettings {
   container: string
   naming_template: string
   prefix?: string
@@ -49,7 +51,7 @@ interface FileSettings {
   preserve_dir_levels: number
 }
 
-interface MetadataSettings {
+export interface MetadataSettings {
   strip_all_metadata: boolean
   passthrough_all_container_metadata: boolean
   passthrough_timecode: boolean
@@ -58,7 +60,7 @@ interface MetadataSettings {
   passthrough_color_metadata: boolean
 }
 
-interface TextOverlay {
+export interface TextOverlay {
   text: string
   position: string
   font_size: number
@@ -66,11 +68,11 @@ interface TextOverlay {
   enabled: boolean
 }
 
-interface OverlaySettings {
+export interface OverlaySettings {
   text_layers: TextOverlay[]
 }
 
-interface DeliverSettings {
+export interface DeliverSettings {
   video: VideoSettings
   audio: AudioSettings
   file: FileSettings
@@ -79,7 +81,7 @@ interface DeliverSettings {
   output_dir?: string
 }
 
-type SelectionContext = 
+export type SelectionContext = 
   | { type: 'none' }
   | { type: 'pre-job'; files: string[] }
   | { type: 'job-pending'; jobId: string }
@@ -95,6 +97,7 @@ interface DeliverControlPanelProps {
   onApply?: () => void
   isReadOnly?: boolean
   backendUrl?: string
+  appliedPresetName?: string | null  // Phase 17: Show "Preset Applied" indicator
 }
 
 // ============================================================================
@@ -309,6 +312,7 @@ export function DeliverControlPanel({
   isReadOnly = false,
   // backendUrl reserved for future API calls
   backendUrl: _backendUrl,
+  appliedPresetName,
 }: DeliverControlPanelProps) {
   // Section visibility state
   const [openSections, setOpenSections] = useState<Set<string>>(
@@ -334,21 +338,44 @@ export function DeliverControlPanel({
   const getPanelTitle = () => {
     switch (context.type) {
       case 'none':
-        return 'Deliver Settings'
+        return 'Deliver'
       case 'pre-job':
-        return `New Job Settings (${context.files.length} files)`
+        return `Deliver (${context.files.length} files)`
       case 'job-pending':
-        return 'Job Settings (Editable)'
+        return 'Deliver'
       case 'job-running':
-        return 'Job Settings (Running - Read Only)'
+        return 'Deliver (Read Only)'
       case 'job-completed':
-        return 'Job Settings (Completed)'
+        return 'Deliver (Completed)'
       case 'multiple-jobs':
-        return `Batch Edit (${context.jobIds.length} jobs)`
+        return `Deliver — Batch (${context.jobIds.length})`
       case 'clip':
         return 'Clip Metadata'
     }
   }
+  
+  // Compute metadata summary status line
+  const getMetadataStatusLine = (): { text: string; isDestructive: boolean } => {
+    if (settings.metadata.strip_all_metadata) {
+      return { text: 'Metadata: Stripped', isDestructive: true }
+    }
+    const passthroughFlags = [
+      settings.metadata.passthrough_timecode,
+      settings.metadata.passthrough_reel_name,
+      settings.metadata.passthrough_camera_metadata,
+      settings.metadata.passthrough_color_metadata,
+    ]
+    const activeCount = passthroughFlags.filter(Boolean).length
+    if (activeCount === passthroughFlags.length) {
+      return { text: 'Metadata: Passthrough (Camera → Output)', isDestructive: false }
+    } else if (activeCount === 0) {
+      return { text: 'Metadata: None Preserved', isDestructive: true }
+    } else {
+      return { text: `Metadata: Partial (${activeCount}/${passthroughFlags.length})`, isDestructive: false }
+    }
+  }
+  
+  const metadataStatus = getMetadataStatusLine()
   
   // Helper to update nested settings
   const updateVideoSettings = (updates: Partial<VideoSettings>) => {
@@ -392,8 +419,11 @@ export function DeliverControlPanel({
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      backgroundColor: 'var(--card-bg)',
-      borderLeft: '1px solid var(--border-primary)',
+      width: '340px',
+      minWidth: '340px',
+      backgroundColor: 'var(--card-bg-solid, rgba(16, 18, 20, 0.95))',
+      borderLeft: '2px solid var(--button-primary-bg, #3B82F6)',
+      boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.25)',
       overflow: 'hidden',
     }}>
       {/* Panel Header */}
@@ -421,6 +451,16 @@ export function DeliverControlPanel({
             🔒 Settings locked during render
           </div>
         )}
+        {appliedPresetName && !isReadOnly && (
+          <div style={{
+            marginTop: '0.25rem',
+            fontSize: '0.6875rem',
+            color: 'var(--button-primary-bg, #3B82F6)',
+            fontFamily: 'var(--font-sans)',
+          }}>
+            ✓ Preset Applied: {appliedPresetName}
+          </div>
+        )}
       </div>
       
       {/* Scrollable Content */}
@@ -429,6 +469,29 @@ export function DeliverControlPanel({
         overflow: 'auto',
         padding: '0.75rem',
       }}>
+        {/* Metadata Status Line — Always Visible */}
+        <div style={{
+          padding: '0.625rem 0.75rem',
+          marginBottom: '0.75rem',
+          backgroundColor: metadataStatus.isDestructive 
+            ? 'rgba(239, 68, 68, 0.15)' 
+            : 'rgba(34, 197, 94, 0.1)',
+          borderRadius: 'var(--radius-sm)',
+          border: `1px solid ${metadataStatus.isDestructive 
+            ? 'rgba(239, 68, 68, 0.3)' 
+            : 'rgba(34, 197, 94, 0.3)'}`,
+        }}>
+          <span style={{
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            color: metadataStatus.isDestructive 
+              ? 'var(--status-failed-fg, #EF4444)' 
+              : 'var(--status-completed-fg, #22C55E)',
+          }}>
+            {metadataStatus.text}
+          </span>
+        </div>
+        
         {/* Video Section */}
         <Section
           title="Video"
@@ -515,6 +578,55 @@ export function DeliverControlPanel({
               </FieldRow>
             </>
           )}
+          
+          <FieldRow label="Frame Rate">
+            <Select
+              value={settings.video.frame_rate_policy}
+              onChange={(v) => updateVideoSettings({ frame_rate_policy: v })}
+              options={[
+                { value: 'source', label: 'Same as Source' },
+                { value: 'custom', label: 'Custom' },
+              ]}
+              disabled={isReadOnly}
+              fullWidth
+            />
+          </FieldRow>
+          
+          {settings.video.frame_rate_policy !== 'source' && (
+            <FieldRow label="Target Frame Rate">
+              <Select
+                value={settings.video.frame_rate || '24'}
+                onChange={(v) => updateVideoSettings({ frame_rate: v })}
+                options={[
+                  { value: '23.976', label: '23.976 fps' },
+                  { value: '24', label: '24 fps' },
+                  { value: '25', label: '25 fps' },
+                  { value: '29.97', label: '29.97 fps' },
+                  { value: '30', label: '30 fps' },
+                  { value: '50', label: '50 fps' },
+                  { value: '59.94', label: '59.94 fps' },
+                  { value: '60', label: '60 fps' },
+                ]}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </FieldRow>
+          )}
+          
+          <FieldRow label="Pixel Aspect Ratio">
+            <Select
+              value={settings.video.pixel_aspect_ratio || 'square'}
+              onChange={(v) => updateVideoSettings({ pixel_aspect_ratio: v })}
+              options={[
+                { value: 'square', label: 'Square Pixels (1:1)' },
+                { value: 'anamorphic_2x', label: 'Anamorphic 2x' },
+                { value: 'dv_ntsc', label: 'DV NTSC (0.91)' },
+                { value: 'dv_pal', label: 'DV PAL (1.09)' },
+              ]}
+              disabled={isReadOnly}
+              fullWidth
+            />
+          </FieldRow>
         </Section>
         
         {/* Audio Section */}
@@ -561,6 +673,35 @@ export function DeliverControlPanel({
               />
             </FieldRow>
           )}
+          
+          <FieldRow label="Channel Layout">
+            <Select
+              value={settings.audio.layout}
+              onChange={(v) => updateAudioSettings({ layout: v })}
+              options={[
+                { value: 'source', label: 'Same as Source' },
+                { value: 'stereo', label: 'Stereo' },
+                { value: 'mono', label: 'Mono' },
+                { value: '5.1', label: '5.1 Surround' },
+              ]}
+              disabled={isReadOnly || settings.audio.passthrough}
+              fullWidth
+            />
+          </FieldRow>
+          
+          <FieldRow label="Sample Rate">
+            <Select
+              value={String(settings.audio.sample_rate || 48000)}
+              onChange={(v) => updateAudioSettings({ sample_rate: parseInt(v) })}
+              options={[
+                { value: '44100', label: '44.1 kHz' },
+                { value: '48000', label: '48 kHz' },
+                { value: '96000', label: '96 kHz' },
+              ]}
+              disabled={isReadOnly || settings.audio.passthrough}
+              fullWidth
+            />
+          </FieldRow>
         </Section>
         
         {/* File Section */}
@@ -810,7 +951,7 @@ export function DeliverControlPanel({
                 </button>
               </div>
               
-              <FieldRow label="Text" description="Tokens: {timecode}, {filename}, {reel}, {frame}, {date}">
+              <FieldRow label="Text" description="Tokens: {TC}, {timecode}, {filename}, {reel}, {frame}, {date}, {source_name}">
                 <input
                   type="text"
                   value={layer.text}
@@ -820,7 +961,7 @@ export function DeliverControlPanel({
                     updateOverlaySettings({ text_layers: newLayers })
                   }}
                   disabled={isReadOnly}
-                  placeholder="{filename} - {timecode}"
+                  placeholder="{source_name} - {TC}"
                   style={{
                     width: '100%',
                     padding: '0.375rem 0.5rem',

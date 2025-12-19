@@ -23,6 +23,16 @@ export { CreateJobPanel } from './CreateJobPanel'
 
 // Phase 17: Deliver Control Panel (replaces modal settings)
 export { DeliverControlPanel } from './DeliverControlPanel'
+export type { 
+  DeliverSettings, 
+  VideoSettings, 
+  AudioSettings, 
+  FileSettings, 
+  MetadataSettings, 
+  OverlaySettings, 
+  TextOverlay,
+  SelectionContext 
+} from './DeliverControlPanel'
 
 // Electron components
 export { TitleBar } from './TitleBar'
