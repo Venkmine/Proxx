@@ -632,6 +632,46 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
         raise HTTPException(status_code=500, detail=f"Job creation failed: {e}")
 
 
+@router.get("/jobs/{job_id}/deliver-settings")
+async def get_job_deliver_settings_endpoint(job_id: str, request: Request):
+    """
+    Get DeliverSettings for a specific job.
+    
+    Phase 17: Allows UI to reload a job's settings into the Deliver panel.
+    Returns the exact settings that were persisted at job creation.
+    
+    Args:
+        job_id: Job UUID
+        
+    Returns:
+        DeliverSettings dict
+        
+    Raises:
+        404: Job not found
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        
+        job = job_registry.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        
+        # Return settings_dict directly (already serialized)
+        # If empty, return DEFAULT_DELIVER_SETTINGS
+        from app.deliver.settings import DEFAULT_DELIVER_SETTINGS
+        
+        if not job.settings_dict:
+            return DEFAULT_DELIVER_SETTINGS.to_dict()
+        
+        return job.settings_dict
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get job deliver settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get job deliver settings: {e}")
+
+
 @router.post("/jobs/{job_id}/resume", response_model=OperationResponse)
 async def resume_job_endpoint(job_id: str, request: Request):
     """

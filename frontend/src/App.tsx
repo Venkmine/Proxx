@@ -445,8 +445,21 @@ function App() {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/retry-failed`, { method: 'POST' })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `HTTP ${response.status}`)
+        // Normalize backend error payloads to readable messages
+        let errorText = `HTTP ${response.status}`
+        try {
+          const errorData = await response.json()
+          if (errorData) {
+            if (typeof errorData.detail === 'string') {
+              errorText = errorData.detail
+            } else {
+              errorText = JSON.stringify(errorData)
+            }
+          }
+        } catch (e) {
+          // ignore parse errors and keep generic message
+        }
+        throw new Error(errorText)
       }
       await fetchJobDetail(jobId)
       await fetchJobs()
