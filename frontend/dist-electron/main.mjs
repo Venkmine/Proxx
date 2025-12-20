@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Phase 20: Logging to ~/Library/Logs/Fabric/
-const LOG_DIR = path.join(os.homedir(), 'Library', 'Logs', 'Fabric');
+// Logging to ~/Library/Logs/Awaire Proxy/
+const LOG_DIR = path.join(os.homedir(), 'Library', 'Logs', 'Awaire Proxy');
 function ensureLogDir() {
     try {
         if (!fs.existsSync(LOG_DIR)) {
@@ -21,7 +21,7 @@ function writeLog(level, message) {
     ensureLogDir();
     const timestamp = new Date().toISOString();
     const logLine = `[${timestamp}] [${level}] ${message}\n`;
-    const logFile = path.join(LOG_DIR, `fabric-${new Date().toISOString().slice(0, 10)}.log`);
+    const logFile = path.join(LOG_DIR, `awaire-proxy-${new Date().toISOString().slice(0, 10)}.log`);
     try {
         fs.appendFileSync(logFile, logLine);
     }
@@ -41,7 +41,7 @@ function getErrorHtml(errorTitle, errorDetails) {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Fabric - Error</title>
+  <title>Awaire Proxy - Error</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -115,13 +115,13 @@ function getErrorHtml(errorTitle, errorDetails) {
   <div class="error-container">
     <div class="error-icon">⚠️</div>
     <h1>${errorTitle}</h1>
-    <p>Fabric encountered an error and couldn't load properly. This may be a temporary issue.</p>
+    <p>Awaire Proxy encountered an error and couldn't load properly. This may be a temporary issue.</p>
     <div class="details">${errorDetails}</div>
     <div class="actions">
       <button onclick="window.location.reload()">Retry</button>
       <button onclick="require('electron').ipcRenderer.send('app:quit')">Quit</button>
     </div>
-    <p class="log-path">Logs: ~/Library/Logs/Fabric/</p>
+    <p class="log-path">Logs: ~/Library/Logs/Awaire Proxy/</p>
   </div>
   <script>
     const { ipcRenderer } = require('electron');
@@ -158,9 +158,8 @@ async function loadDevWithRetries(win, url, retries = 12, delayMs = 800) {
 }
 async function createWindow() {
     const preloadPath = path.join(__dirname, 'preload.mjs');
-    // Phase 20: Log startup diagnostics to ~/Library/Logs/Fabric/
     writeLog('INFO', '═══════════════════════════════════════');
-    writeLog('INFO', 'FABRIC BOOT');
+    writeLog('INFO', 'AWAIRE PROXY BOOT');
     writeLog('INFO', '═══════════════════════════════════════');
     writeLog('INFO', `__dirname: ${__dirname}`);
     writeLog('INFO', `Preload path: ${preloadPath}`);
@@ -277,9 +276,9 @@ function setupApplicationMenu() {
     const template = [
         // App menu (macOS only)
         ...(isMac ? [{
-                label: 'Fabric',
+                label: 'Awaire Proxy',
                 submenu: [
-                    { role: 'about', label: 'About Fabric' },
+                    { role: 'about', label: 'About Awaire Proxy' },
                     { type: 'separator' },
                     {
                         label: 'Preferences...',
@@ -430,9 +429,9 @@ function setupApplicationMenu() {
             role: 'help',
             submenu: [
                 {
-                    label: 'Fabric Documentation',
+                    label: 'Awaire Proxy Documentation',
                     click: async () => {
-                        await shell.openExternal('https://github.com/fabric-media/fabric');
+                        await shell.openExternal('https://github.com/Venkmine/Proxx');
                     }
                 }
             ]

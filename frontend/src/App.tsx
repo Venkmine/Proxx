@@ -213,6 +213,9 @@ function App() {
 
   // Phase 20: Copilot Prompt window state
   const [showCopilotPrompt, setShowCopilotPrompt] = useState<boolean>(false)
+  
+  // Phase 21: System status indicators (UI visibility)
+  const [backendConnected, setBackendConnected] = useState<boolean>(true)
 
   // ============================================
   // Phase 17: DeliverSettings State (Authoritative)
@@ -369,6 +372,7 @@ function App() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
       setJobs(data.jobs)
+      setBackendConnected(true)
 
       // Update job order - add new jobs, keep existing order
       setJobOrder(prev => {
@@ -379,7 +383,9 @@ function App() {
         return [...prev.filter(id => data.jobs.some((j: JobSummary) => j.id === id)), ...newIds]
       })
     } catch (err) {
-      setError(`Failed to fetch jobs: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+      setError(`Failed to fetch jobs: ${errorMsg}`)
+      setBackendConnected(false)
     }
   }
 
@@ -1309,18 +1315,39 @@ function App() {
           alignItems: 'center',
         }}
       >
-        <h1
-          style={{
-            margin: 0,
-            fontSize: '1.25rem',
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            letterSpacing: '-0.02em',
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: '1.25rem',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              letterSpacing: '-0.02em',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            Awaire Proxy
+          </h1>
+          
+          {/* System Status Indicators — Minimal, textual, low visual weight */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '0.75rem', 
+            fontSize: '0.6875rem',
             fontFamily: 'var(--font-sans)',
-          }}
-        >
-          Awaire Proxy
-        </h1>
+            color: 'var(--text-dim)',
+          }}>
+            <span style={{ color: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)' }}>
+              {backendConnected ? '● Backend connected' : '○ Backend disconnected'}
+            </span>
+            <span>
+              Engine: {engines.find(e => e.type === selectedEngine)?.name || 'FFmpeg'}
+            </span>
+            <span>
+              Mode: Manual jobs only
+            </span>
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {/* Phase 20: Copilot Prompt button */}
           <Button
@@ -1344,7 +1371,7 @@ function App() {
         </div>
       </header>
       
-      {/* Phase 20: Modular Tab Bar */}
+      {/* Phase 20: Modular Tab Bar — Active tab only, future modules disabled */}
       <nav
         style={{
           display: 'flex',
@@ -1352,36 +1379,55 @@ function App() {
           borderBottom: '1px solid var(--border-primary)',
           background: 'rgba(20, 24, 32, 0.95)',
           paddingLeft: '1rem',
+          alignItems: 'stretch',
         }}
       >
         {[
-          { id: 'sources', label: 'Sources', enabled: false },
-          { id: 'proxies', label: 'Proxies', enabled: true },
-          { id: 'deliver', label: 'Deliver', enabled: false },
-          { id: 'qc', label: 'QC', enabled: false },
-          { id: 'automation', label: 'Automation', enabled: false },
-          { id: 'settings', label: 'Settings', enabled: false },
+          { id: 'proxies', label: 'Proxies', enabled: true, future: false },
+          { id: 'sources', label: 'Sources', enabled: false, future: true },
+          { id: 'deliver', label: 'Deliver', enabled: false, future: true },
+          { id: 'qc', label: 'QC', enabled: false, future: true },
+          { id: 'automation', label: 'Automation', enabled: false, future: true },
+          { id: 'settings', label: 'Settings', enabled: false, future: true },
         ].map((tab) => (
-          <button
+          <div
             key={tab.id}
-            title={tab.enabled ? tab.label : 'Module coming soon'}
-            disabled={!tab.enabled}
             style={{
-              padding: '0.75rem 1.25rem',
-              background: tab.enabled ? 'transparent' : 'transparent',
-              border: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0.5rem 1rem',
               borderBottom: tab.enabled ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-              color: tab.enabled ? 'var(--text-primary)' : 'var(--text-dim)',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              fontFamily: 'var(--font-sans)',
-              cursor: tab.enabled ? 'pointer' : 'not-allowed',
-              opacity: tab.enabled ? 1 : 0.5,
-              transition: 'all 0.15s',
+              cursor: tab.enabled ? 'pointer' : 'default',
+              opacity: tab.enabled ? 1 : 0.4,
             }}
           >
-            {tab.label}
-          </button>
+            <span
+              style={{
+                color: tab.enabled ? 'var(--text-primary)' : 'var(--text-dim)',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                fontFamily: 'var(--font-sans)',
+              }}
+            >
+              {tab.label}
+            </span>
+            {tab.future && (
+              <span
+                style={{
+                  fontSize: '0.5625rem',
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-sans)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginTop: '0.125rem',
+                }}
+              >
+                Future module
+              </span>
+            )}
+          </div>
         ))}
       </nav>
 
@@ -1531,9 +1577,24 @@ function App() {
             >
               {allOrderedJobs.length === 0 ? (
                 <>
-                  <div style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>No jobs in queue</div>
-                  <div style={{ fontSize: '0.875rem' }}>
-                    Add clips using the panel above to get started.
+                  <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.3 }}>📁</div>
+                  <div style={{ fontSize: '1rem', marginBottom: '0.5rem', fontWeight: 600 }}>No jobs in queue</div>
+                  <div style={{ fontSize: '0.875rem', lineHeight: 1.6 }}>
+                    Drag files into the Sources panel, or click "Select Files" to add media.
+                    <br />
+                    Then choose a preset and click "Add to Queue" to create a proxy job.
+                  </div>
+                  <div style={{ 
+                    marginTop: '1.5rem', 
+                    padding: '1rem', 
+                    backgroundColor: 'rgba(51, 65, 85, 0.15)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-dim)',
+                  }}>
+                    <strong>What is Awaire Proxy?</strong>
+                    <br />
+                    A standalone proxy generation app. Add source files, configure deliver settings, and render proxies for editing.
                   </div>
                 </>
               ) : (
@@ -1643,8 +1704,8 @@ function App() {
       {/* Phase 20: Copilot Prompt Window */}
       {showCopilotPrompt && (
         <>
-          <CopilotPromptBackdrop onClick={() => setShowCopilotPrompt(false)} />
-          <CopilotPromptWindow onClose={() => setShowCopilotPrompt(false)} />
+          <CopilotPromptBackdrop isOpen={showCopilotPrompt} onClick={() => setShowCopilotPrompt(false)} />
+          <CopilotPromptWindow isOpen={showCopilotPrompt} onClose={() => setShowCopilotPrompt(false)} />
         </>
       )}
     </div>

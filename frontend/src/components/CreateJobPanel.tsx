@@ -653,33 +653,50 @@ export function CreateJobPanel({
           </Button>
         </div>
 
-        {/* Coming Next: Watch Folders (Phase 19 stub) */}
+        {/* Watch Folders — Explicit UI stub (not wired to backend) */}
         <div
           style={{
             marginTop: '1rem',
-            padding: '0.75rem',
-            backgroundColor: 'rgba(59, 130, 246, 0.05)',
-            border: '1px dashed var(--border-primary)',
+            padding: '1rem',
+            backgroundColor: 'rgba(51, 65, 85, 0.15)',
+            border: '1px solid var(--border-primary)',
             borderRadius: 'var(--radius-sm)',
           }}
         >
           <div style={{
-            fontSize: '0.6875rem',
-            fontWeight: 600,
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-sans)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            marginBottom: '0.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '0.75rem',
           }}>
-            Coming next
+            <div style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
+            }}>
+              📂 Watch Folders
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={true}
+              style={{ opacity: 0.5 }}
+            >
+              Add Watch Folder
+            </Button>
           </div>
           <div style={{
-            fontSize: '0.75rem',
-            color: 'var(--text-secondary)',
+            fontSize: '0.6875rem',
+            color: 'var(--text-muted)',
             fontFamily: 'var(--font-sans)',
+            lineHeight: 1.5,
           }}>
-            📂 Watch Folders — Auto-queue files from monitored directories
+            Watch folders automatically create proxy jobs when files appear.
+            <br />
+            <span style={{ fontStyle: 'italic', color: 'var(--text-dim)' }}>
+              This feature is planned but not available yet.
+            </span>
           </div>
         </div>
 

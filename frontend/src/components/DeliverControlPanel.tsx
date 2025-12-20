@@ -386,9 +386,6 @@ export function DeliverControlPanel({
   const [codecsLoading, setCodecsLoading] = useState(true)
   const [codecsError, setCodecsError] = useState<string | null>(null)
   
-  // Phase 20: Available LUTs from backend
-  const [availableLuts, setAvailableLuts] = useState<string[]>([])
-  
   // Fetch codec specs on mount
   useEffect(() => {
     const fetchCodecSpecs = async () => {
@@ -407,23 +404,6 @@ export function DeliverControlPanel({
       }
     }
     fetchCodecSpecs()
-  }, [backendUrl])
-  
-  // Fetch available LUTs
-  useEffect(() => {
-    const fetchLuts = async () => {
-      try {
-        const response = await fetch(`${backendUrl}/control/luts`)
-        if (response.ok) {
-          const data = await response.json()
-          setAvailableLuts(data.luts || [])
-        }
-      } catch (err) {
-        // LUT endpoint may not exist yet - that's OK
-        console.warn('LUT endpoint not available yet')
-      }
-    }
-    fetchLuts()
   }, [backendUrl])
   
   // Get current codec spec
@@ -504,25 +484,48 @@ export function DeliverControlPanel({
     })
   }
   
-  // Derive panel title from context
-  const getPanelTitle = () => {
+  // Derive panel title and subtext from context
+  const getPanelInfo = (): { title: string; subtext: string } => {
     switch (context.type) {
       case 'none':
-        return 'Deliver'
+        return { 
+          title: 'Default Proxy Settings', 
+          subtext: 'Using defaults — select files or a job to configure' 
+        }
       case 'pre-job':
-        return `Deliver (${context.files.length} files)`
+        return { 
+          title: 'Default Proxy Settings', 
+          subtext: `Configuring for ${context.files.length} file(s)` 
+        }
       case 'job-pending':
-        return 'Deliver'
+        return { 
+          title: 'Job Deliver Settings', 
+          subtext: appliedPresetName ? `Preset: ${appliedPresetName}` : 'Overrides applied for this job' 
+        }
       case 'job-running':
-        return 'Deliver (Read Only)'
+        return { 
+          title: 'Job Deliver Settings', 
+          subtext: 'Settings locked — job in progress' 
+        }
       case 'job-completed':
-        return 'Deliver (Completed)'
+        return { 
+          title: 'Job Deliver Settings', 
+          subtext: 'Settings locked — job completed' 
+        }
       case 'multiple-jobs':
-        return `Deliver — Batch (${context.jobIds.length})`
+        return { 
+          title: `Batch Settings (${context.jobIds.length} jobs)`, 
+          subtext: 'Common settings across selected jobs' 
+        }
       case 'clip':
-        return 'Clip Metadata'
+        return { 
+          title: 'Clip Metadata', 
+          subtext: 'Read-only clip information' 
+        }
     }
   }
+  
+  const panelInfo = getPanelInfo()
   
   // Compute metadata summary status line
   const getMetadataStatusLine = (): { text: string; isDestructive: boolean } => {
@@ -660,41 +663,36 @@ export function DeliverControlPanel({
       boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.25)',
       overflow: 'hidden',
     }}>
-      {/* Panel Header */}
+      {/* Panel Header — Authoritative context indicator */}
       <div style={{
         padding: '0.75rem 1rem',
         borderBottom: '1px solid var(--border-primary)',
-        background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
+        background: isReadOnly 
+          ? 'linear-gradient(180deg, rgba(51, 65, 85, 0.4) 0%, rgba(30, 41, 59, 0.95) 100%)'
+          : 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
       }}>
-        <h3 style={{
-          margin: 0,
-          fontSize: '0.8125rem',
-          fontWeight: 600,
-          color: 'var(--text-primary)',
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {isReadOnly && (
+            <span style={{ fontSize: '0.875rem' }}>🔒</span>
+          )}
+          <h3 style={{
+            margin: 0,
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            color: isReadOnly ? 'var(--text-muted)' : 'var(--text-primary)',
+            fontFamily: 'var(--font-sans)',
+          }}>
+            {panelInfo.title}
+          </h3>
+        </div>
+        <div style={{
+          marginTop: '0.25rem',
+          fontSize: '0.6875rem',
+          color: isReadOnly ? 'var(--text-dim)' : 'var(--text-muted)',
           fontFamily: 'var(--font-sans)',
         }}>
-          {getPanelTitle()}
-        </h3>
-        {isReadOnly && (
-          <div style={{
-            marginTop: '0.25rem',
-            fontSize: '0.6875rem',
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-sans)',
-          }}>
-            🔒 Settings locked during render
-          </div>
-        )}
-        {appliedPresetName && !isReadOnly && (
-          <div style={{
-            marginTop: '0.25rem',
-            fontSize: '0.6875rem',
-            color: 'var(--button-primary-bg, #3B82F6)',
-            fontFamily: 'var(--font-sans)',
-          }}>
-            ✓ Preset Applied: {appliedPresetName}
-          </div>
-        )}
+          {panelInfo.subtext}
+        </div>
       </div>
       
       {/* Scrollable Content */}
@@ -1236,93 +1234,44 @@ export function DeliverControlPanel({
           )}
         </Section>
         
-        {/* Colour Section (Phase 20) */}
+        {/* Colour Section (Phase 20) — Planned, not fully implemented */}
         <Section
           title="Colour"
           isOpen={openSections.has('colour')}
           onToggle={() => toggleSection('colour')}
-          badge={(settings.colour?.mode || 'passthrough').toUpperCase()}
+          badge="PLANNED"
         >
+          {/* Disabled-with-explanation: Colour/LUT not wired to backend yet */}
+          <div style={{
+            padding: '0.75rem',
+            marginBottom: '0.75rem',
+            fontSize: '0.6875rem',
+            color: 'var(--text-muted)',
+            backgroundColor: 'rgba(51, 65, 85, 0.2)',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-primary)',
+            fontStyle: 'italic',
+          }}>
+            Planned — not available in Proxy v1.
+            <br />
+            Colour transforms and LUT application will be added in a future release.
+          </div>
+          
           <FieldRow label="Colour Mode">
             <Select
               value={settings.colour?.mode || 'passthrough'}
               onChange={(v) => updateColourSettings({ mode: v as 'passthrough' | 'apply_lut' | 'simple_transform' })}
               options={COLOUR_MODES}
-              disabled={isReadOnly || !currentCodecSpec?.supports_lut}
+              disabled={true} // Disabled until backend wiring is complete
               fullWidth
             />
           </FieldRow>
           
-          {!currentCodecSpec?.supports_lut && (
-            <div style={{
-              padding: '0.375rem 0.5rem',
-              marginBottom: '0.75rem',
-              fontSize: '0.6875rem',
-              color: 'var(--text-muted)',
-              backgroundColor: 'rgba(51, 65, 85, 0.2)',
-              borderRadius: 'var(--radius-sm)',
-            }}>
-              ℹ️ Selected codec does not support colour transforms
-            </div>
-          )}
-          
-          {/* LUT Selection (only if Apply LUT mode) */}
-          {settings.colour?.mode === 'apply_lut' && currentCodecSpec?.supports_lut && (
-            <FieldRow label="LUT File" description=".cube files from ~/Library/Application Support/Awaire Proxy/LUTs">
-              <Select
-                value={settings.colour?.lut_file || ''}
-                onChange={(v) => updateColourSettings({ lut_file: v })}
-                options={[
-                  { value: '', label: 'Select LUT...' },
-                  ...availableLuts.map(lut => ({ value: lut, label: lut }))
-                ]}
-                disabled={isReadOnly}
-                fullWidth
-              />
-              {availableLuts.length === 0 && (
-                <div style={{ marginTop: '0.25rem', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                  No LUTs available. Add .cube files to the LUT folder.
-                </div>
-              )}
-            </FieldRow>
-          )}
-          
-          {/* Simple Transform (gamma/contrast only) */}
-          {settings.colour?.mode === 'simple_transform' && currentCodecSpec?.supports_lut && (
-            <>
-              <FieldRow label="Gamma">
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2.0"
-                  step="0.05"
-                  value={settings.colour?.gamma ?? 1.0}
-                  onChange={(e) => updateColourSettings({ gamma: parseFloat(e.target.value) })}
-                  disabled={isReadOnly}
-                  style={{ width: '100%' }}
-                />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  {(settings.colour?.gamma ?? 1.0).toFixed(2)}
-                </span>
-              </FieldRow>
-              
-              <FieldRow label="Contrast">
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2.0"
-                  step="0.05"
-                  value={settings.colour?.contrast ?? 1.0}
-                  onChange={(e) => updateColourSettings({ contrast: parseFloat(e.target.value) })}
-                  disabled={isReadOnly}
-                  style={{ width: '100%' }}
-                />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  {(settings.colour?.contrast ?? 1.0).toFixed(2)}
-                </span>
-              </FieldRow>
-            </>
-          )}
+          {/* 
+            NOTE: LUT Selection and Simple Transform controls are hidden since 
+            the Colour section is marked as "Planned — not available in Proxy v1".
+            These controls would be rendered here when the feature is implemented.
+          */}
         </Section>
         
         {/* Watermarks Section (renamed from Overlays) */}

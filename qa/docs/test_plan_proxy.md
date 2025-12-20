@@ -59,6 +59,21 @@ This document describes the test coverage for Awaire Proxy.
 - Nightly CI builds
 - Manual validation
 
+## UI Flow Testing
+
+> **Status: Deferred**
+>
+> UI flow testing begins after v1 UI stabilisation is complete.
+> The UI is currently being stabilised to make backend state visible and authoritative.
+> Premature UI tests would be churn while the interface is still evolving.
+>
+> TODO: Add UI flow tests after stabilisation covering:
+> - Job creation workflow
+> - DeliverControlPanel state reflection
+> - Selection context switching
+> - Read-only mode for running/completed jobs
+> - Empty state messaging
+
 ## Test Categories
 
 ### Unit Tests
