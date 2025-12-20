@@ -80,7 +80,7 @@ def generate_thumbnail_sync(
     
     # Determine output path
     if output_path is None:
-        output_path = tempfile.mktemp(suffix=".jpg", prefix="fabric_thumb_")
+        output_path = tempfile.mktemp(suffix=".jpg", prefix="awaire_thumb_")
     
     try:
         # First, get video duration
@@ -226,7 +226,7 @@ async def generate_clip_thumbnail(
     if thumbnail_dir is None:
         thumbnail_dir = tempfile.gettempdir()
     
-    output_path = os.path.join(thumbnail_dir, f"fabric_thumb_{clip_id[:8]}.jpg")
+    output_path = os.path.join(thumbnail_dir, f"awaire_thumb_{clip_id[:8]}.jpg")
     
     result_path = await generate_thumbnail_async(source_path, output_path)
     

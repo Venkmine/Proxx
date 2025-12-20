@@ -1,2 +1,0 @@
-task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
-4739d3f2-db5c-4ffd-9d15-5fb24ca8591d,/Users/leon.grant/Desktop/__TEST_FILES/Craft reeel jan 21__proxx__proxx.mp4,failed,,,,Output path resolution failed: 'DeliverSettings' object has no attribute 'naming_template',,,2025-12-19T14:16:35.650600

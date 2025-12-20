@@ -2,7 +2,6 @@
 Watch folder engine — orchestration for unattended ingestion.
 
 Coordinates filesystem scanning, stability checking, and job creation.
-Phase 11: Integrated with execution automation for opt-in auto-execution.
 
 This is the main entry point for watch folder processing.
 """
@@ -11,17 +10,17 @@ import logging
 from pathlib import Path
 from typing import List, Set, Optional, TYPE_CHECKING
 
-from jobs.engine import JobEngine
-from jobs.models import Job
-from jobs.bindings import JobPresetBindingRegistry
-from watchfolders.models import WatchFolder
-from watchfolders.registry import WatchFolderRegistry
-from watchfolders.scanner import FileScanner
-from watchfolders.stability import FileStabilityChecker
-from watchfolders.errors import WatchFolderError
+from ..jobs.engine import JobEngine
+from ..jobs.models import Job
+from ..jobs.bindings import JobPresetBindingRegistry
+from .models import WatchFolder
+from .registry import WatchFolderRegistry
+from .scanner import FileScanner
+from .stability import FileStabilityChecker
+from .errors import WatchFolderError
 
 if TYPE_CHECKING:
-    from jobs.automation import ExecutionAutomation
+    from ..jobs.automation import ExecutionAutomation
 
 logger = logging.getLogger(__name__)
 

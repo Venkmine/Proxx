@@ -1268,7 +1268,7 @@ export function DeliverControlPanel({
           
           {/* LUT Selection (only if Apply LUT mode) */}
           {settings.colour?.mode === 'apply_lut' && currentCodecSpec?.supports_lut && (
-            <FieldRow label="LUT File" description=".cube files from ~/Library/Application Support/Fabric/LUTs">
+            <FieldRow label="LUT File" description=".cube files from ~/Library/Application Support/Awaire Proxy/LUTs">
               <Select
                 value={settings.colour?.lut_file || ''}
                 onChange={(v) => updateColourSettings({ lut_file: v })}

@@ -227,7 +227,7 @@ def validate_output_path(
         
         # Test writability
         try:
-            test_file = output_dir / ".proxx_write_test"
+            test_file = output_dir / ".awaire_proxy_write_test"
             test_file.touch()
             test_file.unlink()
         except Exception:

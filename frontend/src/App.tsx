@@ -10,7 +10,7 @@ import { GlobalDropZone } from './components/GlobalDropZone'
 import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
 
 /**
- * Fabric Operator Control - Grouped Queue View
+ * Awaire Proxy Operator Control - Grouped Queue View
  * 
  * STRUCTURAL UI REFACTOR: Operator-first interaction model inspired by DaVinci Resolve's Render Queue.
  * 
@@ -201,7 +201,7 @@ function App() {
 
   // Path favorites (localStorage-backed)
   const [pathFavorites, setPathFavorites] = useState<string[]>(() => {
-    const saved = localStorage.getItem('fabric_path_favorites')
+    const saved = localStorage.getItem('awaire_proxy_path_favorites')
     return saved ? JSON.parse(saved) : []
   })
 
@@ -879,14 +879,14 @@ function App() {
     if (!pathFavorites.includes(path)) {
       const updated = [...pathFavorites, path]
       setPathFavorites(updated)
-      localStorage.setItem('fabric_path_favorites', JSON.stringify(updated))
+      localStorage.setItem('awaire_proxy_path_favorites', JSON.stringify(updated))
     }
   }
 
   const removePathFavorite = (path: string) => {
     const updated = pathFavorites.filter(p => p !== path)
     setPathFavorites(updated)
-    localStorage.setItem('fabric_path_favorites', JSON.stringify(updated))
+    localStorage.setItem('awaire_proxy_path_favorites', JSON.stringify(updated))
   }
 
   // ============================================
@@ -1111,7 +1111,7 @@ function App() {
       newOrder.splice(targetIndex, 0, draggedJobId)
 
       // Persist to localStorage for session continuity
-      localStorage.setItem('fabric_job_order', JSON.stringify(newOrder))
+      localStorage.setItem('awaire_proxy_job_order', JSON.stringify(newOrder))
 
       return newOrder
     })
@@ -1319,7 +1319,7 @@ function App() {
             fontFamily: 'var(--font-sans)',
           }}
         >
-          Fabric
+          Awaire Proxy
         </h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {/* Phase 20: Copilot Prompt button */}

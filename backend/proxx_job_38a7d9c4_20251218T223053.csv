@@ -1,2 +1,0 @@
-task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
-86554449-72d8-4854-a44b-0c5a4f919e7d,/Users/leon.grant/projects/Proxx/test_media/test_input.mp4,completed,/Users/leon.grant/projects/Proxx/test_media/test_input__proxx.mp4,87015,0.200071,,,2025-12-18T22:30:53.774481,2025-12-18T22:30:53.974803

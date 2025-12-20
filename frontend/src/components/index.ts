@@ -1,7 +1,7 @@
 /**
- * Fabric UI Components
+ * Awaire Proxy UI Components
  * 
- * Reusable component library for the Fabric Operator Control interface.
+ * Reusable component library for the Awaire Proxy Operator Control interface.
  * Implements operator-first design inspired by DaVinci Resolve's Render Queue.
  */
 

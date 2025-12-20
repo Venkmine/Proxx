@@ -21,7 +21,6 @@ from ..jobs.engine import JobEngine
 from ..jobs.registry import JobRegistry
 from ..jobs.bindings import JobPresetBindingRegistry
 from ..presets.registry import PresetRegistry
-from ..resolve.validation import validate_resolve_capability
 from .errors import ValidationError, ConfirmationDenied
 
 logger = logging.getLogger(__name__)
@@ -73,19 +72,12 @@ def resume_job(
             f"Only RECOVERY_REQUIRED or PAUSED jobs can be resumed."
         )
     
-    # Validate Resolve availability
-    capability = validate_resolve_capability()
-    if not capability.is_available:
-        raise ValidationError(
-            f"Resolve is not available: {capability.failure_reason}"
-        )
-    
     # Validate preset binding exists
     preset_id = binding_registry.get_preset_id(job_id)
     if not preset_id:
         raise ValidationError(
             f"No preset bound to job {job_id}. "
-            f"Use 'proxx rebind' to bind a preset before resuming."
+            f"Use 'awaire-proxy rebind' to bind a preset before resuming."
         )
     
     # Validate preset exists
@@ -104,7 +96,7 @@ def resume_job(
         if not output_path.is_dir():
             raise ValidationError(f"Output path is not a directory: {output_base_dir}")
         # Test writability
-        test_file = output_path / ".proxx_write_test"
+        test_file = output_path / ".awaire_proxy_write_test"
         try:
             test_file.touch()
             test_file.unlink()
@@ -208,7 +200,7 @@ def retry_failed_clips(
     if not preset_id:
         raise ValidationError(
             f"No preset bound to job {job_id}. "
-            f"Use 'proxx rebind' to bind a preset before retrying."
+            f"Use 'awaire-proxy rebind' to bind a preset before retrying."
         )
     
     # Validate preset exists

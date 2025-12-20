@@ -13,17 +13,17 @@ Public API:
     WatchFolderEngine — Orchestration: scan → stability → job creation
 """
 
-from watchfolders.errors import (
+from .errors import (
     WatchFolderError,
     FileStabilityError,
     WatchFolderNotFoundError,
     DuplicateWatchFolderError,
 )
-from watchfolders.models import WatchFolder, FileStabilityCheck
-from watchfolders.registry import WatchFolderRegistry
-from watchfolders.stability import FileStabilityChecker
-from watchfolders.scanner import FileScanner
-from watchfolders.engine import WatchFolderEngine
+from .models import WatchFolder, FileStabilityCheck
+from .registry import WatchFolderRegistry
+from .stability import FileStabilityChecker
+from .scanner import FileScanner
+from .engine import WatchFolderEngine
 
 __all__ = [
     # Errors

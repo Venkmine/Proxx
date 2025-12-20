@@ -1,14 +1,13 @@
-# PROXX — HARD CONSTRAINTS
+# Awaire Proxy — Hard Constraints
 
 These constraints are non-negotiable.
 
 ## Architectural
 
-- Resolve Studio is required (v1.x)
-- Resolve is the sole decode/render engine
-- Proxx does not reimplement codecs
+- FFmpeg is the sole execution engine
 - Filesystem state is authoritative
 - UI derives state from job engine, never the reverse
+- No silent fallbacks
 
 ## Execution
 
@@ -20,16 +19,23 @@ These constraints are non-negotiable.
 
 ## UX
 
-- Assistants must be able to prove what happened
+- Operators must be able to prove what happened
 - Errors are logged, surfaced, and reported, not hidden
-- No “clever” automation that hides failure modes
-- UI polish is secondary to correctness
+- No "clever" automation that hides failure modes
+- Reliability matters more than features
+
+## QA
+
+- Verify is the only QA entrypoint
+- No raw pytest, npm test, or ad-hoc commands
+- Every bug results in a regression test
+- No release without Verify Proxy Full passing
 
 ## Development Discipline
 
 - Docs are the source of truth
-- `docs/TODO.md` must be updated after meaningful changes
 - Small commits only
 - Assume the machine can die mid-run
+- No future roadmap language in docs
 
 If a proposed change violates these constraints, stop and explain.

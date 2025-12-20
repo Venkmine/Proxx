@@ -1,17 +1,16 @@
-# PROXX — IRREVERSIBLE DECISIONS
+# Awaire Proxy — Irreversible Decisions
 
 Only decisions that should never be re-litigated live here.
 
-## Resolve
+## Execution Engine
 
-- Resolve Studio is required for v1.x
-- Headless or scripted Resolve operation is preferred
-- Resolve Free mode is deferred and caveated
+- FFmpeg is the sole execution engine
+- No Resolve integration in v1
+- Subprocess execution, not library binding
 
 ## Codecs
 
-- ProRes, DNxHR, and DNxHD are supported
-- DNxHD included for legacy Avid pipelines
+- ProRes, DNxHR, H.264 are supported
 - Intra-frame codecs are editorial defaults
 - Long-GOP codecs warn but do not block
 
@@ -26,3 +25,15 @@ Only decisions that should never be re-litigated live here.
 - Warn-and-continue is the default
 - Filesystem is the final authority
 - Reports are first-class outputs
+
+## Naming
+
+- Product is "Awaire Proxy"
+- All identifiers use `awaire_proxy_*` (snake_case)
+- No Fabric, Proxx, or multi-module language
+
+## QA
+
+- Verify is the QA system
+- Definition of Done is enforced
+- Every bug gets a regression test

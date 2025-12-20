@@ -1,5 +1,5 @@
 """
-Proxx backend service — Operator control + monitoring
+Awaire Proxy backend service — Operator control + monitoring
 """
 
 from fastapi import FastAPI
@@ -14,7 +14,7 @@ from app.presets.registry import PresetRegistry
 from app.persistence.manager import PersistenceManager
 from app.execution.engine_registry import get_engine_registry
 
-app = FastAPI(title="Proxx Backend", version="0.1.0")
+app = FastAPI(title="Awaire Proxy Backend", version="1.0.0")
 
 # CORS middleware for frontend access (Phase 14, backend now on 8085)
 app.add_middleware(
@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # Initialize persistence (Phase 12)
-persistence = PersistenceManager(db_path="./proxx.db")
+persistence = PersistenceManager(db_path="./awaire_proxy.db")
 
 # Initialize registries (Phase 4-13)
 app.state.job_registry = JobRegistry(persistence_manager=persistence)
@@ -96,4 +96,4 @@ app.include_router(control.router)  # Phase 14
 
 @app.get("/")
 async def root():
-    return {"service": "proxx-backend", "status": "running"}
+    return {"service": "awaire-proxy-backend", "status": "running"}

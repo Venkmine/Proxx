@@ -47,6 +47,36 @@ verification_reports/
 tmp/
 temp/
 
+# Awaire Proxy specific
+awaire_proxy_job_*.csv
+awaire_proxy_job_*.json
+awaire_proxy_job_*.txt
+proxx_job_*.csv
+proxx_job_*.json
+proxx_job_*.txt
+
+# Generated proxy outputs
+*_proxy.mp4
+*_proxy.mov
+*_proxy.mxf
+
+# QA fixtures (generated at runtime)
+qa/fixtures/*.mp4
+qa/fixtures/*.mov
+qa/fixtures/*.mxf
+
+# FFmpeg temp files
+ffmpeg*.log
+ffmpeg2pass*
+
+# Test outputs
+test_output/
+test_media/output/
+
+# Electron build outputs
+frontend/dist/
+frontend/dist-electron/
+
 # Sibling projects (hard exclusions)
 Directors_Vision/
 Motoko_Workspace/

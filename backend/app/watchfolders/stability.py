@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 from typing import Dict, Tuple
 
-from watchfolders.models import FileStabilityCheck
-from watchfolders.errors import FileStabilityError
+from .models import FileStabilityCheck
+from .errors import FileStabilityError
 
 
 class FileStabilityChecker:

@@ -2,7 +2,7 @@
 Execution-specific errors.
 
 All errors are non-fatal to the application.
-They indicate execution failure for a specific clip but do not crash Proxx.
+They indicate execution failure for a specific clip but Awaire Proxy continues running.
 """
 
 
@@ -11,7 +11,7 @@ class ExecutionError(Exception):
     Base exception for execution failures.
     
     All execution errors inherit from this.
-    These errors indicate a clip cannot be processed but Proxx continues running.
+    These errors indicate a clip cannot be processed but the app continues running.
     """
     
     pass
@@ -25,21 +25,20 @@ class PreFlightCheckError(ExecutionError):
     - Source file missing
     - Source file unreadable
     - Output destination not writable
-    - Resolve not available
+    - FFmpeg not available
     """
     
     pass
 
 
-class ResolveExecutionError(ExecutionError):
+class EngineExecutionError(ExecutionError):
     """
-    Resolve execution failed.
+    Engine execution failed.
     
-    Raised when Resolve cannot render the clip:
-    - Resolve crashed
-    - Resolve API error
+    Raised when the execution engine cannot process the clip:
+    - FFmpeg error
     - Timeout exceeded
-    - Render job failed
+    - Process crashed
     """
     
     pass

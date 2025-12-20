@@ -52,7 +52,7 @@ export function TitleBar() {
           letterSpacing: '0.02em',
         }}
       >
-        Fabric
+        Awaire Proxy
       </div>
 
       {/* Window Controls (non-draggable) */}

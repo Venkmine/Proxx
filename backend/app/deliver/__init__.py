@@ -2,7 +2,7 @@
 Deliver module: Canonical capability model for render outputs.
 
 This module is the SINGLE SOURCE OF TRUTH for all deliver functionality.
-If something is not expressible here, it does not exist in Proxx.
+If something is not expressible here, it does not exist in Awaire Proxy.
 
 Architecture:
 - capabilities.py: Pure data models (engine-agnostic)

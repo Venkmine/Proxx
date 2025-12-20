@@ -1,22 +1,15 @@
-# PROXX — BACKUP & RECOVERY POLICY
+# Awaire Proxy — Backup & Recovery Policy
 
 ## Git
 
 - Small, frequent commits
-- Commit at the end of every phase
 - No mega commits
 - Docs updated alongside code
 
-## Borg Backup
+## Local Backup
 
-- Incremental Borg backups enabled
-- Includes:
-  - Repo
-  - Configs
-  - Presets
-  - Logs (rotated)
-- Daily automated backup
-- Manual snapshot before overnight unattended runs
+- Incremental backups recommended
+- Includes: Repo, Configs, Presets, Logs (rotated)
 
 ## Assumption
 
@@ -26,3 +19,10 @@ Developers must assume:
 - Jobs may be mid-run
 
 Recovery is a feature, not an afterthought.
+
+## Application Recovery
+
+- SQLite database persists job state
+- Restart detection identifies interrupted jobs
+- RECOVERY_REQUIRED status for interrupted jobs
+- Explicit operator action to resume

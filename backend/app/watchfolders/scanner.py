@@ -7,7 +7,7 @@ Recursively scans directories for media files with extension filtering.
 from pathlib import Path
 from typing import List, Set
 
-from watchfolders.models import WatchFolder
+from .models import WatchFolder
 
 
 class FileScanner:

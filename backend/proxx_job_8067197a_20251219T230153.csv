@@ -1,2 +1,0 @@
-task_id,source_path,status,output_path,output_size_bytes,execution_duration_seconds,failure_reason,warnings,started_at,completed_at
-4017bc89-e176-47f1-b387-7af9cb3946b5,/Users/leon.grant/projects/Proxx/test_media/test_input.mp4,failed,,,,Engine execution failed: 'DeliverSettings' object has no attribute 'watermark_enabled',,2025-12-19T23:01:53.044521,2025-12-19T23:01:53.044563

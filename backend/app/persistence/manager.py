@@ -1,5 +1,5 @@
 """
-SQLite persistence manager for Proxx state.
+SQLite persistence manager for Awaire Proxy state.
 
 Phase 12: Single-file SQLite database.
 Explicit save/load only - no auto-persistence.
@@ -21,7 +21,7 @@ SCHEMA_VERSION = 1
 
 class PersistenceManager:
     """
-    Manages SQLite persistence for Proxx state.
+    Manages SQLite persistence for Awaire Proxy state.
     
     Stores:
     - Jobs and ClipTasks
@@ -40,10 +40,10 @@ class PersistenceManager:
         Initialize persistence manager.
         
         Args:
-            db_path: Path to SQLite database file (defaults to ./proxx.db)
+            db_path: Path to SQLite database file (defaults to ./awaire_proxy.db)
         """
         if db_path is None:
-            db_path = str(Path.cwd() / "proxx.db")
+            db_path = str(Path.cwd() / "awaire_proxy.db")
         
         self.db_path = db_path
         self._ensure_schema()

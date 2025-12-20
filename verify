@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Verify QA CLI wrapper
+# Usage: ./verify proxy fast|proxy|full
+
+set -e
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: ./verify <product> [level]"
+    echo ""
+    echo "Products: proxy"
+    echo "Levels: fast, proxy (default), full"
+    echo ""
+    echo "Examples:"
+    echo "  ./verify proxy fast"
+    echo "  ./verify proxy"
+    echo "  ./verify proxy full"
+    exit 1
+fi
+
+python -m qa.verify.verify "$@"

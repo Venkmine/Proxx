@@ -1,25 +1,23 @@
 """
 Execution pipeline for clip rendering.
 
-Phase 6: Single-clip execution (Resolve legacy).
-Phase 16: Execution engine abstraction (FFmpeg first).
+Awaire Proxy uses FFmpeg as its sole execution engine.
 
-Engine orchestration and selection at job level.
+DaVinci Resolve integration is QUARANTINED in backend/_future/
+and is not active in this release.
 """
 
 from .errors import (
     ExecutionError,
     PreFlightCheckError,
-    ResolveExecutionError,
     OutputVerificationError,
 )
 from .results import (
     ExecutionResult,
     ExecutionStatus,
 )
-from .runner import execute_single_clip
 
-# Phase 16: Execution engines
+# Execution engines
 from .base import (
     EngineType,
     EngineCapability,
@@ -29,22 +27,18 @@ from .base import (
     EngineExecutionError,
 )
 from .ffmpeg import FFmpegEngine
-from .resolve import ResolveEngine
 from .engine_registry import EngineRegistry, get_engine_registry
 from .scheduler import Scheduler, get_scheduler
 
 __all__ = [
-    # Legacy errors
+    # Errors
     "ExecutionError",
     "PreFlightCheckError",
-    "ResolveExecutionError",
     "OutputVerificationError",
     # Results
     "ExecutionResult",
     "ExecutionStatus",
-    # Legacy runner
-    "execute_single_clip",
-    # Phase 16: Engine types
+    # Engine types
     "EngineType",
     "EngineCapability",
     "ExecutionEngine",

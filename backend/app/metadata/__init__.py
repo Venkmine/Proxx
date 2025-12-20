@@ -1,5 +1,5 @@
 """
-Metadata extraction and validation system for Proxx.
+Metadata extraction and validation system for Awaire Proxy.
 
 This module provides read-only metadata extraction from media files.
 Extraction is non-destructive and uses ffprobe.

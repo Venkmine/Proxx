@@ -1,42 +1,54 @@
-# PROXX — PRODUCT DEFINITION
+# Awaire Proxy — Product Definition
 
-## What Proxx Is
+## What Awaire Proxy Is
 
-Proxx is a Resolve-orchestrated, unattended, studio-grade proxy and transcode engine.
+Awaire Proxy is a boring, reliable, watch-folder proxy generator.
 
 It is designed to:
+- Watch folders for new media
+- Generate proxies deterministically
 - Run overnight without supervision
-- Survive bad footage, bad mounts, bad assistants, and bad Macs
-- Produce editorial-ready proxies with provable outcomes
-- Be trusted more than human babysitting
+- Survive bad footage, bad mounts, and restarts
+- Fail loudly when something goes wrong
 
-Resolve Studio is the render engine.  
-Proxx owns orchestration, presets, metadata, reliability, and reporting.
+FFmpeg is the execution engine.
 
-## What Proxx Is Not
+## What Awaire Proxy Is NOT
 
-Proxx is not:
+Awaire Proxy is not:
 - A copy or ingest tool
 - A media management system
 - A creative color pipeline
 - A consumer application
-- A chat interface
-- A general FFmpeg wrapper
+- A DaVinci Resolve integration
+- A platform or suite
 
-If a feature drifts toward any of the above, it is out of scope by default.
+If a feature drifts toward any of the above, it is out of scope.
 
 ## Target Users
 
 - Assistant editors
 - Post-production engineers
-- Studio tech teams
-- Facilities running Resolve at scale
+- Freelancers running proxy workflows
 
-Not hobbyists.
+Freelancers are self-serve and unsupported by design.
 
 ## Success Criteria
 
 Success is defined as:
+- Watch folders detect new media exactly once
 - Jobs complete unattended
 - Failures are visible, explainable, and non-blocking
 - Outputs can be trusted without manual spot checking
+- Restarts do not cause duplication
+
+## Explicit Non-Goals
+
+- No Resolve integration
+- No ingest/copy tooling
+- No checksums
+- No automation chains
+- No federation
+- No enterprise features
+- No platform promises
+- No roadmap commitments

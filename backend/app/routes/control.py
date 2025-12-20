@@ -87,7 +87,7 @@ class FileSettingsRequest(BaseModel):
     
     container: str = "mov"
     extension: Optional[str] = None
-    naming_template: str = "{source_name}__proxx"
+    naming_template: str = "{source_name}__proxy"
     prefix: Optional[str] = None
     suffix: Optional[str] = None
     overwrite_policy: str = "never"
@@ -157,7 +157,7 @@ class JobSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     output_dir: Optional[str] = None
-    naming_template: str = "{source_name}__proxx"
+    naming_template: str = "{source_name}__proxy"
     file_prefix: Optional[str] = None
     file_suffix: Optional[str] = None
     preserve_source_dirs: bool = False
@@ -544,7 +544,7 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
                 )
             # Test writability
             try:
-                test_file = output_path / ".proxx_write_test"
+                test_file = output_path / ".awaire_proxy_write_test"
                 test_file.touch()
                 test_file.unlink()
             except Exception as e:
@@ -611,7 +611,7 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
             file_caps = FileCapabilities(
                 container=ds.file.container if ds.file else "mov",
                 extension=ds.file.extension if ds.file else None,
-                naming_template=ds.file.naming_template if ds.file else "{source_name}__proxx",
+                naming_template=ds.file.naming_template if ds.file else "{source_name}__proxy",
                 prefix=ds.file.prefix if ds.file else None,
                 suffix=ds.file.suffix if ds.file else None,
                 overwrite_policy=OverwritePolicy(ds.file.overwrite_policy) if ds.file else OverwritePolicy.NEVER,
@@ -1024,7 +1024,7 @@ async def update_deliver_settings_endpoint(
         file_caps = FileCapabilities(
             container=body.file.container if body.file else "mov",
             extension=body.file.extension if body.file else None,
-            naming_template=body.file.naming_template if body.file else "{source_name}__proxx",
+            naming_template=body.file.naming_template if body.file else "{source_name}__proxy",
             prefix=body.file.prefix if body.file else None,
             suffix=body.file.suffix if body.file else None,
             overwrite_policy=OverwritePolicy(body.file.overwrite_policy) if body.file else OverwritePolicy.NEVER,

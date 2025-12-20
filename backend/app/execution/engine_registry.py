@@ -14,7 +14,6 @@ from typing import Dict, Optional
 
 from .base import ExecutionEngine, EngineType, EngineNotAvailableError
 from .ffmpeg import FFmpegEngine
-from .resolve import ResolveEngine
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +37,8 @@ class EngineRegistry:
     
     def _initialize_engines(self) -> None:
         """Create engine instances."""
-        # FFmpeg engine (Phase 16: real)
+        # FFmpeg engine - the only supported engine for Awaire Proxy v1
         self._engines[EngineType.FFMPEG] = FFmpegEngine()
-        
-        # Resolve engine (Phase 16: stub only)
-        self._engines[EngineType.RESOLVE] = ResolveEngine()
         
         # Log availability
         for engine_type, engine in self._engines.items():

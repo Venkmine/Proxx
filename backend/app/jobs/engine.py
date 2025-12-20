@@ -812,7 +812,7 @@ class JobEngine:
         """
         from ..reporting.models import JobReport, ClipReport, DiagnosticsInfo
         from ..reporting.diagnostics import (
-            get_proxx_version,
+            get_app_version,
             get_python_version,
             get_os_version,
             get_hostname,
@@ -823,7 +823,7 @@ class JobEngine:
         # Capture diagnostics
         resolve_info = get_resolve_info()
         diagnostics = DiagnosticsInfo(
-            proxx_version=get_proxx_version(),
+            app_version=get_app_version(),
             python_version=get_python_version(),
             os_version=get_os_version(),
             hostname=get_hostname(),

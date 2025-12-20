@@ -145,7 +145,7 @@ class DeliverSettings:
         file_caps = FileCapabilities(
             container=file_data.get("container", "mov"),
             extension=file_data.get("extension"),
-            naming_template=file_data.get("naming_template", "{source_name}__proxx"),
+            naming_template=file_data.get("naming_template", "{source_name}__proxy"),
             prefix=file_data.get("prefix"),
             suffix=file_data.get("suffix"),
             overwrite_policy=OverwritePolicy(file_data.get("overwrite_policy", "never")),
@@ -233,7 +233,7 @@ class DeliverSettings:
             video=VideoCapabilities(),  # Defaults
             audio=AudioCapabilities(),  # Defaults
             file=FileCapabilities(
-                naming_template=legacy.get("naming_template", "{source_name}__proxx"),
+                naming_template=legacy.get("naming_template", "{source_name}__proxy"),
                 prefix=legacy.get("file_prefix"),
                 suffix=legacy.get("file_suffix"),
                 preserve_source_dirs=legacy.get("preserve_source_dirs", False),

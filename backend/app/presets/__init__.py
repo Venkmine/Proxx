@@ -1,5 +1,5 @@
 """
-Preset system for Proxx.
+Preset system for Awaire Proxy.
 
 This module defines the foundational data structures and validation
 for the preset system. Presets are pure data with no side effects.

@@ -196,7 +196,7 @@ class FileCapabilities:
     extension: Optional[str] = None  # Override extension (usually derived from container)
     
     # Naming
-    naming_template: str = "{source_name}__proxx"
+    naming_template: str = "{source_name}__proxy"
     prefix: Optional[str] = None
     suffix: Optional[str] = None
     
