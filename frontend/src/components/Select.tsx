@@ -25,6 +25,7 @@ interface SelectProps {
   fullWidth?: boolean
   size?: 'sm' | 'md'
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export function Select({
@@ -36,6 +37,7 @@ export function Select({
   fullWidth = false,
   size = 'md',
   style,
+  'data-testid': testId,
 }: SelectProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -87,6 +89,7 @@ export function Select({
 
   return (
     <select
+      data-testid={testId}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}

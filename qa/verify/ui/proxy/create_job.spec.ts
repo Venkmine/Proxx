@@ -53,13 +53,11 @@ test.describe('Create Proxy Job', () => {
     await page.goto('/');
     await waitForAppReady(page);
     
-    // Assert: Create Job section is visible
-    await expect(page.getByText(/create job|source|sources/i)).toBeVisible();
+    // Assert: Create Job panel is visible (using data-testid)
+    await expect(page.locator('[data-testid="create-job-panel"]')).toBeVisible();
     
     // Assert: Preset selection exists
-    await expect(
-      page.locator('select, [role="combobox"], button').filter({ hasText: /preset/i }).first()
-    ).toBeVisible();
+    await expect(page.locator('[data-testid="preset-select"]')).toBeVisible();
   });
   
   test('should load presets from backend', async ({ page }) => {
@@ -112,6 +110,9 @@ test.describe('Create Proxy Job', () => {
     // Full E2E test with filesystem truth check
     test.setTimeout(180000); // 3 minutes for transcoding + validation
     
+    // Reset backend queue for test isolation
+    await resetBackendQueue();
+    
     await page.goto('/');
     await waitForAppReady(page);
     
@@ -122,35 +123,24 @@ test.describe('Create Proxy Job', () => {
     const filesBefore = findOutputFiles(TEST_OUTPUT_DIR, /\.mp4$/);
     expect(filesBefore).toHaveLength(0);
     
-    // Step 1: Enter file path
-    const filePathInput = page.getByPlaceholder(/file|path|source/i).first();
-    const fileInputs = page.locator('input[type="text"]');
-    const fileInput = fileInputs.first();
+    // Step 1: Enter file path using the manual path input
+    const filePathInput = page.locator('[data-testid="file-path-input"]');
+    await expect(filePathInput).toBeVisible({ timeout: 5000 });
+    await filePathInput.fill(TEST_FILES.valid);
+    await filePathInput.press('Enter');
     
-    if (await filePathInput.isVisible()) {
-      await filePathInput.fill(TEST_FILES.valid);
-      await expect(filePathInput).toHaveValue(TEST_FILES.valid);
-    } else if (await fileInput.isVisible()) {
-      await fileInput.fill(TEST_FILES.valid);
-      await expect(fileInput).toHaveValue(TEST_FILES.valid);
-    }
+    // Verify file is selected (look for selected file count or filename)
+    await expect(page.getByText(/1 file.*selected|test_input_fabric/i).first()).toBeVisible({ timeout: 5000 });
     
-    // Step 2: Select preset
-    const presetButtons = page.locator('button').filter({ hasText: /preset/i });
-    if (await presetButtons.first().isVisible()) {
-      await presetButtons.first().click();
-      
-      // Wait for dropdown to open (state-based, not time-based)
-      await waitForDropdownOpen(page);
-      
-      // Click first available preset option
-      const presetOption = page.locator('[role="option"], [data-value]').first();
-      await expect(presetOption).toBeVisible();
-      await presetOption.click();
-    }
+    // Step 2: Select preset using native <select> element
+    const presetSelect = page.locator('[data-testid="preset-select"]');
+    await expect(presetSelect).toBeVisible({ timeout: 5000 });
+    // Select the first non-placeholder option
+    await presetSelect.selectOption({ index: 1 });
     
-    // Step 3: Set output directory
-    const outputInput = page.locator('input[type="text"]').last();
+    // Step 3: Set output directory (use placeholder to identify the correct input)
+    const outputInput = page.getByPlaceholder('/path/to/output/directory');
+    await expect(outputInput).toBeVisible({ timeout: 5000 });
     await outputInput.fill(TEST_OUTPUT_DIR);
     await expect(outputInput).toHaveValue(TEST_OUTPUT_DIR);
     
@@ -160,25 +150,53 @@ test.describe('Create Proxy Job', () => {
     // Wait for button to be enabled (state-based)
     await expect(createBtn).toBeEnabled({ timeout: 5000 });
     
-    // Assert BEFORE: No jobs in queue
-    const jobsBefore = page.locator('[data-job-id], .job-card, .job-group');
-    const jobCountBefore = await jobsBefore.count();
+    // Get existing job IDs before creating new job
+    const existingJobIds = new Set<string>();
+    const existingJobs = page.locator('[data-job-id]');
+    const existingCount = await existingJobs.count();
+    for (let i = 0; i < existingCount; i++) {
+      const id = await existingJobs.nth(i).getAttribute('data-job-id');
+      if (id) existingJobIds.add(id);
+    }
     
     await createBtn.click();
     
-    // Step 5: Assert job appears in queue
-    await waitForJobInQueue(page);
+    // Step 5: Wait for new job to appear (by count increase)
+    await expect(page.locator('[data-job-id]')).toHaveCount(existingCount + 1, { timeout: 10000 });
     
-    // Assert AFTER: Job count increased
-    const jobsAfter = page.locator('[data-job-id], .job-card, .job-group');
-    await expect(jobsAfter).toHaveCount(jobCountBefore + 1, { timeout: 10000 });
+    // Find the NEW job (one that wasn't in existingJobIds)
+    const allJobs = page.locator('[data-job-id]');
+    let newJobLocator: ReturnType<typeof page.locator> | null = null;
+    const newCount = await allJobs.count();
+    for (let i = 0; i < newCount; i++) {
+      const job = allJobs.nth(i);
+      const id = await job.getAttribute('data-job-id');
+      if (id && !existingJobIds.has(id)) {
+        newJobLocator = job;
+        break;
+      }
+    }
     
-    // Step 6: Wait for job status transitions
-    // PENDING → RUNNING → COMPLETED
-    await waitForJobStatus(page, 'running|encoding|processing', 30000);
-    await waitForJobStatus(page, 'completed', 120000);
+    expect(newJobLocator).not.toBeNull();
     
-    // Step 7: Filesystem truth check
+    // Step 6: Start the job (jobs don't auto-start, must click Render All or per-job Render)
+    const renderAllBtn = page.getByRole('button', { name: /render all/i });
+    await expect(renderAllBtn).toBeVisible({ timeout: 5000 });
+    await renderAllBtn.click();
+    
+    // Step 7: Wait for THIS specific job to complete (not any job)
+    // Check the data-job-status attribute on the new job
+    await expect(async () => {
+      const status = await newJobLocator!.getAttribute('data-job-status');
+      expect(status).toMatch(/RUNNING|ENCODING|PROCESSING|COMPLETED/i);
+    }).toPass({ timeout: 30000 });
+    
+    await expect(async () => {
+      const status = await newJobLocator!.getAttribute('data-job-status');
+      expect(status).toBe('COMPLETED');
+    }).toPass({ timeout: 120000 });
+    
+    // Step 8: Filesystem truth check
     const filesAfter = findOutputFiles(TEST_OUTPUT_DIR, /\.mp4$/);
     expect(filesAfter.length).toBeGreaterThan(0);
     

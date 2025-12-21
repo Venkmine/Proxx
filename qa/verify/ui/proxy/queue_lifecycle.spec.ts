@@ -43,7 +43,7 @@ test.describe('Queue Lifecycle', () => {
 
   test('should display empty queue state initially', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Wait for initial load
     await waitForAppReady(page);
@@ -64,7 +64,7 @@ test.describe('Queue Lifecycle', () => {
   
   test('should show job count after adding jobs', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Wait for presets to load
     await waitForAppReady(page);
@@ -83,7 +83,6 @@ test.describe('Queue Lifecycle', () => {
   
   test('should allow selecting a job in the queue', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // If there are jobs, clicking one should select it
@@ -105,7 +104,6 @@ test.describe('Queue Lifecycle', () => {
   
   test('should show job action buttons when job is selected', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -114,7 +112,6 @@ test.describe('Queue Lifecycle', () => {
     if (jobCount > 0) {
       // Select a job
       await jobElements.first().click();
-      await waitForDropdownOpen(page);
       
       // Look for action buttons (cancel, delete, retry, etc.)
       const actionButtons = page.locator('button').filter({ 
@@ -129,7 +126,7 @@ test.describe('Queue Lifecycle', () => {
   
   test('should have queue filter options', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Look for filter controls
     // The UI should have status filters (All, Pending, Running, Completed, Failed)
@@ -145,7 +142,6 @@ test.describe('Queue Lifecycle', () => {
   
   test('should filter jobs by status', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Find status filter buttons
@@ -160,7 +156,6 @@ test.describe('Queue Lifecycle', () => {
     // Click filter if available
     if (await completedFilter.isVisible()) {
       await completedFilter.click();
-      await waitForDropdownOpen(page);
       
       // After filtering, only completed jobs should be visible
       // (or an empty state if no completed jobs)
@@ -169,7 +164,7 @@ test.describe('Queue Lifecycle', () => {
   
   test('should support date-based filtering', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Look for date filter controls
     const dateFilters = page.locator('button, select').filter({
@@ -182,7 +177,7 @@ test.describe('Queue Lifecycle', () => {
   
   test('should support search/filter by filename', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Look for search input
     const searchInput = page.getByPlaceholder(/search|filter|find/i).or(
@@ -192,7 +187,6 @@ test.describe('Queue Lifecycle', () => {
     if (await searchInput.isVisible()) {
       // Enter a search term
       await searchInput.fill('test');
-      await waitForDropdownOpen(page);
       
       // Jobs should be filtered (may show none if no matches)
     }
@@ -214,7 +208,7 @@ test.describe('Queue Operations', () => {
 
   test('should have global queue controls', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Look for global queue controls (start all, pause all, clear all)
     const globalControls = page.locator('button').filter({
@@ -227,7 +221,6 @@ test.describe('Queue Operations', () => {
   
   test('should show job status badges', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Look for status badge components
@@ -240,7 +233,6 @@ test.describe('Queue Operations', () => {
   
   test('should show job creation timestamp', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Jobs should display when they were created
@@ -253,7 +245,6 @@ test.describe('Queue Operations', () => {
   
   test('should show job progress for running jobs', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Look for progress indicators
@@ -273,7 +264,7 @@ test.describe('Queue State Consistency', () => {
   
   test('should refresh queue state from backend', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // The UI should automatically poll or refresh queue state
     // We can verify by checking for periodic network requests
@@ -287,7 +278,7 @@ test.describe('Queue State Consistency', () => {
   
   test('should handle backend disconnection gracefully', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // The UI should show a connection status indicator
     // or handle disconnection gracefully
@@ -301,7 +292,6 @@ test.describe('Queue State Consistency', () => {
   
   test('should maintain queue order across refresh', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Get current job order
@@ -310,7 +300,6 @@ test.describe('Queue State Consistency', () => {
     
     // Refresh the page
     await page.reload();
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Verify job count is maintained

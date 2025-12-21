@@ -169,6 +169,9 @@ export function JobGroup({
   return (
     <div
       ref={containerRef}
+      data-testid="job-group"
+      data-job-id={_jobId}
+      data-job-status={normalizedStatus}
       draggable={!!onDragStart}
       onDragStart={onDragStart}
       onDragOver={onDragOver}

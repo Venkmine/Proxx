@@ -78,3 +78,8 @@ test-integration:
 # E2E tests only
 test-e2e:
 	cd qa && python -m pytest proxy/e2e/ -v
+
+#  DO NOT start Vite or backend servers from Playwright or Verify.
+#
+# The frontend MUST be started manually before running UI tests.
+# Copilot must not add webServer, pnpm run dev, or port management here.

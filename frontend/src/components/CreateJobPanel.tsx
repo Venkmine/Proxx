@@ -169,6 +169,7 @@ export function CreateJobPanel({
 
   return (
     <div
+      data-testid="create-job-panel"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -327,6 +328,35 @@ export function CreateJobPanel({
                 >
                   Select Files...
                 </Button>
+                {/* Manual path input for browser mode - allows entering full paths */}
+                <input
+                  type="text"
+                  data-testid="file-path-input"
+                  placeholder="Or enter file path..."
+                  disabled={loading}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const input = e.target as HTMLInputElement
+                      const path = input.value.trim()
+                      if (path) {
+                        onFilesChange([...selectedFiles, path])
+                        input.value = ''
+                      }
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: '200px',
+                    padding: '0.375rem 0.75rem',
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-mono)',
+                    backgroundColor: 'var(--input-bg)',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                  }}
+                />
               </>
             )}
             <span
@@ -412,6 +442,7 @@ export function CreateJobPanel({
             Preset *
           </label>
           <Select
+            data-testid="preset-select"
             value={selectedPresetId}
             onChange={onPresetChange}
             options={presetOptions}
@@ -685,6 +716,7 @@ export function CreateJobPanel({
           }}
         >
           <Button
+            data-testid="add-to-queue-button"
             variant="primary"
             size="md"
             onClick={onCreateJob}

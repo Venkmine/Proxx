@@ -34,14 +34,27 @@ export const TEST_FILES = {
 
 /**
  * Wait for the app to be fully loaded and ready.
- * Checks for visible UI elements and network idle state.
+ * 
+ * Uses UI-state-based checks (DOM selectors), NOT network probes.
+ * Frontend must be started manually before Playwright runs.
+ * 
+ * Waits for:
+ * - App root container visible
+ * - Header with app title visible
+ * - Create job panel or queue area visible
+ * - No loading spinners
  */
 export async function waitForAppReady(page: Page): Promise<void> {
-  // Wait for network to settle
-  await page.waitForLoadState('networkidle');
+  // Wait for app root container
+  await expect(page.locator('[data-testid="app-root"]')).toBeVisible({ timeout: 10000 });
   
-  // Wait for main content to be visible
-  await expect(page.locator('main, [role="main"], #root')).toBeVisible({ timeout: 10000 });
+  // Wait for header to be visible (proves React has rendered)
+  await expect(page.locator('[data-testid="app-header"]')).toBeVisible({ timeout: 10000 });
+  
+  // Wait for create job panel OR queue area (proves main UI is ready)
+  await expect(
+    page.locator('[data-testid="create-job-panel"], [data-testid="job-queue"]').first()
+  ).toBeVisible({ timeout: 10000 });
   
   // Wait for any loading spinners to disappear
   const spinner = page.locator('.loading, .spinner, [data-loading="true"]');
@@ -86,11 +99,30 @@ export async function waitForJobInQueue(page: Page, expectedStatus?: string): Pr
 
 /**
  * Wait for job status to change to a specific value.
+ * Uses data-job-status attribute to avoid matching filter button labels.
  */
 export async function waitForJobStatus(page: Page, status: string, timeout: number = 60000): Promise<void> {
-  await expect(
-    page.getByText(new RegExp(status, 'i')).first()
-  ).toBeVisible({ timeout });
+  // Match against data-job-status attribute (uppercase values like RUNNING, COMPLETED)
+  // The status parameter can be a regex pattern like 'running|encoding|processing'
+  const statusPattern = status.toUpperCase().replace(/\|/g, '|');
+  const attrSelector = `[data-job-status]`;
+  
+  // Find a job element whose data-job-status matches the pattern
+  const jobStatusLocator = page.locator(attrSelector).filter({
+    has: page.locator(':scope'),
+  }).first();
+  
+  // Use a custom matcher to check the attribute value
+  await expect(async () => {
+    const elements = await page.locator(attrSelector).all();
+    for (const el of elements) {
+      const attrValue = await el.getAttribute('data-job-status');
+      if (attrValue && new RegExp(statusPattern, 'i').test(attrValue)) {
+        return;
+      }
+    }
+    throw new Error(`No job with status matching ${statusPattern}`);
+  }).toPass({ timeout });
 }
 
 /**

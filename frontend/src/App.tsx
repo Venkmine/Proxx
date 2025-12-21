@@ -1300,6 +1300,7 @@ function App() {
 
   return (
     <div
+      data-testid="app-root"
       style={{
         height: '100vh',
         display: 'flex',
@@ -1320,6 +1321,7 @@ function App() {
 
       {/* Header */}
       <header
+        data-testid="app-header"
         style={{
           padding: '0.875rem 1.5rem',
           borderBottom: '1px solid var(--border-primary)',
@@ -1351,7 +1353,10 @@ function App() {
             fontFamily: 'var(--font-sans)',
             color: 'var(--text-dim)',
           }}>
-            <span style={{ color: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)' }}>
+            <span 
+              data-testid="backend-status"
+              style={{ color: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)' }}
+            >
               {backendConnected ? '● Backend connected' : '○ Backend disconnected'}
             </span>
             <span>
@@ -1374,6 +1379,7 @@ function App() {
           </Button>
           {pendingJobCount > 0 && (
             <Button 
+              data-testid="render-all-button"
               variant="success" 
               size="md" 
               onClick={renderAllJobs}

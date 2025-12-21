@@ -249,6 +249,35 @@ class OperationResponse(BaseModel):
 
 
 # ============================================================================
+# QUEUE RESET API (Test Support)
+# ============================================================================
+
+@router.post("/queue/reset", response_model=OperationResponse)
+async def reset_queue(request: Request):
+    """
+    Reset the job queue by clearing all jobs.
+    
+    This endpoint is primarily for testing purposes to ensure test isolation.
+    It clears all jobs from the registry.
+    """
+    try:
+        job_registry = request.app.state.job_registry
+        job_count = job_registry.count()
+        job_registry.clear()
+        logger.info(f"Queue reset: cleared {job_count} jobs")
+        return OperationResponse(
+            success=True,
+            message=f"Queue cleared: {job_count} jobs removed"
+        )
+    except Exception as e:
+        logger.error(f"Failed to reset queue: {e}")
+        return OperationResponse(
+            success=False,
+            message=f"Failed to reset queue: {e}"
+        )
+
+
+# ============================================================================
 # CODEC SPECS API (Phase 20)
 # ============================================================================
 

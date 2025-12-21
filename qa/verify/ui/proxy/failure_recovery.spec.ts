@@ -153,23 +153,24 @@ test.describe('Recovery Workflows', () => {
     await page.goto('/');
     await waitForAppReady(page);
     
-    // Look for queue clear/reset button
-    const clearQueueBtn = page.getByRole('button', { name: /clear|reset|delete all/i });
+    // The "Clear" button in the Sources panel clears the form, not the queue
+    // This test verifies form clearing behavior
+    const clearFormBtn = page.getByRole('button', { name: /^clear$/i });
     
-    if (await clearQueueBtn.isVisible()) {
-      // Get job count before clear
-      const jobsBefore = page.locator('[data-job-id], .job-card, .job-group');
-      const countBefore = await jobsBefore.count();
+    if (await clearFormBtn.isVisible()) {
+      // Fill the form first
+      const outputInput = page.getByPlaceholder('/path/to/output/directory');
+      if (await outputInput.isVisible()) {
+        await outputInput.fill('/tmp/test');
+        await expect(outputInput).toHaveValue('/tmp/test');
+      }
       
-      if (countBefore > 0) {
-        await clearQueueBtn.click();
-        
-        // Assert: Queue should be empty
-        await waitForEmptyQueue(page);
-        
-        // Assert: No job cards remain
-        const jobsAfter = page.locator('[data-job-id], .job-card, .job-group');
-        await expect(jobsAfter).toHaveCount(0);
+      // Click Clear
+      await clearFormBtn.click();
+      
+      // Assert: Form should be cleared (output directory becomes empty)
+      if (await outputInput.isVisible()) {
+        await expect(outputInput).toHaveValue('');
       }
     }
   });
@@ -206,7 +207,7 @@ test.describe('Recovery Workflows', () => {
     const connectionStatus = page.locator('[data-connection-status], .connection-indicator');
     
     // UI should remain functional even with backend issues
-    const mainContent = page.locator('main, [role="main"], #root');
+    const mainContent = page.locator('main, [role="main"], #root').first();
     await expect(mainContent).toBeVisible();
   });
 });

@@ -42,7 +42,7 @@ test.describe('Browser Mode', () => {
 
   test('should show text input for file paths', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // In browser mode, file paths must be entered via text input
     // (or drag & drop, but can't invoke native file picker)
@@ -55,7 +55,7 @@ test.describe('Browser Mode', () => {
   
   test('should show text input for output directory', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Output directory should be editable via text input
     const textInputs = page.locator('input[type="text"]');
@@ -71,7 +71,7 @@ test.describe('Browser Mode', () => {
   
   test('should accept drag and drop for files', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Look for drop zone indicator
     const dropZone = page.locator('.drop-zone, [data-dropzone], [draggable]').or(
@@ -87,7 +87,7 @@ test.describe('Browser Mode', () => {
   
   test('should show folder picker button (may be disabled in browser)', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // The folder picker button should exist but may work differently
     const folderBtn = page.getByRole('button', { name: /select folder|browse|choose folder/i });
@@ -101,7 +101,7 @@ test.describe('Browser Mode', () => {
   
   test('should show file picker button (may be disabled in browser)', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // The file picker button should exist
     const fileBtn = page.getByRole('button', { name: /select files|add files|browse files/i });
@@ -114,7 +114,6 @@ test.describe('Browser Mode', () => {
   
   test('should allow manual path entry', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Find file path input
@@ -135,7 +134,7 @@ test.describe('Mode Detection', () => {
   
   test('should detect browser environment', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Check if the page has Electron detection
     const hasElectron = await page.evaluate(() => {
@@ -149,7 +148,7 @@ test.describe('Mode Detection', () => {
   
   test('should adapt UI to browser constraints', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // The UI should work without Electron features
     // All essential functions should be available via fallbacks
@@ -165,7 +164,7 @@ test.describe('Mode Detection', () => {
   
   test('should not crash when Electron APIs unavailable', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Click any buttons that might invoke Electron APIs
     const selectFilesBtn = page.getByRole('button', { name: /select files/i });
@@ -197,7 +196,7 @@ test.describe('Cross-Mode Functionality', () => {
 
   test('should show job queue in both modes', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Queue display should work regardless of mode
     const queueArea = page.locator('main, .queue-area, [data-queue]');
@@ -206,7 +205,7 @@ test.describe('Cross-Mode Functionality', () => {
   
   test('should show job status badges in both modes', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Status badges should render
     const statusBadges = page.locator('.status-badge, [data-status]');
@@ -217,7 +216,6 @@ test.describe('Cross-Mode Functionality', () => {
   
   test('should show presets dropdown in both modes', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Preset selection should work
@@ -228,7 +226,6 @@ test.describe('Cross-Mode Functionality', () => {
   
   test('should show engine selection in both modes', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Engine selection should be available
@@ -240,7 +237,7 @@ test.describe('Cross-Mode Functionality', () => {
   
   test('should show deliver settings panel in both modes', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Deliver/output settings should be visible
     const deliverPanel = page.getByText(/deliver|output settings|video|audio/i);
@@ -251,7 +248,7 @@ test.describe('Cross-Mode Functionality', () => {
   
   test('should handle API responses consistently in both modes', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // Wait for API data to load
     await waitForAppReady(page);
@@ -266,7 +263,6 @@ test.describe('Cross-Mode Functionality', () => {
     
     // Reload and check for errors
     await page.reload();
-    await page.waitForLoadState('networkidle');
     await waitForAppReady(page);
     
     // Filter out expected network errors (backend may not be running)
@@ -288,7 +284,7 @@ test.describe('Browser Mode Fallbacks', () => {
 
   test('should show path input when no file picker available', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // There should be a way to enter paths manually
     const pathInputs = page.locator('input[type="text"]');
@@ -298,7 +294,7 @@ test.describe('Browser Mode Fallbacks', () => {
   
   test('should accept pasted paths', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     const fileInput = page.locator('input[type="text"]').first();
     
@@ -315,7 +311,7 @@ test.describe('Browser Mode Fallbacks', () => {
   
   test('should show helpful text for browser limitations', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForAppReady(page);
     
     // The UI might show hints about browser mode limitations
     const hints = page.getByText(/drag.*drop|paste|enter path/i);

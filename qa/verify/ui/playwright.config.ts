@@ -42,8 +42,8 @@ export default defineConfig({
   /* Fail the build on CI if you accidentally left test.only in source */
   forbidOnly: CI,
   
-  /* Retry failed tests - more retries in CI */
-  retries: CI ? 2 : 1,
+  /* No retries - do not hide flakiness */
+  retries: 0,
   
   /* Single worker to ensure test isolation */
   workers: 1,
@@ -138,3 +138,10 @@ export default defineConfig({
 
 // Export URLs for use in tests
 export { FRONTEND_URL, BACKEND_URL };
+
+/**
+ * ⚠️ DO NOT start Vite or backend servers from Playwright or Verify.
+ *
+ * The frontend MUST be started manually before running UI tests.
+ * Copilot must not add webServer, pnpm run dev, or port management here.
+ */
