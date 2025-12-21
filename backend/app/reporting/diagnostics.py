@@ -10,8 +10,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from app.resolve.discovery import discover_resolve
-
 
 def get_python_version() -> str:
     """Return Python version (e.g., '3.11.5')."""
@@ -64,11 +62,20 @@ def get_resolve_info() -> dict:
     - studio: Studio license detected (bool or None)
     """
     try:
+        # Lazy import to avoid breaking if resolve module doesn't exist yet
+        from app.resolve.discovery import discover_resolve
         resolve = discover_resolve()
         return {
             "path": str(resolve.path),
             "version": resolve.version or "unknown",
             "studio": resolve.studio,
+        }
+    except ImportError:
+        return {
+            "path": None,
+            "version": "unknown",
+            "studio": None,
+            "error": "Resolve module not yet implemented",
         }
     except Exception as e:
         return {

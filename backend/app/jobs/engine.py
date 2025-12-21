@@ -107,7 +107,7 @@ class JobEngine:
                     task.duration = metadata.time.duration_seconds
                 
                 if metadata.audio:
-                    task.audio_channels = metadata.audio.channels
+                    task.audio_channels = metadata.audio.channel_count
                     task.audio_sample_rate = metadata.audio.sample_rate
                     
             except Exception as e:
@@ -812,7 +812,7 @@ class JobEngine:
         """
         from ..reporting.models import JobReport, ClipReport, DiagnosticsInfo
         from ..reporting.diagnostics import (
-            get_app_version,
+            get_proxx_version,
             get_python_version,
             get_os_version,
             get_hostname,
@@ -823,7 +823,7 @@ class JobEngine:
         # Capture diagnostics
         resolve_info = get_resolve_info()
         diagnostics = DiagnosticsInfo(
-            app_version=get_app_version(),
+            proxx_version=get_proxx_version(),
             python_version=get_python_version(),
             os_version=get_os_version(),
             hostname=get_hostname(),
