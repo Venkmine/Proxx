@@ -207,13 +207,6 @@ const WATERMARK_POSITIONS = [
   { value: 'center', label: 'Center' },
 ]
 
-// Phase 20: Colour modes
-const COLOUR_MODES = [
-  { value: 'passthrough', label: 'Passthrough (No Change)' },
-  { value: 'apply_lut', label: 'Apply LUT' },
-  { value: 'simple_transform', label: 'Simple Transform' },
-]
-
 // ============================================================================
 // SECTION COMPONENTS
 // ============================================================================
@@ -635,13 +628,6 @@ export function DeliverControlPanel({
   const updateOverlaySettings = (updates: Partial<OverlaySettings>) => {
     onSettingsChange({
       overlay: { ...settings.overlay, ...updates }
-    })
-  }
-  
-  // Phase 20: Colour settings update
-  const updateColourSettings = (updates: Partial<ColourSettings>) => {
-    onSettingsChange({
-      colour: { ...(settings.colour || { mode: 'passthrough' }), ...updates }
     })
   }
   
@@ -1232,46 +1218,6 @@ export function DeliverControlPanel({
               />
             </>
           )}
-        </Section>
-        
-        {/* Colour Section (Phase 20) — Planned, not fully implemented */}
-        <Section
-          title="Colour"
-          isOpen={openSections.has('colour')}
-          onToggle={() => toggleSection('colour')}
-          badge="PLANNED"
-        >
-          {/* Disabled-with-explanation: Colour/LUT not wired to backend yet */}
-          <div style={{
-            padding: '0.75rem',
-            marginBottom: '0.75rem',
-            fontSize: '0.6875rem',
-            color: 'var(--text-muted)',
-            backgroundColor: 'rgba(51, 65, 85, 0.2)',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-primary)',
-            fontStyle: 'italic',
-          }}>
-            Planned — not available in Proxy v1.
-            <br />
-            Colour transforms and LUT application will be added in a future release.
-          </div>
-          
-          <FieldRow label="Colour Mode">
-            <Select
-              value={settings.colour?.mode || 'passthrough'}
-              onChange={(v) => updateColourSettings({ mode: v as 'passthrough' | 'apply_lut' | 'simple_transform' })}
-              options={COLOUR_MODES}
-              disabled={true} // Disabled until backend wiring is complete
-              fullWidth
-            />
-          </FieldRow>
-          
-          {/* 
-            NOTE: LUT Selection and Simple Transform controls are hidden since 
-            the Colour section is marked as "Planned — not available in Proxy v1".
-            These controls would be rendered here when the feature is implemented.
-          */}
         </Section>
         
         {/* Watermarks Section (renamed from Overlays) */}

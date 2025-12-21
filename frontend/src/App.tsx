@@ -777,23 +777,32 @@ function App() {
   // ============================================
 
   const createManualJob = async () => {
+    // Validation with visible feedback
     if (!selectedFiles.length) {
-      alert('Please select at least one file')
+      setError('Please select at least one source file')
       return
     }
     if (!selectedPresetId) {
-      alert('Please select a preset')
+      setError('Please select a preset')
+      return
+    }
+    
+    // Determine effective output directory
+    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || null
+    if (!effectiveOutputDir) {
+      setError('Please choose an output directory')
       return
     }
 
     // Phase 17: No confirmation for routine actions
     try {
       setLoading(true)
+      setError('')  // Clear any previous errors
       
-      // Phase 17: Use DeliverSettings from the Deliver panel (not hardcoded defaults)
-      // The panel is the source of truth for what the job runs with
+      // Proxy v1: Use complete DeliverSettings from the Deliver panel
+      // (colour settings intentionally excluded - not supported in v1)
       const jobDeliverSettings = {
-        output_dir: outputDirectory || deliverSettings.output_dir || null,
+        output_dir: effectiveOutputDir,
         video: deliverSettings.video,
         audio: deliverSettings.audio,
         file: deliverSettings.file,
@@ -1371,7 +1380,7 @@ function App() {
         </div>
       </header>
       
-      {/* Phase 20: Modular Tab Bar — Active tab only, future modules disabled */}
+      {/* Proxy v1: Single module - Proxies only */}
       <nav
         style={{
           display: 'flex',
@@ -1382,53 +1391,28 @@ function App() {
           alignItems: 'stretch',
         }}
       >
-        {[
-          { id: 'proxies', label: 'Proxies', enabled: true, future: false },
-          { id: 'sources', label: 'Sources', enabled: false, future: true },
-          { id: 'deliver', label: 'Deliver', enabled: false, future: true },
-          { id: 'qc', label: 'QC', enabled: false, future: true },
-          { id: 'automation', label: 'Automation', enabled: false, future: true },
-          { id: 'settings', label: 'Settings', enabled: false, future: true },
-        ].map((tab) => (
-          <div
-            key={tab.id}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0.5rem 1rem',
+            borderBottom: '2px solid var(--button-primary-bg)',
+            cursor: 'pointer',
+          }}
+        >
+          <span
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0.5rem 1rem',
-              borderBottom: tab.enabled ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-              cursor: tab.enabled ? 'pointer' : 'default',
-              opacity: tab.enabled ? 1 : 0.4,
+              color: 'var(--text-primary)',
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              fontFamily: 'var(--font-sans)',
             }}
           >
-            <span
-              style={{
-                color: tab.enabled ? 'var(--text-primary)' : 'var(--text-dim)',
-                fontSize: '0.8125rem',
-                fontWeight: 600,
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              {tab.label}
-            </span>
-            {tab.future && (
-              <span
-                style={{
-                  fontSize: '0.5625rem',
-                  color: 'var(--text-dim)',
-                  fontFamily: 'var(--font-sans)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  marginTop: '0.125rem',
-                }}
-              >
-                Future module
-              </span>
-            )}
-          </div>
-        ))}
+            Proxies
+          </span>
+        </div>
       </nav>
 
       {/* Error Banner */}

@@ -65,6 +65,9 @@ class VideoSettingsRequest(BaseModel):
     preset: Optional[str] = None
     # Phase 17.1: Frontend sends pixel_aspect_ratio
     pixel_aspect_ratio: Optional[str] = None
+    # Proxy v1: Accepted for schema compatibility, not implemented
+    rate_control_mode: Optional[str] = None
+    bitrate_preset: Optional[str] = None
 
 
 class AudioSettingsRequest(BaseModel):
@@ -118,6 +121,9 @@ class TextOverlayRequest(BaseModel):
     font_size: int = 24
     opacity: float = 1.0
     enabled: bool = True
+    # Proxy v1: Accepted for schema compatibility, positional behaviour not guaranteed
+    x: Optional[float] = None
+    y: Optional[float] = None
 
 
 class OverlaySettingsRequest(BaseModel):
@@ -128,11 +134,15 @@ class OverlaySettingsRequest(BaseModel):
     text_layers: List[TextOverlayRequest] = []
 
 
+# Proxy v1: ColourSettingsRequest removed - colour settings are explicitly rejected
+
+
 class DeliverSettingsRequest(BaseModel):
     """
-    Full DeliverSettings for API (Phase 17).
+    Full DeliverSettings for API (Proxy v1).
     
     Replaces legacy JobSettingsRequest with complete capability model.
+    Note: Colour settings are NOT accepted in Proxy v1 and will cause HTTP 400.
     """
     
     model_config = ConfigDict(extra="forbid")
@@ -142,6 +152,7 @@ class DeliverSettingsRequest(BaseModel):
     file: Optional[FileSettingsRequest] = None
     metadata: Optional[MetadataSettingsRequest] = None
     overlay: Optional[OverlaySettingsRequest] = None
+    # Proxy v1: colour field removed - any colour settings will fail schema validation
     output_dir: Optional[str] = None
 
 
@@ -498,12 +509,12 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
         if not engine_registry.is_available(engine_type):
             if engine_type == EngineType.RESOLVE:
                 raise HTTPException(
-                    status_code=400,
-                    detail="DaVinci Resolve engine is not yet available (coming soon)"
+                    status_code=501,
+                    detail="Resolve engine is not available in Proxy v1"
                 )
             else:
                 raise HTTPException(
-                    status_code=400,
+                    status_code=501,
                     detail=f"Engine '{engine_type.value}' is not available on this system"
                 )
         
@@ -523,11 +534,16 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
             )
         
         # Phase 16.4: Determine output directory from settings or legacy field
+        # Priority: deliver_settings (Phase 17) > settings (legacy) > output_base_dir
         output_dir = None
-        if body.settings and body.settings.output_dir:
+        if body.deliver_settings and body.deliver_settings.output_dir:
+            output_dir = body.deliver_settings.output_dir
+        elif body.settings and body.settings.output_dir:
             output_dir = body.settings.output_dir
         elif body.output_base_dir:
             output_dir = body.output_base_dir
+        
+        # Proxy v1: Colour settings are rejected at schema level (extra="forbid")
         
         # Validation: output directory must be writable if specified
         if output_dir:

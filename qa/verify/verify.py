@@ -134,6 +134,61 @@ def run_e2e_tests(project_root: Path) -> bool:
     return True
 
 
+def run_ui_tests(project_root: Path) -> bool:
+    """Run UI end-to-end tests with Playwright."""
+    print("\n" + "=" * 60)
+    print("UI TESTS (Playwright)")
+    print("=" * 60)
+    
+    ui_path = project_root / "qa" / "verify" / "ui"
+    
+    # Check if Playwright is installed
+    print("\n→ Checking Playwright installation...")
+    code, stdout, stderr = run_command(
+        ["npx", "playwright", "--version"],
+        cwd=ui_path
+    )
+    
+    if code != 0:
+        print("  ⚠ Playwright not installed. Installing...")
+        code, stdout, stderr = run_command(
+            ["npm", "install"],
+            cwd=ui_path
+        )
+        if code != 0:
+            print("  ✗ Failed to install Playwright dependencies")
+            return False
+        
+        # Install browsers
+        code, stdout, stderr = run_command(
+            ["npx", "playwright", "install", "chromium"],
+            cwd=ui_path
+        )
+        if code != 0:
+            print("  ✗ Failed to install Playwright browsers")
+            return False
+    
+    print("  ✓ Playwright ready")
+    
+    # Run Playwright tests
+    print("\n→ Running Playwright UI tests...")
+    code, stdout, stderr = run_command(
+        ["npx", "playwright", "test", "--project=browser"],
+        cwd=ui_path
+    )
+    
+    print(stdout)
+    if stderr:
+        print(stderr)
+    
+    if code != 0:
+        print("  ✗ UI tests failed")
+        return False
+    
+    print("  ✓ UI tests passed")
+    return True
+
+
 def run_schema_validation(project_root: Path) -> bool:
     """Run schema and settings validation."""
     print("\n" + "=" * 60)
@@ -162,7 +217,8 @@ def verify_proxy(level: VerifyLevel, project_root: Path) -> bool:
     Levels:
     - FAST: lint, unit tests, schema validation
     - PROXY: + integration tests
-    - FULL: + E2E tests with real FFmpeg
+    - UI: UI end-to-end tests via Playwright
+    - FULL: + E2E tests with real FFmpeg + UI tests
     """
     print("\n" + "=" * 60)
     print(f"VERIFY PROXY — {level.name}")
@@ -170,25 +226,32 @@ def verify_proxy(level: VerifyLevel, project_root: Path) -> bool:
     
     all_passed = True
     
-    # FAST level
-    if not run_lint(project_root):
-        all_passed = False
-    
-    if not run_schema_validation(project_root):
-        all_passed = False
+    # UI level runs only UI tests (fast feedback for frontend changes)
+    if level == VerifyLevel.UI:
+        if not run_ui_tests(project_root):
+            all_passed = False
+    else:
+        # FAST level
+        if not run_lint(project_root):
+            all_passed = False
         
-    if not run_unit_tests(project_root):
-        all_passed = False
-    
-    # PROXY level (includes FAST)
-    if level in (VerifyLevel.PROXY, VerifyLevel.FULL):
-        if not run_integration_tests(project_root):
+        if not run_schema_validation(project_root):
             all_passed = False
-    
-    # FULL level (includes PROXY)
-    if level == VerifyLevel.FULL:
-        if not run_e2e_tests(project_root):
+            
+        if not run_unit_tests(project_root):
             all_passed = False
+        
+        # PROXY level (includes FAST)
+        if level in (VerifyLevel.PROXY, VerifyLevel.FULL):
+            if not run_integration_tests(project_root):
+                all_passed = False
+        
+        # FULL level (includes PROXY + UI + E2E)
+        if level == VerifyLevel.FULL:
+            if not run_ui_tests(project_root):
+                all_passed = False
+            if not run_e2e_tests(project_root):
+                all_passed = False
     
     # Final result
     print("\n" + "=" * 60)
@@ -216,7 +279,7 @@ def main():
         "level",
         nargs="?",
         default="proxy",
-        choices=["fast", "proxy", "full"],
+        choices=["fast", "proxy", "ui", "full"],
         help="Verification level (default: proxy)"
     )
     

@@ -34,7 +34,8 @@ class VerifyLevel(Enum):
     """Verification levels."""
     FAST = "fast"
     PROXY = "proxy"
-    FULL = "full"
+    UI = "ui"      # UI end-to-end tests via Playwright
+    FULL = "full"  # Includes UI tests
 
 
 def get_level(level_str: str) -> VerifyLevel:
@@ -42,6 +43,7 @@ def get_level(level_str: str) -> VerifyLevel:
     level_map = {
         "fast": VerifyLevel.FAST,
         "proxy": VerifyLevel.PROXY,
+        "ui": VerifyLevel.UI,
         "full": VerifyLevel.FULL,
     }
     return level_map.get(level_str.lower(), VerifyLevel.PROXY)
@@ -63,12 +65,22 @@ Verify Proxy (includes Fast):
 - State transition correctness
 - Metadata passthrough assertions
 """,
+    VerifyLevel.UI: """
+Verify Proxy UI:
+- End-to-end Playwright tests
+- Create Job workflow
+- Queue lifecycle
+- Validation errors
+- Reset and retry
+- Browser vs Electron mode
+""",
     VerifyLevel.FULL: """
-Verify Proxy Full (includes Proxy):
+Verify Proxy Full (includes Proxy + UI):
 - Real FFmpeg E2E transcodes
 - ffprobe validation (codec, duration, fps, audio)
 - Restart/recovery scenarios
 - Watermark overlay verification
+- UI end-to-end tests
 - Regression suite
 """,
 }

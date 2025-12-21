@@ -3,19 +3,19 @@ import { Button } from './Button'
 import { Select } from './Select'
 
 /**
- * CreateJobPanel component - Sources panel (Phase 20).
+ * CreateJobPanel component - Sources panel (Proxy v1).
  * 
  * Per design requirements:
- * - Renamed from "Source & Intake" to "Sources" (Phase 20)
+ * - File selection for manual job creation
  * - Full height left column
- * - Supports drag & drop for files and folders
- * - Watch folders stubbed as "Coming next"
+ * - Supports drag & drop for files
  * - Favorites moved to collapsible utility section
  * 
- * IMPORTANT: This panel is ONLY for:
- * - File selection
- * - Watch folders (later)
- * - Source validation
+ * Proxy v1 scope:
+ * - File selection (required)
+ * - Preset selection (required)
+ * - Output directory (required)
+ * - Engine selection (FFmpeg only)
  * - Nothing render-related (no Deliver/codec/metadata logic)
  */
 
@@ -153,7 +153,7 @@ export function CreateJobPanel({
     }
   }, [selectedFiles, onFilesChange])
 
-  const canCreate = selectedFiles.length > 0 && selectedPresetId && !loading
+  const canCreate = selectedFiles.length > 0 && selectedPresetId && outputDirectory && !loading
   const presetOptions = presets.map(p => ({ value: p.id, label: `${p.id} — ${p.name}` }))
   const favoriteOptions = pathFavorites.map(p => ({ value: p, label: p }))
 
@@ -279,15 +279,50 @@ export function CreateJobPanel({
           >
             Source Files *
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onSelectFilesClick}
-              disabled={!hasElectron || loading}
-            >
-              Select Files...
-            </Button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {hasElectron ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onSelectFilesClick}
+                disabled={loading}
+              >
+                Select Files...
+              </Button>
+            ) : (
+              <>
+                <input
+                  type="file"
+                  id="file-input-browser"
+                  multiple
+                  onChange={(e) => {
+                    const files = e.target.files
+                    if (files && files.length > 0) {
+                      const paths: string[] = []
+                      for (let i = 0; i < files.length; i++) {
+                        // In browser, we use file name; Electron would give path
+                        const file = files[i]
+                        const path = (file as any).path || file.name
+                        paths.push(path)
+                      }
+                      onFilesChange([...selectedFiles, ...paths])
+                    }
+                    // Reset input so same file can be selected again
+                    e.target.value = ''
+                  }}
+                  disabled={loading}
+                  style={{ display: 'none' }}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => document.getElementById('file-input-browser')?.click()}
+                  disabled={loading}
+                >
+                  Select Files...
+                </Button>
+              </>
+            )}
             <span
               style={{
                 fontSize: '0.8125rem',
@@ -420,7 +455,7 @@ export function CreateJobPanel({
           )}
         </div>
 
-        {/* Phase 16: Engine Selection */}
+        {/* Proxy v1: Engine Selection - FFmpeg only */}
         <div>
           <label
             style={{
@@ -437,11 +472,12 @@ export function CreateJobPanel({
             Execution Engine
           </label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {engines.map(engine => (
+            {/* Proxy v1: Only show available engines (FFmpeg) */}
+            {engines.filter(e => e.available).map(engine => (
               <button
                 key={engine.type}
-                onClick={() => engine.available && onEngineChange?.(engine.type)}
-                disabled={!engine.available || loading}
+                onClick={() => onEngineChange?.(engine.type)}
+                disabled={loading}
                 style={{
                   flex: 1,
                   padding: '0.625rem 1rem',
@@ -452,30 +488,17 @@ export function CreateJobPanel({
                   backgroundColor: selectedEngine === engine.type
                     ? 'rgba(59, 130, 246, 0.1)'
                     : 'var(--card-bg)',
-                  color: !engine.available
-                    ? 'var(--text-dim)'
-                    : selectedEngine === engine.type
+                  color: selectedEngine === engine.type
                       ? 'var(--button-primary-bg)'
                       : 'var(--text-secondary)',
-                  cursor: engine.available ? 'pointer' : 'not-allowed',
+                  cursor: 'pointer',
                   fontSize: '0.8125rem',
                   fontFamily: 'var(--font-sans)',
                   fontWeight: selectedEngine === engine.type ? 600 : 400,
                   transition: 'all 0.15s',
-                  opacity: engine.available ? 1 : 0.5,
                 }}
               >
                 {engine.name}
-                {!engine.available && (
-                  <span style={{ 
-                    display: 'block', 
-                    fontSize: '0.625rem', 
-                    color: 'var(--text-muted)',
-                    marginTop: '0.125rem',
-                  }}>
-                    Coming Soon
-                  </span>
-                )}
               </button>
             ))}
           </div>
@@ -495,17 +518,38 @@ export function CreateJobPanel({
               letterSpacing: '0.03em',
             }}
           >
-            Output Directory (optional)
+            Output Directory *
           </label>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onSelectFolderClick}
-              disabled={!hasElectron || loading}
-            >
-              Select Folder...
-            </Button>
+            {hasElectron ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onSelectFolderClick}
+                disabled={loading}
+              >
+                Select Folder...
+              </Button>
+            ) : (
+              <input
+                type="text"
+                value={outputDirectory}
+                onChange={(e) => onOutputDirectoryChange(e.target.value)}
+                placeholder="/path/to/output/directory"
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.8125rem',
+                  fontFamily: 'var(--font-mono)',
+                  backgroundColor: 'var(--input-bg)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                }}
+              />
+            )}
             
             {pathFavorites.length > 0 && (
               <Select
@@ -651,53 +695,6 @@ export function CreateJobPanel({
           >
             Clear
           </Button>
-        </div>
-
-        {/* Watch Folders — Explicit UI stub (not wired to backend) */}
-        <div
-          style={{
-            marginTop: '1rem',
-            padding: '1rem',
-            backgroundColor: 'rgba(51, 65, 85, 0.15)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--radius-sm)',
-          }}
-        >
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '0.75rem',
-          }}>
-            <div style={{
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-sans)',
-            }}>
-              📂 Watch Folders
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={true}
-              style={{ opacity: 0.5 }}
-            >
-              Add Watch Folder
-            </Button>
-          </div>
-          <div style={{
-            fontSize: '0.6875rem',
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-sans)',
-            lineHeight: 1.5,
-          }}>
-            Watch folders automatically create proxy jobs when files appear.
-            <br />
-            <span style={{ fontStyle: 'italic', color: 'var(--text-dim)' }}>
-              This feature is planned but not available yet.
-            </span>
-          </div>
         </div>
 
         <div

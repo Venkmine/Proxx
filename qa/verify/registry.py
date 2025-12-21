@@ -17,6 +17,7 @@ class TestCategory(Enum):
     INTEGRATION = "integration"
     E2E = "e2e"
     UI = "ui"
+    CONTRACT = "contract"  # Proxy v1: Product behaviour contracts
 
 
 @dataclass
@@ -59,6 +60,29 @@ TEST_GROUPS: List[TestGroup] = [
         min_level=VerifyLevel.FAST,
         path="proxy/unit/test_engine_mapping.py",
         description="Engine mapping validation",
+    ),
+    
+    # Contract tests (PROXY level) - Proxy v1 product behaviour
+    TestGroup(
+        name="job_creation_contract",
+        category=TestCategory.CONTRACT,
+        min_level=VerifyLevel.PROXY,
+        path="proxy/contract/test_job_creation_contract.py",
+        description="Proxy v1 job creation requirements",
+    ),
+    TestGroup(
+        name="feature_gates",
+        category=TestCategory.CONTRACT,
+        min_level=VerifyLevel.PROXY,
+        path="proxy/contract/test_feature_gates.py",
+        description="Proxy v1 unsupported feature rejection",
+    ),
+    TestGroup(
+        name="browser_mode",
+        category=TestCategory.CONTRACT,
+        min_level=VerifyLevel.PROXY,
+        path="proxy/contract/test_browser_mode.py",
+        description="Browser mode cannot bypass v1 restrictions",
     ),
     
     # Integration tests (PROXY level)
@@ -106,6 +130,43 @@ TEST_GROUPS: List[TestGroup] = [
         path="proxy/e2e/test_recovery.py",
         description="Restart/recovery scenarios",
     ),
+    
+    # UI tests (UI level - also included in FULL)
+    TestGroup(
+        name="ui_create_job",
+        category=TestCategory.UI,
+        min_level=VerifyLevel.UI,
+        path="verify/ui/proxy/create_job.spec.ts",
+        description="Create job workflow via UI",
+    ),
+    TestGroup(
+        name="ui_queue_lifecycle",
+        category=TestCategory.UI,
+        min_level=VerifyLevel.UI,
+        path="verify/ui/proxy/queue_lifecycle.spec.ts",
+        description="Queue operations via UI",
+    ),
+    TestGroup(
+        name="ui_validation_errors",
+        category=TestCategory.UI,
+        min_level=VerifyLevel.UI,
+        path="verify/ui/proxy/validation_errors.spec.ts",
+        description="Error handling in UI",
+    ),
+    TestGroup(
+        name="ui_reset_retry",
+        category=TestCategory.UI,
+        min_level=VerifyLevel.UI,
+        path="verify/ui/proxy/reset_and_retry.spec.ts",
+        description="Reset and retry workflows via UI",
+    ),
+    TestGroup(
+        name="ui_browser_electron",
+        category=TestCategory.UI,
+        min_level=VerifyLevel.UI,
+        path="verify/ui/proxy/browser_vs_electron.spec.ts",
+        description="Browser vs Electron mode behavior",
+    ),
 ]
 
 
@@ -114,15 +175,28 @@ def get_test_groups(level: Optional[VerifyLevel] = None) -> List[TestGroup]:
     Get test groups for a given level.
     
     If level is None, returns all groups.
-    Otherwise, returns groups where min_level <= level.
+    UI level returns only UI tests.
+    FULL level includes all tests including UI.
     """
     if level is None:
         return TEST_GROUPS
     
+    # UI level is special - returns only UI tests
+    if level == VerifyLevel.UI:
+        return [g for g in TEST_GROUPS if g.category == TestCategory.UI]
+    
+    # Standard level progression
     level_order = [VerifyLevel.FAST, VerifyLevel.PROXY, VerifyLevel.FULL]
-    level_idx = level_order.index(level)
+    level_idx = level_order.index(level) if level in level_order else 2
+    
+    # FULL includes UI tests too
+    if level == VerifyLevel.FULL:
+        return [
+            g for g in TEST_GROUPS
+            if g.min_level in level_order[:level_idx + 1] or g.category == TestCategory.UI
+        ]
     
     return [
         g for g in TEST_GROUPS
-        if level_order.index(g.min_level) <= level_idx
+        if g.min_level in level_order[:level_idx + 1]
     ]

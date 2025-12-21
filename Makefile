@@ -1,6 +1,6 @@
 # Awaire Proxy Makefile
 
-.PHONY: verify-fast verify verify-full dev clean help
+.PHONY: verify-fast verify verify-ui verify-full dev clean help
 
 # Default target
 help:
@@ -8,7 +8,8 @@ help:
 	@echo ""
 	@echo "  make verify-fast  - Run fast checks (lint, unit tests, schema)"
 	@echo "  make verify       - Run standard verification (+ integration tests)"
-	@echo "  make verify-full  - Run full verification (+ E2E with real FFmpeg)"
+	@echo "  make verify-ui    - Run UI end-to-end tests (Playwright)"
+	@echo "  make verify-full  - Run full verification (+ E2E + UI tests)"
 	@echo ""
 	@echo "  make dev          - Start development environment"
 	@echo "  make clean        - Clean build artifacts"
@@ -22,6 +23,10 @@ verify-fast:
 verify:
 	@echo "Running Verify Proxy..."
 	python -m qa.verify.verify proxy
+
+verify-ui:
+	@echo "Running Verify Proxy UI..."
+	python -m qa.verify.verify proxy ui
 
 verify-full:
 	@echo "Running Verify Proxy Full..."
