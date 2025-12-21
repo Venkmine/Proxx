@@ -19,6 +19,8 @@ import {
   TEST_OUTPUT_DIR,
   resetBackendQueue,
   ensureOutputDir,
+  waitForAppReady,
+  waitForDropdownOpen,
 } from './fixtures';
 
 test.describe('Input Validation Errors', () => {
@@ -31,14 +33,14 @@ test.describe('Input Validation Errors', () => {
   test('should block job creation without files', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Set preset and output directory but NOT files
     // Find preset selector
     const presetButtons = page.locator('button').filter({ hasText: /preset/i });
     if (await presetButtons.first().isVisible()) {
       await presetButtons.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Select first available preset
       const presetOption = page.locator('[role="option"]').first();
@@ -63,7 +65,7 @@ test.describe('Input Validation Errors', () => {
   test('should block job creation without preset', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Set file path and output directory but NOT preset
     const fileInput = page.locator('input[type="text"]').first();
@@ -86,7 +88,7 @@ test.describe('Input Validation Errors', () => {
   test('should block job creation without output directory', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Set file path and preset but NOT output directory
     const fileInput = page.locator('input[type="text"]').first();
@@ -98,7 +100,7 @@ test.describe('Input Validation Errors', () => {
     const presetButtons = page.locator('button').filter({ hasText: /preset/i });
     if (await presetButtons.first().isVisible()) {
       await presetButtons.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       const presetOption = page.locator('[role="option"]').first();
       if (await presetOption.isVisible()) {
@@ -124,7 +126,7 @@ test.describe('Input Validation Errors', () => {
   test('should show error for non-existent file path', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Enter a file path that doesn't exist
     const fileInput = page.locator('input[type="text"]').first();
@@ -136,7 +138,7 @@ test.describe('Input Validation Errors', () => {
     const presetButtons = page.locator('button').filter({ hasText: /preset/i });
     if (await presetButtons.first().isVisible()) {
       await presetButtons.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       const presetOption = page.locator('[role="option"]').first();
       if (await presetOption.isVisible()) {
@@ -154,7 +156,7 @@ test.describe('Input Validation Errors', () => {
     const createBtn = page.getByRole('button', { name: /create job|add to queue/i });
     if (await createBtn.isVisible() && await createBtn.isEnabled()) {
       await createBtn.click();
-      await page.waitForTimeout(1000);
+      await waitForAppReady(page);
       
       // Should see an error message about the file not existing
       const errorIndicators = page.getByText(/not found|does not exist|invalid|error|failed/i);
@@ -200,7 +202,7 @@ test.describe('Error Message Display', () => {
     
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // If presets loaded successfully, verify they're displayed
     // If they failed, verify an error is shown
@@ -215,17 +217,17 @@ test.describe('Error Message Display', () => {
   test('should clear errors when corrected', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Enter invalid path first
     const fileInput = page.locator('input[type="text"]').first();
     if (await fileInput.isVisible()) {
       await fileInput.fill('/invalid/path');
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Now enter valid path
       await fileInput.fill(TEST_FILES.valid);
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Error should be cleared (if there was one)
       // The UI should not show stale errors
@@ -268,7 +270,7 @@ test.describe('Disabled States', () => {
   test('should show disabled state for completed job controls', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Find any completed jobs
     const completedJobs = page.locator('.job-card, [data-job-id]').filter({
@@ -277,7 +279,7 @@ test.describe('Disabled States', () => {
     
     if (await completedJobs.count() > 0) {
       await completedJobs.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Completed jobs should not have "Cancel" button enabled
       const cancelBtn = page.getByRole('button', { name: /cancel/i });
@@ -303,14 +305,14 @@ test.describe('Form Validation', () => {
       await fileInput.fill('/path/to/document.pdf');
       
       // The UI may show a validation error or defer to backend
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
     }
   });
   
   test('should validate output directory is writable', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Enter a directory that doesn't exist or isn't writable
     const outputInput = page.locator('input[type="text"]').last();

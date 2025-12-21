@@ -5,6 +5,12 @@ import { Select } from './Select'
 /**
  * CreateJobPanel component - Sources panel (Proxy v1).
  * 
+ * ⚠️ VERIFY GUARD:
+ * Any change to this component requires Playwright coverage.
+ * Tests: qa/verify/ui/proxy/create_job.spec.ts
+ *        qa/verify/ui/proxy/validation_errors.spec.ts
+ * Run: make verify-ui before committing changes.
+ * 
  * Per design requirements:
  * - File selection for manual job creation
  * - Full height left column

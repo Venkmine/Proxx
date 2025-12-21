@@ -178,3 +178,97 @@ page.locator('#create-job-btn')
 This document is **AUTHORITATIVE**. If there is conflict between this document and other documentation, this document wins for UI testing matters.
 
 **Fail fast. Fail loud. No silent regressions.**
+
+---
+
+## Hardening Rules (MANDATORY)
+
+### No Time-Based Waits
+
+```typescript
+// ❌ FORBIDDEN - Brittle, non-deterministic
+await page.waitForTimeout(2000);
+await page.waitForTimeout(300);
+
+// ✅ REQUIRED - State-based, deterministic
+await waitForAppReady(page);
+await waitForDropdownOpen(page);
+await waitForJobInQueue(page);
+await waitForJobStatus(page, 'completed');
+await waitForEmptyQueue(page);
+```
+
+### Assert Before AND After State Changes
+
+```typescript
+// ✅ CORRECT - Assert before/after
+const countBefore = await jobs.count();
+await createBtn.click();
+await expect(jobs).toHaveCount(countBefore + 1);
+```
+
+### Filesystem Truth Validation
+
+All E2E tests that create output files MUST validate:
+
+```typescript
+// ✅ REQUIRED for E2E tests
+const validation = validateOutputFile(outputPath);
+expect(validation.exists).toBe(true);
+expect(validation.error).toBeUndefined();
+expect(validation.codec).toBeDefined();
+expect(validation.duration).toBeGreaterThan(0);
+```
+
+### Never Click Hidden/Disabled Elements
+
+```typescript
+// ✅ CORRECT - Wait for enabled state first
+await expect(createBtn).toBeEnabled({ timeout: 5000 });
+await createBtn.click();
+```
+
+---
+
+## Debug Mode
+
+For debugging failing tests:
+
+```bash
+# Headed mode (visible browser)
+make verify-ui-debug
+
+# Or directly:
+cd qa/verify/ui && npx playwright test --headed --debug
+```
+
+On failure, check:
+- `logs/playwright-report/` - HTML report
+- `logs/playwright-artifacts/` - Screenshots, videos, traces
+- Console output captured automatically
+
+---
+
+## CI Integration Rules
+
+| Trigger | Action | Failure Behavior |
+|---------|--------|------------------|
+| PR → `frontend/` | Run `verify-ui` | Block merge |
+| PR → `backend/routes/` | Run `verify-ui` | Block merge |
+| Nightly build | Run `verify-full` | Alert team |
+| Release tag | Run `verify-full` | Block release |
+
+---
+
+## Proxy v1 Release Gate
+
+**Proxy v1 is ONLY shippable if:**
+
+1. `make verify-full` passes with zero failures
+2. All E2E tests validate filesystem output
+3. No `test.skip()` exists without tracking issue
+4. No `waitForTimeout` exists in any spec file
+
+---
+
+*Last updated: 21 December 2025*

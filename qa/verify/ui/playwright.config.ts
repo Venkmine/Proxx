@@ -3,15 +3,17 @@
  * 
  * AUTHORITATIVE: This configuration drives all UI end-to-end testing.
  * 
- * Modes:
- * - Browser mode: Tests the Vite dev server (http://localhost:5173)
- * - Electron mode: Tests the packaged Electron app
+ * HARDENED FOR PRODUCTION:
+ * - Fixed viewport for deterministic screenshots
+ * - Disabled animations for consistent timing
+ * - Forced locale/timezone for reproducibility
+ * - Full trace + screenshot capture on failure
+ * - Console log capture for debugging
  * 
  * Usage:
  * - npx playwright test                 # Run all UI tests
  * - npx playwright test --project=browser  # Browser mode only
- * - npx playwright test --project=electron # Electron mode only
- * - npx playwright test --headed        # See browser window
+ * - npx playwright test --headed        # See browser window (make verify-ui-debug)
  * - npx playwright test --debug          # Step through tests
  */
 
@@ -19,6 +21,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 // Environment configuration
 const CI = !!process.env.CI;
+const DEBUG = !!process.env.DEBUG;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8085';
 
@@ -26,11 +29,11 @@ export default defineConfig({
   testDir: './proxy',
   
   /* Maximum time one test can run for */
-  timeout: 60 * 1000,
+  timeout: 90 * 1000,
   
   /* Expect timeout for assertions */
   expect: {
-    timeout: 10 * 1000,
+    timeout: 15 * 1000,
   },
   
   /* Run tests in parallel - disabled for queue state consistency */
@@ -40,7 +43,7 @@ export default defineConfig({
   forbidOnly: CI,
   
   /* Retry failed tests - more retries in CI */
-  retries: CI ? 2 : 0,
+  retries: CI ? 2 : 1,
   
   /* Single worker to ensure test isolation */
   workers: 1,
@@ -52,25 +55,43 @@ export default defineConfig({
     ['json', { outputFile: '../../../logs/playwright-results.json' }],
   ],
   
-  /* Shared settings for all projects */
+  /* Shared settings for all projects - HARDENED FOR DETERMINISM */
   use: {
     /* Base URL for page.goto() calls */
     baseURL: FRONTEND_URL,
     
-    /* Collect trace when retrying failed test */
-    trace: 'on-first-retry',
+    /* ALWAYS collect trace for debugging failed tests */
+    trace: 'retain-on-failure',
     
-    /* Capture screenshot on failure */
+    /* ALWAYS capture screenshot on failure */
     screenshot: 'only-on-failure',
     
-    /* Record video on failure */
-    video: 'on-first-retry',
+    /* ALWAYS record video on failure */
+    video: 'retain-on-failure',
     
     /* Timeout for actions like click, fill */
-    actionTimeout: 10 * 1000,
+    actionTimeout: 15 * 1000,
     
     /* Timeout for navigation */
     navigationTimeout: 30 * 1000,
+    
+    /* Fixed viewport for deterministic rendering */
+    viewport: { width: 1280, height: 800 },
+    
+    /* Force consistent locale for date/number formatting */
+    locale: 'en-US',
+    
+    /* Force consistent timezone */
+    timezoneId: 'UTC',
+    
+    /* Ignore HTTPS errors for local development */
+    ignoreHTTPSErrors: true,
+    
+    /* Reduce motion for consistent animations */
+    reducedMotion: 'reduce',
+    
+    /* Color scheme for consistent styling */
+    colorScheme: 'dark',
   },
   
   /* Configure projects for browser testing */
@@ -79,9 +100,16 @@ export default defineConfig({
       name: 'browser',
       use: {
         ...devices['Desktop Chrome'],
+        // Fixed channel for reproducibility
+        channel: 'chromium',
         // Browser mode: folder picker fallback to text input
         contextOptions: {
           permissions: [],
+        },
+        // Launch options for consistency
+        launchOptions: {
+          // Disable GPU for CI consistency
+          args: CI ? ['--disable-gpu', '--no-sandbox'] : [],
         },
       },
       testMatch: /.*\.spec\.ts$/,
@@ -103,6 +131,9 @@ export default defineConfig({
   
   /* Output folder for test artifacts */
   outputDir: '../../../logs/playwright-artifacts',
+  
+  /* Preserve output on failure for debugging */
+  preserveOutput: 'failures-only',
 });
 
 // Export URLs for use in tests

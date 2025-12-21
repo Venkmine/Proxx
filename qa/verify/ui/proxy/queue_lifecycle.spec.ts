@@ -20,6 +20,10 @@ import {
   resetBackendQueue,
   ensureOutputDir,
   cleanupOutputDir,
+  waitForAppReady,
+  waitForDropdownOpen,
+  waitForJobInQueue,
+  waitForEmptyQueue,
 } from './fixtures';
 
 test.describe('Queue Lifecycle', () => {
@@ -42,7 +46,7 @@ test.describe('Queue Lifecycle', () => {
     await page.waitForLoadState('networkidle');
     
     // Wait for initial load
-    await page.waitForTimeout(1000);
+    await waitForAppReady(page);
     
     // The queue should be empty or show a "no jobs" message
     // Look for job elements
@@ -63,7 +67,7 @@ test.describe('Queue Lifecycle', () => {
     await page.waitForLoadState('networkidle');
     
     // Wait for presets to load
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Get initial job count
     const initialJobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -80,7 +84,7 @@ test.describe('Queue Lifecycle', () => {
   test('should allow selecting a job in the queue', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // If there are jobs, clicking one should select it
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -102,7 +106,7 @@ test.describe('Queue Lifecycle', () => {
   test('should show job action buttons when job is selected', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
     const jobCount = await jobElements.count();
@@ -110,7 +114,7 @@ test.describe('Queue Lifecycle', () => {
     if (jobCount > 0) {
       // Select a job
       await jobElements.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Look for action buttons (cancel, delete, retry, etc.)
       const actionButtons = page.locator('button').filter({ 
@@ -142,7 +146,7 @@ test.describe('Queue Lifecycle', () => {
   test('should filter jobs by status', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Find status filter buttons
     const allFilter = page.getByRole('button', { name: /all/i }).or(
@@ -156,7 +160,7 @@ test.describe('Queue Lifecycle', () => {
     // Click filter if available
     if (await completedFilter.isVisible()) {
       await completedFilter.click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // After filtering, only completed jobs should be visible
       // (or an empty state if no completed jobs)
@@ -188,7 +192,7 @@ test.describe('Queue Lifecycle', () => {
     if (await searchInput.isVisible()) {
       // Enter a search term
       await searchInput.fill('test');
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Jobs should be filtered (may show none if no matches)
     }
@@ -224,7 +228,7 @@ test.describe('Queue Operations', () => {
   test('should show job status badges', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Look for status badge components
     const statusBadges = page.locator('.status-badge, [data-status], .badge');
@@ -237,7 +241,7 @@ test.describe('Queue Operations', () => {
   test('should show job creation timestamp', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Jobs should display when they were created
     // Look for time-related text patterns
@@ -250,7 +254,7 @@ test.describe('Queue Operations', () => {
   test('should show job progress for running jobs', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Look for progress indicators
     const progressBars = page.locator('[role="progressbar"], .progress-bar, [class*="progress"]');
@@ -275,7 +279,7 @@ test.describe('Queue State Consistency', () => {
     // We can verify by checking for periodic network requests
     
     // Wait and observe the UI updates
-    await page.waitForTimeout(3000);
+    await waitForAppReady(page);
     
     // The page should still be responsive
     await expect(page.locator('body')).toBeVisible();
@@ -298,7 +302,7 @@ test.describe('Queue State Consistency', () => {
   test('should maintain queue order across refresh', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Get current job order
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -307,7 +311,7 @@ test.describe('Queue State Consistency', () => {
     // Refresh the page
     await page.reload();
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Verify job count is maintained
     const afterCount = await jobElements.count();

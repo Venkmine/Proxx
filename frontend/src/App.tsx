@@ -12,6 +12,11 @@ import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/Copilot
 /**
  * Awaire Proxy Operator Control - Grouped Queue View
  * 
+ * ⚠️ VERIFY GUARD:
+ * Any change to this file's UI flow requires Playwright coverage.
+ * See: qa/verify/ui/proxy/*.spec.ts
+ * Run: make verify-ui before committing changes.
+ * 
  * STRUCTURAL UI REFACTOR: Operator-first interaction model inspired by DaVinci Resolve's Render Queue.
  * 
  * Core principles:

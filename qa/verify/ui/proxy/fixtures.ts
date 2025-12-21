@@ -2,13 +2,20 @@
  * Playwright Test Fixtures for Awaire Proxy UI Tests
  * 
  * AUTHORITATIVE: These fixtures provide common test utilities and page objects.
+ * HARDENED: No waitForTimeout - all waits are state-based.
  * 
  * All UI tests must use these fixtures to interact with the application.
  * Never call backend APIs directly from tests - interact through UI only.
+ * 
+ * ⚠️ VERIFY GUARD:
+ * Any change to these fixtures requires updating dependent tests.
+ * All waits must be state-based, not time-based.
  */
 
 import { test as base, expect, Page, Locator } from '@playwright/test';
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Test configuration
 export const TEST_MEDIA_DIR = '/Users/leon.grant/projects/Proxx/test_media';
@@ -20,6 +27,90 @@ export const TEST_FILES = {
   valid: `${TEST_MEDIA_DIR}/test_input_fabric_phase20.mp4`,
   // Add more test files as needed
 };
+
+// ============================================
+// Hardened Wait Utilities (NO waitForTimeout)
+// ============================================
+
+/**
+ * Wait for the app to be fully loaded and ready.
+ * Checks for visible UI elements and network idle state.
+ */
+export async function waitForAppReady(page: Page): Promise<void> {
+  // Wait for network to settle
+  await page.waitForLoadState('networkidle');
+  
+  // Wait for main content to be visible
+  await expect(page.locator('main, [role="main"], #root')).toBeVisible({ timeout: 10000 });
+  
+  // Wait for any loading spinners to disappear
+  const spinner = page.locator('.loading, .spinner, [data-loading="true"]');
+  if (await spinner.count() > 0) {
+    await expect(spinner.first()).toBeHidden({ timeout: 10000 });
+  }
+}
+
+/**
+ * Wait for a dropdown/select to be populated with options.
+ */
+export async function waitForDropdownReady(page: Page, dropdownLocator: Locator): Promise<void> {
+  await expect(dropdownLocator).toBeVisible({ timeout: 5000 });
+  await expect(dropdownLocator).toBeEnabled({ timeout: 5000 });
+}
+
+/**
+ * Wait for a dropdown menu to open after clicking.
+ */
+export async function waitForDropdownOpen(page: Page): Promise<void> {
+  // Wait for any dropdown menu to appear
+  await expect(
+    page.locator('[role="listbox"], [role="menu"], .dropdown-menu, [data-state="open"]').first()
+  ).toBeVisible({ timeout: 5000 });
+}
+
+/**
+ * Wait for job to appear in the queue with a specific status.
+ */
+export async function waitForJobInQueue(page: Page, expectedStatus?: string): Promise<void> {
+  // Wait for at least one job card to appear
+  await expect(
+    page.locator('[data-job-id], .job-card, .job-group').first()
+  ).toBeVisible({ timeout: 10000 });
+  
+  if (expectedStatus) {
+    await expect(
+      page.getByText(new RegExp(expectedStatus, 'i')).first()
+    ).toBeVisible({ timeout: 15000 });
+  }
+}
+
+/**
+ * Wait for job status to change to a specific value.
+ */
+export async function waitForJobStatus(page: Page, status: string, timeout: number = 60000): Promise<void> {
+  await expect(
+    page.getByText(new RegExp(status, 'i')).first()
+  ).toBeVisible({ timeout });
+}
+
+/**
+ * Wait for the queue to be empty.
+ */
+export async function waitForEmptyQueue(page: Page): Promise<void> {
+  // Either no job cards or empty state message
+  const jobCards = page.locator('[data-job-id], .job-card, .job-group');
+  await expect(jobCards).toHaveCount(0, { timeout: 10000 });
+}
+
+/**
+ * Wait for progress indicator to update.
+ */
+export async function waitForProgressUpdate(page: Page): Promise<void> {
+  // Wait for any progress indicator
+  await expect(
+    page.locator('[data-progress], .progress, progress, [role="progressbar"]').first()
+  ).toBeVisible({ timeout: 10000 });
+}
 
 // ============================================
 // Page Object: Create Job Panel
@@ -60,7 +151,7 @@ export class CreateJobPage {
   
   async goto() {
     await this.page.goto('/');
-    await this.page.waitForLoadState('networkidle');
+    await waitForAppReady(this.page);
   }
   
   async setFilesViaInput(filePaths: string[]) {
@@ -86,8 +177,8 @@ export class CreateJobPage {
         break;
       }
     }
-    // Wait for dropdown options to appear
-    await this.page.waitForTimeout(300);
+    // Wait for dropdown options to appear (state-based, not time-based)
+    await waitForDropdownOpen(this.page);
     
     // Click the option containing the preset ID
     const option = this.page.getByRole('option', { name: new RegExp(presetId, 'i') }).or(
@@ -95,9 +186,8 @@ export class CreateJobPage {
     ).or(
       this.page.getByText(presetId)
     );
-    if (await option.isVisible()) {
-      await option.click();
-    }
+    await expect(option).toBeVisible({ timeout: 5000 });
+    await option.click();
   }
   
   async setOutputDirectory(dir: string) {
@@ -348,6 +438,132 @@ export function getOutputFileDuration(filePath: string): number | null {
   } catch {
     return null;
   }
+}
+
+// ============================================
+// Comprehensive ffprobe Validation (HARDENED)
+// ============================================
+
+export interface FFProbeResult {
+  exists: boolean;
+  codec?: string;
+  container?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  frameRate?: string;
+  audioCodec?: string;
+  error?: string;
+}
+
+/**
+ * Comprehensive ffprobe validation for output files.
+ * Returns detailed information or error if file is corrupt/missing.
+ */
+export function validateOutputFile(filePath: string): FFProbeResult {
+  // Check file exists first
+  if (!fs.existsSync(filePath)) {
+    return { exists: false, error: `File not found: ${filePath}` };
+  }
+  
+  const stats = fs.statSync(filePath);
+  if (stats.size === 0) {
+    return { exists: true, error: 'File is empty (0 bytes)' };
+  }
+  
+  try {
+    // Get comprehensive ffprobe data
+    const result = execSync(
+      `ffprobe -v quiet -print_format json -show_format -show_streams "${filePath}"`,
+      { encoding: 'utf-8' }
+    );
+    
+    const data = JSON.parse(result);
+    const videoStream = data.streams?.find((s: any) => s.codec_type === 'video');
+    const audioStream = data.streams?.find((s: any) => s.codec_type === 'audio');
+    const format = data.format;
+    
+    return {
+      exists: true,
+      codec: videoStream?.codec_name,
+      container: format?.format_name,
+      width: videoStream?.width,
+      height: videoStream?.height,
+      duration: format?.duration ? parseFloat(format.duration) : undefined,
+      frameRate: videoStream?.r_frame_rate,
+      audioCodec: audioStream?.codec_name,
+    };
+  } catch (e) {
+    return {
+      exists: true,
+      error: `ffprobe failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
+    };
+  }
+}
+
+/**
+ * Assert that an output file is valid with specific expectations.
+ */
+export function assertOutputFileValid(
+  filePath: string,
+  expectations: {
+    codec?: string;
+    container?: string;
+    minDuration?: number;
+    maxDuration?: number;
+    minWidth?: number;
+    minHeight?: number;
+  }
+): void {
+  const result = validateOutputFile(filePath);
+  
+  if (!result.exists) {
+    throw new Error(`Output file validation failed: ${result.error}`);
+  }
+  
+  if (result.error) {
+    throw new Error(`Output file is corrupt: ${result.error}`);
+  }
+  
+  if (expectations.codec && result.codec !== expectations.codec) {
+    throw new Error(`Expected codec ${expectations.codec}, got ${result.codec}`);
+  }
+  
+  if (expectations.container && !result.container?.includes(expectations.container)) {
+    throw new Error(`Expected container ${expectations.container}, got ${result.container}`);
+  }
+  
+  if (expectations.minDuration && (result.duration || 0) < expectations.minDuration) {
+    throw new Error(`Expected duration >= ${expectations.minDuration}, got ${result.duration}`);
+  }
+  
+  if (expectations.maxDuration && (result.duration || Infinity) > expectations.maxDuration) {
+    throw new Error(`Expected duration <= ${expectations.maxDuration}, got ${result.duration}`);
+  }
+  
+  if (expectations.minWidth && (result.width || 0) < expectations.minWidth) {
+    throw new Error(`Expected width >= ${expectations.minWidth}, got ${result.width}`);
+  }
+  
+  if (expectations.minHeight && (result.height || 0) < expectations.minHeight) {
+    throw new Error(`Expected height >= ${expectations.minHeight}, got ${result.height}`);
+  }
+}
+
+/**
+ * Find output files matching a pattern in a directory.
+ */
+export function findOutputFiles(dir: string, pattern?: RegExp): string[] {
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+  
+  const files = fs.readdirSync(dir);
+  const matches = pattern 
+    ? files.filter(f => pattern.test(f))
+    : files;
+  
+  return matches.map(f => path.join(dir, f));
 }
 
 // ============================================

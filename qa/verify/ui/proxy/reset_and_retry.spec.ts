@@ -19,6 +19,9 @@ import {
   resetBackendQueue,
   ensureOutputDir,
   cleanupOutputDir,
+  waitForAppReady,
+  waitForDropdownOpen,
+  waitForEmptyQueue,
 } from './fixtures';
 
 test.describe('Create Job Form Reset', () => {
@@ -34,7 +37,7 @@ test.describe('Create Job Form Reset', () => {
   test('should clear all form fields on reset', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Fill in some form data
     const fileInput = page.locator('input[type="text"]').first();
@@ -52,7 +55,7 @@ test.describe('Create Job Form Reset', () => {
     
     if (await clearBtn.isVisible()) {
       await clearBtn.click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Form should be cleared
       // Note: Inputs may or may not be cleared depending on UI design
@@ -62,7 +65,7 @@ test.describe('Create Job Form Reset', () => {
   test('should preserve panel state after job creation', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // The Create Job panel should remain visible after creating a job
     // (per the Operator UI design)
@@ -77,7 +80,7 @@ test.describe('Create Job Form Reset', () => {
   test('should allow immediate re-creation after job added', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // The UI should allow creating another job immediately
     // without navigating away
@@ -100,7 +103,7 @@ test.describe('Job Retry', () => {
   test('should show retry button for failed jobs', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Look for any failed jobs
     const failedJobs = page.locator('.job-card, [data-job-id]').filter({
@@ -109,7 +112,7 @@ test.describe('Job Retry', () => {
     
     if (await failedJobs.count() > 0) {
       await failedJobs.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Retry button should be visible
       const retryBtn = page.getByRole('button', { name: /retry/i });
@@ -120,7 +123,7 @@ test.describe('Job Retry', () => {
   test('should not show retry button for running jobs', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Look for running jobs
     const runningJobs = page.locator('.job-card, [data-job-id]').filter({
@@ -129,7 +132,7 @@ test.describe('Job Retry', () => {
     
     if (await runningJobs.count() > 0) {
       await runningJobs.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // Retry button should not be clickable for running jobs
       const retryBtn = page.getByRole('button', { name: /retry/i });
@@ -142,7 +145,7 @@ test.describe('Job Retry', () => {
   test('should allow retry of individual failed clips', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Look for failed clip indicators within jobs
     const failedClips = page.locator('.clip-row, [data-clip-id]').filter({
@@ -161,7 +164,7 @@ test.describe('Job Retry', () => {
   test('should clear failure reason after successful retry', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // This is a verification test - after retry succeeds,
     // the failure reason should be cleared
@@ -196,14 +199,14 @@ test.describe('Queue Reset', () => {
   test('should confirm before clearing queue', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Find reset/clear button
     const clearBtn = page.getByRole('button', { name: /reset queue|clear queue|clear all/i });
     
     if (await clearBtn.isVisible()) {
       await clearBtn.click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       // There might be a confirmation dialog
       const confirmDialog = page.locator('[role="dialog"], .modal, .confirmation');
@@ -217,7 +220,7 @@ test.describe('Queue Reset', () => {
   test('should clear queue after reset', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Reset via backend for this test
     await resetBackendQueue();
@@ -225,7 +228,7 @@ test.describe('Queue Reset', () => {
     // Reload to see cleared state
     await page.reload();
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    await waitForAppReady(page);
     
     // Queue should be empty
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -244,7 +247,7 @@ test.describe('Undo Operations', () => {
   test('should show undo option after delete', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Look for any jobs to delete
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -252,12 +255,12 @@ test.describe('Undo Operations', () => {
     if (await jobElements.count() > 0) {
       // Select and delete a job
       await jobElements.first().click();
-      await page.waitForTimeout(300);
+      await waitForDropdownOpen(page);
       
       const deleteBtn = page.getByRole('button', { name: /delete|remove/i });
       if (await deleteBtn.isVisible()) {
         await deleteBtn.click();
-        await page.waitForTimeout(500);
+        await waitForDropdownOpen(page);
         
         // Look for undo toast/option
         const undoOption = page.getByRole('button', { name: /undo/i }).or(
@@ -273,7 +276,7 @@ test.describe('Undo Operations', () => {
   test('should restore job on undo', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // This test verifies undo restores deleted job
     // The exact behavior depends on UI implementation
@@ -288,13 +291,13 @@ test.describe('Undo Operations', () => {
       
       if (await deleteBtn.isVisible()) {
         await deleteBtn.click();
-        await page.waitForTimeout(500);
+        await waitForDropdownOpen(page);
         
         // Click undo if available
         const undoBtn = page.getByRole('button', { name: /undo/i });
         if (await undoBtn.isVisible()) {
           await undoBtn.click();
-          await page.waitForTimeout(500);
+          await waitForDropdownOpen(page);
           
           // Job count should be restored
           const afterCount = await jobElements.count();
@@ -319,7 +322,7 @@ test.describe('State Consistency', () => {
     await resetBackendQueue();
     
     // Wait for UI to sync
-    await page.waitForTimeout(3000);
+    await waitForAppReady(page);
     
     // UI should reflect empty queue
     const jobElements = page.locator('[data-job-id], .job-card, .job-group');
@@ -331,7 +334,7 @@ test.describe('State Consistency', () => {
   test('should handle rapid operations gracefully', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Perform several rapid operations
     const clearBtn = page.getByRole('button', { name: /clear/i });
@@ -343,7 +346,7 @@ test.describe('State Consistency', () => {
       await clearBtn.click();
       
       // UI should remain stable
-      await page.waitForTimeout(500);
+      await waitForDropdownOpen(page);
       await expect(page.locator('body')).toBeVisible();
     }
   });
@@ -351,7 +354,7 @@ test.describe('State Consistency', () => {
   test('should maintain form state during backend operations', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Enter some form data
     const fileInput = page.locator('input[type="text"]').first();
@@ -360,7 +363,7 @@ test.describe('State Consistency', () => {
     }
     
     // While backend is doing something, form should remain stable
-    await page.waitForTimeout(1000);
+    await waitForAppReady(page);
     
     // Value should be preserved
     if (await fileInput.isVisible()) {

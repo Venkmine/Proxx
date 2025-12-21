@@ -167,6 +167,13 @@ TEST_GROUPS: List[TestGroup] = [
         path="verify/ui/proxy/browser_vs_electron.spec.ts",
         description="Browser vs Electron mode behavior",
     ),
+    TestGroup(
+        name="ui_failure_recovery",
+        category=TestCategory.UI,
+        min_level=VerifyLevel.UI,
+        path="verify/ui/proxy/failure_recovery.spec.ts",
+        description="Failure injection and recovery workflows",
+    ),
 ]
 
 

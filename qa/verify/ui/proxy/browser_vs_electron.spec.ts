@@ -22,6 +22,8 @@ import {
   TEST_OUTPUT_DIR,
   resetBackendQueue,
   ensureOutputDir,
+  waitForAppReady,
+  waitForDropdownOpen,
 } from './fixtures';
 
 test.describe('Browser Mode', () => {
@@ -113,7 +115,7 @@ test.describe('Browser Mode', () => {
   test('should allow manual path entry', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    await waitForAppReady(page);
     
     // Find file path input
     const fileInput = page.locator('input[type="text"]').first();
@@ -173,7 +175,7 @@ test.describe('Mode Detection', () => {
     if (await selectFilesBtn.isVisible()) {
       try {
         await selectFilesBtn.click();
-        await page.waitForTimeout(500);
+        await waitForDropdownOpen(page);
       } catch {
         // Expected to fail gracefully
       }
@@ -216,7 +218,7 @@ test.describe('Cross-Mode Functionality', () => {
   test('should show presets dropdown in both modes', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Preset selection should work
     const presetSelectors = page.locator('button, select').filter({ hasText: /preset/i });
@@ -227,7 +229,7 @@ test.describe('Cross-Mode Functionality', () => {
   test('should show engine selection in both modes', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Engine selection should be available
     const engineSelectors = page.locator('button, select').filter({ hasText: /engine|ffmpeg/i });
@@ -252,7 +254,7 @@ test.describe('Cross-Mode Functionality', () => {
     await page.waitForLoadState('networkidle');
     
     // Wait for API data to load
-    await page.waitForTimeout(3000);
+    await waitForAppReady(page);
     
     // No JavaScript errors should occur
     const consoleErrors: string[] = [];
@@ -265,7 +267,7 @@ test.describe('Cross-Mode Functionality', () => {
     // Reload and check for errors
     await page.reload();
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForAppReady(page);
     
     // Filter out expected network errors (backend may not be running)
     const criticalErrors = consoleErrors.filter(e => 

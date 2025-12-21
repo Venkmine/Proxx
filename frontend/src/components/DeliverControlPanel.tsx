@@ -5,6 +5,12 @@ import { Select } from './Select'
 /**
  * DeliverControlPanel — Persistent Control Surface (Phase 17 + Phase 20)
  * 
+ * ⚠️ VERIFY GUARD:
+ * Any change to this component requires Playwright coverage.
+ * Tests: qa/verify/ui/proxy/create_job.spec.ts
+ *        qa/verify/ui/proxy/validation_errors.spec.ts
+ * Run: make verify-ui before committing changes.
+ * 
  * Phase 20: Codec-driven UI authority.
  * - All codec options fetched from backend CodecSpec registry
  * - UI dynamically reconfigures based on codec capabilities

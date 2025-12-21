@@ -1,18 +1,19 @@
 # Awaire Proxy Makefile
 
-.PHONY: verify-fast verify verify-ui verify-full dev clean help
+.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full dev clean help
 
 # Default target
 help:
 	@echo "Awaire Proxy - Available targets:"
 	@echo ""
-	@echo "  make verify-fast  - Run fast checks (lint, unit tests, schema)"
-	@echo "  make verify       - Run standard verification (+ integration tests)"
-	@echo "  make verify-ui    - Run UI end-to-end tests (Playwright)"
-	@echo "  make verify-full  - Run full verification (+ E2E + UI tests)"
+	@echo "  make verify-fast     - Run fast checks (lint, unit tests, schema)"
+	@echo "  make verify          - Run standard verification (+ integration tests)"
+	@echo "  make verify-ui       - Run UI end-to-end tests (Playwright)"
+	@echo "  make verify-ui-debug - Run UI tests in headed mode (visible browser)"
+	@echo "  make verify-full     - Run full verification (+ E2E + UI tests)"
 	@echo ""
-	@echo "  make dev          - Start development environment"
-	@echo "  make clean        - Clean build artifacts"
+	@echo "  make dev             - Start development environment"
+	@echo "  make clean           - Clean build artifacts"
 	@echo ""
 
 # Verify targets - 1:1 mapping to Verify commands
@@ -27,6 +28,10 @@ verify:
 verify-ui:
 	@echo "Running Verify Proxy UI..."
 	python -m qa.verify.verify proxy ui
+
+verify-ui-debug:
+	@echo "Running Verify Proxy UI (Debug Mode - Headed)..."
+	cd qa/verify/ui && DEBUG=1 npx playwright test --headed --project=browser
 
 verify-full:
 	@echo "Running Verify Proxy Full..."
