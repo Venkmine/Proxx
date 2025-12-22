@@ -61,6 +61,9 @@ export async function waitForAppReady(page: Page): Promise<void> {
   if (await spinner.count() > 0) {
     await expect(spinner.first()).toBeHidden({ timeout: 10000 });
   }
+  
+  // Wait for backend to be connected (check status indicator)
+  await expect(page.locator('[data-testid="backend-status"]')).toContainText('Connected', { timeout: 15000 });
 }
 
 /**

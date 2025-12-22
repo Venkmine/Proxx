@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import health
 from app.routes import control
+from app.routes import preview
 from app.monitoring import server as monitoring
 from app.jobs.registry import JobRegistry
 from app.jobs.bindings import JobPresetBindingRegistry
@@ -13,6 +14,7 @@ from app.jobs.engine import JobEngine
 from app.presets.registry import PresetRegistry
 from app.persistence.manager import PersistenceManager
 from app.execution.engine_registry import get_engine_registry
+from app.services.ingestion import IngestionService
 
 app = FastAPI(title="Awaire Proxy Backend", version="1.0.0")
 
@@ -40,6 +42,15 @@ app.state.engine_registry = get_engine_registry()
 # Initialize job engine with all registries
 app.state.job_engine = JobEngine(
     binding_registry=app.state.binding_registry,
+    engine_registry=app.state.engine_registry,
+)
+
+# Initialize canonical ingestion service (single entry point for all job creation)
+app.state.ingestion_service = IngestionService(
+    job_registry=app.state.job_registry,
+    job_engine=app.state.job_engine,
+    binding_registry=app.state.binding_registry,
+    preset_registry=app.state.preset_registry,
     engine_registry=app.state.engine_registry,
 )
 
@@ -92,6 +103,7 @@ app.state.binding_registry.load_all_bindings()
 app.include_router(health.router)
 app.include_router(monitoring.router)
 app.include_router(control.router)  # Phase 14
+app.include_router(preview.router)  # Alpha: Preview video generation
 
 
 @app.get("/")

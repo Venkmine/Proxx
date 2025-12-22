@@ -61,25 +61,26 @@ test.describe('Input Validation Errors', () => {
     }
   });
   
-  test('should block job creation without preset', async ({ page }) => {
+  test('should allow job creation without preset (Alpha: presets optional)', async ({ page }) => {
     await page.goto('/');
     await waitForAppReady(page);
     
-    // Set file path and output directory but NOT preset
-    const fileInput = page.locator('input[type="text"]').first();
+    // Set file path using data-testid input
+    const fileInput = page.locator('[data-testid="file-path-input"]');
     if (await fileInput.isVisible()) {
       await fileInput.fill(TEST_FILES.valid);
+      await fileInput.press('Enter');
     }
     
-    const outputInput = page.locator('input[type="text"]').last();
+    const outputInput = page.getByPlaceholder('/path/to/output/directory');
     if (await outputInput.isVisible()) {
       await outputInput.fill(TEST_OUTPUT_DIR);
     }
     
-    // Create job button should be disabled (no preset selected)
+    // Alpha: Create job button should be ENABLED even without preset
     const createBtn = page.getByRole('button', { name: /create job|add to queue/i });
     if (await createBtn.isVisible()) {
-      await expect(createBtn).toBeDisabled();
+      await expect(createBtn).toBeEnabled({ timeout: 5000 });
     }
   });
   

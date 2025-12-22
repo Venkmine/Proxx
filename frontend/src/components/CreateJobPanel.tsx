@@ -1,9 +1,13 @@
+// Alpha scope defined in docs/ALPHA_REALITY.md.
+// Do not add features that contradict it without updating that file first.
+
 import React, { useState, useCallback } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
+import type { WorkspaceMode } from '../stores/workspaceModeStore'
 
 /**
- * CreateJobPanel component - Sources panel (Proxy v1).
+ * CreateJobPanel component - Sources panel (Alpha).
  * 
  * ⚠️ VERIFY GUARD:
  * Any change to this component requires Playwright coverage.
@@ -17,17 +21,23 @@ import { Select } from './Select'
  * - Supports drag & drop for files
  * - Favorites moved to collapsible utility section
  * 
- * Proxy v1 scope:
+ * Alpha scope:
  * - File selection (required)
- * - Preset selection (required)
  * - Output directory (required)
  * - Engine selection (FFmpeg only)
- * - Nothing render-related (no Deliver/codec/metadata logic)
+ * - Sources implicitly use the currently active preset
+ * 
+ * LAYOUT RULE: This component receives space from App.tsx.
+ * It MUST NOT set its own max-width or decide its visibility.
+ * WorkspaceMode controls layout authority.
  */
 
-interface PresetInfo {
-  id: string
-  name: string
+// ALPHA BLOCKER FIX: absolute source paths required for job creation
+// Validates that a path is absolute (contains '/' or starts with drive letter on Windows)
+function isAbsolutePath(path: string): boolean {
+  // Unix-style absolute paths start with /
+  // Windows-style absolute paths start with C:\\ or similar
+  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path)
 }
 
 // Phase 16: Engine info
@@ -45,12 +55,6 @@ interface CreateJobPanelProps {
   selectedFiles: string[]
   onFilesChange: (files: string[]) => void
   onSelectFilesClick: () => void
-  
-  // Preset selection
-  presets: PresetInfo[]
-  selectedPresetId: string
-  onPresetChange: (presetId: string) => void
-  presetError?: string
   
   // Phase 16: Engine selection
   engines?: EngineInfo[]
@@ -75,6 +79,9 @@ interface CreateJobPanelProps {
   loading?: boolean
   hasElectron?: boolean
   backendUrl?: string
+  
+  // WorkspaceMode — controls layout behaviour (passed from App.tsx)
+  workspaceMode?: WorkspaceMode
 }
 
 export function CreateJobPanel({
@@ -83,10 +90,6 @@ export function CreateJobPanel({
   selectedFiles,
   onFilesChange,
   onSelectFilesClick,
-  presets,
-  selectedPresetId,
-  onPresetChange,
-  presetError,
   engines = [],
   selectedEngine = 'ffmpeg',
   onEngineChange,
@@ -100,9 +103,17 @@ export function CreateJobPanel({
   onClear,
   loading = false,
   hasElectron = false,
-  backendUrl = '',
+  backendUrl: _backendUrl = '',
+  workspaceMode = 'configure',
 }: CreateJobPanelProps) {
   const [isDragOver, setIsDragOver] = useState(false)
+  // Web mode: show prompt when files dropped without absolute paths
+  const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
+  const [showPathPrompt, setShowPathPrompt] = useState(false)
+  const [pathPromptValue, setPathPromptValue] = useState('')
+  
+  // Design mode guard: Add to Queue is blocked in design mode
+  const isDesignMode = workspaceMode === 'design'
 
   // Drag & drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -124,6 +135,7 @@ export function CreateJobPanel({
 
     const items = e.dataTransfer.items
     const newPaths: string[] = []
+    const droppedNames: string[] = []
 
     if (items) {
       // Use DataTransferItemList interface for file access
@@ -132,12 +144,14 @@ export function CreateJobPanel({
         if (item.kind === 'file') {
           const file = item.getAsFile()
           if (file) {
-            // In Electron, we can get the path from webUtils
-            // For now, use the file name as a placeholder
-            // The actual path extraction happens via Electron's webUtils.getPathForFile
-            const path = (file as any).path || file.name
-            if (path) {
-              newPaths.push(path)
+            // Check for Electron-provided absolute path
+            const filePath = (file as any).path
+            if (filePath && isAbsolutePath(filePath)) {
+              newPaths.push(filePath)
+            } else {
+              // Web browser: no absolute path available
+              // Collect file name to help user enter path
+              droppedNames.push(file.name)
             }
           }
         }
@@ -147,9 +161,11 @@ export function CreateJobPanel({
       const files = e.dataTransfer.files
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
-        const path = (file as any).path || file.name
-        if (path) {
-          newPaths.push(path)
+        const filePath = (file as any).path
+        if (filePath && isAbsolutePath(filePath)) {
+          newPaths.push(filePath)
+        } else {
+          droppedNames.push(file.name)
         }
       }
     }
@@ -157,14 +173,33 @@ export function CreateJobPanel({
     if (newPaths.length > 0) {
       onFilesChange([...selectedFiles, ...newPaths])
     }
+    
+    // Web mode: show prompt for user to enter full path
+    if (droppedNames.length > 0 && newPaths.length === 0) {
+      setDroppedFileNames(droppedNames)
+      setShowPathPrompt(true)
+      // Pre-fill with example path containing first file name
+      setPathPromptValue(`/Users/yourname/path/to/${droppedNames[0]}`)
+    }
   }, [selectedFiles, onFilesChange])
 
-  const canCreate = selectedFiles.length > 0 && selectedPresetId && outputDirectory && !loading
-  const presetOptions = presets.map(p => ({ value: p.id, label: `${p.id} — ${p.name}` }))
+  // Alpha: Presets are optional - sources use current preset implicitly
+  const canCreate = selectedFiles.length > 0 && outputDirectory && !loading && !isDesignMode
   const favoriteOptions = pathFavorites.map(p => ({ value: p, label: p }))
 
   if (!isVisible) {
     return null
+  }
+
+  // Handler for path prompt confirmation
+  const handlePathPromptConfirm = () => {
+    const path = pathPromptValue.trim()
+    if (path && isAbsolutePath(path)) {
+      onFilesChange([...selectedFiles, path])
+      setShowPathPrompt(false)
+      setDroppedFileNames([])
+      setPathPromptValue('')
+    }
   }
 
   return (
@@ -186,6 +221,73 @@ export function CreateJobPanel({
         }),
       }}
     >
+      {/* Path Prompt Dialog for Web Mode */}
+      {showPathPrompt && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'var(--card-bg-solid, #1a202c)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '1.5rem',
+            maxWidth: '500px',
+            width: '90%',
+            border: '1px solid var(--border-primary)',
+          }}>
+            <h3 style={{ margin: '0 0 1rem', color: 'var(--text-primary)', fontSize: '1rem' }}>
+              Enter Full File Path
+            </h3>
+            <p style={{ margin: '0 0 0.75rem', color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
+              File detected: <strong style={{ color: 'var(--text-primary)' }}>{droppedFileNames[0]}</strong>
+              {droppedFileNames.length > 1 && ` (+${droppedFileNames.length - 1} more)`}
+            </p>
+            <p style={{ margin: '0 0 0.75rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+              Web browsers cannot access file paths. Please enter the full absolute path:
+            </p>
+            <input
+              type="text"
+              value={pathPromptValue}
+              onChange={(e) => setPathPromptValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePathPromptConfirm()}
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '0.625rem 0.75rem',
+                fontSize: '0.8125rem',
+                fontFamily: 'var(--font-mono)',
+                backgroundColor: 'var(--input-bg)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)',
+                marginBottom: '1rem',
+              }}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { setShowPathPrompt(false); setDroppedFileNames([]); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handlePathPromptConfirm}
+              >
+                Add File
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header with Chevron Toggle */}
       <div
         style={{
@@ -264,7 +366,7 @@ export function CreateJobPanel({
               fontFamily: 'var(--font-sans)',
             }}
           >
-            Drop files or folders here
+            Drop source media here
           </div>
         </div>
       )}
@@ -297,67 +399,40 @@ export function CreateJobPanel({
                 Select Files...
               </Button>
             ) : (
-              <>
-                <input
-                  type="file"
-                  id="file-input-browser"
-                  multiple
-                  onChange={(e) => {
-                    const files = e.target.files
-                    if (files && files.length > 0) {
-                      const paths: string[] = []
-                      for (let i = 0; i < files.length; i++) {
-                        // In browser, we use file name; Electron would give path
-                        const file = files[i]
-                        const path = (file as any).path || file.name
-                        paths.push(path)
-                      }
-                      onFilesChange([...selectedFiles, ...paths])
-                    }
-                    // Reset input so same file can be selected again
-                    e.target.value = ''
-                  }}
-                  disabled={loading}
-                  style={{ display: 'none' }}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => document.getElementById('file-input-browser')?.click()}
-                  disabled={loading}
-                >
-                  Select Files...
-                </Button>
-                {/* Manual path input for browser mode - allows entering full paths */}
+              /* Manual path input for browser mode - allows entering full paths */
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                 <input
                   type="text"
                   data-testid="file-path-input"
-                  placeholder="Or enter file path..."
+                  placeholder="Paste absolute path here: /Users/yourname/path/to/video.mp4"
                   disabled={loading}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       const input = e.target as HTMLInputElement
                       const path = input.value.trim()
                       if (path) {
+                        console.log('[CreateJobPanel] Adding path:', path)
                         onFilesChange([...selectedFiles, path])
                         input.value = ''
                       }
                     }
                   }}
                   style={{
-                    flex: 1,
-                    minWidth: '200px',
-                    padding: '0.375rem 0.75rem',
-                    fontSize: '0.75rem',
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    fontSize: '0.8125rem',
                     fontFamily: 'var(--font-mono)',
                     backgroundColor: 'var(--input-bg)',
-                    border: '1px solid var(--border-primary)',
+                    border: '2px solid var(--border-primary)',
                     borderRadius: 'var(--radius-sm)',
                     color: 'var(--text-primary)',
                     outline: 'none',
                   }}
                 />
-              </>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  Press Enter to add file. Example: /Users/leon.grant/projects/Proxx/test_media/test_input.mp4
+                </span>
+              </div>
             )}
             <span
               style={{
@@ -425,74 +500,19 @@ export function CreateJobPanel({
           )}
         </div>
 
-        {/* Preset Selection */}
-        <div>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              color: 'var(--text-secondary)',
-              marginBottom: '0.375rem',
-              fontFamily: 'var(--font-sans)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.03em',
-            }}
-          >
-            Preset *
-          </label>
-          <Select
-            data-testid="preset-select"
-            value={selectedPresetId}
-            onChange={onPresetChange}
-            options={presetOptions}
-            placeholder="Select a preset..."
-            disabled={loading || presets.length === 0}
-            fullWidth
-          />
-          
-          {presetError && (
-            <div
-              style={{
-                marginTop: '0.5rem',
-                padding: '0.5rem',
-                fontSize: '0.75rem',
-                color: 'var(--status-failed-fg)',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              <strong>Error:</strong> {presetError}
-              {backendUrl && (
-                <>
-                  <br />
-                  <small>Check that backend is running at {backendUrl}</small>
-                </>
-              )}
-            </div>
-          )}
-          
-          {!presetError && presets.length === 0 && (
-            <div
-              style={{
-                marginTop: '0.5rem',
-                padding: '0.5rem',
-                fontSize: '0.75rem',
-                color: 'var(--text-muted)',
-                backgroundColor: 'var(--card-bg)',
-                border: '1px solid var(--border-secondary)',
-                borderRadius: 'var(--radius-sm)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              No presets available. Loading...
-            </div>
-          )}
+        {/* Passive preset indicator - preset controlled via Preset Editor only */}
+        <div
+          style={{
+            fontSize: '0.6875rem',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-sans)',
+            padding: '0.5rem 0',
+          }}
+        >
+          Using current preset
         </div>
 
-        {/* Proxy v1: Engine Selection - FFmpeg only */}
+        {/* Alpha: Engine Selection - FFmpeg only */}
         <div>
           <label
             style={{
@@ -509,7 +529,7 @@ export function CreateJobPanel({
             Execution Engine
           </label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {/* Proxy v1: Only show available engines (FFmpeg) */}
+            {/* Alpha: Only show available engines (FFmpeg) */}
             {engines.filter(e => e.available).map(engine => (
               <button
                 key={engine.type}
@@ -557,37 +577,39 @@ export function CreateJobPanel({
           >
             Output Directory *
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {hasElectron ? (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <input
+              type="text"
+              value={outputDirectory}
+              onChange={(e) => onOutputDirectoryChange(e.target.value)}
+              placeholder="/Users/yourname/Desktop/OUTPUT"
+              disabled={loading}
+              title="Paste output directory path or click Browse..."
+              style={{
+                flex: 1,
+                padding: '0.375rem 0.5rem',
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-mono)',
+                backgroundColor: 'var(--input-bg)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)',
+                outline: 'none',
+              }}
+            />
+            {hasElectron && (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={onSelectFolderClick}
                 disabled={loading}
+                style={{ whiteSpace: 'nowrap' }}
               >
-                Select Folder...
+                Browse...
               </Button>
-            ) : (
-              <input
-                type="text"
-                value={outputDirectory}
-                onChange={(e) => onOutputDirectoryChange(e.target.value)}
-                placeholder="/path/to/output/directory"
-                disabled={loading}
-                style={{
-                  flex: 1,
-                  padding: '0.5rem 0.75rem',
-                  fontSize: '0.8125rem',
-                  fontFamily: 'var(--font-mono)',
-                  backgroundColor: 'var(--input-bg)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                }}
-              />
             )}
-            
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.375rem' }}>
             {pathFavorites.length > 0 && (
               <Select
                 value=""
@@ -598,42 +620,17 @@ export function CreateJobPanel({
                 size="sm"
               />
             )}
-          </div>
-          
-          {outputDirectory && (
-            <div
-              style={{
-                marginTop: '0.5rem',
-                display: 'flex',
-                gap: '0.5rem',
-                alignItems: 'center',
-              }}
-            >
-              <code
-                style={{
-                  flex: 1,
-                  fontSize: '0.75rem',
-                  fontFamily: 'var(--font-mono)',
-                  color: 'var(--text-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
+            {outputDirectory && !pathFavorites.includes(outputDirectory) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onAddFavorite(outputDirectory)}
+                style={{ fontSize: '0.6875rem' }}
               >
-                {outputDirectory}
-              </code>
-              {!pathFavorites.includes(outputDirectory) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onAddFavorite(outputDirectory)}
-                  style={{ fontSize: '0.6875rem' }}
-                >
-                  Add to Favorites
-                </Button>
-              )}
-            </div>
-          )}
+                ★ Favorite
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Favorites Management - Collapsible Utility Section (Phase 19) */}
@@ -712,27 +709,50 @@ export function CreateJobPanel({
             paddingTop: '0.75rem',
             borderTop: '1px solid var(--border-secondary)',
             display: 'flex',
+            flexDirection: 'column',
             gap: '0.5rem',
           }}
         >
-          <Button
-            data-testid="add-to-queue-button"
-            variant="primary"
-            size="md"
-            onClick={onCreateJob}
-            disabled={!canCreate}
-            loading={loading}
-          >
-            + Add to Queue
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={onClear}
-            disabled={loading}
-          >
-            Clear
-          </Button>
+          {/* Design mode guard message */}
+          {isDesignMode && (
+            <div
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-sans)',
+                fontStyle: 'italic',
+                padding: '0.5rem',
+                background: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              Exit design mode to queue jobs
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <Button
+                data-testid="add-to-queue-button"
+                variant="primary"
+                size="md"
+                onClick={onCreateJob}
+                disabled={!canCreate}
+                loading={loading}
+                title={isDesignMode ? 'Exit design mode to queue jobs' : undefined}
+              >
+                + Add to Queue
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={onClear}
+                disabled={loading}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div
@@ -744,7 +764,7 @@ export function CreateJobPanel({
             fontStyle: 'italic',
           }}
         >
-          Drag & drop files or select manually. Jobs render in queue order.
+          Drop source media above, or use Select Files to browse.
         </div>
       </div>
     </div>

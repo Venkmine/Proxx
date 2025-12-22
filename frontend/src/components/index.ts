@@ -34,5 +34,35 @@ export type {
   SelectionContext 
 } from './DeliverControlPanel'
 
+// Alpha: Preset Management
+export { PresetManager } from './PresetManager'
+export { PresetSelector } from './PresetSelector'
+export type { Preset } from '../hooks/usePresets'
+
+// Alpha: Naming Template Builder
+export { TokenPalette } from './TokenPalette'
+
+// Alpha: Watermark & Burn-In Panels
+export { TextBurnInPanel } from './TextBurnInPanel'
+export { ImageOverlayPanel } from './ImageOverlayPanel'
+
+// Phase 23: Unified Visual Preview Modal
+export { VisualPreviewModal } from './VisualPreviewModal'
+
+// Phase 24: 4-Region Persistent Workspace Layout
+export { WorkspaceLayout } from './WorkspaceLayout'
+export { VisualPreviewWorkspace } from './VisualPreviewWorkspace'
+
+// Alpha: Preview & Processing Feedback
+export { PreviewPanel } from './PreviewPanel'
+export { JobProgressBar } from './JobProgressBar'
+export type { JobProgress, JobStatus } from './JobProgressBar'
+
+// Alpha: UX Cleanup — Volumes and Colour
+export { VolumesPanel } from './VolumesPanel'
+export type { Volume } from './VolumesPanel'
+export { ColourPanel } from './ColourPanel'
+export type { ColourSettings } from './ColourPanel'
+
 // Electron components
 export { TitleBar } from './TitleBar'

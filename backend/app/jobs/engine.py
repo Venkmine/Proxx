@@ -458,18 +458,41 @@ class JobEngine:
                 engine_type = EngineType(job.engine)
                 engine = self.engine_registry.get_available_engine(engine_type)
                 
-                # CRITICAL: Resolve preset to ResolvedPresetParams BEFORE calling engine
-                try:
-                    resolved_params = preset_registry.resolve_preset_params(global_preset_id)
-                except Exception as e:
-                    # If preset resolution fails, use H.264 default
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Preset resolution failed for '{global_preset_id}': {e}. Using H.264 default.")
-                    resolved_params = DEFAULT_H264_PARAMS
+                # Alpha: Resolve params from preset or job settings
+                resolved_params = None
+                
+                # Try preset resolution first (if preset is provided and not synthetic)
+                if global_preset_id and not global_preset_id.startswith("_job_"):
+                    try:
+                        resolved_params = preset_registry.resolve_preset_params(global_preset_id)
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Preset resolution failed for '{global_preset_id}': {e}")
+                
+                # Fall back to job settings
+                if not resolved_params:
+                    # Build ResolvedPresetParams from job.settings
+                    settings = job.settings
+                    from ..execution.resolved_params import ResolvedPresetParams
+                    resolved_params = ResolvedPresetParams(
+                        codec=settings.video.codec,
+                        profile=settings.video.profile,
+                        level=settings.video.level,
+                        pixel_format=settings.video.pixel_format,
+                        crf=settings.video.quality,
+                        bitrate=settings.video.bitrate,
+                        preset=settings.video.preset,
+                        resolution_policy=str(settings.video.resolution_policy.value) if hasattr(settings.video.resolution_policy, 'value') else str(settings.video.resolution_policy),
+                        width=settings.video.width,
+                        height=settings.video.height,
+                        frame_rate_policy=str(settings.video.frame_rate_policy.value) if hasattr(settings.video.frame_rate_policy, 'value') else str(settings.video.frame_rate_policy),
+                        frame_rate=settings.video.frame_rate,
+                        container=settings.file.container,
+                        extension=settings.file.extension,
+                    )
                 
                 # Phase 20: Get watermark text from DeliverSettings overlay
-                # Legacy: settings.watermark_enabled/text are now settings.overlay.text_layers
                 settings = job.settings
                 watermark_text = None
                 if settings.overlay and settings.overlay.text_layers:
@@ -513,35 +536,54 @@ class JobEngine:
         self,
         job: Job,
         preset_registry,
-        global_preset_id: str,
+        global_preset_id: Optional[str],
     ) -> None:
         """
         Resolve output paths for all clips BEFORE render starts.
         
-        Phase 16.4: Output paths are computed ONCE and stored on ClipTask.
-        Engines receive resolved paths - they NEVER construct paths.
-        
-        This method must be called before _process_job().
-        Once paths are resolved, job.settings becomes immutable.
+        Alpha: Preset is optional. Uses job.settings for resolution info.
         
         Args:
             job: Job with clips to resolve
-            preset_registry: Registry for preset resolution
-            global_preset_id: Preset ID for codec/extension info
+            preset_registry: Registry for preset resolution (may be None)
+            global_preset_id: Preset ID for codec/extension info (may be None)
         """
         from ..execution.naming import resolve_filename
         from ..execution.output_paths import resolve_output_path
-        from ..execution.resolved_params import DEFAULT_H264_PARAMS
+        from ..execution.resolved_params import ResolvedPresetParams, DEFAULT_H264_PARAMS
         import logging
         
         logger = logging.getLogger(__name__)
         
-        # Resolve preset params for extension info
-        try:
-            resolved_params = preset_registry.resolve_preset_params(global_preset_id)
-        except Exception as e:
-            logger.warning(f"Preset resolution failed: {e}. Using H.264 default.")
-            resolved_params = DEFAULT_H264_PARAMS
+        # Alpha: Resolve params from preset or job settings
+        resolved_params = None
+        
+        # Try preset resolution first (if preset is provided and not synthetic)
+        if global_preset_id and not global_preset_id.startswith("_job_") and preset_registry:
+            try:
+                resolved_params = preset_registry.resolve_preset_params(global_preset_id)
+            except Exception as e:
+                logger.warning(f"Preset resolution failed: {e}")
+        
+        # Fall back to job settings
+        if not resolved_params:
+            settings = job.settings
+            resolved_params = ResolvedPresetParams(
+                codec=settings.video.codec,
+                profile=settings.video.profile,
+                level=settings.video.level,
+                pixel_format=settings.video.pixel_format,
+                crf=settings.video.quality,
+                bitrate=settings.video.bitrate,
+                preset=settings.video.preset,
+                resolution_policy=str(settings.video.resolution_policy.value) if hasattr(settings.video.resolution_policy, 'value') else str(settings.video.resolution_policy),
+                width=settings.video.width,
+                height=settings.video.height,
+                frame_rate_policy=str(settings.video.frame_rate_policy.value) if hasattr(settings.video.frame_rate_policy, 'value') else str(settings.video.frame_rate_policy),
+                frame_rate=settings.video.frame_rate,
+                container=settings.file.container,
+                extension=settings.file.extension,
+            )
         
         settings = job.settings
         
@@ -552,13 +594,12 @@ class JobEngine:
             
             try:
                 # Step 1: Resolve filename from naming template
-                # Phase 20: Use settings.file.naming_template (not flat settings.naming_template)
                 resolved_name = resolve_filename(
                     template=settings.file.naming_template,
                     clip=task,
                     job=job,
                     resolved_params=resolved_params,
-                    preset_id=global_preset_id,
+                    preset_id=global_preset_id or "default",
                 )
                 task.output_filename = resolved_name
                 
@@ -694,9 +735,9 @@ class JobEngine:
         """
         Execute a job and optionally generate reports.
         
-        Phase 8: Public entry point with integrated reporting.
-        Phase 11: Uses bound preset if available, falls back to parameter.
-        Phase 16: Validates engine availability before execution.
+        Alpha: Preset is optional. Jobs use their embedded settings_snapshot
+        (or override_settings if present). Preset is only used for codec
+        resolution when available.
         
         Executes all queued tasks sequentially, respecting warn-and-continue
         semantics. After execution completes, generates diagnostic reports
@@ -704,7 +745,7 @@ class JobEngine:
         
         Args:
             job: The job to execute
-            global_preset_id: Optional preset ID (fallback if no binding exists)
+            global_preset_id: Optional preset ID (for codec resolution)
             preset_registry: Registry instance for preset lookup
             output_base_dir: Optional output directory override
             generate_reports: Whether to generate reports after execution (default: True)
@@ -714,13 +755,12 @@ class JobEngine:
             
         Raises:
             JobEngineError: If execution or reporting fails
-            ValueError: If no preset is available (neither bound nor provided)
             ValueError: If engine is not available
         """
         import logging
         logger = logging.getLogger(__name__)
         
-        # Resolve effective preset ID
+        # Alpha: Preset is optional - resolve if available
         effective_preset_id = None
         
         if self.binding_registry:
@@ -729,17 +769,20 @@ class JobEngine:
         if not effective_preset_id:
             effective_preset_id = global_preset_id
         
+        # Alpha: If no preset, use a default preset ID for codec resolution
+        # The actual settings come from job.settings (settings_snapshot or override)
         if not effective_preset_id:
-            raise ValueError(
-                f"No preset available for job {job.id}. "
-                "Preset must be bound via binding_registry or provided as parameter."
-            )
-        
-        # Validate preset exists
-        if preset_registry:
-            preset = preset_registry.get_global_preset(effective_preset_id)
-            if not preset:
-                raise ValueError(f"Global preset '{effective_preset_id}' not found in registry")
+            # Use a synthetic preset ID based on job's video codec
+            video_settings = job.settings.video
+            effective_preset_id = f"_job_{job.id}_settings"
+            logger.info(f"Job {job.id} has no preset - using embedded settings with codec '{video_settings.codec}'")
+        else:
+            # Validate preset exists if provided
+            if preset_registry:
+                preset = preset_registry.get_global_preset(effective_preset_id)
+                if not preset:
+                    logger.warning(f"Preset '{effective_preset_id}' not found, using job settings")
+                    effective_preset_id = f"_job_{job.id}_settings"
         
         # Phase 16: Validate engine availability
         if job.engine and self.engine_registry:
@@ -749,11 +792,11 @@ class JobEngine:
                 engine_type = EngineType(job.engine)
                 engine = self.engine_registry.get_available_engine(engine_type)
                 
-                # Validate job before execution
+                # Validate job before execution (preset validation is optional)
                 is_valid, error_msg = engine.validate_job(
                     job=job,
                     preset_registry=preset_registry,
-                    preset_id=effective_preset_id,
+                    preset_id=effective_preset_id if not effective_preset_id.startswith("_job_") else None,
                 )
                 
                 if not is_valid:

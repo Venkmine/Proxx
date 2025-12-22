@@ -1,9 +1,16 @@
+//Alpha scope defined in docs/ALPHA_REALITY.md.
+//Do not add features that contradict it without updating that file first.
+
 import React, { useState, useEffect, useMemo } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
+import { TokenPalette } from './TokenPalette'
+// Phase 23: Watermark panels moved to VisualPreviewModal
+// Imports kept for backwards compatibility but components no longer rendered inline
+import type { TimecodeOverlay } from './PreviewViewport16x9'
 
 /**
- * DeliverControlPanel — Persistent Control Surface (Phase 17 + Phase 20)
+ * DeliverControlPanel — Persistent Control Surface (Alpha)
  * 
  * ⚠️ VERIFY GUARD:
  * Any change to this component requires Playwright coverage.
@@ -11,7 +18,7 @@ import { Select } from './Select'
  *        qa/verify/ui/proxy/validation_errors.spec.ts
  * Run: make verify-ui before committing changes.
  * 
- * Phase 20: Codec-driven UI authority.
+ * Alpha: Codec-driven UI authority.
  * - All codec options fetched from backend CodecSpec registry
  * - UI dynamically reconfigures based on codec capabilities
  * - CRF and Bitrate are mutually exclusive
@@ -33,6 +40,7 @@ import { Select } from './Select'
 export interface VideoSettings {
   codec: string
   resolution_policy: string
+  resolution_preset?: string  // Phase 21: Named preset (source, 1080p, 2k, 720p, 540p)
   width?: number
   height?: number
   frame_rate_policy: string
@@ -41,9 +49,11 @@ export interface VideoSettings {
   color_space?: string
   quality?: number  // CRF value
   bitrate?: string
+  custom_bitrate?: string  // Phase 21: Custom bitrate input (e.g., "8M", "15000k")
   rate_control_mode?: 'crf' | 'bitrate'  // Phase 20: Explicit mode selection
-  bitrate_preset?: 'low' | 'medium' | 'high' | 'broadcast'  // Phase 20: Preset selection
+  bitrate_preset?: 'low' | 'medium' | 'high' | 'broadcast' | 'custom'  // Phase 21: Added custom option
   preset?: string
+  framing_mode?: 'fit' | 'fill' | 'stretch'  // Phase 21: Aspect ratio handling
 }
 
 export interface AudioSettings {
@@ -80,13 +90,37 @@ export interface TextOverlay {
   font_size: number
   opacity: number
   enabled: boolean
-  // Phase 20: Normalized coordinates (0-1) for graphical positioning
+  // Normalized coordinates (0-1) for graphical positioning
   x?: number
   y?: number
+  // Phase 22: Additional text styling options
+  font?: string
+  color?: string
+  background?: boolean
+  background_color?: string
+}
+
+// Alpha: Image watermark support
+export interface ImageOverlay {
+  enabled: boolean
+  // Image data (base64 for Alpha, will be file path in v1)
+  image_data?: string
+  image_name?: string
+  // Normalized coordinates (0-1) for positioning
+  x: number
+  y: number
+  opacity: number
+  // Alpha: New scale and grayscale options
+  scale?: number       // 0.25 - 2.0, default 1.0
+  grayscale?: boolean  // B&W toggle
 }
 
 export interface OverlaySettings {
   text_layers: TextOverlay[]
+  // Alpha: Image watermark
+  image_watermark?: ImageOverlay
+  // Alpha: Timecode burn-in overlay
+  timecode_overlay?: TimecodeOverlay
 }
 
 // Phase 20: Colour settings
@@ -157,6 +191,8 @@ interface DeliverControlPanelProps {
   isReadOnly?: boolean
   backendUrl?: string
   appliedPresetName?: string | null  // Phase 17: Show "Preset Applied" indicator
+  onOpenVisualEditor?: () => void  // Phase 23: Open Visual Preview Modal
+  hasQueuedJobSelected?: boolean  // Phase 0: Enable visual editor only when a queued job is selected
 }
 
 // ============================================================================
@@ -178,39 +214,38 @@ const AUDIO_BITRATE_PRESETS = [
   { value: '320k', label: '320 kbps (Broadcast)' },
 ]
 
-const RESOLUTION_POLICIES = [
-  { value: 'source', label: 'Source Resolution' },
-  { value: 'custom', label: 'Custom Dimensions' },
+// Kept for future use
+// const RESOLUTION_POLICIES = [
+//   { value: 'source', label: 'Source Resolution' },
+//   { value: 'custom', label: 'Custom Dimensions' },
+// ]
+
+// Phase 21: Simplified resolution presets for common proxy formats
+const RESOLUTION_PRESETS = [
+  { value: 'source', label: 'Source (Original)', width: 0, height: 0 },
+  { value: '8k_dci', label: '8K DCI (8192×4320)', width: 8192, height: 4320 },
+  { value: '8k', label: '8K UHD (7680×4320)', width: 7680, height: 4320 },
+  { value: '6k_dci', label: '6K DCI (6144×3240)', width: 6144, height: 3240 },
+  { value: '6k', label: '6K (6016×3384)', width: 6016, height: 3384 },
+  { value: '4k_dci', label: '4K DCI (4096×2160)', width: 4096, height: 2160 },
+  { value: '4k', label: '4K UHD (3840×2160)', width: 3840, height: 2160 },
+  { value: '2k', label: '2K (2048×1080)', width: 2048, height: 1080 },
+  { value: '1080p', label: '1080p Full HD (1920×1080)', width: 1920, height: 1080 },
+  { value: '720p', label: '720p HD (1280×720)', width: 1280, height: 720 },
+  { value: '540p', label: '540p (960×540)', width: 960, height: 540 },
 ]
 
-// Phase 20: Resolution presets for common formats
-const RESOLUTION_PRESETS = [
-  { value: '', label: 'Select preset...', width: 0, height: 0 },
-  { value: 'pal', label: 'PAL (720×576)', width: 720, height: 576 },
-  { value: 'ntsc', label: 'NTSC (720×486)', width: 720, height: 486 },
-  { value: '720p', label: '720p HD (1280×720)', width: 1280, height: 720 },
-  { value: '1080p', label: '1080p Full HD (1920×1080)', width: 1920, height: 1080 },
-  { value: '2k_dci', label: '2K DCI (2048×1080)', width: 2048, height: 1080 },
-  { value: 'uhd', label: 'UHD 4K (3840×2160)', width: 3840, height: 2160 },
-  { value: '4k_dci', label: '4K DCI (4096×2160)', width: 4096, height: 2160 },
-  { value: '8k', label: '8K UHD (7680×4320)', width: 7680, height: 4320 },
+// Phase 21: Aspect ratio framing options (when output AR ≠ source AR)
+const FRAMING_OPTIONS = [
+  { value: 'fit', label: 'Fit (Letterbox / Pillarbox)', description: 'Scale to fit within frame, add padding' },
+  { value: 'fill', label: 'Fill (Crop)', description: 'Scale to fill frame, crop overflow' },
+  { value: 'stretch', label: 'Stretch (Distort)', description: 'Scale to fill frame, distort aspect' },
 ]
 
 const OVERWRITE_POLICIES = [
   { value: 'never', label: 'Never (Fail if exists)' },
   { value: 'always', label: 'Always Overwrite' },
   { value: 'increment', label: 'Auto-Increment Suffix' },
-]
-
-// Phase 20: Watermark positions (renamed from TEXT_POSITIONS)
-const WATERMARK_POSITIONS = [
-  { value: 'top_left', label: 'Top Left' },
-  { value: 'top_center', label: 'Top Center' },
-  { value: 'top_right', label: 'Top Right' },
-  { value: 'bottom_left', label: 'Bottom Left' },
-  { value: 'bottom_center', label: 'Bottom Center' },
-  { value: 'bottom_right', label: 'Bottom Right' },
-  { value: 'center', label: 'Center' },
 ]
 
 // ============================================================================
@@ -223,11 +258,12 @@ interface SectionProps {
   onToggle: () => void
   children: React.ReactNode
   badge?: string
+  'data-testid'?: string
 }
 
-function Section({ title, isOpen, onToggle, children, badge }: SectionProps) {
+function Section({ title, isOpen, onToggle, children, badge, 'data-testid': testId }: SectionProps) {
   return (
-    <div style={{ marginBottom: '0.5rem' }}>
+    <div style={{ marginBottom: '0.5rem' }} data-testid={testId}>
       <button
         onClick={onToggle}
         style={{
@@ -272,7 +308,7 @@ function Section({ title, isOpen, onToggle, children, badge }: SectionProps) {
       
       {isOpen && (
         <div style={{
-          padding: '0.75rem',
+          padding: '0.75rem 0.5rem',
           borderLeft: '1px solid var(--border-primary)',
           borderRight: '1px solid var(--border-primary)',
           borderBottom: '1px solid var(--border-primary)',
@@ -286,6 +322,41 @@ function Section({ title, isOpen, onToggle, children, badge }: SectionProps) {
     </div>
   )
 }
+
+// Responsive two-column grid for field groupings (unused, kept for reference)
+// interface FieldGridProps {
+//   children: React.ReactNode
+// }
+
+// function FieldGrid({ children }: FieldGridProps) {
+//   return (
+//     <div style={{
+//       display: 'flex',
+//       flexWrap: 'wrap',
+//       gap: '0.75rem 1.5rem',
+//     }}>
+//       {children}
+//     </div>
+//   )
+// }
+
+// Field item that can span half or full width (unused, kept for reference)
+// interface FieldItemProps {
+//   children: React.ReactNode
+//   fullWidth?: boolean
+// }
+
+// function FieldItem({ children, fullWidth = false }: FieldItemProps) {
+//   return (
+//     <div style={{
+//       flex: fullWidth ? '1 1 100%' : '1 1 200px',
+//       minWidth: fullWidth ? '100%' : '200px',
+//       maxWidth: fullWidth ? '100%' : undefined,
+//     }}>
+//       {children}
+//     </div>
+//   )
+// }
 
 interface FieldRowProps {
   label: string
@@ -374,6 +445,8 @@ export function DeliverControlPanel({
   isReadOnly = false,
   backendUrl = 'http://127.0.0.1:8085',
   appliedPresetName,
+  onOpenVisualEditor,
+  hasQueuedJobSelected = false,
 }: DeliverControlPanelProps) {
   // Section visibility state
   const [openSections, setOpenSections] = useState<Set<string>>(
@@ -427,18 +500,18 @@ export function DeliverControlPanel({
       }
     })
     
-    // Flatten with group headers
+    // Flatten with group headers (unique values to avoid React key warnings)
     const result: { value: string; label: string; disabled?: boolean }[] = []
     if (categories.prores.length > 0) {
-      result.push({ value: '', label: '── ProRes ──', disabled: true })
+      result.push({ value: '__header_prores', label: '── ProRes ──', disabled: true })
       result.push(...categories.prores)
     }
     if (categories.dnx.length > 0) {
-      result.push({ value: '', label: '── DNx ──', disabled: true })
+      result.push({ value: '__header_dnx', label: '── DNx ──', disabled: true })
       result.push(...categories.dnx)
     }
     if (categories.delivery.length > 0) {
-      result.push({ value: '', label: '── Delivery ──', disabled: true })
+      result.push({ value: '__header_delivery', label: '── Delivery ──', disabled: true })
       result.push(...categories.delivery)
     }
     
@@ -459,7 +532,7 @@ export function DeliverControlPanel({
     
     const containerLabels: Record<string, string> = {
       mov: 'QuickTime (.mov)',
-      mxf: 'MXF (.mxf)',
+      mxf: 'MXF OP1a (.mxf)',
       mp4: 'MP4 (.mp4)',
       mkv: 'Matroska (.mkv)',
       webm: 'WebM (.webm)',
@@ -526,28 +599,28 @@ export function DeliverControlPanel({
   
   const panelInfo = getPanelInfo()
   
-  // Compute metadata summary status line
-  const getMetadataStatusLine = (): { text: string; isDestructive: boolean } => {
-    if (settings.metadata.strip_all_metadata) {
-      return { text: 'Metadata: Stripped', isDestructive: true }
-    }
-    const passthroughFlags = [
-      settings.metadata.passthrough_timecode,
-      settings.metadata.passthrough_reel_name,
-      settings.metadata.passthrough_camera_metadata,
-      settings.metadata.passthrough_color_metadata,
-    ]
-    const activeCount = passthroughFlags.filter(Boolean).length
-    if (activeCount === passthroughFlags.length) {
-      return { text: 'Metadata: Passthrough (Camera → Output)', isDestructive: false }
-    } else if (activeCount === 0) {
-      return { text: 'Metadata: None Preserved', isDestructive: true }
-    } else {
-      return { text: `Metadata: Partial (${activeCount}/${passthroughFlags.length})`, isDestructive: false }
-    }
-  }
+  // Compute metadata summary status line (commented out for now, kept for future)
+  // const getMetadataStatusLine = (): { text: string; isDestructive: boolean } => {
+  //   if (settings.metadata.strip_all_metadata) {
+  //     return { text: 'Metadata: Stripped', isDestructive: true }
+  //   }
+  //   const passthroughFlags = [
+  //     settings.metadata.passthrough_timecode,
+  //     settings.metadata.passthrough_reel_name,
+  //     settings.metadata.passthrough_camera_metadata,
+  //     settings.metadata.passthrough_color_metadata,
+  //   ]
+  //   const activeCount = passthroughFlags.filter(Boolean).length
+  //   if (activeCount === passthroughFlags.length) {
+  //     return { text: 'Metadata: Passthrough (Camera → Output)', isDestructive: false }
+  //   } else if (activeCount === 0) {
+  //     return { text: 'Metadata: None Preserved', isDestructive: true }
+  //   } else {
+  //     return { text: `Metadata: Partial (${activeCount}/${passthroughFlags.length})`, isDestructive: false }
+  //   }
+  // }
   
-  const metadataStatus = getMetadataStatusLine()
+  // const metadataStatus = getMetadataStatusLine()
   
   // Helper to update nested settings
   const updateVideoSettings = (updates: Partial<VideoSettings>) => {
@@ -631,37 +704,33 @@ export function DeliverControlPanel({
     })
   }
   
+  // Overlay settings helper (for watermarks section)
   const updateOverlaySettings = (updates: Partial<OverlaySettings>) => {
     onSettingsChange({
       overlay: { ...settings.overlay, ...updates }
     })
   }
   
-  // Determine if metadata passthrough is at risk
-  const metadataWarning = settings.metadata.strip_all_metadata
-  
   // Count active text overlays
   const activeOverlays = settings.overlay.text_layers.filter(l => l.enabled).length
+  
+  // Determine if metadata passthrough is at risk
+  const metadataWarning = settings.metadata.strip_all_metadata
 
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      width: '340px',
-      minWidth: '340px',
+      flex: 1,
+      width: '100%',
       backgroundColor: 'var(--card-bg-solid, rgba(16, 18, 20, 0.95))',
-      /* Removed prominent blue divider to the left of the panel (UX request) */
-      boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.25)',
       overflow: 'hidden',
     }}>
-      {/* Panel Header — Authoritative context indicator */}
+      {/* Panel Header — Matches PresetEditorHeader visual style */}
       <div style={{
-        padding: '0.75rem 1rem',
-        borderBottom: '1px solid var(--border-primary)',
-        background: isReadOnly 
-          ? 'linear-gradient(180deg, rgba(51, 65, 85, 0.4) 0%, rgba(30, 41, 59, 0.95) 100%)'
-          : 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
+        padding: '0.75rem 1.25rem',
+        background: 'var(--card-bg-solid, rgba(16, 18, 20, 0.95))',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {isReadOnly && (
@@ -685,37 +754,17 @@ export function DeliverControlPanel({
         }}>
           {panelInfo.subtext}
         </div>
+        
+        {/* Phase 23: Metadata status banner moved into Metadata section header badge */}
+        {/* Removed duplicate callout from panel header */}
       </div>
       
       {/* Scrollable Content */}
       <div style={{
         flex: 1,
         overflow: 'auto',
-        padding: '0.75rem',
+        padding: '1rem 1.25rem',
       }}>
-        {/* Metadata Status Line — Always Visible */}
-        <div style={{
-          padding: '0.625rem 0.75rem',
-          marginBottom: '0.75rem',
-          backgroundColor: metadataStatus.isDestructive 
-            ? 'rgba(239, 68, 68, 0.15)' 
-            : 'rgba(34, 197, 94, 0.1)',
-          borderRadius: 'var(--radius-sm)',
-          border: `1px solid ${metadataStatus.isDestructive 
-            ? 'rgba(239, 68, 68, 0.3)' 
-            : 'rgba(34, 197, 94, 0.3)'}`,
-        }}>
-          <span style={{
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-            color: metadataStatus.isDestructive 
-              ? 'var(--status-failed-fg, #EF4444)' 
-              : 'var(--status-completed-fg, #22C55E)',
-          }}>
-            {metadataStatus.text}
-          </span>
-        </div>
-        
         {/* Video Section */}
         <Section
           title="Video"
@@ -733,6 +782,17 @@ export function DeliverControlPanel({
             </div>
           ) : (
             <>
+              {/* Container first, then Codec */}
+              <FieldRow label="Container" description={currentCodecSpec ? `Valid for ${currentCodecSpec.name}` : undefined}>
+                <Select
+                  value={settings.file.container}
+                  onChange={(v) => updateFileSettings({ container: v })}
+                  options={containerOptions}
+                  disabled={isReadOnly}
+                  fullWidth
+                />
+              </FieldRow>
+
               <FieldRow label="Codec">
                 <Select
                   value={settings.video.codec}
@@ -824,20 +884,54 @@ export function DeliverControlPanel({
                   {/* Bitrate Preset (only if Bitrate mode selected and codec supports it) */}
                   {currentCodecSpec.supports_bitrate && currentCodecSpec.bitrate_presets &&
                    settings.video.rate_control_mode === 'bitrate' && (
-                    <FieldRow label="Bitrate Preset" description="No free-text entry. Presets ensure optimal quality.">
-                      <Select
-                        value={settings.video.bitrate_preset || 'medium'}
-                        onChange={(v) => updateVideoSettings({ bitrate_preset: v as 'low' | 'medium' | 'high' | 'broadcast' })}
-                        options={[
-                          { value: 'low', label: `Low (${currentCodecSpec.bitrate_presets.low})` },
-                          { value: 'medium', label: `Medium (${currentCodecSpec.bitrate_presets.medium})` },
-                          { value: 'high', label: `High (${currentCodecSpec.bitrate_presets.high})` },
-                          { value: 'broadcast', label: `Broadcast (${currentCodecSpec.bitrate_presets.broadcast})` },
-                        ]}
-                        disabled={isReadOnly}
-                        fullWidth
-                      />
-                    </FieldRow>
+                    <>
+                      <FieldRow label="Bitrate Preset">
+                        <Select
+                          data-testid="bitrate-preset-select"
+                          value={settings.video.bitrate_preset || 'medium'}
+                          onChange={(v) => updateVideoSettings({ 
+                            bitrate_preset: v as 'low' | 'medium' | 'high' | 'broadcast' | 'custom',
+                            custom_bitrate: v === 'custom' ? settings.video.custom_bitrate : undefined,
+                          })}
+                          options={[
+                            { value: 'low', label: `Low (${currentCodecSpec.bitrate_presets.low})` },
+                            { value: 'medium', label: `Medium (${currentCodecSpec.bitrate_presets.medium})` },
+                            { value: 'high', label: `High (${currentCodecSpec.bitrate_presets.high})` },
+                            { value: 'broadcast', label: `Broadcast (${currentCodecSpec.bitrate_presets.broadcast})` },
+                            { value: 'custom', label: 'Custom...' },
+                          ]}
+                          disabled={isReadOnly}
+                          fullWidth
+                        />
+                      </FieldRow>
+                      
+                      {/* Custom Bitrate Input (Advanced disclosure) */}
+                      {settings.video.bitrate_preset === 'custom' && (
+                        <FieldRow label="Custom Bitrate" description="Enter bitrate (e.g., 8M, 15000k, 50000000)">
+                          <input
+                            type="text"
+                            data-testid="custom-bitrate-input"
+                            value={settings.video.custom_bitrate || ''}
+                            onChange={(e) => updateVideoSettings({ 
+                              custom_bitrate: e.target.value,
+                              bitrate: e.target.value,
+                            })}
+                            disabled={isReadOnly}
+                            placeholder="e.g., 8M, 15000k"
+                            style={{
+                              width: '100%',
+                              padding: '0.375rem 0.5rem',
+                              fontSize: '0.75rem',
+                              fontFamily: 'var(--font-mono)',
+                              background: 'var(--input-bg)',
+                              border: '1px solid var(--border-primary)',
+                              borderRadius: 'var(--radius-sm)',
+                              color: 'var(--text-primary)',
+                            }}
+                          />
+                        </FieldRow>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -858,27 +952,27 @@ export function DeliverControlPanel({
               
               <FieldRow label="Resolution">
                 <Select
-                  value={settings.video.resolution_policy}
-                  onChange={(v) => updateVideoSettings({ resolution_policy: v })}
-                  options={RESOLUTION_POLICIES}
-                  disabled={isReadOnly}
-                  fullWidth
-                />
-              </FieldRow>
-          
-          {settings.video.resolution_policy !== 'source' && (
-            <>
-              {/* Phase 20: Resolution preset dropdown */}
-              <FieldRow label="Preset">
-                <Select
-                  value=""
+                  data-testid="resolution-preset-select"
+                  value={settings.video.resolution_preset || 'source'}
                   onChange={(v) => {
                     const preset = RESOLUTION_PRESETS.find(p => p.value === v)
-                    if (preset && preset.width > 0) {
-                      updateVideoSettings({ 
-                        width: preset.width, 
-                        height: preset.height 
-                      })
+                    if (preset) {
+                      if (v === 'source') {
+                        updateVideoSettings({ 
+                          resolution_policy: 'source',
+                          resolution_preset: 'source',
+                          width: undefined, 
+                          height: undefined,
+                          framing_mode: undefined,
+                        })
+                      } else {
+                        updateVideoSettings({ 
+                          resolution_policy: 'custom',
+                          resolution_preset: v,
+                          width: preset.width, 
+                          height: preset.height,
+                        })
+                      }
                     }
                   }}
                   options={RESOLUTION_PRESETS.map(p => ({ value: p.value, label: p.label }))}
@@ -886,46 +980,43 @@ export function DeliverControlPanel({
                   fullWidth
                 />
               </FieldRow>
-              
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <FieldRow label="Width">
-                  <input
-                    type="number"
-                    value={settings.video.width || ''}
-                    onChange={(e) => updateVideoSettings({ width: parseInt(e.target.value) || undefined })}
-                    disabled={isReadOnly}
-                    placeholder="1920"
+          
+          {/* Framing/Scaling controls - only when output AR may differ from source */}
+          {settings.video.resolution_policy !== 'source' && settings.video.width && settings.video.height && (
+            <FieldRow label="Framing / Scaling" description="How to handle aspect ratio differences">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                {FRAMING_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
                     style={{
-                      width: '100%',
-                      padding: '0.375rem 0.5rem',
-                      fontSize: '0.75rem',
-                      background: 'var(--input-bg)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-primary)',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.5rem',
+                      cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                      opacity: isReadOnly ? 0.5 : 1,
                     }}
-                  />
-                </FieldRow>
-                <FieldRow label="Height">
-                  <input
-                    type="number"
-                    value={settings.video.height || ''}
-                    onChange={(e) => updateVideoSettings({ height: parseInt(e.target.value) || undefined })}
-                    disabled={isReadOnly}
-                    placeholder="1080"
-                    style={{
-                      width: '100%',
-                      padding: '0.375rem 0.5rem',
-                      fontSize: '0.75rem',
-                      background: 'var(--input-bg)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-primary)',
-                    }}
-                  />
-                </FieldRow>
+                  >
+                    <input
+                      type="radio"
+                      name="framing_mode"
+                      data-testid={`framing-${option.value}`}
+                      checked={(settings.video.framing_mode || 'fit') === option.value}
+                      onChange={() => updateVideoSettings({ framing_mode: option.value as 'fit' | 'fill' | 'stretch' })}
+                      disabled={isReadOnly}
+                      style={{ marginTop: '0.125rem' }}
+                    />
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        {option.label}
+                      </span>
+                      <div style={{ fontSize: '0.625rem', color: 'var(--text-dim)' }}>
+                        {option.description}
+                      </div>
+                    </div>
+                  </label>
+                ))}
               </div>
-            </>
+            </FieldRow>
           )}
           
           <FieldRow label="Frame Rate">
@@ -1046,39 +1137,18 @@ export function DeliverControlPanel({
           </FieldRow>
         </Section>
         
-        {/* File Section */}
+        {/* File Naming Section - Container moved to Video for codec grouping */}
         <Section
-          title="File"
+          title="File Naming"
           isOpen={openSections.has('file')}
           onToggle={() => toggleSection('file')}
-          badge={settings.file.container.toUpperCase()}
         >
-          <FieldRow label="Container" description={currentCodecSpec ? `Valid for ${currentCodecSpec.name}` : undefined}>
-            <Select
-              value={settings.file.container}
-              onChange={(v) => updateFileSettings({ container: v })}
-              options={containerOptions}
-              disabled={isReadOnly}
-              fullWidth
-            />
-          </FieldRow>
-          
-          <FieldRow label="Naming Template" description="Tokens: {source_name}, {reel}, {timecode}, {date}">
-            <input
-              type="text"
+          <FieldRow label="Naming Template" description="Click tokens or type to build template">
+            <TokenPalette
               value={settings.file.naming_template}
-              onChange={(e) => updateFileSettings({ naming_template: e.target.value })}
+              onChange={(v) => updateFileSettings({ naming_template: v })}
               disabled={isReadOnly}
-              style={{
-                width: '100%',
-                padding: '0.375rem 0.5rem',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono)',
-                background: 'var(--input-bg)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-              }}
+              backendUrl={backendUrl}
             />
           </FieldRow>
           
@@ -1161,79 +1231,205 @@ export function DeliverControlPanel({
           )}
         </Section>
         
-        {/* Metadata Section */}
+        {/* Metadata Section — Reorganized with Passthrough at top */}
         <Section
           title="Metadata"
           isOpen={openSections.has('metadata')}
           onToggle={() => toggleSection('metadata')}
           badge={metadataWarning ? '⚠️ STRIPPED' : 'PASSTHROUGH'}
         >
-          <CheckboxField
-            label="Strip ALL metadata (DESTRUCTIVE)"
-            checked={settings.metadata.strip_all_metadata}
-            onChange={(v) => updateMetadataSettings({ strip_all_metadata: v })}
-            disabled={isReadOnly}
-            warning={settings.metadata.strip_all_metadata}
-          />
-          
-          {settings.metadata.strip_all_metadata && (
-            <div style={{
-              padding: '0.5rem',
-              marginBottom: '0.5rem',
-              fontSize: '0.6875rem',
-              color: 'var(--status-failed-fg)',
-              backgroundColor: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+          {/* Master Passthrough Toggle - Always visible at top */}
+          <div 
+            data-testid="metadata-passthrough-group"
+            style={{
+              padding: '0.625rem',
+              marginBottom: '0.75rem',
+              backgroundColor: settings.metadata.strip_all_metadata 
+                ? 'rgba(239, 68, 68, 0.1)' 
+                : 'rgba(34, 197, 94, 0.1)',
               borderRadius: 'var(--radius-sm)',
+              border: `1px solid ${settings.metadata.strip_all_metadata 
+                ? 'rgba(239, 68, 68, 0.3)' 
+                : 'rgba(34, 197, 94, 0.3)'}`,
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              marginBottom: settings.metadata.strip_all_metadata ? 0 : '0.5rem',
             }}>
-              ⚠️ All source metadata will be removed. This cannot be undone.
+              <input
+                type="checkbox"
+                data-testid="metadata-passthrough-toggle"
+                checked={!settings.metadata.strip_all_metadata}
+                onChange={(v) => updateMetadataSettings({ 
+                  strip_all_metadata: !v.target.checked,
+                  // When enabling passthrough, enable all by default
+                  ...(!v.target.checked ? {} : {
+                    passthrough_all_container_metadata: true,
+                    passthrough_timecode: true,
+                    passthrough_reel_name: true,
+                    passthrough_camera_metadata: true,
+                    passthrough_color_metadata: true,
+                  })
+                })}
+                disabled={isReadOnly}
+                style={{ accentColor: 'var(--status-completed-fg)' }}
+              />
+              <span style={{
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                color: settings.metadata.strip_all_metadata 
+                  ? 'var(--status-failed-fg)' 
+                  : 'var(--status-completed-fg)',
+              }}>
+                {settings.metadata.strip_all_metadata 
+                  ? '⚠️ Metadata: STRIPPED (Destructive)' 
+                  : '✓ Passthrough (Camera → Output)'}
+              </span>
+            </div>
+            
+            {/* Individual passthrough options - immediately visible when enabled */}
+            {!settings.metadata.strip_all_metadata && (
+              <div style={{ 
+                paddingLeft: '1.5rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.375rem',
+              }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    data-testid="metadata-container"
+                    checked={settings.metadata.passthrough_all_container_metadata}
+                    onChange={(v) => updateMetadataSettings({ passthrough_all_container_metadata: v.target.checked })}
+                    disabled={isReadOnly}
+                    style={{ accentColor: 'var(--button-primary-bg)' }}
+                  />
+                  Container metadata
+                </label>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    data-testid="metadata-timecode"
+                    checked={settings.metadata.passthrough_timecode}
+                    onChange={(v) => updateMetadataSettings({ passthrough_timecode: v.target.checked })}
+                    disabled={isReadOnly}
+                    style={{ accentColor: 'var(--button-primary-bg)' }}
+                  />
+                  Timecode
+                </label>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    data-testid="metadata-reel"
+                    checked={settings.metadata.passthrough_reel_name}
+                    onChange={(v) => updateMetadataSettings({ passthrough_reel_name: v.target.checked })}
+                    disabled={isReadOnly}
+                    style={{ accentColor: 'var(--button-primary-bg)' }}
+                  />
+                  Reel name
+                </label>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    data-testid="metadata-camera"
+                    checked={settings.metadata.passthrough_camera_metadata}
+                    onChange={(v) => updateMetadataSettings({ passthrough_camera_metadata: v.target.checked })}
+                    disabled={isReadOnly}
+                    style={{ accentColor: 'var(--button-primary-bg)' }}
+                  />
+                  Camera metadata
+                </label>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                  cursor: isReadOnly ? 'not-allowed' : 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    data-testid="metadata-color"
+                    checked={settings.metadata.passthrough_color_metadata}
+                    onChange={(v) => updateMetadataSettings({ passthrough_color_metadata: v.target.checked })}
+                    disabled={isReadOnly}
+                    style={{ accentColor: 'var(--button-primary-bg)' }}
+                  />
+                  Color metadata
+                </label>
+              </div>
+            )}
+          </div>
+        </Section>
+        
+        {/* Overlays Section — Text overlays, image overlay, timecode overlay */}
+        <Section
+          title="Overlays"
+          isOpen={openSections.has('overlay')}
+          onToggle={() => toggleSection('overlay')}
+          badge={activeOverlays > 0 || settings.overlay.image_watermark?.enabled || settings.overlay.timecode_overlay?.enabled ? 'ACTIVE' : 'NONE'}
+          data-testid="overlays-section"
+        >
+          {/* Visual Editor Button */}
+          {onOpenVisualEditor && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onOpenVisualEditor}
+                disabled={isReadOnly || !hasQueuedJobSelected}
+                fullWidth
+                data-testid="open-visual-editor"
+              >
+                🎨 Open Visual Editor
+              </Button>
+              {!hasQueuedJobSelected && (
+                <div style={{
+                  marginTop: '0.375rem',
+                  fontSize: '0.625rem',
+                  color: 'var(--text-dim)',
+                  textAlign: 'center',
+                  fontStyle: 'italic',
+                }}>
+                  Select a queued job to enable visual editor
+                </div>
+              )}
             </div>
           )}
           
-          {!settings.metadata.strip_all_metadata && (
-            <>
-              <CheckboxField
-                label="Passthrough container metadata"
-                checked={settings.metadata.passthrough_all_container_metadata}
-                onChange={(v) => updateMetadataSettings({ passthrough_all_container_metadata: v })}
-                disabled={isReadOnly}
-              />
-              <CheckboxField
-                label="Passthrough timecode"
-                checked={settings.metadata.passthrough_timecode}
-                onChange={(v) => updateMetadataSettings({ passthrough_timecode: v })}
-                disabled={isReadOnly}
-              />
-              <CheckboxField
-                label="Passthrough reel name"
-                checked={settings.metadata.passthrough_reel_name}
-                onChange={(v) => updateMetadataSettings({ passthrough_reel_name: v })}
-                disabled={isReadOnly}
-              />
-              <CheckboxField
-                label="Passthrough camera metadata"
-                checked={settings.metadata.passthrough_camera_metadata}
-                onChange={(v) => updateMetadataSettings({ passthrough_camera_metadata: v })}
-                disabled={isReadOnly}
-              />
-              <CheckboxField
-                label="Passthrough color metadata"
-                checked={settings.metadata.passthrough_color_metadata}
-                onChange={(v) => updateMetadataSettings({ passthrough_color_metadata: v })}
-                disabled={isReadOnly}
-              />
-            </>
-          )}
-        </Section>
-        
-        {/* Watermarks Section (renamed from Overlays) */}
-        <Section
-          title="Watermarks"
-          isOpen={openSections.has('overlay')}
-          onToggle={() => toggleSection('overlay')}
-          badge={activeOverlays > 0 ? `${activeOverlays} ACTIVE` : 'NONE'}
-        >
-          <div style={{ marginBottom: '0.5rem' }}>
+          {/* Add Text Layer Button */}
+          <div style={{ marginBottom: '0.75rem' }}>
             <Button
               variant="secondary"
               size="sm"
@@ -1246,147 +1442,189 @@ export function DeliverControlPanel({
                 })
               }}
               disabled={isReadOnly}
+              fullWidth
             >
-              + Add Watermark
+              + Add Text Layer
             </Button>
           </div>
           
+          {/* Text Layers List */}
           {settings.overlay.text_layers.map((layer, index) => (
             <div 
               key={index}
               style={{
                 padding: '0.5rem',
                 marginBottom: '0.5rem',
-                border: '1px solid var(--border-primary)',
+                background: layer.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
+                border: `1px solid ${layer.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
                 borderRadius: 'var(--radius-sm)',
-                background: layer.enabled ? 'rgba(51, 65, 85, 0.2)' : 'rgba(51, 65, 85, 0.1)',
-                opacity: layer.enabled ? 1 : 0.6,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <CheckboxField
-                  label={`Layer ${index + 1}`}
-                  checked={layer.enabled}
-                  onChange={(v) => {
-                    const newLayers = [...settings.overlay.text_layers]
-                    newLayers[index] = { ...layer, enabled: v }
-                    updateOverlaySettings({ text_layers: newLayers })
-                  }}
-                  disabled={isReadOnly}
-                />
-                <button
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={layer.enabled}
+                    onChange={(e) => {
+                      const updated = [...settings.overlay.text_layers]
+                      updated[index] = { ...updated[index], enabled: e.target.checked }
+                      updateOverlaySettings({ text_layers: updated })
+                    }}
+                    disabled={isReadOnly}
+                    style={{ accentColor: 'var(--button-primary-bg)' }}
+                  />
+                  Layer {index + 1}
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
-                    const newLayers = settings.overlay.text_layers.filter((_, i) => i !== index)
-                    updateOverlaySettings({ text_layers: newLayers })
+                    const updated = settings.overlay.text_layers.filter((_, i) => i !== index)
+                    updateOverlaySettings({ text_layers: updated })
                   }}
                   disabled={isReadOnly}
-                  style={{
-                    marginLeft: 'auto',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-dim)',
-                    cursor: isReadOnly ? 'not-allowed' : 'pointer',
-                    fontSize: '0.875rem',
-                  }}
+                  style={{ padding: '0.125rem 0.375rem', fontSize: '0.625rem' }}
                 >
-                  ×
-                </button>
+                  ✕
+                </Button>
               </div>
-              
-              <FieldRow label="Text" description="Tokens: {TC}, {timecode}, {filename}, {reel}, {frame}, {date}, {source_name}">
-                <input
-                  type="text"
-                  value={layer.text}
+              <input
+                type="text"
+                value={layer.text}
+                placeholder="Enter text..."
+                onChange={(e) => {
+                  const updated = [...settings.overlay.text_layers]
+                  updated[index] = { ...updated[index], text: e.target.value }
+                  updateOverlaySettings({ text_layers: updated })
+                }}
+                disabled={isReadOnly}
+                style={{
+                  width: '100%',
+                  padding: '0.375rem 0.5rem',
+                  fontSize: '0.75rem',
+                  backgroundColor: 'var(--input-bg)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-primary)',
+                  marginBottom: '0.375rem',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '0.375rem' }}>
+                <select
+                  value={layer.position}
                   onChange={(e) => {
-                    const newLayers = [...settings.overlay.text_layers]
-                    newLayers[index] = { ...layer, text: e.target.value }
-                    updateOverlaySettings({ text_layers: newLayers })
+                    const updated = [...settings.overlay.text_layers]
+                    updated[index] = { ...updated[index], position: e.target.value }
+                    updateOverlaySettings({ text_layers: updated })
                   }}
                   disabled={isReadOnly}
-                  placeholder="{source_name} - {TC}"
                   style={{
-                    width: '100%',
-                    padding: '0.375rem 0.5rem',
-                    fontSize: '0.75rem',
-                    fontFamily: 'var(--font-mono)',
-                    background: 'var(--input-bg)',
+                    flex: 1,
+                    padding: '0.25rem',
+                    fontSize: '0.6875rem',
+                    backgroundColor: 'var(--input-bg)',
                     border: '1px solid var(--border-primary)',
                     borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
+                    color: 'var(--text-secondary)',
                   }}
-                />
-              </FieldRow>
-              
-              <FieldRow label="Position">
-                <Select
-                  value={layer.position}
-                  onChange={(v) => {
-                    const newLayers = [...settings.overlay.text_layers]
-                    newLayers[index] = { ...layer, position: v }
-                    updateOverlaySettings({ text_layers: newLayers })
+                >
+                  <option value="top_left">Top Left</option>
+                  <option value="top_center">Top Center</option>
+                  <option value="top_right">Top Right</option>
+                  <option value="bottom_left">Bottom Left</option>
+                  <option value="bottom_center">Bottom Center</option>
+                  <option value="bottom_right">Bottom Right</option>
+                </select>
+                <input
+                  type="number"
+                  value={layer.font_size}
+                  min={8}
+                  max={72}
+                  onChange={(e) => {
+                    const updated = [...settings.overlay.text_layers]
+                    updated[index] = { ...updated[index], font_size: parseInt(e.target.value) || 24 }
+                    updateOverlaySettings({ text_layers: updated })
                   }}
-                  options={WATERMARK_POSITIONS}
                   disabled={isReadOnly}
-                  fullWidth
+                  style={{
+                    width: '50px',
+                    padding: '0.25rem',
+                    fontSize: '0.6875rem',
+                    backgroundColor: 'var(--input-bg)',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-secondary)',
+                    textAlign: 'center',
+                  }}
                 />
-              </FieldRow>
-              
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <FieldRow label="Font Size">
-                  <input
-                    type="number"
-                    min="8"
-                    max="72"
-                    value={layer.font_size}
-                    onChange={(e) => {
-                      const newLayers = [...settings.overlay.text_layers]
-                      newLayers[index] = { ...layer, font_size: parseInt(e.target.value) || 24 }
-                      updateOverlaySettings({ text_layers: newLayers })
-                    }}
-                    disabled={isReadOnly}
-                    style={{
-                      width: '60px',
-                      padding: '0.375rem 0.5rem',
-                      fontSize: '0.75rem',
-                      background: 'var(--input-bg)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-primary)',
-                    }}
-                  />
-                </FieldRow>
-                <FieldRow label="Opacity">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={layer.opacity}
-                    onChange={(e) => {
-                      const newLayers = [...settings.overlay.text_layers]
-                      newLayers[index] = { ...layer, opacity: parseFloat(e.target.value) }
-                      updateOverlaySettings({ text_layers: newLayers })
-                    }}
-                    disabled={isReadOnly}
-                    style={{ width: '80px' }}
-                  />
-                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>
-                    {Math.round(layer.opacity * 100)}%
-                  </span>
-                </FieldRow>
               </div>
             </div>
           ))}
           
-          {settings.overlay.text_layers.length === 0 && (
+          {/* Image Overlay Toggle */}
+          <div style={{
+            padding: '0.5rem',
+            marginTop: '0.5rem',
+            background: settings.overlay.image_watermark?.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
+            border: `1px solid ${settings.overlay.image_watermark?.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={settings.overlay.image_watermark?.enabled || false}
+                onChange={(e) => {
+                  updateOverlaySettings({
+                    image_watermark: {
+                      ...(settings.overlay.image_watermark || { x: 0.9, y: 0.1, scale: 1.0, opacity: 1.0 }),
+                      enabled: e.target.checked
+                    }
+                  })
+                }}
+                disabled={isReadOnly}
+                style={{ accentColor: 'var(--button-primary-bg)' }}
+              />
+              Image Overlay
+            </label>
+          </div>
+          
+          {/* Timecode Overlay Toggle */}
+          <div style={{
+            padding: '0.5rem',
+            marginTop: '0.5rem',
+            background: settings.overlay.timecode_overlay?.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
+            border: `1px solid ${settings.overlay.timecode_overlay?.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={settings.overlay.timecode_overlay?.enabled || false}
+                onChange={(e) => {
+                  updateOverlaySettings({
+                    timecode_overlay: {
+                      ...(settings.overlay.timecode_overlay || { position: 'top_left', font_size: 24, opacity: 1.0, background: false }),
+                      enabled: e.target.checked
+                    }
+                  })
+                }}
+                disabled={isReadOnly}
+                style={{ accentColor: 'var(--button-primary-bg)' }}
+              />
+              Timecode Overlay
+            </label>
+          </div>
+          
+          {settings.overlay.text_layers.length === 0 && !settings.overlay.image_watermark?.enabled && !settings.overlay.timecode_overlay?.enabled && (
             <div style={{
-              padding: '1rem',
-              textAlign: 'center',
-              fontSize: '0.75rem',
+              padding: '0.5rem',
+              marginTop: '0.5rem',
+              fontSize: '0.625rem',
               color: 'var(--text-dim)',
-              fontFamily: 'var(--font-sans)',
+              textAlign: 'center',
+              fontStyle: 'italic',
             }}>
-              No watermarks configured
+              No overlays configured. Add a text layer or enable an overlay above.
             </div>
           )}
         </Section>

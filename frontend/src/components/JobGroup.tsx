@@ -12,6 +12,7 @@ import { Button } from './Button'
  * - Jobs may be collapsible, but never hidden by selection
  * - Job label uses "Job 1", "Job 2" etc. (NOT UUID)
  * - Shows: status badge, aggregate counters, drag handle
+ * - Alpha: Shows settings summary on the right side
  */
 
 interface ClipTask {
@@ -40,6 +41,15 @@ interface ClipTask {
   thumbnail?: string | null
 }
 
+// Alpha: Settings summary for job row
+interface JobSettingsSummary {
+  codec?: string
+  resolution?: string
+  fps?: string
+  audio?: string
+  container?: string
+}
+
 interface JobGroupProps {
   // Job data
   jobId: string
@@ -57,6 +67,9 @@ interface JobGroupProps {
   warningCount: number
   tasks: ClipTask[]
   
+  // Alpha: Settings summary for the job
+  settingsSummary?: JobSettingsSummary
+  
   // Interaction
   isSelected?: boolean
   onSelect?: () => void
@@ -71,6 +84,7 @@ interface JobGroupProps {
   onCancel?: () => void
   onDelete?: () => void
   onRebindPreset?: () => void
+  onEditSettings?: () => void  // Alpha: Open settings editor for this job
   
   // Drag & drop
   onDragStart?: (e: React.DragEvent) => void
@@ -103,6 +117,7 @@ export function JobGroup({
   queuedCount,
   warningCount,
   tasks,
+  settingsSummary,
   isSelected = false,
   onSelect,
   onRevealClip,
@@ -114,6 +129,7 @@ export function JobGroup({
   onCancel,
   onDelete,
   onRebindPreset,
+  onEditSettings,  // Alpha
   onDragStart,
   onDragOver,
   onDrop,
@@ -291,6 +307,34 @@ export function JobGroup({
           )}
         </div>
 
+        {/* Alpha: Settings Summary */}
+        {settingsSummary && (
+          <div
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              fontSize: '0.6875rem',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              padding: '0.25rem 0.5rem',
+              backgroundColor: 'rgba(51, 65, 85, 0.2)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+            title="Output settings for this job"
+          >
+            {settingsSummary.codec && <span>{settingsSummary.codec}</span>}
+            {settingsSummary.resolution && settingsSummary.resolution !== 'Source' && (
+              <span>• {settingsSummary.resolution}</span>
+            )}
+            {settingsSummary.fps && settingsSummary.fps !== 'Source' && (
+              <span>• {settingsSummary.fps}</span>
+            )}
+            {settingsSummary.container && (
+              <span>• .{settingsSummary.container}</span>
+            )}
+          </div>
+        )}
+
         {/* Clip count */}
         <div
           style={{
@@ -443,7 +487,19 @@ export function JobGroup({
                     🗑 Delete
                   </Button>
                 )}
-                {showRebind && (
+                {/* Alpha: Edit Settings button for PENDING jobs */}
+                {normalizedStatus === 'PENDING' && onEditSettings && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onEditSettings}
+                    disabled={loading}
+                    title="Edit output settings for this job"
+                  >
+                    ✏ Edit Settings
+                  </Button>
+                )}
+                {showRebind && !onEditSettings && (
                   <Button
                     variant="secondary"
                     size="sm"

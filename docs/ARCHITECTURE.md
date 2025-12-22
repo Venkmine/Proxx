@@ -1,3 +1,11 @@
+INACTIVE — DOES NOT DESCRIBE CURRENT PRODUCT STATE (ALPHA)
+
+PRODUCT_PROXY_V1.md
+
+QA.md (Verify principles stay, “Definition of Done” does not)
+
+NEXT_AFTER_V1.md
+
 # Awaire Proxy — Architecture Overview
 
 This document describes the current technical structure of Awaire Proxy.

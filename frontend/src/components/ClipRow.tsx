@@ -136,7 +136,7 @@ export function ClipRow({
           gap: '0.75rem',
         }}
       >
-        {/* Phase 20: Thumbnail preview */}
+        {/* Alpha: Thumbnail preview - graceful fallback on error */}
         {thumbnail && (
           <div
             style={{
@@ -151,6 +151,10 @@ export function ClipRow({
             <img
               src={thumbnail}
               alt=""
+              onError={(e) => {
+                // Hide broken image gracefully
+                (e.target as HTMLImageElement).style.display = 'none'
+              }}
               style={{
                 width: '100%',
                 height: '100%',

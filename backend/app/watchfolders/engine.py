@@ -4,6 +4,10 @@ Watch folder engine — orchestration for unattended ingestion.
 Coordinates filesystem scanning, stability checking, and job creation.
 
 This is the main entry point for watch folder processing.
+
+CANONICAL INGESTION PIPELINE:
+Watch folders use IngestionService.ingest_sources() for job creation.
+This ensures consistent validation, normalization, and settings snapshot.
 """
 
 import logging
@@ -21,6 +25,7 @@ from .errors import WatchFolderError
 
 if TYPE_CHECKING:
     from ..jobs.automation import ExecutionAutomation
+    from ..services.ingestion import IngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -53,22 +58,25 @@ class WatchFolderEngine:
         binding_registry: JobPresetBindingRegistry,
         automation_mediator: Optional["ExecutionAutomation"] = None,
         persistence_manager = None,
+        ingestion_service: Optional["IngestionService"] = None,
     ):
         """
         Initialize watch folder engine.
 
         Args:
             watch_folder_registry: Registry of watch folder configurations
-            job_engine: Job engine for creating jobs
+            job_engine: Job engine for creating jobs (legacy, used if no ingestion_service)
             binding_registry: Registry for job-preset bindings
             automation_mediator: Optional mediator for auto-execution
             persistence_manager: Optional PersistenceManager for processed files tracking
+            ingestion_service: Canonical ingestion service (preferred over job_engine)
         """
         self.watch_folder_registry = watch_folder_registry
         self.job_engine = job_engine
         self.binding_registry = binding_registry
         self.automation_mediator = automation_mediator
         self._persistence = persistence_manager
+        self.ingestion_service = ingestion_service
 
         # Initialize scanner and stability checker
         self.scanner = FileScanner(skip_hidden=True, follow_symlinks=False)
@@ -201,6 +209,10 @@ class WatchFolderEngine:
         """
         Create a job for a single file.
 
+        CANONICAL INGESTION PIPELINE:
+        Uses IngestionService.ingest_sources() when available.
+        Falls back to direct JobEngine.create_job() for backwards compatibility.
+
         Phase 11 behavior:
         - One job per file
         - Bind preset if watch_folder.preset_id is set
@@ -216,15 +228,34 @@ class WatchFolderEngine:
         Returns:
             New job (PENDING or post-execution state)
         """
-        # Create job with single source file
-        job = self.job_engine.create_job(source_paths=[str(file_path)])
-
-        # Bind preset if configured
-        if watch_folder.preset_id:
-            self.binding_registry.bind_preset(job.id, watch_folder.preset_id)
-            logger.debug(
-                f"Bound preset '{watch_folder.preset_id}' to job {job.id}"
+        # Use canonical ingestion pipeline when available
+        if self.ingestion_service:
+            from ..deliver.settings import DeliverSettings
+            
+            # Build settings from watch folder configuration
+            # TODO: Watch folders should store DeliverSettings in future
+            deliver_settings = DeliverSettings(
+                output_dir=watch_folder.output_dir if hasattr(watch_folder, 'output_dir') else None
             )
+            
+            result = self.ingestion_service.ingest_sources(
+                source_paths=[str(file_path)],
+                output_dir=getattr(watch_folder, 'output_dir', None),
+                deliver_settings=deliver_settings,
+                engine="ffmpeg",  # Watch folders default to ffmpeg
+                preset_id=watch_folder.preset_id,
+            )
+            job = result.job
+        else:
+            # Fallback: direct job creation (legacy path)
+            job = self.job_engine.create_job(source_paths=[str(file_path)])
+            
+            # Bind preset if configured
+            if watch_folder.preset_id:
+                self.binding_registry.bind_preset(job.id, watch_folder.preset_id)
+                logger.debug(
+                    f"Bound preset '{watch_folder.preset_id}' to job {job.id}"
+                )
 
         # Attempt auto-execution if enabled
         if watch_folder.auto_execute and self.automation_mediator:

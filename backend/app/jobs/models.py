@@ -139,11 +139,16 @@ class Job(BaseModel):
     # Phase 17: DeliverSettings (output dir, naming, metadata, overlays)
     # Stored as dict for Pydantic compatibility, accessed via property
     # BREAKING RENAME: settings_dict contains DeliverSettings, not JobSettings
+    # This is the immutable snapshot taken at job creation
     settings_dict: Dict[str, Any] = Field(default_factory=dict)
     
+    # Alpha: Per-job override settings (editable while PENDING)
+    # When present, execution uses these instead of settings_dict
+    override_settings_dict: Optional[Dict[str, Any]] = None
+    
     @property
-    def settings(self) -> DeliverSettings:
-        """Get DeliverSettings from stored dict."""
+    def settings_snapshot(self) -> DeliverSettings:
+        """Get the immutable settings snapshot from job creation."""
         if not self.settings_dict:
             return DEFAULT_DELIVER_SETTINGS
         # Handle legacy JobSettings format during migration
@@ -151,11 +156,56 @@ class Job(BaseModel):
             return DeliverSettings.from_legacy_job_settings(self.settings_dict)
         return DeliverSettings.from_dict(self.settings_dict)
     
+    @property
+    def override_settings(self) -> Optional[DeliverSettings]:
+        """Get per-job override settings, if any."""
+        if not self.override_settings_dict:
+            return None
+        return DeliverSettings.from_dict(self.override_settings_dict)
+    
+    @property
+    def effective_settings(self) -> DeliverSettings:
+        """Get effective settings: overrides if present, else snapshot."""
+        if self.override_settings_dict:
+            return DeliverSettings.from_dict(self.override_settings_dict)
+        return self.settings_snapshot
+    
+    @property
+    def settings(self) -> DeliverSettings:
+        """
+        Get effective settings for execution.
+        
+        Alias for effective_settings - uses overrides if present, else snapshot.
+        This is what engines should use.
+        """
+        return self.effective_settings
+    
+    def set_override_settings(self, new_settings: DeliverSettings) -> None:
+        """
+        Set per-job override settings.
+        
+        Can only be set while job.status == PENDING.
+        Does not modify the original settings_snapshot.
+        
+        Args:
+            new_settings: Override settings for this specific job
+            
+        Raises:
+            ValueError: If job is not in PENDING state
+        """
+        if self.status != JobStatus.PENDING:
+            raise ValueError(
+                f"Override settings cannot be modified after render has started. "
+                f"Current status: {self.status.value}"
+            )
+        self.override_settings_dict = new_settings.to_dict()
+    
     def update_settings(self, new_settings: DeliverSettings) -> None:
         """
-        Update job settings.
+        Update job override settings.
         
-        Phase 17: Settings are ONLY editable while job.status == PENDING.
+        Alpha: Modifies override_settings, preserving the original snapshot.
+        Settings are ONLY editable while job.status == PENDING.
         Once any clip enters RUNNING, settings are frozen.
         
         BACKEND ENFORCEMENT: This is the authoritative guard.
@@ -164,12 +214,7 @@ class Job(BaseModel):
         Raises:
             ValueError: If job is not in PENDING state
         """
-        if self.status != JobStatus.PENDING:
-            raise ValueError(
-                f"DeliverSettings cannot be modified after render has started. "
-                f"Current status: {self.status.value}"
-            )
-        self.settings_dict = new_settings.to_dict()
+        self.set_override_settings(new_settings)
     
     # Clip tasks
     tasks: List[ClipTask] = Field(default_factory=list)

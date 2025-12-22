@@ -1,13 +1,30 @@
+// Alpha scope defined in docs/ALPHA_REALITY.md.
+// Do not add features that contradict it without updating that file first.
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { TitleBar } from './components/TitleBar'
 import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
 import { CreateJobPanel } from './components/CreateJobPanel'
+import { SourceMetadataPanel } from './components/SourceMetadataPanel'
 import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
+import { VisualPreviewModal } from './components/VisualPreviewModal'
+import { VisualPreviewWorkspace } from './components/VisualPreviewWorkspace'
+import { WorkspaceLayout } from './components/WorkspaceLayout'
+import { PresetEditorHeader } from './components/PresetEditorHeader'
+import { AppFooter } from './components/AppFooter'
+import { SplashScreen } from './components/SplashScreen'
+import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { GlobalDropZone } from './components/GlobalDropZone'
-import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
+// Alpha: Copilot imports hidden (dev feature)
+// import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
+import { FEATURE_FLAGS } from './config/featureFlags'
+import { usePresets } from './hooks/usePresets'
+import { useIngestion } from './hooks/useIngestion'
+import { usePresetStore } from './stores/presetStore'
+import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 
 /**
  * Awaire Proxy Operator Control - Grouped Queue View
@@ -28,43 +45,6 @@ import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/Copilot
  * 
  * Phase 16: Full operator control with start, pause, delete, global filters.
  */
-
-/**
- * Phase 19: Format error responses to human-readable messages.
- * Prevents [object Object] errors from appearing in the UI.
- */
-function formatApiError(err: unknown): string {
-  if (err instanceof Error) {
-    return err.message
-  }
-  if (typeof err === 'string') {
-    return err
-  }
-  if (typeof err === 'object' && err !== null) {
-    // Handle structured error objects
-    const obj = err as Record<string, unknown>
-    if (typeof obj.detail === 'string') {
-      return obj.detail
-    }
-    if (typeof obj.message === 'string') {
-      return obj.message
-    }
-    if (obj.detail && typeof obj.detail === 'object') {
-      // Handle nested detail objects
-      const detail = obj.detail as Record<string, unknown>
-      if (typeof detail.msg === 'string') {
-        return detail.msg
-      }
-      if (Array.isArray(detail)) {
-        // Handle Pydantic validation errors
-        return detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ')
-      }
-      return JSON.stringify(detail)
-    }
-    return JSON.stringify(obj)
-  }
-  return 'Unknown error'
-}
 
 const BACKEND_URL = 'http://127.0.0.1:8085'
 
@@ -167,6 +147,20 @@ function matchesDateFilter(dateStr: string, filter: 'all' | 'today' | 'yesterday
 }
 
 function App() {
+  // ============================================
+  // WORKSPACE MODE — Authoritative Layout Driver
+  // ============================================
+  // WorkspaceMode is the SINGLE SOURCE OF TRUTH for layout decisions.
+  // All width, visibility, and positioning logic must reference this.
+  const { workspaceMode } = useWorkspaceModeStore()
+  
+  // Visual Preview Modal state (Phase 23)
+  const { 
+    isVisualPreviewModalOpen, 
+    openVisualPreviewModal, 
+    closeVisualPreviewModal 
+  } = usePresetStore()
+
   // Job queue state
   const [jobs, setJobs] = useState<JobSummary[]>([])
   const [jobDetails, setJobDetails] = useState<Map<string, JobDetail>>(new Map())
@@ -188,13 +182,31 @@ function App() {
   // Clip selection
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set())
 
-  // Create Job panel state (always visible in left column)
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('')
+  // ============================================
+  // CANONICAL INGESTION PIPELINE
+  // ============================================
+  // useIngestion is the SINGLE ENTRY POINT for job creation.
+  // pendingPaths = source files staged for ingestion (pre-job)
+  // activeJobId = job created after ingestion (post-job)
+  const ingestion = useIngestion(BACKEND_URL)
+  
+  // Alias for backwards compatibility with existing components
+  const selectedFiles = ingestion.pendingPaths
+  const setSelectedFiles = ingestion.setPendingPaths
+  
   const [selectedEngine, setSelectedEngine] = useState<string>('ffmpeg') // Phase 16: Engine selection
-  const [outputDirectory, setOutputDirectory] = useState<string>('')
-  const [presets, setPresets] = useState<PresetInfo[]>([])
-  const [presetError, setPresetError] = useState<string>('')
+  // Output directory - single source of truth, persisted to localStorage
+  const [outputDirectory, setOutputDirectory] = useState<string>(() => {
+    const saved = localStorage.getItem('awaire_proxy_output_directory')
+    return saved || ''
+  })
+  
+  // Alpha: Client-side preset management (localStorage)
+  const presetManager = usePresets()
+  
+  // Legacy: Backend presets (kept for backwards compatibility with existing backend)
+  const [backendPresets, setBackendPresets] = useState<PresetInfo[]>([])
+  const [_presetError, setPresetError] = useState<string>('')
 
   // Phase 16: Engine list
   interface EngineInfo {
@@ -216,11 +228,20 @@ function App() {
   // Drag state for file drop
   const [isDraggingFiles, setIsDraggingFiles] = useState<boolean>(false)
 
-  // Phase 20: Copilot Prompt window state
-  const [showCopilotPrompt, setShowCopilotPrompt] = useState<boolean>(false)
+  // Alpha: Copilot Prompt window state (hidden in Alpha, available for dev)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_showCopilotPrompt, _setShowCopilotPrompt] = useState<boolean>(false)
   
   // Phase 21: System status indicators (UI visibility)
   const [backendConnected, setBackendConnected] = useState<boolean>(true)
+  
+  // Phase 22: Splash screen state (shown on first launch / connectivity delay)
+  const [showSplash, setShowSplash] = useState<boolean>(true)
+  const [enginesLoaded, setEnginesLoaded] = useState<boolean>(false)
+  
+  // Phase 22: Discard changes confirmation dialog
+  const [discardDialogOpen, setDiscardDialogOpen] = useState<boolean>(false)
+  const [pendingPresetSwitch, setPendingPresetSwitch] = useState<(() => void) | null>(null)
 
   // ============================================
   // Phase 17: DeliverSettings State (Authoritative)
@@ -229,7 +250,7 @@ function App() {
   // Default DeliverSettings - matches backend DeliverCapabilities
   const getDefaultDeliverSettings = (): DeliverSettings => ({
     video: {
-      codec: 'h264',
+      codec: 'prores_proxy',
       resolution_policy: 'source',
       frame_rate_policy: 'source',
       pixel_aspect_ratio: 'square',
@@ -242,7 +263,7 @@ function App() {
       passthrough: true,
     },
     file: {
-      container: 'mp4',
+      container: 'mov',
       naming_template: '{source_name}_proxy',
       overwrite_policy: 'increment',
       preserve_source_dirs: false,
@@ -290,20 +311,31 @@ function App() {
   // Data Fetching
   // ============================================
 
+  // Legacy: Fetch backend presets for backwards compatibility
   const fetchPresets = async () => {
     try {
       const response = await fetch(`${BACKEND_URL}/control/presets`)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
-      setPresets(data.presets)
+      setBackendPresets(data.presets)
       setPresetError('')
     } catch (err) {
-      const msg = `Failed to load presets: ${err instanceof Error ? err.message : 'Unknown error'}`
-      setPresetError(msg)
+      // Alpha: Backend presets are optional, client-side presets are primary
+      console.warn(`Backend presets unavailable: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setPresetError('')
     }
   }
 
-  // Phase 17: Fetch DeliverSettings for a preset (populates Deliver panel)
+  // Alpha: Apply client-side preset settings to Deliver panel
+  const applyPresetSettings = (settings: DeliverSettings) => {
+    setDeliverSettings(settings)
+    const preset = presetManager.getPreset(presetManager.selectedPresetId || '')
+    setAppliedPresetName(preset?.name || null)
+  }
+
+  // Phase 17: Fetch DeliverSettings for a backend preset (legacy support)
+  // @ts-ignore - kept for potential future use
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fetchPresetDeliverSettings = async (presetId: string): Promise<boolean> => {
     try {
       const response = await fetch(`${BACKEND_URL}/control/presets/${presetId}/deliver-settings`)
@@ -323,7 +355,7 @@ function App() {
         overlay: data.overlay || prev.overlay,
       }))
       // Track applied preset for UI indicator
-      const preset = presets.find(p => p.id === presetId)
+      const preset = backendPresets.find(p => p.id === presetId)
       setAppliedPresetName(preset?.name || presetId)
       return true
     } catch (err) {
@@ -363,10 +395,12 @@ function App() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
       setEngines(data.engines)
+      setEnginesLoaded(true) // Phase 22: Mark engines as loaded for splash
     } catch (err) {
       console.error('Failed to load engines:', err)
       // Default to FFmpeg if fetch fails
       setEngines([{ type: 'ffmpeg', name: 'FFmpeg', available: true }])
+      setEnginesLoaded(true) // Phase 22: Still mark as loaded even on error
     }
   }
 
@@ -412,9 +446,31 @@ function App() {
     fetchEngines()  // Phase 16
   }, [])
 
-  // Phase 20: Global document-level drag/drop handlers for authoritative file intake
-  // Ensures drops work EVERYWHERE in the app, not just on specific elements
+  // Persist outputDirectory to localStorage when it changes
   useEffect(() => {
+    if (outputDirectory) {
+      localStorage.setItem('awaire_proxy_output_directory', outputDirectory)
+    }
+  }, [outputDirectory])
+
+  // Phase 20: Global document-level drag/drop handlers for authoritative file intake
+  // PHASE 0 STABILIZATION: Disabled behind feature flag to prevent whitescreen crashes
+  useEffect(() => {
+    // Feature flag gate: skip if drag/drop is disabled
+    if (!FEATURE_FLAGS.GLOBAL_DRAG_DROP_ENABLED) {
+      // Prevent browser default (opening files) but don't enable our drop handling
+      const preventDefaultDrop = (e: DragEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      document.addEventListener('dragover', preventDefaultDrop)
+      document.addEventListener('drop', preventDefaultDrop)
+      return () => {
+        document.removeEventListener('dragover', preventDefaultDrop)
+        document.removeEventListener('drop', preventDefaultDrop)
+      }
+    }
+
     const handleDocumentDragOver = (e: DragEvent) => {
       // Prevent browser default (which would open the file)
       e.preventDefault()
@@ -441,16 +497,18 @@ function App() {
       if (files) {
         for (let i = 0; i < files.length; i++) {
           const file = files[i]
-          const path = (file as any).path
-          if (path) {
-            newPaths.push(path)
+          // ALPHA BLOCKER FIX: Only use absolute paths from Electron
+          const filePath = (file as any).path
+          // Validate path is absolute (contains /)
+          if (filePath && filePath.includes('/')) {
+            newPaths.push(filePath)
           }
         }
       }
 
       if (newPaths.length > 0) {
         console.log('Document drop: Adding files to intake:', newPaths)
-        setSelectedFiles(prev => [...new Set([...prev, ...newPaths])])
+        ingestion.addPendingPaths(newPaths)
         setSelectedJobId(null)
       }
     }
@@ -737,12 +795,13 @@ function App() {
       const sourcePaths = detail.tasks.map(t => t.source_path)
       
       // Create a new job with the same settings
+      // Alpha: preset_id is optional
       const response = await fetch(`${BACKEND_URL}/control/jobs/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           source_paths: sourcePaths,
-          preset_id: selectedPresetId || 'default',
+          preset_id: presetManager.selectedPresetId || null,
           engine: selectedEngine,
           deliver_settings: jobDeliverSettings,
         }),
@@ -778,74 +837,34 @@ function App() {
   }
 
   // ============================================
-  // Create Job
+  // Create Job — Canonical Ingestion Pipeline
   // ============================================
 
   const createManualJob = async () => {
-    // Validation with visible feedback
-    if (!selectedFiles.length) {
-      setError('Please select at least one source file')
-      return
-    }
-    if (!selectedPresetId) {
-      setError('Please select a preset')
+    // Determine effective output directory
+    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
+    
+    // Use canonical ingestion pipeline
+    const result = await ingestion.ingest({
+      sourcePaths: selectedFiles,
+      outputDir: effectiveOutputDir,
+      deliverSettings: deliverSettings,
+      engine: selectedEngine,
+      presetId: presetManager.selectedPresetId,
+    })
+    
+    if (!result.success) {
+      setError(`Failed to create job: ${result.error}`)
       return
     }
     
-    // Determine effective output directory
-    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || null
-    if (!effectiveOutputDir) {
-      setError('Please choose an output directory')
-      return
-    }
-
-    // Phase 17: No confirmation for routine actions
-    try {
-      setLoading(true)
-      setError('')  // Clear any previous errors
-      
-      // Proxy v1: Use complete DeliverSettings from the Deliver panel
-      // (colour settings intentionally excluded - not supported in v1)
-      const jobDeliverSettings = {
-        output_dir: effectiveOutputDir,
-        video: deliverSettings.video,
-        audio: deliverSettings.audio,
-        file: deliverSettings.file,
-        metadata: deliverSettings.metadata,
-        overlay: deliverSettings.overlay,
-      }
-      
-      const response = await fetch(`${BACKEND_URL}/control/jobs/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source_paths: selectedFiles,
-          preset_id: selectedPresetId,
-          engine: selectedEngine,
-          deliver_settings: jobDeliverSettings,
-        }),
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(formatApiError(errorData))
-      }
-      const result = await response.json()
-      
-      // Phase 17: Clear form but keep Deliver panel values as starting point for next job
-      setSelectedFiles([])
-      setSelectedPresetId('')
-      setOutputDirectory('')
-      setAppliedPresetName(null)
-      
-      // Fetch jobs and select the newly created one
-      await fetchJobs()
-      setSelectedJobId(result.job_id)
-      
-    } catch (err) {
-      setError(`Failed to create job: ${formatApiError(err)}`)
-    } finally {
-      setLoading(false)
-    }
+    // Success: clear preset selection, keep output directory
+    presetManager.selectPreset(null)
+    setAppliedPresetName(null)
+    
+    // Fetch jobs and select the newly created one
+    await fetchJobs()
+    setSelectedJobId(result.jobId)
   }
 
   // ============================================
@@ -853,16 +872,22 @@ function App() {
   // ============================================
 
   const selectFiles = async () => {
+    console.log('[App] selectFiles called, hasElectron:', hasElectron)
+    console.log('[App] window.electron:', window.electron)
     if (!hasElectron) {
       alert('File picker requires Electron runtime')
       return
     }
     try {
+      console.log('[App] Calling window.electron.openFiles()...')
       const paths = await window.electron!.openFiles()
+      console.log('[App] openFiles returned:', paths)
       if (paths.length > 0) {
         setSelectedFiles(paths)
+        console.log('[App] Files selected:', paths)
       }
     } catch (err) {
+      console.error('[App] File selection error:', err)
       setError(`File selection failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
@@ -910,20 +935,18 @@ function App() {
   }
 
   // ============================================
-  // Phase 17: Preset Selection → Deliver Panel Sync
+  // Alpha: Preset Selection → Deliver Panel Sync
   // ============================================
   
-  const handlePresetChange = async (presetId: string) => {
-    setSelectedPresetId(presetId)
-    if (presetId) {
-      // Fetch preset's deliver settings and populate panel
-      // Preset is a one-time initializer, not authority
-      await fetchPresetDeliverSettings(presetId)
-    } else {
-      // No preset selected, clear applied indicator
-      setAppliedPresetName(null)
-    }
-  }
+  // Alpha: Handle backend preset selection (legacy compatibility)
+  // Disabled for now - uncomment when needed
+  // const handlePresetChange = async (presetId: string) => {
+  //   if (presetId) {
+  //     await fetchPresetDeliverSettings(presetId)
+  //   } else {
+  //     setAppliedPresetName(null)
+  //   }
+  // }
   
   // Handle deliver settings changes from the panel
   const handleDeliverSettingsChange = (updates: Partial<typeof deliverSettings>) => {
@@ -937,11 +960,99 @@ function App() {
       if (updates.output_dir !== undefined) newSettings.output_dir = updates.output_dir
       return newSettings
     })
+    // Mark preset as dirty when settings are edited
+    if (presetManager.editingPresetId) {
+      presetManager.markDirty()
+    }
     // Clear preset indicator on any manual edit
     if (appliedPresetName && deliverContext.type !== 'job-pending') {
       setAppliedPresetName(null)
     }
   }
+
+  // ============================================
+  // Phase 22: Preset Editor Header Callbacks
+  // ============================================
+  
+  // Handle discard changes confirmation
+  const handleConfirmDiscardChanges = useCallback((onConfirm: () => void) => {
+    if (presetManager.isDirty) {
+      setPendingPresetSwitch(() => onConfirm)
+      setDiscardDialogOpen(true)
+    } else {
+      onConfirm()
+    }
+  }, [presetManager.isDirty])
+  
+  // Confirm discard and execute pending action
+  const handleDiscardConfirmed = useCallback(() => {
+    setDiscardDialogOpen(false)
+    presetManager.clearDirty()
+    if (pendingPresetSwitch) {
+      pendingPresetSwitch()
+      setPendingPresetSwitch(null)
+    }
+  }, [pendingPresetSwitch, presetManager])
+  
+  // Cancel discard
+  const handleDiscardCancelled = useCallback(() => {
+    setDiscardDialogOpen(false)
+    setPendingPresetSwitch(null)
+  }, [])
+  
+  // Save current settings to active preset
+  const handleSavePreset = useCallback(() => {
+    if (presetManager.selectedPresetId) {
+      return presetManager.savePreset(deliverSettings)
+    }
+    return false
+  }, [presetManager, deliverSettings])
+  
+  // Save As: Create new preset with current settings
+  const handleSaveAsPreset = useCallback((name: string) => {
+    const result = presetManager.createPreset(name, deliverSettings)
+    if ('error' in result) {
+      console.error('Failed to create preset:', result.error)
+      return
+    }
+    presetManager.selectPreset(result.id)
+    setAppliedPresetName(name)
+  }, [presetManager, deliverSettings])
+  
+  // Duplicate a preset
+  const handleDuplicatePreset = useCallback((id: string, newName?: string) => {
+    presetManager.duplicatePreset(id, newName)
+  }, [presetManager])
+  
+  // Export all presets (download JSON)
+  const handleExportPresets = useCallback(() => {
+    const json = presetManager.exportPresets()
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'awaire_proxy_presets.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [presetManager])
+  
+  // Import presets (from file input)
+  const handleImportPresets = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) {
+        const text = await file.text()
+        const result = presetManager.importPresets(text)
+        if (!result.success) {
+          console.error('Import failed:', result.error)
+        }
+      }
+    }
+    input.click()
+  }, [presetManager])
 
   // ============================================
   // Status Filter Toggle (per-job clip filtering)
@@ -1161,59 +1272,21 @@ function App() {
     }
   }, [])
 
-  const handleGlobalDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+  // Alpha: Separate handlers for the two drop zones
+  const handleDropSourceFiles = useCallback((paths: string[]) => {
     setIsDraggingFiles(false)
-
-    const newPaths: string[] = []
-    
-    // Phase 20: Authoritative drop handler - extract file paths robustly
-    // Works in Electron where file.path contains absolute path
-    const items = e.dataTransfer.items
-    if (items && items.length > 0) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        if (item.kind === 'file') {
-          const file = item.getAsFile()
-          if (file) {
-            // In Electron, file.path contains the absolute path
-            const path = (file as any).path
-            if (path) {
-              newPaths.push(path)
-            } else {
-              // Fallback: use file name if no absolute path (web context)
-              console.warn('Drop: No absolute path available for:', file.name)
-            }
-          }
-        }
-      }
-    } else {
-      // Fallback for files property
-      const files = e.dataTransfer.files
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        const path = (file as any).path
-        if (path) {
-          newPaths.push(path)
-        }
-      }
-    }
-
-    console.log('GlobalDrop: Extracted paths:', newPaths)
-
-    if (newPaths.length > 0) {
-      // Add dropped files to selected files
-      setSelectedFiles(prev => {
-        const combined = [...prev, ...newPaths]
-        // Deduplicate
-        return [...new Set(combined)]
-      })
-      // Clear any job selection - we're now in "create new job" mode
+    if (paths.length > 0) {
+      ingestion.addPendingPaths(paths)
       setSelectedJobId(null)
-      console.log(`GlobalDrop: Added ${newPaths.length} file(s) to intake`)
-    } else {
-      console.warn('GlobalDrop: No valid file paths extracted from drop')
+      console.log(`GlobalDrop: Added ${paths.length} source file(s)`)
+    }
+  }, [ingestion])
+
+  const handleDropOutputDirectory = useCallback((dir: string) => {
+    setIsDraggingFiles(false)
+    if (dir) {
+      setOutputDirectory(dir)
+      console.log(`GlobalDrop: Set output directory to ${dir}`)
     }
   }, [])
 
@@ -1323,7 +1396,7 @@ function App() {
       <header
         data-testid="app-header"
         style={{
-          padding: '0.875rem 1.5rem',
+          padding: '0.5rem 1.5rem',
           borderBottom: '1px solid var(--border-primary)',
           background: 'linear-gradient(180deg, rgba(30, 41, 59, 0.6) 0%, rgba(20, 22, 26, 0.95) 100%)',
           display: 'flex',
@@ -1352,31 +1425,31 @@ function App() {
             fontSize: '0.6875rem',
             fontFamily: 'var(--font-sans)',
             color: 'var(--text-dim)',
+            alignItems: 'center',
           }}>
             <span 
               data-testid="backend-status"
               style={{ color: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)' }}
             >
-              {backendConnected ? '● Backend connected' : '○ Backend disconnected'}
+              {backendConnected ? '● Connected' : '○ Disconnected'}
             </span>
-            <span>
-              Engine: {engines.find(e => e.type === selectedEngine)?.name || 'FFmpeg'}
-            </span>
-            <span>
-              Mode: Manual jobs only
+            <span style={{
+              padding: '0.125rem 0.375rem',
+              fontSize: '0.5625rem',
+              fontWeight: 600,
+              color: 'var(--text-dim)',
+              background: 'rgba(251, 191, 36, 0.15)',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+              borderRadius: 'var(--radius-sm)',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+            }}>
+              Alpha
             </span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {/* Phase 20: Copilot Prompt button */}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setShowCopilotPrompt(true)}
-            title="Open Copilot Prompt window"
-          >
-            ✦ Copilot Prompt
-          </Button>
+          {/* Alpha: Copilot Prompt button hidden (dev feature) */}
           {pendingJobCount > 0 && (
             <Button 
               data-testid="render-all-button"
@@ -1390,41 +1463,6 @@ function App() {
           )}
         </div>
       </header>
-      
-      {/* Proxy v1: Single module - Proxies only */}
-      <nav
-        style={{
-          display: 'flex',
-          gap: '0',
-          borderBottom: '1px solid var(--border-primary)',
-          background: 'rgba(20, 24, 32, 0.95)',
-          paddingLeft: '1rem',
-          alignItems: 'stretch',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.5rem 1rem',
-            borderBottom: '2px solid var(--button-primary-bg)',
-            cursor: 'pointer',
-          }}
-        >
-          <span
-            style={{
-              color: 'var(--text-primary)',
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              fontFamily: 'var(--font-sans)',
-            }}
-          >
-            Proxies
-          </span>
-        </div>
-      </nav>
 
       {/* Error Banner */}
       {error && (
@@ -1447,7 +1485,33 @@ function App() {
         </div>
       )}
 
-      {/* Phase 20: Three-Column Layout (LEFT: Sources, CENTER: Queue, RIGHT: Deliver) */}
+      {/* ============================================ */}
+      {/* WORKSPACE LAYOUT — 4-Region Persistent Layout */}
+      {/* ============================================ */}
+      {/* 
+        Phase 24: 4-region persistent workspace layout.
+        
+        LEFT SIDEBAR (fixed ~320px):
+        - Sources panel
+        - Volumes panel (placeholder)
+        - Drag-and-drop ingestion
+        
+        CENTRE TOP (flexible, 70% default):
+        - VisualPreviewWorkspace (always visible)
+        - No modal behavior, no close button
+        
+        CENTRE BOTTOM (flexible, 30% default):
+        - Queue panel
+        - Horizontal draggable splitter above
+        
+        RIGHT SIDEBAR (fixed ~380px):
+        - DeliverControlPanel
+        - Preset selector + CRUD
+        - File naming, metadata, video, audio settings
+        
+        Desktop-only layout. Minimum width: 1280px.
+        Splitter ratio persists in localStorage.
+      */}
       <div 
         ref={appContainerRef}
         tabIndex={0}
@@ -1457,236 +1521,293 @@ function App() {
           flex: 1,
           display: 'flex',
           overflow: 'hidden',
-          outline: 'none', // Remove focus outline
+          outline: 'none',
+          minWidth: '1280px',
         }}
       >
-        {/* Global Drop Zone Overlay */}
-        <GlobalDropZone
-          isVisible={isDraggingFiles}
-          onDrop={handleGlobalDrop}
-          onDragLeave={handleGlobalDragLeave}
+        {/* Global Drop Zone Overlay - PHASE 0: Disabled behind feature flag */}
+        {FEATURE_FLAGS.GLOBAL_DRAG_DROP_ENABLED && (
+          <GlobalDropZone
+            isVisible={isDraggingFiles}
+            onDropFiles={handleDropSourceFiles}
+            onDropOutputDirectory={handleDropOutputDirectory}
+            onDragLeave={handleGlobalDragLeave}
+          />
+        )}
+        
+        {/* 4-Region Workspace Layout */}
+        <WorkspaceLayout
+          leftSidebar={
+            /* LEFT SIDEBAR: Sources + Metadata */
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <CreateJobPanel
+                isVisible={true}
+                onToggleVisibility={() => {}}
+                selectedFiles={selectedFiles}
+                onFilesChange={setSelectedFiles}
+                onSelectFilesClick={selectFiles}
+                engines={engines}
+                selectedEngine={selectedEngine}
+                onEngineChange={setSelectedEngine}
+                outputDirectory={outputDirectory}
+                onOutputDirectoryChange={setOutputDirectory}
+                onSelectFolderClick={selectOutputFolder}
+                pathFavorites={pathFavorites}
+                onAddFavorite={addPathFavorite}
+                onRemoveFavorite={removePathFavorite}
+                onCreateJob={createManualJob}
+                onClear={() => {
+                  ingestion.clearPendingPaths()
+                  setOutputDirectory('')
+                }}
+                loading={loading || ingestion.isIngesting}
+                hasElectron={hasElectron}
+                workspaceMode={workspaceMode}
+              />
+              
+              {/* Source Metadata Panel */}
+              <SourceMetadataPanel
+                sourceFilePath={
+                  // Show selected job's first task source OR first selected file
+                  selectedJobId
+                    ? jobDetails.get(selectedJobId)?.tasks?.[0]?.source_path || selectedFiles[0]
+                    : selectedFiles[0]
+                }
+                backendUrl={BACKEND_URL}
+                isVisible={selectedFiles.length > 0 || selectedJobId !== null}
+              />
+            </div>
+          }
+          rightSidebar={
+            /* RIGHT SIDEBAR: DeliverControlPanel + Presets */
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              {/* Preset Editor Header */}
+              <PresetEditorHeader
+                presets={presetManager.presets}
+                selectedPresetId={presetManager.selectedPresetId}
+                isDirty={presetManager.isDirty}
+                onSelectPreset={(id) => {
+                  if (id) {
+                    const preset = presetManager.getPreset(id)
+                    if (preset) {
+                      applyPresetSettings(preset.settings)
+                    }
+                  }
+                  presetManager.selectPreset(id)
+                }}
+                onRenamePreset={presetManager.renamePreset}
+                onSavePreset={handleSavePreset}
+                onSaveAsPreset={handleSaveAsPreset}
+                onDeletePreset={presetManager.deletePreset}
+                onDuplicatePreset={handleDuplicatePreset}
+                onExportPresets={handleExportPresets}
+                onImportPresets={handleImportPresets}
+                onConfirmDiscardChanges={handleConfirmDiscardChanges}
+                disabled={isDeliverReadOnly}
+              />
+              
+              {/* DeliverControlPanel */}
+              <DeliverControlPanel
+                context={deliverContext}
+                settings={deliverSettings}
+                onSettingsChange={handleDeliverSettingsChange}
+                isReadOnly={isDeliverReadOnly || workspaceMode === 'execute'}
+                backendUrl={BACKEND_URL}
+                appliedPresetName={appliedPresetName}
+                onOpenVisualEditor={openVisualPreviewModal}
+                hasQueuedJobSelected={!!selectedJobId && jobs.some(j => j.id === selectedJobId)}
+              />
+            </div>
+          }
+          centreTop={
+            /* CENTRE TOP: VisualPreviewWorkspace — Single Source of Truth for Preview */
+            /* CANONICAL INGESTION PIPELINE: Preview binds to activeJob.tasks[0] when job selected,
+               otherwise falls back to pendingPaths[0] for pre-job preview */
+            <VisualPreviewWorkspace
+              sourceFilePath={
+                selectedJobId
+                  ? jobDetails.get(selectedJobId)?.tasks?.[0]?.source_path
+                  : selectedFiles.length > 0
+                    ? selectedFiles[0]
+                    : undefined
+              }
+              hasSource={selectedJobId !== null || selectedFiles.length > 0}
+              onOpenVisualEditor={openVisualPreviewModal}
+              backendUrl={BACKEND_URL}
+              overlaySettings={deliverSettings.overlay}
+              onOverlaySettingsChange={(overlay) => handleDeliverSettingsChange({ overlay })}
+              outputSummary={{
+                codec: deliverSettings.video?.codec?.toUpperCase(),
+                container: deliverSettings.file?.container,
+                resolution: deliverSettings.video?.resolution_policy === 'source' ? 'Source' : deliverSettings.video?.resolution_policy,
+                fps: deliverSettings.video?.frame_rate_policy === 'source' ? 'Source' : deliverSettings.video?.frame_rate_policy,
+              }}
+            />
+          }
+          centreBottom={
+            /* CENTRE BOTTOM: Queue Panel */
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              {/* Queue Filter Bar */}
+              <QueueFilterBar
+                activeStatusFilters={globalStatusFilters}
+                onToggleStatusFilter={toggleGlobalStatusFilter}
+                onClearStatusFilters={clearGlobalStatusFilters}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                dateFilter={dateFilter}
+                onDateFilterChange={setDateFilter}
+                statusCounts={statusCounts}
+              />
+
+              {/* Queue Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '0.5rem 0.75rem',
+                  borderBottom: '1px solid var(--border-secondary)',
+                  background: 'rgba(26, 32, 44, 0.6)',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  Queue ({filteredJobs.length})
+                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {selectedClipIds.size > 0 && (
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                      {selectedClipIds.size} clip(s)
+                    </span>
+                  )}
+                  {/* Render Jobs button - starts all pending jobs */}
+                  {jobs.filter(j => j.status.toUpperCase() === 'PENDING').length > 0 && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={async () => {
+                        // Start all pending jobs
+                        const pendingJobs = jobs.filter(j => j.status.toUpperCase() === 'PENDING')
+                        for (const job of pendingJobs) {
+                          await startJob(job.id)
+                        }
+                      }}
+                      disabled={loading}
+                      data-testid="render-jobs-btn"
+                    >
+                      ▶ Render Jobs ({jobs.filter(j => j.status.toUpperCase() === 'PENDING').length})
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Job Groups */}
+              <div style={{ padding: '0.5rem', flex: 1, overflow: 'auto' }}>
+                {filteredJobs.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '1.5rem 0.75rem',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    {allOrderedJobs.length === 0 ? (
+                      <>
+                        <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem', opacity: 0.3 }}>📁</div>
+                        <div style={{ fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 600 }}>No jobs in queue</div>
+                        <div style={{ fontSize: '0.6875rem', lineHeight: 1.5 }}>
+                          Add files in the left panel and click "Add to Queue"
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: '0.75rem', marginBottom: '0.25rem' }}>No matching jobs</div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => {
+                            clearGlobalStatusFilters()
+                            setSearchQuery('')
+                            setDateFilter('all')
+                          }}
+                          style={{ marginTop: '0.5rem' }}
+                        >
+                          Clear Filters
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  filteredJobs.map((job, index) => {
+                    const detail = jobDetails.get(job.id)
+                    return (
+                      <JobGroup
+                        key={job.id}
+                        jobId={job.id}
+                        jobNumber={index + 1}
+                        status={job.status}
+                        createdAt={job.created_at}
+                        startedAt={job.started_at}
+                        completedAt={job.completed_at}
+                        totalTasks={job.total_tasks}
+                        completedCount={job.completed_count}
+                        failedCount={job.failed_count}
+                        skippedCount={job.skipped_count}
+                        runningCount={job.running_count}
+                        queuedCount={job.queued_count}
+                        warningCount={job.warning_count}
+                        tasks={detail?.tasks || []}
+                        isSelected={selectedJobId === job.id}
+                        onSelect={() => {
+                          setSelectedJobId(job.id === selectedJobId ? null : job.id)
+                          setSelectedClipIds(new Set())
+                          setActiveStatusFilters(new Set())
+                        }}
+                        onRevealClip={hasElectron ? revealInFolder : undefined}
+                        onStart={() => startJob(job.id)}
+                        onPause={() => pauseJob(job.id)}
+                        onResume={() => resumeJob(job.id)}
+                        onRetryFailed={() => retryFailedClips(job.id)}
+                        onRequeue={() => requeueJob(job.id)}
+                        onCancel={() => cancelJob(job.id)}
+                        onDelete={() => deleteJob(job.id)}
+                        onRebindPreset={() => setSelectedJobId(job.id)}
+                        onDragStart={handleJobDragStart(job.id)}
+                        onDragOver={handleJobDragOver(job.id)}
+                        onDrop={handleJobDrop(job.id)}
+                        isDragging={draggedJobId === job.id}
+                        loading={loading}
+                        activeStatusFilters={selectedJobId === job.id ? activeStatusFilters : new Set()}
+                        onToggleStatusFilter={toggleStatusFilter}
+                        selectedClipIds={selectedJobId === job.id ? selectedClipIds : new Set()}
+                        onClipClick={handleClipClick}
+                      />
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          }
         />
         
-        {/* LEFT Column: Sources (full height) */}
-        <aside style={{
-          width: '280px',
-          minWidth: '260px',
-          maxWidth: '320px',
-          borderRight: '1px solid var(--border-primary)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
-        }}>
-          {/* Source Files + Preset Selection */}
-          <CreateJobPanel
-            isVisible={true}
-            onToggleVisibility={() => {}} // Always visible in new layout
-            selectedFiles={selectedFiles}
-            onFilesChange={setSelectedFiles}
-            onSelectFilesClick={selectFiles}
-            presets={presets}
-            selectedPresetId={selectedPresetId}
-            onPresetChange={handlePresetChange}
-            presetError={presetError}
-            engines={engines}
-            selectedEngine={selectedEngine}
-            onEngineChange={setSelectedEngine}
-            outputDirectory={outputDirectory}
-            onOutputDirectoryChange={setOutputDirectory}
-            onSelectFolderClick={selectOutputFolder}
-            pathFavorites={pathFavorites}
-            onAddFavorite={addPathFavorite}
-            onRemoveFavorite={removePathFavorite}
-            onCreateJob={createManualJob}
-            onClear={() => {
-              setSelectedFiles([])
-              setSelectedPresetId('')
-              setOutputDirectory('')
-              setAppliedPresetName(null)
-            }}
-            loading={loading}
-            hasElectron={hasElectron}
-            backendUrl={BACKEND_URL}
-          />
-        </aside>
-        
-        {/* CENTER Column: Render Queue (full height, primary interaction) */}
-        <main
-          style={{
-            flex: 1,
-            overflow: 'auto',
-            padding: '0',
-            position: 'relative',
-            minWidth: '400px',
+        {/* Visual Preview Modal — unified visual editing workspace */}
+        <VisualPreviewModal
+          isOpen={isVisualPreviewModalOpen}
+          onClose={closeVisualPreviewModal}
+          settings={deliverSettings.overlay}
+          onChange={(overlay) => {
+            handleDeliverSettingsChange({ overlay })
+            presetManager.markDirty()
           }}
-        >
-          {/* Global Filter Bar */}
-          <QueueFilterBar
-            activeStatusFilters={globalStatusFilters}
-            onToggleStatusFilter={toggleGlobalStatusFilter}
-            onClearStatusFilters={clearGlobalStatusFilters}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            dateFilter={dateFilter}
-            onDateFilterChange={setDateFilter}
-            statusCounts={statusCounts}
-          />
-
-          {/* Queue Header */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0.75rem 1.5rem',
-              borderBottom: '1px solid var(--border-secondary)',
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              fontSize: '0.9375rem',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-            }}
-          >
-            Render Queue ({filteredJobs.length}{filteredJobs.length !== allOrderedJobs.length ? ` of ${allOrderedJobs.length}` : ''})
-          </h2>
-          {selectedClipIds.size > 0 && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              {selectedClipIds.size} clip(s) selected
-            </span>
-          )}
-        </div>
-
-        {/* Job Groups */}
-        <div style={{ padding: '1rem 1.5rem' }}>
-          {filteredJobs.length === 0 ? (
-            <div
-              style={{
-                textAlign: 'center',
-                padding: '3rem',
-                color: 'var(--text-muted)',
-              }}
-            >
-              {allOrderedJobs.length === 0 ? (
-                <>
-                  <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.3 }}>📁</div>
-                  <div style={{ fontSize: '1rem', marginBottom: '0.5rem', fontWeight: 600 }}>No jobs in queue</div>
-                  <div style={{ fontSize: '0.875rem', lineHeight: 1.6 }}>
-                    Drag files into the Sources panel, or click "Select Files" to add media.
-                    <br />
-                    Then choose a preset and click "Add to Queue" to create a proxy job.
-                  </div>
-                  <div style={{ 
-                    marginTop: '1.5rem', 
-                    padding: '1rem', 
-                    backgroundColor: 'rgba(51, 65, 85, 0.15)',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-dim)',
-                  }}>
-                    <strong>What is Awaire Proxy?</strong>
-                    <br />
-                    A standalone proxy generation app. Add source files, configure deliver settings, and render proxies for editing.
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>No matching jobs</div>
-                  <div style={{ fontSize: '0.875rem' }}>
-                    Try adjusting your filters or search query.
-                  </div>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => {
-                      clearGlobalStatusFilters()
-                      setSearchQuery('')
-                      setDateFilter('all')
-                    }}
-                    style={{ marginTop: '1rem' }}
-                  >
-                    Clear Filters
-                  </Button>
-                </>
-              )}
-            </div>
-          ) : (
-            filteredJobs.map((job, index) => {
-              const detail = jobDetails.get(job.id)
-              return (
-                <JobGroup
-                  key={job.id}
-                  jobId={job.id}
-                  jobNumber={index + 1} // Sequential label: "Job 1", "Job 2", etc.
-                  status={job.status}
-                  createdAt={job.created_at}
-                  startedAt={job.started_at}
-                  completedAt={job.completed_at}
-                  totalTasks={job.total_tasks}
-                  completedCount={job.completed_count}
-                  failedCount={job.failed_count}
-                  skippedCount={job.skipped_count}
-                  runningCount={job.running_count}
-                  queuedCount={job.queued_count}
-                  warningCount={job.warning_count}
-                  tasks={detail?.tasks || []}
-                  isSelected={selectedJobId === job.id}
-                  onSelect={() => {
-                    setSelectedJobId(job.id === selectedJobId ? null : job.id)
-                    setSelectedClipIds(new Set())
-                    setActiveStatusFilters(new Set())
-                  }}
-                  onRevealClip={hasElectron ? revealInFolder : undefined}
-                  onStart={() => startJob(job.id)}
-                  onPause={() => pauseJob(job.id)}
-                  onResume={() => resumeJob(job.id)}
-                  onRetryFailed={() => retryFailedClips(job.id)}
-                  onRequeue={() => requeueJob(job.id)}
-                  onCancel={() => cancelJob(job.id)}
-                  onDelete={() => deleteJob(job.id)}
-                  onRebindPreset={() => {
-                    // Select job to edit its settings in the DeliverControlPanel
-                    setSelectedJobId(job.id)
-                  }}
-                  onDragStart={handleJobDragStart(job.id)}
-                  onDragOver={handleJobDragOver(job.id)}
-                  onDrop={handleJobDrop(job.id)}
-                  isDragging={draggedJobId === job.id}
-                  loading={loading}
-                  activeStatusFilters={selectedJobId === job.id ? activeStatusFilters : new Set()}
-                  onToggleStatusFilter={toggleStatusFilter}
-                  selectedClipIds={selectedJobId === job.id ? selectedClipIds : new Set()}
-                  onClipClick={handleClipClick}
-                />
-              )
-            })
-          )}
-        </div>
-        </main>
-        
-        {/* RIGHT Column: Deliver (full height, scrollable independently) */}
-        <aside style={{
-          width: '320px',
-          minWidth: '280px',
-          maxWidth: '380px',
-          borderLeft: '1px solid var(--border-primary)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
-        }}>
-          <DeliverControlPanel
-            context={deliverContext}
-            settings={deliverSettings}
-            onSettingsChange={handleDeliverSettingsChange}
-            isReadOnly={isDeliverReadOnly}
-            backendUrl={BACKEND_URL}
-            appliedPresetName={appliedPresetName}
-          />
-        </aside>
+          sourceClipName={selectedFiles.length > 0 ? selectedFiles[0].split('/').pop() : 'No source selected'}
+          disabled={isDeliverReadOnly}
+        />
       </div>
       
       {/* Undo Toast (Phase 19) */}
@@ -1696,13 +1817,45 @@ function App() {
         duration={5000}
       />
       
-      {/* Phase 20: Copilot Prompt Window */}
+      {/* Phase 22: App Footer - visually quiet status bar */}
+      <AppFooter
+        version="ALPHA"
+        tier="Basic"
+        engines={{
+          ffmpeg: engines.some(e => e.type === 'ffmpeg' && e.available),
+          resolve: engines.some(e => e.type === 'resolve' && e.available),
+        }}
+      />
+      
+      {/* Phase 22: Discard Changes Confirmation Dialog */}
+      <DiscardChangesDialog
+        isOpen={discardDialogOpen}
+        onDiscard={handleDiscardConfirmed}
+        onCancel={handleDiscardCancelled}
+        presetName={presetManager.selectedPresetId 
+          ? presetManager.getPreset(presetManager.selectedPresetId)?.name 
+          : undefined}
+      />
+      
+      {/* Phase 22: Splash Screen - shown during startup/engine detection */}
+      {showSplash && (
+        <SplashScreen
+          isReady={enginesLoaded && backendConnected}
+          ffmpegAvailable={engines.some(e => e.type === 'ffmpeg' && e.available)}
+          resolveAvailable={engines.some(e => e.type === 'resolve' && e.available)}
+          tier="Basic"
+          onDismiss={() => setShowSplash(false)}
+        />
+      )}
+      
+      {/* Alpha: Copilot Prompt Window hidden (dev feature)
       {showCopilotPrompt && (
         <>
           <CopilotPromptBackdrop isOpen={showCopilotPrompt} onClick={() => setShowCopilotPrompt(false)} />
           <CopilotPromptWindow isOpen={showCopilotPrompt} onClose={() => setShowCopilotPrompt(false)} />
         </>
       )}
+      */}
     </div>
   )
 }
