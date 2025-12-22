@@ -858,6 +858,9 @@ function App() {
       return
     }
     
+    // Phase 3: Clear selected files after successful job creation
+    setSelectedFiles([])
+    
     // Success: clear preset selection, keep output directory
     presetManager.selectPreset(null)
     setAppliedPresetName(null)

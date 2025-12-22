@@ -7,7 +7,7 @@ import { Select } from './Select'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 
 /**
- * CreateJobPanel component - Sources panel (Alpha).
+ * CreateJobPanel component - Sources panel (Phase 3: UX Clarity).
  * 
  * ⚠️ VERIFY GUARD:
  * Any change to this component requires Playwright coverage.
@@ -15,17 +15,17 @@ import type { WorkspaceMode } from '../stores/workspaceModeStore'
  *        qa/verify/ui/proxy/validation_errors.spec.ts
  * Run: make verify-ui before committing changes.
  * 
- * Per design requirements:
- * - File selection for manual job creation
- * - Full height left column
- * - Supports drag & drop for files
- * - Favorites moved to collapsible utility section
+ * Phase 3 improvements:
+ * - Clearer labels: "Add to Queue" becomes explicit job creation
+ * - Immediate feedback when job is created
+ * - File selection paths unchanged (working ingestion pipeline preserved)
+ * - Drag & drop unchanged (working ingestion pipeline preserved)
  * 
- * Alpha scope:
- * - File selection (required)
+ * Architecture:
+ * - File selection (Electron: file picker, Browser: manual path entry)
  * - Output directory (required)
  * - Engine selection (FFmpeg only)
- * - Sources implicitly use the currently active preset
+ * - "Add to Queue" triggers useIngestion.ingest() → job appears in queue
  * 
  * LAYOUT RULE: This component receives space from App.tsx.
  * It MUST NOT set its own max-width or decide its visibility.
@@ -739,18 +739,33 @@ export function CreateJobPanel({
                 onClick={onCreateJob}
                 disabled={!canCreate}
                 loading={loading}
-                title={isDesignMode ? 'Exit design mode to queue jobs' : undefined}
+                title={isDesignMode ? 'Exit design mode to queue jobs' : 'Create job from selected files'}
               >
-                + Add to Queue
+                + Create Job
               </Button>
               <Button
                 variant="secondary"
                 size="md"
                 onClick={onClear}
                 disabled={loading}
+                title="Clear selected files and output directory"
               >
                 Clear
               </Button>
+            </div>
+            {/* Phase 3: Show feedback hint */}
+            <div
+              style={{
+                fontSize: '0.6875rem',
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-sans)',
+                fontStyle: 'italic',
+              }}
+            >
+              {canCreate 
+                ? 'Job will appear in the queue immediately'
+                : 'Select files and output directory to create job'
+              }
             </div>
           </div>
         </div>
@@ -764,7 +779,10 @@ export function CreateJobPanel({
             fontStyle: 'italic',
           }}
         >
-          Drop source media above, or use Select Files to browse.
+          {hasElectron 
+            ? 'Drop source media above, use Select Files, or click "Create Job"'
+            : 'Enter file paths above, then click "Create Job"'
+          }
         </div>
       </div>
     </div>
