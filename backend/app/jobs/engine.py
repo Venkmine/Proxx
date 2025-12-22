@@ -475,21 +475,27 @@ class JobEngine:
                     # Build ResolvedPresetParams from job.settings
                     settings = job.settings
                     from ..execution.resolved_params import ResolvedPresetParams
+                    
+                    # Map video codec and audio codec from settings
+                    video_codec = settings.video.codec if settings.video else "prores_422"
+                    container = settings.file.container if settings.file else "mov"
+                    audio_codec = settings.audio.codec.value if settings.audio and hasattr(settings.audio.codec, 'value') else "copy"
+                    audio_bitrate = settings.audio.bitrate if settings.audio else None
+                    audio_sample_rate = settings.audio.sample_rate if settings.audio else None
+                    
                     resolved_params = ResolvedPresetParams(
-                        codec=settings.video.codec,
-                        profile=settings.video.profile,
-                        level=settings.video.level,
-                        pixel_format=settings.video.pixel_format,
-                        crf=settings.video.quality,
-                        bitrate=settings.video.bitrate,
-                        preset=settings.video.preset,
-                        resolution_policy=str(settings.video.resolution_policy.value) if hasattr(settings.video.resolution_policy, 'value') else str(settings.video.resolution_policy),
-                        width=settings.video.width,
-                        height=settings.video.height,
-                        frame_rate_policy=str(settings.video.frame_rate_policy.value) if hasattr(settings.video.frame_rate_policy, 'value') else str(settings.video.frame_rate_policy),
-                        frame_rate=settings.video.frame_rate,
-                        container=settings.file.container,
-                        extension=settings.file.extension,
+                        preset_id=f"_job_{job.id}",
+                        preset_name=f"Job {job.id[:8]} Settings",
+                        video_codec=video_codec,
+                        container=container,
+                        video_bitrate=settings.video.bitrate if settings.video else None,
+                        video_quality=settings.video.quality if settings.video else None,
+                        video_preset=settings.video.preset if settings.video else None,
+                        audio_codec=audio_codec,
+                        audio_bitrate=audio_bitrate,
+                        audio_sample_rate=audio_sample_rate,
+                        target_width=settings.video.width if settings.video else None,
+                        target_height=settings.video.height if settings.video else None,
                     )
                 
                 # Phase 20: Get watermark text from DeliverSettings overlay
@@ -568,21 +574,27 @@ class JobEngine:
         # Fall back to job settings
         if not resolved_params:
             settings = job.settings
+            
+            # Map video codec and audio codec from settings
+            video_codec = settings.video.codec if settings.video else "prores_422"
+            container = settings.file.container if settings.file else "mov"
+            audio_codec = settings.audio.codec.value if settings.audio and hasattr(settings.audio.codec, 'value') else "copy"
+            audio_bitrate = settings.audio.bitrate if settings.audio else None
+            audio_sample_rate = settings.audio.sample_rate if settings.audio else None
+            
             resolved_params = ResolvedPresetParams(
-                codec=settings.video.codec,
-                profile=settings.video.profile,
-                level=settings.video.level,
-                pixel_format=settings.video.pixel_format,
-                crf=settings.video.quality,
-                bitrate=settings.video.bitrate,
-                preset=settings.video.preset,
-                resolution_policy=str(settings.video.resolution_policy.value) if hasattr(settings.video.resolution_policy, 'value') else str(settings.video.resolution_policy),
-                width=settings.video.width,
-                height=settings.video.height,
-                frame_rate_policy=str(settings.video.frame_rate_policy.value) if hasattr(settings.video.frame_rate_policy, 'value') else str(settings.video.frame_rate_policy),
-                frame_rate=settings.video.frame_rate,
-                container=settings.file.container,
-                extension=settings.file.extension,
+                preset_id=f"_job_{job.id}",
+                preset_name=f"Job {job.id[:8]} Settings",
+                video_codec=video_codec,
+                container=container,
+                video_bitrate=settings.video.bitrate if settings.video else None,
+                video_quality=settings.video.quality if settings.video else None,
+                video_preset=settings.video.preset if settings.video else None,
+                audio_codec=audio_codec,
+                audio_bitrate=audio_bitrate,
+                audio_sample_rate=audio_sample_rate,
+                target_width=settings.video.width if settings.video else None,
+                target_height=settings.video.height if settings.video else None,
             )
         
         settings = job.settings

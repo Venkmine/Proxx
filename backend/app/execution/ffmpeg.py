@@ -158,13 +158,13 @@ class FFmpegEngine(ExecutionEngine):
         self,
         job: "Job",
         preset_registry: "PresetRegistry",
-        preset_id: str,
+        preset_id: Optional[str],
     ) -> tuple[bool, Optional[str]]:
         """
         Validate job can be executed by FFmpeg.
         
-        This validation runs BEFORE preset resolution, so it still
-        uses preset_registry for existence checks.
+        Alpha: preset_id is optional. When None, job uses embedded settings
+        and codec validation uses job.settings.video.codec directly.
         """
         from ..presets.models import PresetCategory
         
@@ -172,27 +172,37 @@ class FFmpegEngine(ExecutionEngine):
         if not self.available:
             return False, "FFmpeg is not installed or not in PATH"
         
-        # Validate preset exists
-        preset = preset_registry.get_global_preset(preset_id)
-        if not preset:
-            return False, f"Preset '{preset_id}' not found"
-        
-        # Validate codec preset exists and is compatible
-        codec_ref = preset.category_refs.get(PresetCategory.CODEC, "")
-        if not codec_ref:
-            return False, "No codec preset reference in global preset"
-        
-        codec_preset = preset_registry.get_category_preset(PresetCategory.CODEC, codec_ref)
-        if not codec_preset:
-            return False, f"Codec preset '{codec_ref}' not found"
-        
-        # Check codec is supported by FFmpeg
-        codec_type = getattr(codec_preset, "codec", None)
-        if codec_type:
-            codec_str = codec_type.value if hasattr(codec_type, 'value') else str(codec_type)
-            # Allow h264 explicitly
+        # Alpha: If no preset, validate using job's embedded settings
+        if preset_id is None:
+            # Validate codec from job settings
+            video_settings = job.settings.video
+            codec_str = video_settings.codec if video_settings else "prores_422"
+            
+            # Check codec is supported by FFmpeg
             if codec_str not in FFMPEG_CODEC_MAP and codec_str != "h264":
                 return False, f"Codec '{codec_str}' is not supported by FFmpeg engine"
+        else:
+            # Validate preset exists
+            preset = preset_registry.get_global_preset(preset_id)
+            if not preset:
+                return False, f"Preset '{preset_id}' not found"
+            
+            # Validate codec preset exists and is compatible
+            codec_ref = preset.category_refs.get(PresetCategory.CODEC, "")
+            if not codec_ref:
+                return False, "No codec preset reference in global preset"
+            
+            codec_preset = preset_registry.get_category_preset(PresetCategory.CODEC, codec_ref)
+            if not codec_preset:
+                return False, f"Codec preset '{codec_ref}' not found"
+            
+            # Check codec is supported by FFmpeg
+            codec_type = getattr(codec_preset, "codec", None)
+            if codec_type:
+                codec_str = codec_type.value if hasattr(codec_type, 'value') else str(codec_type)
+                # Allow h264 explicitly
+                if codec_str not in FFMPEG_CODEC_MAP and codec_str != "h264":
+                    return False, f"Codec '{codec_str}' is not supported by FFmpeg engine"
         
         # Validate source files exist
         missing_files = []
