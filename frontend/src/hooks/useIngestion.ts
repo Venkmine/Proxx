@@ -33,8 +33,10 @@ export interface IngestionRequest {
   deliverSettings: DeliverSettings
   /** Engine type: "ffmpeg" or "resolve" */
   engine?: string
-  /** Optional preset ID to bind */
+  /** Optional legacy preset ID to bind */
   presetId?: string | null
+  /** Phase 6: Optional settings preset ID (overrides deliverSettings) */
+  settingsPresetId?: string | null
 }
 
 export interface IngestionResult {
@@ -160,6 +162,7 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
       const body = {
         source_paths: request.sourcePaths,
         preset_id: request.presetId || null,
+        settings_preset_id: request.settingsPresetId || null,  // Phase 6
         engine: request.engine || 'ffmpeg',
         deliver_settings: {
           output_dir: request.outputDir,

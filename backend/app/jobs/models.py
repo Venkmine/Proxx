@@ -146,6 +146,13 @@ class Job(BaseModel):
     # When present, execution uses these instead of settings_dict
     override_settings_dict: Optional[Dict[str, Any]] = None
     
+    # Phase 6: Preset source tracking (diagnostics only)
+    # These fields record WHICH preset was used at job creation.
+    # They are for diagnostics only — changing a preset never affects this job.
+    source_preset_id: Optional[str] = None  # UUID of preset used at creation
+    source_preset_name: Optional[str] = None  # Name of preset at creation time
+    source_preset_fingerprint: Optional[str] = None  # SHA-256 hash of settings snapshot
+    
     @property
     def settings_snapshot(self) -> DeliverSettings:
         """Get the immutable settings snapshot from job creation."""

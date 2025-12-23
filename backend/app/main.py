@@ -40,6 +40,10 @@ app.state.preset_registry = PresetRegistry()
 # Phase 16: Initialize engine registry
 app.state.engine_registry = get_engine_registry()
 
+# Phase 6: Initialize settings preset store (immutable snapshots)
+from app.presets.settings_presets import SettingsPresetStore
+app.state.settings_preset_store = SettingsPresetStore()
+
 # Initialize job engine with all registries
 app.state.job_engine = JobEngine(
     binding_registry=app.state.binding_registry,
@@ -53,6 +57,7 @@ app.state.ingestion_service = IngestionService(
     binding_registry=app.state.binding_registry,
     preset_registry=app.state.preset_registry,
     engine_registry=app.state.engine_registry,
+    settings_preset_store=app.state.settings_preset_store,  # Phase 6
 )
 
 # TEMPORARY: Add test preset for UI testing (Phase 15 stub)

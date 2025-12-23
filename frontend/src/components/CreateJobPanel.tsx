@@ -49,6 +49,14 @@ interface EngineInfo {
   available: boolean
 }
 
+// Phase 6: Settings preset info
+interface SettingsPresetInfo {
+  id: string
+  name: string
+  description?: string
+  fingerprint: string
+}
+
 interface CreateJobPanelProps {
   isVisible: boolean
   onToggleVisibility: () => void
@@ -65,6 +73,11 @@ interface CreateJobPanelProps {
   engines?: EngineInfo[]
   selectedEngine?: string
   onEngineChange?: (engine: string) => void
+  
+  // Phase 6: Settings preset selection
+  settingsPresets?: SettingsPresetInfo[]
+  selectedSettingsPresetId?: string | null
+  onSettingsPresetChange?: (presetId: string | null) => void
   
   // Output directory
   outputDirectory: string
@@ -103,6 +116,9 @@ export function CreateJobPanel({
   engines = [],
   selectedEngine = 'ffmpeg',
   onEngineChange,
+  settingsPresets = [],
+  selectedSettingsPresetId = null,
+  onSettingsPresetChange,
   outputDirectory,
   onOutputDirectoryChange,
   onSelectFolderClick,
@@ -122,9 +138,14 @@ export function CreateJobPanel({
   const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
   const [showPathPrompt, setShowPathPrompt] = useState(false)
   const [pathPromptValue, setPathPromptValue] = useState('')
+  // Phase 6: Preset preview collapsed state
+  const [showPresetPreview, setShowPresetPreview] = useState(false)
   
   // Design mode guard: Add to Queue is blocked in design mode
   const isDesignMode = workspaceMode === 'design'
+
+  // Phase 6: Get selected preset for preview
+  const selectedPreset = settingsPresets.find(p => p.id === selectedSettingsPresetId)
 
   // Alpha: Presets are optional - sources use current preset implicitly
   const canCreate = selectedFiles.length > 0 && outputDirectory && !loading && !isDesignMode
@@ -464,16 +485,90 @@ export function CreateJobPanel({
           )}
         </div>
 
-        {/* Passive preset indicator - preset controlled via Preset Editor only */}
-        <div
-          style={{
-            fontSize: '0.6875rem',
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-sans)',
-            padding: '0.5rem 0',
-          }}
-        >
-          Using current preset
+        {/* Phase 6: Settings Preset Selector */}
+        <div>
+          <label
+            style={{
+              display: 'block',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              marginBottom: '0.375rem',
+              fontFamily: 'var(--font-sans)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
+            }}
+          >
+            Preset
+          </label>
+          <Select
+            value={selectedSettingsPresetId || ''}
+            onChange={(val) => onSettingsPresetChange?.(val || null)}
+            options={[
+              { value: '', label: 'No preset (manual)' },
+              ...settingsPresets.map(p => ({ 
+                value: p.id, 
+                label: p.name + (p.description ? ` — ${p.description}` : '')
+              }))
+            ]}
+            disabled={loading || isDesignMode}
+            size="sm"
+          />
+          {/* Phase 6: Informational label */}
+          <div
+            style={{
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-sans)',
+              fontStyle: 'italic',
+              marginTop: '0.25rem',
+            }}
+          >
+            {selectedSettingsPresetId 
+              ? 'Preset is copied at job creation. Changes do not affect existing jobs.'
+              : 'Manual configuration — settings from current Deliver panel.'
+            }
+          </div>
+          {/* Phase 6: Preset preview (collapsed) */}
+          {selectedPreset && (
+            <div style={{ marginTop: '0.375rem' }}>
+              <button
+                onClick={() => setShowPresetPreview(!showPresetPreview)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-secondary)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-muted)',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.625rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                }}
+              >
+                <span style={{ transform: showPresetPreview ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
+                {showPresetPreview ? 'Hide Preset Info' : 'Show Preset Info'}
+              </button>
+              {showPresetPreview && (
+                <div
+                  style={{
+                    marginTop: '0.25rem',
+                    padding: '0.5rem',
+                    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.625rem',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <div><strong>Name:</strong> {selectedPreset.name}</div>
+                  {selectedPreset.description && <div><strong>Description:</strong> {selectedPreset.description}</div>}
+                  <div><strong>Fingerprint:</strong> {selectedPreset.fingerprint}</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Alpha: Engine Selection - FFmpeg only */}

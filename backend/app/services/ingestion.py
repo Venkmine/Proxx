@@ -69,6 +69,9 @@ class IngestionService:
     
     All job creation MUST flow through this service.
     Provides unified validation, normalization, and settings snapshot.
+    
+    Phase 6: Settings presets are COPIED at job creation.
+    Jobs own their settings forever after creation.
     """
     
     def __init__(
@@ -78,6 +81,7 @@ class IngestionService:
         binding_registry: Optional["JobPresetBindingRegistry"] = None,
         preset_registry: Optional["PresetRegistry"] = None,
         engine_registry: Optional["EngineRegistry"] = None,
+        settings_preset_store: Optional[Any] = None,
     ):
         """
         Initialize ingestion service.
@@ -88,12 +92,14 @@ class IngestionService:
             binding_registry: Optional registry for preset bindings
             preset_registry: Optional registry for preset lookup
             engine_registry: Optional registry for engine availability checks
+            settings_preset_store: Optional Phase 6 settings preset store
         """
         self.job_registry = job_registry
         self.job_engine = job_engine
         self.binding_registry = binding_registry
         self.preset_registry = preset_registry
         self.engine_registry = engine_registry
+        self.settings_preset_store = settings_preset_store
     
     def ingest_sources(
         self,
@@ -102,6 +108,7 @@ class IngestionService:
         deliver_settings: "DeliverSettings",
         engine: str = "ffmpeg",
         preset_id: Optional[str] = None,
+        settings_preset_id: Optional[str] = None,
     ) -> IngestionResult:
         """
         Canonical ingestion entry point.
@@ -109,12 +116,18 @@ class IngestionService:
         Creates a job from source paths with settings snapshot.
         This is THE ONLY method for creating jobs.
         
+        Phase 6: If settings_preset_id is provided:
+        - Settings are COPIED from the preset (not linked)
+        - Job stores preset ID/name/fingerprint for diagnostics only
+        - Preset changes NEVER affect this job after creation
+        
         Args:
             source_paths: List of absolute paths to source files
             output_dir: Absolute path to output directory (may be None)
-            deliver_settings: DeliverSettings to snapshot (immutable after this)
+            deliver_settings: DeliverSettings to snapshot (used if no preset)
             engine: Engine type string ("ffmpeg" or "resolve")
-            preset_id: Optional preset ID to bind
+            preset_id: Optional legacy global preset ID to bind
+            settings_preset_id: Optional Phase 6 settings preset ID (overrides deliver_settings)
             
         Returns:
             IngestionResult with created job and metadata
@@ -123,6 +136,32 @@ class IngestionService:
             IngestionError: If validation fails (empty paths, invalid files, etc.)
         """
         warnings: List[str] = []
+        
+        # Phase 6: Settings preset source tracking
+        source_preset_id: Optional[str] = None
+        source_preset_name: Optional[str] = None
+        source_preset_fingerprint: Optional[str] = None
+        
+        # =====================================================================
+        # 0. PHASE 6: Load settings from preset if specified
+        # =====================================================================
+        if settings_preset_id and self.settings_preset_store:
+            settings_preset = self.settings_preset_store.get_preset(settings_preset_id)
+            if not settings_preset:
+                raise IngestionError(f"Settings preset not found: {settings_preset_id}")
+            
+            # COPY settings from preset (not a reference!)
+            deliver_settings = settings_preset.get_settings()
+            
+            # Store preset source info for diagnostics
+            source_preset_id = settings_preset.id
+            source_preset_name = settings_preset.name
+            source_preset_fingerprint = settings_preset.fingerprint
+            
+            logger.debug(
+                f"Using settings preset: {source_preset_name} ({source_preset_id}) "
+                f"fingerprint={source_preset_fingerprint}"
+            )
         
         # =====================================================================
         # 1. VALIDATE: paths exist, are files, are readable
@@ -189,16 +228,36 @@ class IngestionService:
             job.settings_dict = deliver_settings.to_dict()
         
         # =====================================================================
+        # 7b. PHASE 6: Store preset source info for diagnostics
+        # =====================================================================
+        # This records WHICH preset was used at creation time.
+        # It does NOT create a live link — jobs own their settings forever.
+        if source_preset_id:
+            job.source_preset_id = source_preset_id
+            job.source_preset_name = source_preset_name
+            job.source_preset_fingerprint = source_preset_fingerprint
+            logger.debug(
+                f"Job {job.id} created from preset '{source_preset_name}' "
+                f"(id={source_preset_id}, fingerprint={source_preset_fingerprint})"
+            )
+        else:
+            # Job created with manual configuration (no preset)
+            job.source_preset_id = None
+            job.source_preset_name = None
+            job.source_preset_fingerprint = None
+            logger.debug(f"Job {job.id} created with manual configuration (no preset)")
+        
+        # =====================================================================
         # 8. ENQUEUE: add to registry
         # =====================================================================
         self.job_registry.add_job(job)
         
         # =====================================================================
-        # 9. BIND PRESET (if provided)
+        # 9. BIND PRESET (if provided — legacy global preset system)
         # =====================================================================
         if preset_id and self.binding_registry:
             self.binding_registry.bind_preset(job.id, preset_id)
-            logger.debug(f"Bound preset '{preset_id}' to job {job.id}")
+            logger.debug(f"Bound legacy preset '{preset_id}' to job {job.id}")
         
         logger.info(
             f"Ingested job {job.id} with {len(job.tasks)} tasks, "

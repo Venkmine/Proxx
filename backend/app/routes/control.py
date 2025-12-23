@@ -228,18 +228,24 @@ class JobSettingsRequest(BaseModel):
 class CreateJobRequest(BaseModel):
     """Request body for manual job creation (Alpha).
     
-    Alpha: preset_id is optional. When not provided, uses current
-    deliver_settings directly without loading preset defaults.
+    Phase 6: settings_preset_id is the preferred way to apply preset settings.
+    When settings_preset_id is provided:
+    - Settings are COPIED from the preset (not linked)
+    - Job stores preset ID/name/fingerprint for diagnostics only
+    - Preset changes NEVER affect this job after creation
+    
+    If no preset, uses deliver_settings directly ("Manual configuration").
     """
     
     model_config = ConfigDict(extra="forbid")
     
     source_paths: List[str]
-    preset_id: Optional[str] = None  # Alpha: Optional - use current settings when None
+    preset_id: Optional[str] = None  # Legacy global preset (Phase 15)
+    settings_preset_id: Optional[str] = None  # Phase 6: Settings preset ID
     output_base_dir: Optional[str] = None  # Deprecated: use deliver_settings.output_dir
     engine: str = "ffmpeg"
     
-    # Full DeliverSettings - used directly when no preset_id
+    # Full DeliverSettings - used directly when no settings_preset_id
     deliver_settings: Optional[DeliverSettingsRequest] = None
     
     # DEPRECATED: Legacy settings (Phase 16.4 compatibility)
@@ -301,6 +307,78 @@ class OperationResponse(BaseModel):
 
 
 # ============================================================================
+# PHASE 6: SETTINGS PRESET API MODELS
+# ============================================================================
+
+class SettingsPresetInfo(BaseModel):
+    """Settings preset summary for UI display."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    id: str
+    name: str
+    description: str = ""
+    fingerprint: str  # SHA-256 hash prefix for diagnostics
+    created_at: str
+    updated_at: str
+    tags: List[str] = []
+
+
+class SettingsPresetDetail(BaseModel):
+    """Full settings preset with snapshot."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    id: str
+    name: str
+    description: str = ""
+    settings_snapshot: dict  # Full DeliverSettings dict
+    fingerprint: str
+    tags: List[str] = []
+    created_at: str
+    updated_at: str
+
+
+class SettingsPresetListResponse(BaseModel):
+    """Response for settings preset listing."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    presets: List[SettingsPresetInfo]
+
+
+class CreateSettingsPresetRequest(BaseModel):
+    """Request body for creating a settings preset."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    name: str
+    description: str = ""
+    settings_snapshot: dict  # Full DeliverSettings dict
+    tags: List[str] = []
+
+
+class CreateSettingsPresetResponse(BaseModel):
+    """Response for settings preset creation."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    success: bool
+    message: str
+    preset: Optional[SettingsPresetInfo] = None
+
+
+class DeleteSettingsPresetResponse(BaseModel):
+    """Response for settings preset deletion."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    success: bool
+    message: str
+    referencing_job_ids: List[str] = []  # Jobs that reference this preset (informational)
+
+
+# ============================================================================
 # QUEUE RESET API (Test Support)
 # ============================================================================
 
@@ -327,6 +405,256 @@ async def reset_queue(request: Request):
             success=False,
             message=f"Failed to reset queue: {e}"
         )
+
+
+# ============================================================================
+# PHASE 6: SETTINGS PRESET API ENDPOINTS
+# ============================================================================
+
+@router.get("/settings-presets", response_model=SettingsPresetListResponse)
+async def list_settings_presets_endpoint(request: Request):
+    """
+    List all settings presets.
+    
+    Phase 6: Immutable settings snapshots for job creation.
+    
+    Returns:
+        List of preset summaries with fingerprints
+    """
+    try:
+        preset_store = request.app.state.settings_preset_store
+        
+        presets = preset_store.list_presets()
+        
+        preset_infos = [
+            SettingsPresetInfo(
+                id=p.id,
+                name=p.name,
+                description=p.description,
+                fingerprint=p.fingerprint,
+                created_at=p.created_at,
+                updated_at=p.updated_at,
+                tags=list(p.tags),
+            )
+            for p in presets
+        ]
+        
+        return SettingsPresetListResponse(presets=preset_infos)
+        
+    except Exception as e:
+        logger.error(f"Failed to list settings presets: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list settings presets: {e}")
+
+
+@router.get("/settings-presets/{preset_id}", response_model=SettingsPresetDetail)
+async def get_settings_preset_endpoint(preset_id: str, request: Request):
+    """
+    Get a settings preset by ID.
+    
+    Phase 6: Returns full preset with settings snapshot.
+    
+    Args:
+        preset_id: The preset UUID
+        
+    Returns:
+        Full preset details including settings snapshot
+        
+    Raises:
+        404: Preset not found
+    """
+    try:
+        preset_store = request.app.state.settings_preset_store
+        
+        preset = preset_store.get_preset(preset_id)
+        if not preset:
+            raise HTTPException(status_code=404, detail=f"Settings preset not found: {preset_id}")
+        
+        return SettingsPresetDetail(
+            id=preset.id,
+            name=preset.name,
+            description=preset.description,
+            settings_snapshot=preset.settings_snapshot,
+            fingerprint=preset.fingerprint,
+            tags=list(preset.tags),
+            created_at=preset.created_at,
+            updated_at=preset.updated_at,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get settings preset: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get settings preset: {e}")
+
+
+@router.post("/settings-presets", response_model=CreateSettingsPresetResponse)
+async def create_settings_preset_endpoint(body: CreateSettingsPresetRequest, request: Request):
+    """
+    Create a new settings preset from a DeliverSettings snapshot.
+    
+    Phase 6: Presets are immutable snapshots.
+    No PATCH. No mutation. To "edit", duplicate and delete old.
+    
+    Args:
+        body: Preset name, description, and settings snapshot
+        
+    Returns:
+        Created preset summary
+        
+    Raises:
+        400: Validation failed (empty name, invalid settings, duplicate name)
+    """
+    try:
+        preset_store = request.app.state.settings_preset_store
+        
+        # Validate settings by deserializing
+        from app.deliver.settings import DeliverSettings
+        try:
+            settings = DeliverSettings.from_dict(body.settings_snapshot)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid settings snapshot: {e}")
+        
+        try:
+            preset = preset_store.create_preset(
+                name=body.name,
+                settings=settings,
+                description=body.description,
+                tags=body.tags,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        logger.info(f"Settings preset created: {preset.id} ({preset.name})")
+        
+        return CreateSettingsPresetResponse(
+            success=True,
+            message=f"Preset '{preset.name}' created",
+            preset=SettingsPresetInfo(
+                id=preset.id,
+                name=preset.name,
+                description=preset.description,
+                fingerprint=preset.fingerprint,
+                created_at=preset.created_at,
+                updated_at=preset.updated_at,
+                tags=list(preset.tags),
+            ),
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create settings preset: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create settings preset: {e}")
+
+
+@router.post("/settings-presets/{preset_id}/duplicate", response_model=CreateSettingsPresetResponse)
+async def duplicate_settings_preset_endpoint(
+    preset_id: str, 
+    request: Request,
+    new_name: Optional[str] = None,
+):
+    """
+    Create a new preset from an existing preset's snapshot.
+    
+    Phase 6: This is the ONLY way to "edit" a preset:
+    1. Duplicate the preset
+    2. Delete the old one (if desired)
+    
+    Args:
+        preset_id: The preset to duplicate
+        new_name: Optional name for the new preset
+        
+    Returns:
+        Created preset summary
+        
+    Raises:
+        404: Source preset not found
+    """
+    try:
+        preset_store = request.app.state.settings_preset_store
+        
+        new_preset = preset_store.duplicate_preset(preset_id, new_name)
+        if not new_preset:
+            raise HTTPException(status_code=404, detail=f"Settings preset not found: {preset_id}")
+        
+        logger.info(f"Settings preset duplicated: {preset_id} -> {new_preset.id} ({new_preset.name})")
+        
+        return CreateSettingsPresetResponse(
+            success=True,
+            message=f"Preset duplicated as '{new_preset.name}'",
+            preset=SettingsPresetInfo(
+                id=new_preset.id,
+                name=new_preset.name,
+                description=new_preset.description,
+                fingerprint=new_preset.fingerprint,
+                created_at=new_preset.created_at,
+                updated_at=new_preset.updated_at,
+                tags=list(new_preset.tags),
+            ),
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to duplicate settings preset: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to duplicate settings preset: {e}")
+
+
+@router.delete("/settings-presets/{preset_id}", response_model=DeleteSettingsPresetResponse)
+async def delete_settings_preset_endpoint(preset_id: str, request: Request, force: bool = False):
+    """
+    Delete a settings preset.
+    
+    Phase 6: Deleting a preset does NOT affect jobs that were created from it.
+    Jobs own their settings forever after creation.
+    
+    Args:
+        preset_id: The preset to delete
+        force: If True, delete even if jobs reference this preset
+        
+    Returns:
+        Deletion result with list of referencing jobs (informational)
+        
+    Raises:
+        404: Preset not found
+        400: Jobs reference this preset and force=False
+    """
+    try:
+        preset_store = request.app.state.settings_preset_store
+        job_registry = request.app.state.job_registry
+        
+        preset = preset_store.get_preset(preset_id)
+        if not preset:
+            raise HTTPException(status_code=404, detail=f"Settings preset not found: {preset_id}")
+        
+        # Check for referencing jobs (informational only)
+        referencing_jobs = preset_store.is_preset_referenced_by_jobs(preset_id, job_registry)
+        
+        if referencing_jobs and not force:
+            return DeleteSettingsPresetResponse(
+                success=False,
+                message=f"Preset is referenced by {len(referencing_jobs)} job(s). "
+                        f"Use force=True to delete anyway. "
+                        f"Note: Deleting the preset will NOT affect those jobs.",
+                referencing_job_ids=referencing_jobs,
+            )
+        
+        preset_name = preset.name
+        preset_store.delete_preset(preset_id)
+        
+        logger.info(f"Settings preset deleted: {preset_id} ({preset_name})")
+        
+        return DeleteSettingsPresetResponse(
+            success=True,
+            message=f"Preset '{preset_name}' deleted",
+            referencing_job_ids=referencing_jobs,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete settings preset: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete settings preset: {e}")
 
 
 # ============================================================================
@@ -547,6 +875,11 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
     All job creation flows through IngestionService.ingest_sources().
     This endpoint is the HTTP adapter over the canonical pipeline.
     
+    Phase 6: If settings_preset_id is provided:
+    - Settings are COPIED from the preset (not linked)
+    - Job stores preset ID/name/fingerprint for diagnostics only
+    - Preset changes NEVER affect this job after creation
+    
     Creates one job with multiple clip tasks from selected files.
     Job is left in PENDING state - no automatic execution.
     Preset and engine are bound at creation time.
@@ -566,7 +899,7 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
         # Get IngestionService from app state
         ingestion_service = request.app.state.ingestion_service
         
-        # Phase 17: Build DeliverSettings from request
+        # Phase 17: Build DeliverSettings from request (used if no preset)
         deliver_settings = _build_deliver_settings_from_request(body)
         
         # Determine output directory
@@ -582,6 +915,7 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
                 deliver_settings=deliver_settings,
                 engine=body.engine or "ffmpeg",
                 preset_id=body.preset_id,
+                settings_preset_id=body.settings_preset_id,  # Phase 6
             )
         except IngestionError as e:
             # Map ingestion errors to appropriate HTTP status codes
@@ -592,13 +926,22 @@ async def create_job_endpoint(body: CreateJobRequest, request: Request):
             else:
                 raise HTTPException(status_code=400, detail=str(e))
         
+        # Phase 6: Include preset info in response message
+        preset_msg = ""
+        if body.settings_preset_id:
+            preset_store = request.app.state.settings_preset_store
+            preset = preset_store.get_preset(body.settings_preset_id)
+            if preset:
+                preset_msg = f" using preset '{preset.name}'"
+        
         logger.info(
             f"Job {result.job_id} created via canonical pipeline with {result.task_count} tasks"
+            + (f" from preset {body.settings_preset_id}" if body.settings_preset_id else " (manual config)")
         )
         
         return CreateJobResponse(
             success=True,
-            message=f"Job created with {result.task_count} clips using {body.engine or 'ffmpeg'} engine",
+            message=f"Job created with {result.task_count} clips{preset_msg} using {body.engine or 'ffmpeg'} engine",
             job_id=result.job_id
         )
         

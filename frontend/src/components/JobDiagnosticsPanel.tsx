@@ -46,6 +46,14 @@ interface JobDiagnosticsData {
   failedCount: number
   /** Completed task count */
   completedCount: number
+  
+  // Phase 6: Preset source tracking
+  /** ID of preset used at job creation (null = manual config) */
+  sourcePresetId?: string | null
+  /** Name of preset at creation time */
+  sourcePresetName?: string | null
+  /** SHA-256 fingerprint of settings snapshot */
+  sourcePresetFingerprint?: string | null
 }
 
 interface JobDiagnosticsPanelProps {
@@ -169,6 +177,31 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
         >
           {/* Job ID */}
           <DiagnosticRow label="Job ID" value={data.jobId} mono />
+          
+          {/* Phase 6: Preset Source */}
+          {data.sourcePresetId ? (
+            <>
+              <DiagnosticRow 
+                label="Preset" 
+                value={data.sourcePresetName || 'Unknown'} 
+              />
+              <DiagnosticRow 
+                label="Preset ID" 
+                value={data.sourcePresetId} 
+                mono 
+              />
+              <DiagnosticRow 
+                label="Fingerprint" 
+                value={data.sourcePresetFingerprint || 'N/A'} 
+                mono 
+              />
+            </>
+          ) : (
+            <DiagnosticRow 
+              label="Configuration" 
+              value="Manual configuration (no preset)" 
+            />
+          )}
           
           {/* Engine */}
           <DiagnosticRow label="Engine" value={data.engine || 'Not specified'} />
