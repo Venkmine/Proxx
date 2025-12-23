@@ -295,6 +295,7 @@ function App() {
       passthrough_color_metadata: true,
     },
     overlay: {
+      layers: [],  // Phase 5A: Layer-based overlay system
       text_layers: [],
     },
     output_dir: '',

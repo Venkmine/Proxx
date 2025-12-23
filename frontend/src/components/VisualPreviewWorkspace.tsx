@@ -17,7 +17,7 @@
  * ALPHA LIMITATION: static preview frame only (no scrubbing)
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from './Button'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
@@ -64,14 +64,20 @@ interface VisualPreviewWorkspaceProps {
   overlaySettings?: OverlaySettings
   /** Callback when overlay settings change (for drag positioning) */
   onOverlaySettingsChange?: (settings: OverlaySettings) => void
-  /** Currently selected overlay type */
+  /** Currently selected overlay type (legacy) */
   selectedOverlayType?: 'text' | 'image' | 'timecode' | null
-  /** Currently selected text layer index */
+  /** Currently selected text layer index (legacy) */
   selectedTextLayerIndex?: number | null
-  /** Callback when an overlay is selected */
+  /** Callback when an overlay is selected (legacy) */
   onOverlaySelect?: (type: 'text' | 'image' | 'timecode' | null, index?: number) => void
   /** Output summary for compact header row */
   outputSummary?: OutputSummary
+  /** Phase 5A: Currently selected layer ID */
+  selectedLayerId?: string | null
+  /** Phase 5A: Callback when a layer is selected */
+  onLayerSelect?: (layerId: string | null) => void
+  /** Phase 5A: Read-only mode (for running/completed jobs) */
+  isReadOnly?: boolean
 }
 
 // ============================================================================
@@ -126,6 +132,10 @@ export function VisualPreviewWorkspace({
   selectedTextLayerIndex,
   onOverlaySelect,
   outputSummary,
+  // Phase 5A: Layer-based selection
+  selectedLayerId,
+  onLayerSelect,
+  isReadOnly = false,
 }: VisualPreviewWorkspaceProps) {
   // Extract filename from path
   const fileName = sourceFilePath ? sourceFilePath.split('/').pop() : null
@@ -136,7 +146,7 @@ export function VisualPreviewWorkspace({
   const [metadata, setMetadata] = useState<SourceMetadata | null>(null)
   const [metadataExpanded, setMetadataExpanded] = useState(true)
   const [isDragging, setIsDragging] = useState(false)
-  const [dragTarget, setDragTarget] = useState<{ type: 'text' | 'image' | 'timecode'; index?: number } | null>(null)
+  const [dragTarget, setDragTarget] = useState<{ type: 'text' | 'image' | 'timecode' | 'layer'; index?: number; layerId?: string } | null>(null)
   
   // Zoom state
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
@@ -358,20 +368,35 @@ export function VisualPreviewWorkspace({
   // Drag-to-position handlers
   // ============================================
 
+  // Phase 5A: Handle layer mouse down for new layer system
+  const handleLayerMouseDown = useCallback((
+    e: React.MouseEvent,
+    layerId: string
+  ) => {
+    if (isReadOnly) return
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+    setDragTarget({ type: 'layer', layerId })
+    onLayerSelect?.(layerId)
+  }, [isReadOnly, onLayerSelect])
+
   const handleMouseDown = useCallback((
     e: React.MouseEvent,
     type: 'text' | 'image' | 'timecode',
     index?: number
   ) => {
+    if (isReadOnly) return
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(true)
     setDragTarget({ type, index })
     onOverlaySelect?.(type, index)
-  }, [onOverlaySelect])
+  }, [isReadOnly, onOverlaySelect])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !dragTarget || !canvasRef.current || !overlaySettings || !onOverlaySettingsChange) return
+    if (isReadOnly) return
     
     const rect = canvasRef.current.getBoundingClientRect()
     const rawX = (e.clientX - rect.left) / rect.width
@@ -382,7 +407,24 @@ export function VisualPreviewWorkspace({
     
     const newSettings = { ...overlaySettings }
     
-    if (dragTarget.type === 'text' && dragTarget.index !== undefined) {
+    // Phase 5A: Handle layer-based dragging
+    if (dragTarget.type === 'layer' && dragTarget.layerId && newSettings.layers) {
+      const layers = [...newSettings.layers]
+      const layerIndex = layers.findIndex(l => l.id === dragTarget.layerId)
+      if (layerIndex !== -1) {
+        const layer = layers[layerIndex]
+        layers[layerIndex] = {
+          ...layer,
+          settings: {
+            ...layer.settings,
+            x,
+            y,
+            position: 'custom',
+          }
+        }
+        newSettings.layers = layers
+      }
+    } else if (dragTarget.type === 'text' && dragTarget.index !== undefined) {
       const layers = [...newSettings.text_layers]
       layers[dragTarget.index] = {
         ...layers[dragTarget.index],
@@ -398,7 +440,7 @@ export function VisualPreviewWorkspace({
     }
     
     onOverlaySettingsChange(newSettings)
-  }, [isDragging, dragTarget, overlaySettings, onOverlaySettingsChange])
+  }, [isDragging, dragTarget, overlaySettings, onOverlaySettingsChange, isReadOnly])
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false)
@@ -815,7 +857,179 @@ export function VisualPreviewWorkspace({
           {/* OVERLAY RENDERING — Single Source of Truth */}
           {/* ============================================ */}
 
-          {/* Text Overlay Layers */}
+          {/* Phase 5A: Render layers sorted by order (higher order = on top) */}
+          {overlaySettings?.layers && [...overlaySettings.layers]
+            .filter(layer => layer.enabled)
+            .sort((a, b) => a.order - b.order)
+            .map(layer => {
+              const pos = layer.settings.position === 'custom' && layer.settings.x !== undefined && layer.settings.y !== undefined
+                ? { x: layer.settings.x, y: layer.settings.y }
+                : getAnchorPosition(layer.settings.position || 'center')
+              const isSelected = layer.id === selectedLayerId
+              const zIndex = isSelected ? 30 : 10 + layer.order
+              
+              // Render based on layer type
+              if (layer.type === 'text') {
+                return (
+                  <div
+                    key={layer.id}
+                    data-testid={`overlay-layer-${layer.id}`}
+                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
+                    style={{
+                      position: 'absolute',
+                      left: `${pos.x * 100}%`,
+                      top: `${pos.y * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                      padding: '0.25rem 0.5rem',
+                      backgroundColor: layer.settings.background 
+                        ? (layer.settings.background_color || 'rgba(0, 0, 0, 0.6)') 
+                        : 'rgba(0, 0, 0, 0.6)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: `${(layer.settings.font_size || 24) * 0.5}px`,
+                      fontFamily: layer.settings.font || 'Arial, sans-serif',
+                      color: layer.settings.color || 'white',
+                      opacity: layer.settings.opacity || 1,
+                      cursor: isReadOnly ? 'default' : 'move',
+                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      whiteSpace: 'nowrap',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                      userSelect: 'none',
+                      zIndex,
+                    }}
+                  >
+                    {layer.settings.text || 'Text Layer'}
+                  </div>
+                )
+              }
+              
+              if (layer.type === 'image') {
+                return (
+                  <div
+                    key={layer.id}
+                    data-testid={`overlay-layer-${layer.id}`}
+                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
+                    style={{
+                      position: 'absolute',
+                      left: `${pos.x * 100}%`,
+                      top: `${pos.y * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                      cursor: isReadOnly ? 'default' : 'move',
+                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '2px',
+                      userSelect: 'none',
+                      zIndex,
+                    }}
+                  >
+                    {layer.settings.image_data ? (
+                      <img
+                        src={layer.settings.image_data}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          maxWidth: `${(layer.settings.scale || 1.0) * 100}px`,
+                          maxHeight: `${(layer.settings.scale || 1.0) * 75}px`,
+                          opacity: layer.settings.opacity || 1,
+                          filter: layer.settings.grayscale ? 'grayscale(100%)' : 'none',
+                          borderRadius: '2px',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    ) : (
+                      <div style={{ 
+                        width: '60px', 
+                        height: '45px', 
+                        background: 'rgba(51, 65, 85, 0.5)', 
+                        borderRadius: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.5rem',
+                        opacity: 0.5,
+                      }}>
+                        🖼
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+              
+              if (layer.type === 'timecode') {
+                return (
+                  <div
+                    key={layer.id}
+                    data-testid={`overlay-layer-${layer.id}`}
+                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
+                    style={{
+                      position: 'absolute',
+                      left: `${pos.x * 100}%`,
+                      top: `${pos.y * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                      padding: layer.settings.background ? '0.25rem 0.5rem' : '0',
+                      backgroundColor: layer.settings.background ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: `${(layer.settings.font_size || 24) * 0.5}px`,
+                      fontFamily: layer.settings.font || 'Menlo, monospace',
+                      color: layer.settings.color || 'white',
+                      opacity: layer.settings.opacity || 1,
+                      cursor: isReadOnly ? 'default' : 'move',
+                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      whiteSpace: 'nowrap',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                      letterSpacing: '0.05em',
+                      userSelect: 'none',
+                      zIndex,
+                    }}
+                  >
+                    {metadata?.timecode_start || '00:00:00:00'}
+                  </div>
+                )
+              }
+              
+              if (layer.type === 'metadata') {
+                return (
+                  <div
+                    key={layer.id}
+                    data-testid={`overlay-layer-${layer.id}`}
+                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
+                    style={{
+                      position: 'absolute',
+                      left: `${pos.x * 100}%`,
+                      top: `${pos.y * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                      padding: '0.25rem 0.5rem',
+                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: `${(layer.settings.font_size || 16) * 0.5}px`,
+                      fontFamily: 'Menlo, monospace',
+                      color: 'white',
+                      opacity: layer.settings.opacity || 1,
+                      cursor: isReadOnly ? 'default' : 'move',
+                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      whiteSpace: 'nowrap',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                      userSelect: 'none',
+                      zIndex,
+                    }}
+                  >
+                    {layer.settings.metadata_field === 'filename' && fileName}
+                    {layer.settings.metadata_field === 'resolution' && metadata?.resolution}
+                    {layer.settings.metadata_field === 'fps' && metadata?.fps}
+                    {layer.settings.metadata_field === 'codec' && metadata?.codec}
+                    {layer.settings.metadata_field === 'reel' && metadata?.reel_name}
+                    {!layer.settings.metadata_field && 'Metadata'}
+                  </div>
+                )
+              }
+              
+              return null
+            })}
+
+          {/* Legacy Text Overlay Layers */}
           {overlaySettings?.text_layers.map((layer, index) => {
             if (!layer.enabled) return null
             const pos = layer.position === 'custom' && layer.x !== undefined && layer.y !== undefined

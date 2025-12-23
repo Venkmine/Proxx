@@ -1,10 +1,11 @@
 //Alpha scope defined in docs/ALPHA_REALITY.md.
 //Do not add features that contradict it without updating that file first.
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
 import { TokenPalette } from './TokenPalette'
+import { OverlayLayerStack } from './OverlayLayerStack'
 // Phase 23: Watermark panels moved to VisualPreviewModal
 // Imports kept for backwards compatibility but components no longer rendered inline
 import type { TimecodeOverlay } from './PreviewViewport16x9'
@@ -115,7 +116,57 @@ export interface ImageOverlay {
   grayscale?: boolean  // B&W toggle
 }
 
+// ============================================================================
+// PHASE 5A: OVERLAY LAYER SYSTEM
+// ============================================================================
+
+/**
+ * OverlayLayer — Unified overlay model for all overlay types.
+ * - Project scope: applies to all clips in the job
+ * - Clip scope: applies only to the selected clip
+ * - Order: higher values render on top (z-index)
+ */
+export type OverlayLayerType = 'image' | 'text' | 'timecode' | 'metadata'
+export type OverlayLayerScope = 'project' | 'clip'
+
+export interface OverlayLayerSettings {
+  // Text layer settings
+  text?: string
+  position?: string
+  font_size?: number
+  opacity?: number
+  x?: number
+  y?: number
+  font?: string
+  color?: string
+  background?: boolean
+  background_color?: string
+  // Image layer settings
+  image_data?: string
+  image_name?: string
+  scale?: number
+  grayscale?: boolean
+  // Timecode layer settings
+  timecode_source?: string
+  // Metadata layer settings
+  metadata_field?: string
+}
+
+export interface OverlayLayer {
+  id: string
+  type: OverlayLayerType
+  scope: OverlayLayerScope
+  enabled: boolean
+  order: number
+  settings: OverlayLayerSettings
+  // Clip ID for clip-scoped layers (undefined for project-scoped)
+  clipId?: string
+}
+
 export interface OverlaySettings {
+  // Phase 5A: Layer-based overlay system
+  layers: OverlayLayer[]
+  // Legacy support (deprecated, kept for backwards compatibility)
   text_layers: TextOverlay[]
   // Alpha: Image watermark
   image_watermark?: ImageOverlay
@@ -711,8 +762,50 @@ export function DeliverControlPanel({
     })
   }
   
-  // Count active text overlays
-  const activeOverlays = settings.overlay.text_layers.filter(l => l.enabled).length
+  // Phase 5A: Layer state for the new overlay system
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
+  
+  // Phase 5A: Generate unique ID for new layers
+  const generateLayerId = useCallback(() => {
+    return `layer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  }, [])
+  
+  // Phase 5A: Add new overlay layer
+  const handleAddOverlayLayer = useCallback((type: OverlayLayerType, scope: OverlayLayerScope) => {
+    const layers = settings.overlay.layers || []
+    const maxOrder = layers.length > 0 ? Math.max(...layers.map(l => l.order)) : 0
+    
+    const newLayer: OverlayLayer = {
+      id: generateLayerId(),
+      type,
+      scope,
+      enabled: true,
+      order: maxOrder + 1,
+      settings: {
+        opacity: 1.0,
+        position: 'bottom_left',
+        font_size: 24,
+        ...(type === 'text' ? { text: '' } : {}),
+        ...(type === 'image' ? { scale: 1.0, x: 0.5, y: 0.5 } : {}),
+        ...(type === 'timecode' ? { background: true } : {}),
+        ...(type === 'metadata' ? { metadata_field: 'filename' } : {}),
+      },
+      clipId: scope === 'clip' ? undefined : undefined, // Will be set when clip is selected
+    }
+    
+    updateOverlaySettings({ layers: [...layers, newLayer] })
+    setSelectedLayerId(newLayer.id)
+  }, [settings.overlay.layers, generateLayerId, updateOverlaySettings])
+  
+  // Phase 5A: Update layers array
+  const handleLayersChange = useCallback((layers: OverlayLayer[]) => {
+    updateOverlaySettings({ layers })
+  }, [updateOverlaySettings])
+  
+  // Count active overlays (from both legacy and new layer system)
+  const activeLayerCount = (settings.overlay.layers || []).filter(l => l.enabled).length
+  const activeLegacyOverlays = settings.overlay.text_layers.filter(l => l.enabled).length
+  const activeOverlays = activeLayerCount + activeLegacyOverlays
   
   // Determine if metadata passthrough is at risk
   const metadataWarning = settings.metadata.strip_all_metadata
@@ -1428,203 +1521,72 @@ export function DeliverControlPanel({
             </div>
           )}
           
-          {/* Add Text Layer Button */}
-          <div style={{ marginBottom: '0.75rem' }}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                updateOverlaySettings({
-                  text_layers: [
-                    ...settings.overlay.text_layers,
-                    { text: '', position: 'bottom_left', font_size: 24, opacity: 1.0, enabled: true }
-                  ]
-                })
-              }}
-              disabled={isReadOnly}
-              fullWidth
-            >
-              + Add Text Layer
-            </Button>
-          </div>
+          {/* Phase 5A: Overlay Layer Stack */}
+          <OverlayLayerStack
+            layers={settings.overlay.layers || []}
+            onLayersChange={handleLayersChange}
+            selectedLayerId={selectedLayerId}
+            onLayerSelect={setSelectedLayerId}
+            isReadOnly={isReadOnly}
+            onAddLayer={handleAddOverlayLayer}
+          />
           
-          {/* Text Layers List */}
-          {settings.overlay.text_layers.map((layer, index) => (
-            <div 
-              key={index}
-              style={{
-                padding: '0.5rem',
-                marginBottom: '0.5rem',
-                background: layer.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
-                border: `1px solid ${layer.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
-                borderRadius: 'var(--radius-sm)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
-                  <input
-                    type="checkbox"
-                    checked={layer.enabled}
-                    onChange={(e) => {
-                      const updated = [...settings.overlay.text_layers]
-                      updated[index] = { ...updated[index], enabled: e.target.checked }
-                      updateOverlaySettings({ text_layers: updated })
-                    }}
-                    disabled={isReadOnly}
-                    style={{ accentColor: 'var(--button-primary-bg)' }}
-                  />
-                  Layer {index + 1}
-                </label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    const updated = settings.overlay.text_layers.filter((_, i) => i !== index)
-                    updateOverlaySettings({ text_layers: updated })
-                  }}
-                  disabled={isReadOnly}
-                  style={{ padding: '0.125rem 0.375rem', fontSize: '0.625rem' }}
-                >
-                  ✕
-                </Button>
-              </div>
-              <input
-                type="text"
-                value={layer.text}
-                placeholder="Enter text..."
-                onChange={(e) => {
-                  const updated = [...settings.overlay.text_layers]
-                  updated[index] = { ...updated[index], text: e.target.value }
-                  updateOverlaySettings({ text_layers: updated })
-                }}
-                disabled={isReadOnly}
-                style={{
-                  width: '100%',
-                  padding: '0.375rem 0.5rem',
-                  fontSize: '0.75rem',
-                  backgroundColor: 'var(--input-bg)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  marginBottom: '0.375rem',
-                }}
-              />
-              <div style={{ display: 'flex', gap: '0.375rem' }}>
-                <select
-                  value={layer.position}
-                  onChange={(e) => {
-                    const updated = [...settings.overlay.text_layers]
-                    updated[index] = { ...updated[index], position: e.target.value }
-                    updateOverlaySettings({ text_layers: updated })
-                  }}
-                  disabled={isReadOnly}
-                  style={{
-                    flex: 1,
-                    padding: '0.25rem',
-                    fontSize: '0.6875rem',
-                    backgroundColor: 'var(--input-bg)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  <option value="top_left">Top Left</option>
-                  <option value="top_center">Top Center</option>
-                  <option value="top_right">Top Right</option>
-                  <option value="bottom_left">Bottom Left</option>
-                  <option value="bottom_center">Bottom Center</option>
-                  <option value="bottom_right">Bottom Right</option>
-                </select>
-                <input
-                  type="number"
-                  value={layer.font_size}
-                  min={8}
-                  max={72}
-                  onChange={(e) => {
-                    const updated = [...settings.overlay.text_layers]
-                    updated[index] = { ...updated[index], font_size: parseInt(e.target.value) || 24 }
-                    updateOverlaySettings({ text_layers: updated })
-                  }}
-                  disabled={isReadOnly}
-                  style={{
-                    width: '50px',
-                    padding: '0.25rem',
-                    fontSize: '0.6875rem',
-                    backgroundColor: 'var(--input-bg)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-secondary)',
-                    textAlign: 'center',
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-          
-          {/* Image Overlay Toggle */}
-          <div style={{
-            padding: '0.5rem',
-            marginTop: '0.5rem',
-            background: settings.overlay.image_watermark?.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
-            border: `1px solid ${settings.overlay.image_watermark?.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
-            borderRadius: 'var(--radius-sm)',
-          }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
-              <input
-                type="checkbox"
-                checked={settings.overlay.image_watermark?.enabled || false}
-                onChange={(e) => {
-                  updateOverlaySettings({
-                    image_watermark: {
-                      ...(settings.overlay.image_watermark || { x: 0.9, y: 0.1, scale: 1.0, opacity: 1.0 }),
-                      enabled: e.target.checked
-                    }
-                  })
-                }}
-                disabled={isReadOnly}
-                style={{ accentColor: 'var(--button-primary-bg)' }}
-              />
-              Image Overlay
-            </label>
-          </div>
-          
-          {/* Timecode Overlay Toggle */}
-          <div style={{
-            padding: '0.5rem',
-            marginTop: '0.5rem',
-            background: settings.overlay.timecode_overlay?.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
-            border: `1px solid ${settings.overlay.timecode_overlay?.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
-            borderRadius: 'var(--radius-sm)',
-          }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
-              <input
-                type="checkbox"
-                checked={settings.overlay.timecode_overlay?.enabled || false}
-                onChange={(e) => {
-                  updateOverlaySettings({
-                    timecode_overlay: {
-                      ...(settings.overlay.timecode_overlay || { position: 'top_left', font_size: 24, opacity: 1.0, background: false }),
-                      enabled: e.target.checked
-                    }
-                  })
-                }}
-                disabled={isReadOnly}
-                style={{ accentColor: 'var(--button-primary-bg)' }}
-              />
-              Timecode Overlay
-            </label>
-          </div>
-          
-          {settings.overlay.text_layers.length === 0 && !settings.overlay.image_watermark?.enabled && !settings.overlay.timecode_overlay?.enabled && (
+          {/* Legacy overlays (deprecated, shown for backwards compatibility) */}
+          {(settings.overlay.text_layers.length > 0 || settings.overlay.image_watermark?.enabled || settings.overlay.timecode_overlay?.enabled) && (
             <div style={{
+              marginTop: '1rem',
               padding: '0.5rem',
-              marginTop: '0.5rem',
-              fontSize: '0.625rem',
-              color: 'var(--text-dim)',
-              textAlign: 'center',
-              fontStyle: 'italic',
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.2)',
+              borderRadius: 'var(--radius-sm)',
             }}>
-              No overlays configured. Add a text layer or enable an overlay above.
+              <div style={{ fontSize: '0.625rem', color: 'rgb(251, 191, 36)', fontWeight: 600, marginBottom: '0.5rem' }}>
+                Legacy Overlays (Migrating to Layer System)
+              </div>
+              
+              {/* Text Layers List */}
+              {settings.overlay.text_layers.map((layer, index) => (
+                <div 
+                  key={index}
+                  style={{
+                    padding: '0.375rem',
+                    marginBottom: '0.375rem',
+                    background: layer.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
+                    border: `1px solid ${layer.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.6875rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      Text: {layer.text || '(empty)'} 
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const updated = settings.overlay.text_layers.filter((_, i) => i !== index)
+                        updateOverlaySettings({ text_layers: updated })
+                      }}
+                      disabled={isReadOnly}
+                      style={{ padding: '0.125rem 0.25rem', fontSize: '0.5rem' }}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              
+              {settings.overlay.image_watermark?.enabled && (
+                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  • Image Overlay (enabled)
+                </div>
+              )}
+              {settings.overlay.timecode_overlay?.enabled && (
+                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                  • Timecode Overlay (enabled)
+                </div>
+              )}
             </div>
           )}
         </Section>
