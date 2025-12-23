@@ -218,3 +218,42 @@ export function assertJobPendingForRender(
     { component, jobId, jobStatus }
   )
 }
+
+// ============================================================================
+// PHASE 9A: PREVIEW TRANSFORM AUTHORITY
+// ============================================================================
+
+/**
+ * Assert that overlay position updates flow through PreviewTransform.
+ * 
+ * This invariant should be triggered if position math is detected
+ * outside of the PreviewTransform utility. Since we cannot statically
+ * enforce this at runtime, this function is called defensively when
+ * position updates occur to validate the coordinates are reasonable.
+ * 
+ * @param point - The normalized coordinates being set
+ * @param component - Where the update originated
+ */
+export function assertPreviewTransformUsed(
+  point: { x: number; y: number },
+  component: string = 'VisualPreviewWorkspace'
+): boolean {
+  // Validate that coordinates are in valid normalized range (0-1)
+  // Invalid coordinates suggest bypass of PreviewTransform clamping
+  const isValidRange = 
+    typeof point.x === 'number' &&
+    typeof point.y === 'number' &&
+    !isNaN(point.x) &&
+    !isNaN(point.y) &&
+    point.x >= 0 &&
+    point.x <= 1 &&
+    point.y >= 0 &&
+    point.y <= 1
+  
+  return assertInvariant(
+    isValidRange,
+    'PREVIEW_TRANSFORM_BYPASS',
+    `Overlay position update with invalid coordinates (x: ${point.x}, y: ${point.y}) — may indicate PreviewTransform bypass`,
+    { component, x: point.x, y: point.y }
+  )
+}

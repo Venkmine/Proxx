@@ -1,31 +1,37 @@
 /**
  * VisualPreviewWorkspace — Single Source of Truth for Visual Preview
  * 
- * ALPHA CONSOLIDATION:
- * This is THE ONLY preview renderer in the application.
- * All visual overlays (timecode, text, image) render here.
- * Settings panels toggle features, but NEVER render their own previews.
+ * MULTIMODAL WORKSPACE:
+ * This is THE primary interaction surface for the application.
+ * Supports three modes:
+ * - View: Playback and viewing only
+ * - Overlays: Direct manipulation of overlays (drag, scale, position)
+ * - Burn-In: Data burn-in preview and editing
  * 
- * Rule: If it's spatial, it renders in the preview workspace.
+ * Side panels are INSPECTORS ONLY. All spatial editing happens here.
  * 
  * Features:
  * - Static preview frame (thumbnail from backend)
+ * - Video playback with controls
  * - Overlay rendering with drag-to-position
  * - Collapsible metadata strip
  * - Title-safe and action-safe guides
- * 
- * ALPHA LIMITATION: static preview frame only (no scrubbing)
+ * - Fullscreen support
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from './Button'
 import { FEATURE_FLAGS } from '../config/featureFlags'
-import { assertInvariant } from '../utils/invariants'
+import { assertInvariant, assertPreviewTransformUsed } from '../utils/invariants'
+import * as PreviewTransform from '../utils/PreviewTransform'
 import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
 
 // ============================================================================
 // TYPES
 // ============================================================================
+
+// Preview workspace mode
+export type PreviewMode = 'view' | 'overlays' | 'burn-in'
 
 interface SourceMetadata {
   resolution?: string
@@ -79,35 +85,17 @@ interface VisualPreviewWorkspaceProps {
   onLayerSelect?: (layerId: string | null) => void
   /** Phase 5A: Read-only mode (for running/completed jobs) */
   isReadOnly?: boolean
+  /** Preview mode (view/overlays/burn-in) */
+  mode?: PreviewMode
+  /** Callback when mode changes */
+  onModeChange?: (mode: PreviewMode) => void
 }
 
 // ============================================================================
-// HELPER: Get anchor position in normalized coordinates
+// COORDINATE MATH — Delegated to PreviewTransform utility
+// All coordinate transformations flow through PreviewTransform.
+// See: src/utils/PreviewTransform.ts
 // ============================================================================
-
-function getAnchorPosition(anchor: string): { x: number; y: number } {
-  const positions: Record<string, { x: number; y: number }> = {
-    'top_left': { x: 0.1, y: 0.1 },
-    'top_center': { x: 0.5, y: 0.1 },
-    'top_right': { x: 0.9, y: 0.1 },
-    'center_left': { x: 0.1, y: 0.5 },
-    'center': { x: 0.5, y: 0.5 },
-    'center_right': { x: 0.9, y: 0.5 },
-    'bottom_left': { x: 0.1, y: 0.9 },
-    'bottom_center': { x: 0.5, y: 0.9 },
-    'bottom_right': { x: 0.9, y: 0.9 },
-    'custom': { x: 0.5, y: 0.5 },
-  }
-  return positions[anchor] || { x: 0.5, y: 0.5 }
-}
-
-// Clamp to title-safe area (10% inset)
-function clampToTitleSafe(x: number, y: number): { x: number; y: number } {
-  return {
-    x: Math.max(0.1, Math.min(0.9, x)),
-    y: Math.max(0.1, Math.min(0.9, y)),
-  }
-}
 
 // ============================================================================
 // COMPONENT
@@ -137,6 +125,9 @@ export function VisualPreviewWorkspace({
   selectedLayerId,
   onLayerSelect,
   isReadOnly = false,
+  // Multimodal preview
+  mode = 'view',
+  onModeChange,
 }: VisualPreviewWorkspaceProps) {
   // Extract filename from path
   const fileName = sourceFilePath ? sourceFilePath.split('/').pop() : null
@@ -162,11 +153,16 @@ export function VisualPreviewWorkspace({
   
   // Video playback state
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null)
-  const [previewStatus, setPreviewStatus] = useState<'idle' | 'generating' | 'ready' | 'error'>('idle')
+  const [previewStatus, setPreviewStatus] = useState<'idle' | 'generating' | 'ready' | 'error' | 'unsupported'>('idle')
   const [previewProgress, setPreviewProgress] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [videoError, setVideoError] = useState<string | null>(null)
+  
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const workspaceRef = useRef<HTMLDivElement>(null)
   
   // Refs
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -357,13 +353,111 @@ export function VisualPreviewWorkspace({
     }
   }, [])
 
-  const formatTimecode = useCallback((seconds: number): string => {
+  // Handle video errors - show thumbnail fallback with message
+  const handleVideoError = useCallback(() => {
+    console.log('[VisualPreviewWorkspace] Video playback error - falling back to thumbnail')
+    setVideoError('Playback not supported for this format')
+    setPreviewStatus('unsupported')
+    setIsPlaying(false)
+  }, [])
+
+  // Parse frame rate from metadata (e.g., "24 fps", "29.97", "30000/1001")
+  const getFrameRate = useCallback((): number => {
+    if (!metadata?.fps) return 24
+    const fpsStr = metadata.fps.toLowerCase().replace('fps', '').trim()
+    // Handle fractional formats like "30000/1001"
+    if (fpsStr.includes('/')) {
+      const [num, den] = fpsStr.split('/').map(s => parseFloat(s))
+      if (num && den) return num / den
+    }
+    const parsed = parseFloat(fpsStr)
+    return isNaN(parsed) ? 24 : parsed
+  }, [metadata?.fps])
+
+  // Format seconds to timecode (frame-rate aware)
+  const formatTimecode = useCallback((seconds: number, fps?: number): string => {
+    const frameRate = fps || getFrameRate()
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     const s = Math.floor(seconds % 60)
-    const f = Math.floor((seconds % 1) * 24) // Assume 24fps for display
+    const f = Math.floor((seconds % 1) * frameRate)
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}:${f.toString().padStart(2, '0')}`
+  }, [getFrameRate])
+
+  // Calculate SRC TC from source metadata timecode start + current playback position
+  const getSrcTimecode = useCallback((): string => {
+    if (!metadata?.timecode_start) return '--:--:--:--'
+    
+    // Parse source timecode start
+    const tcParts = metadata.timecode_start.split(':').map(s => parseInt(s, 10))
+    if (tcParts.length !== 4 || tcParts.some(isNaN)) return metadata.timecode_start
+    
+    const [startH, startM, startS, startF] = tcParts
+    const frameRate = getFrameRate()
+    
+    // Convert start timecode to total frames
+    const startTotalFrames = (startH * 3600 + startM * 60 + startS) * frameRate + startF
+    
+    // Add current playback frames
+    const currentFrames = Math.floor(currentTime * frameRate)
+    const totalFrames = startTotalFrames + currentFrames
+    
+    // Convert back to timecode
+    const totalSeconds = Math.floor(totalFrames / frameRate)
+    const frames = Math.floor(totalFrames % frameRate)
+    const h = Math.floor(totalSeconds / 3600)
+    const m = Math.floor((totalSeconds % 3600) / 60)
+    const s = totalSeconds % 60
+    
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`
+  }, [metadata?.timecode_start, currentTime, getFrameRate])
+
+  // ============================================
+  // Fullscreen handlers
+  // ============================================
+  
+  const toggleFullscreen = useCallback(async () => {
+    if (!workspaceRef.current) return
+    
+    try {
+      if (!document.fullscreenElement) {
+        await workspaceRef.current.requestFullscreen()
+        setIsFullscreen(true)
+      } else {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err)
+    }
   }, [])
+  
+  // Listen for fullscreen changes (ESC key exits fullscreen)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+  
+  // ESC key handler for fullscreen (browsers handle this automatically, but we sync state)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        // Browser will exit fullscreen, we just sync state
+        setIsFullscreen(false)
+      }
+    }
+    
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isFullscreen])
 
   // ============================================
   // Drag-to-position handlers
@@ -409,11 +503,17 @@ export function VisualPreviewWorkspace({
     if (isReadOnly) return
     
     const rect = canvasRef.current.getBoundingClientRect()
-    const rawX = (e.clientX - rect.left) / rect.width
-    const rawY = (e.clientY - rect.top) / rect.height
+    // Phase 9A: All coordinate math through PreviewTransform
+    const rawPoint = PreviewTransform.screenToNormalized(
+      { x: e.clientX, y: e.clientY },
+      rect
+    )
     
-    // Clamp to title-safe area
-    const { x, y } = clampToTitleSafe(rawX, rawY)
+    // Clamp to title-safe area via PreviewTransform
+    const { x, y } = PreviewTransform.clampToSafeArea(rawPoint, 'title')
+    
+    // Phase 9A: Defensive invariant — validate coordinates before applying
+    assertPreviewTransformUsed({ x, y }, 'VisualPreviewWorkspace.handleMouseMove')
     
     const newSettings = { ...overlaySettings }
     
@@ -531,13 +631,14 @@ export function VisualPreviewWorkspace({
 
   return (
     <div
+      ref={workspaceRef}
       data-testid="visual-preview-workspace"
       style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         overflow: 'hidden',
-        background: 'var(--card-bg-solid, rgba(16, 18, 20, 0.98))',
+        background: isFullscreen ? '#000' : 'var(--card-bg-solid, rgba(16, 18, 20, 0.98))',
       }}
     >
       {/* Source Timecode Bar */}
@@ -573,7 +674,7 @@ export function VisualPreviewWorkspace({
         </div>
       )}
 
-      {/* Header with Zoom Controls */}
+      {/* Header with Mode Switcher & Zoom Controls */}
       <div
         style={{
           display: 'flex',
@@ -584,7 +685,32 @@ export function VisualPreviewWorkspace({
           background: 'rgba(26, 32, 44, 0.6)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {/* Mode Switcher */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', borderRight: '1px solid var(--border-primary)', paddingRight: '0.75rem' }}>
+            {(['view', 'overlays', 'burn-in'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => onModeChange?.(m)}
+                disabled={!onModeChange}
+                style={{
+                  padding: '0.375rem 0.625rem',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  textTransform: 'capitalize',
+                  background: mode === m ? 'var(--button-primary-bg)' : 'rgba(255,255,255,0.05)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: mode === m ? '#fff' : 'var(--text-muted)',
+                  cursor: onModeChange ? 'pointer' : 'default',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {m === 'burn-in' ? 'Burn-In' : m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
+          
           <span
             style={{
               fontSize: '0.75rem',
@@ -692,6 +818,29 @@ export function VisualPreviewWorkspace({
             </button>
           </div>
           
+          {/* Fullscreen toggle */}
+          <button
+            onClick={toggleFullscreen}
+            data-testid="fullscreen-toggle-btn"
+            title={isFullscreen ? 'Exit Fullscreen (ESC)' : 'Fullscreen'}
+            style={{
+              padding: '0.25rem 0.5rem',
+              fontSize: '0.625rem',
+              fontWeight: 600,
+              background: isFullscreen ? 'var(--button-primary-bg)' : 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: 'var(--radius-sm)',
+              color: isFullscreen ? '#fff' : 'var(--text-muted)',
+              cursor: 'pointer',
+              marginLeft: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+            }}
+          >
+            {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+          </button>
+          
           {onOpenVisualEditor && hasSource && (
             <Button
               variant="secondary"
@@ -742,7 +891,7 @@ export function VisualPreviewWorkspace({
             transition: zoom === 'fit' ? 'width 0.2s ease' : undefined,
           }}
         >
-          {/* Video element for playback */}
+          {/* Video element for playback - only for supported formats */}
           {previewVideoUrl && previewStatus === 'ready' && (
             <video
               ref={videoRef}
@@ -750,6 +899,7 @@ export function VisualPreviewWorkspace({
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={handleVideoEnded}
+              onError={handleVideoError}
               style={{
                 position: 'absolute',
                 inset: 0,
@@ -762,8 +912,8 @@ export function VisualPreviewWorkspace({
             />
           )}
           
-          {/* Fallback thumbnail when video not ready */}
-          {thumbnailUrl && previewStatus !== 'ready' && (
+          {/* Fallback thumbnail - shown for unsupported formats, error states, or while generating */}
+          {thumbnailUrl && (previewStatus !== 'ready' || previewStatus === 'unsupported') && (
             <img
               src={thumbnailUrl}
               alt="Preview thumbnail"
@@ -775,6 +925,44 @@ export function VisualPreviewWorkspace({
                 objectFit: 'contain',
               }}
             />
+          )}
+          
+          {/* Unsupported format message */}
+          {previewStatus === 'unsupported' && thumbnailUrl && (
+            <div style={{
+              position: 'absolute',
+              bottom: '0.75rem',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '0.375rem 0.75rem',
+              background: 'rgba(251, 191, 36, 0.9)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.6875rem',
+              color: '#1a202c',
+              fontWeight: 500,
+              zIndex: 30,
+            }}>
+              {videoError || 'Playback not supported — showing static frame'}
+            </div>
+          )}
+          
+          {/* Error state with thumbnail fallback */}
+          {previewStatus === 'error' && thumbnailUrl && (
+            <div style={{
+              position: 'absolute',
+              bottom: '0.75rem',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '0.375rem 0.75rem',
+              background: 'rgba(239, 68, 68, 0.9)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.6875rem',
+              color: 'white',
+              fontWeight: 500,
+              zIndex: 30,
+            }}>
+              Preview generation failed — showing static frame
+            </div>
           )}
           
           {/* Preview generation progress */}
@@ -842,6 +1030,70 @@ export function VisualPreviewWorkspace({
             </div>
           )}
 
+          {/* On-screen Timecode Reader (visible in fullscreen mode) */}
+          {hasSource && isFullscreen && (
+            <div
+              data-testid="fullscreen-timecode"
+              style={{
+                position: 'absolute',
+                bottom: '1rem',
+                left: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1rem',
+                padding: '0.375rem 0.75rem',
+                background: 'rgba(0, 0, 0, 0.75)',
+                borderRadius: 'var(--radius-sm)',
+                pointerEvents: 'none',
+                zIndex: 40,
+              }}
+            >
+              {/* REC TC */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <span style={{
+                  fontSize: '0.5rem',
+                  fontWeight: 600,
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  textTransform: 'uppercase',
+                }}>
+                  REC
+                </span>
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: 'white',
+                  letterSpacing: '0.03em',
+                }}>
+                  {formatTimecode(currentTime)}
+                </span>
+              </div>
+              
+              <div style={{ width: '1px', height: '1rem', background: 'rgba(255, 255, 255, 0.3)' }} />
+              
+              {/* SRC TC */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <span style={{
+                  fontSize: '0.5rem',
+                  fontWeight: 600,
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  textTransform: 'uppercase',
+                }}>
+                  SRC
+                </span>
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  color: metadata?.timecode_start ? 'rgb(59, 130, 246)' : 'rgba(255, 255, 255, 0.4)',
+                  letterSpacing: '0.03em',
+                }}>
+                  {getSrcTimecode()}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Safe Area Guides - Toggleable */}
           {hasSource && (
             <>
@@ -872,9 +1124,12 @@ export function VisualPreviewWorkspace({
             .filter(layer => layer.enabled)
             .sort((a, b) => a.order - b.order)
             .map(layer => {
-              const pos = layer.settings.position === 'custom' && layer.settings.x !== undefined && layer.settings.y !== undefined
-                ? { x: layer.settings.x, y: layer.settings.y }
-                : getAnchorPosition(layer.settings.position || 'center')
+              // Phase 9A: All position resolution through PreviewTransform
+              const pos = PreviewTransform.resolveOverlayPosition(
+                layer.settings.position || 'center',
+                layer.settings.x,
+                layer.settings.y
+              )
               const isSelected = layer.id === selectedLayerId
               const zIndex = isSelected ? 30 : 10 + layer.order
               
@@ -1042,9 +1297,12 @@ export function VisualPreviewWorkspace({
           {/* Legacy Text Overlay Layers */}
           {overlaySettings?.text_layers.map((layer, index) => {
             if (!layer.enabled) return null
-            const pos = layer.position === 'custom' && layer.x !== undefined && layer.y !== undefined
-              ? { x: layer.x, y: layer.y }
-              : getAnchorPosition(layer.position)
+            // Phase 9A: All position resolution through PreviewTransform
+            const pos = PreviewTransform.resolveOverlayPosition(
+              layer.position,
+              layer.x,
+              layer.y
+            )
             const isSelected = selectedOverlayType === 'text' && selectedTextLayerIndex === index
             // Type assertion for extended properties
             const extLayer = layer as TextOverlay & { font?: string; color?: string; background?: boolean; background_color?: string; background_opacity?: number }
@@ -1120,9 +1378,12 @@ export function VisualPreviewWorkspace({
           {/* Timecode Overlay */}
           {overlaySettings?.timecode_overlay?.enabled && (() => {
             const tc = overlaySettings.timecode_overlay!
-            const pos = tc.position === 'custom' && tc.x !== undefined && tc.y !== undefined
-              ? { x: tc.x, y: tc.y }
-              : getAnchorPosition(tc.position)
+            // Phase 9A: All position resolution through PreviewTransform
+            const pos = PreviewTransform.resolveOverlayPosition(
+              tc.position,
+              tc.x,
+              tc.y
+            )
             const isSelected = selectedOverlayType === 'timecode'
             
             return (
@@ -1238,6 +1499,103 @@ export function VisualPreviewWorkspace({
             }}>
               {formatTimecode(duration)}
             </span>
+          </div>
+        )}
+
+        {/* ============================================ */}
+        {/* Timecode Reader — REC TC & SRC TC Display */}
+        {/* ============================================ */}
+        {hasSource && (
+          <div
+            data-testid="timecode-reader"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '1.5rem',
+              marginTop: '0.5rem',
+              padding: '0.5rem 1rem',
+              background: 'rgba(0, 0, 0, 0.6)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-primary)',
+              width: '100%',
+              maxWidth: '960px',
+            }}
+          >
+            {/* REC TC - Player-based timecode starting at 00:00:00:00 */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: '0.5625rem',
+                fontWeight: 600,
+                color: 'var(--text-dim)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '0.125rem',
+              }}>
+                REC TC
+              </div>
+              <div
+                data-testid="rec-timecode"
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  letterSpacing: '0.03em',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                }}
+              >
+                {formatTimecode(currentTime)}
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{
+              width: '1px',
+              height: '2rem',
+              background: 'var(--border-secondary)',
+            }} />
+
+            {/* SRC TC - Source metadata timecode */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: '0.5625rem',
+                fontWeight: 600,
+                color: 'var(--text-dim)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '0.125rem',
+              }}>
+                SRC TC
+              </div>
+              <div
+                data-testid="src-timecode"
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
+                  color: metadata?.timecode_start ? 'rgb(59, 130, 246)' : 'var(--text-dim)',
+                  letterSpacing: '0.03em',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                }}
+              >
+                {getSrcTimecode()}
+              </div>
+            </div>
+
+            {/* Frame Rate Badge */}
+            <div style={{
+              marginLeft: '0.5rem',
+              padding: '0.125rem 0.375rem',
+              fontSize: '0.5625rem',
+              fontWeight: 600,
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-muted)',
+            }}>
+              {metadata?.fps || '24 fps'}
+            </div>
           </div>
         )}
 

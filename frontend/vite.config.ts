@@ -32,4 +32,10 @@ export default defineConfig({
     host: '0.0.0.0', // Listen on all interfaces (both IPv4 and IPv6)
     strictPort: true, // Fail if port is already in use
   },
+  // Phase 9A: Unit test configuration
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
 })
