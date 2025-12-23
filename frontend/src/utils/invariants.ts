@@ -257,3 +257,32 @@ export function assertPreviewTransformUsed(
     { component, x: point.x, y: point.y }
   )
 }
+
+// ============================================================================
+// PHASE 9B: OVERLAY BOUNDING BOX HANDLES
+// ============================================================================
+
+/**
+ * Assert that an overlay handle drag does not push the overlay outside bounds.
+ * 
+ * This invariant is triggered when scaling via bounding box handles would
+ * cause the overlay to exceed the title-safe or action-safe area.
+ * 
+ * @param isWithinBounds - Whether the overlay remains within bounds after scaling
+ * @param layerId - The overlay layer being scaled
+ * @param attemptedScale - The scale value that was attempted
+ * @param component - Where the scaling originated
+ */
+export function assertOverlayHandleWithinBounds(
+  isWithinBounds: boolean,
+  layerId: string,
+  attemptedScale: number,
+  component: string = 'OverlaySelectionBox'
+): boolean {
+  return assertInvariant(
+    isWithinBounds,
+    'OVERLAY_HANDLE_OUT_OF_BOUNDS',
+    `Scaling overlay ${layerId} would push it outside the safe area (attempted scale: ${attemptedScale.toFixed(2)})`,
+    { component, layerId, attemptedScale }
+  )
+}

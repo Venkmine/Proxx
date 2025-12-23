@@ -25,6 +25,7 @@ import { FEATURE_FLAGS } from '../config/featureFlags'
 import { assertInvariant, assertPreviewTransformUsed } from '../utils/invariants'
 import * as PreviewTransform from '../utils/PreviewTransform'
 import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
+import { OverlaySelectionBox, type OverlaySizeInfo } from './OverlaySelectionBox'
 
 // ============================================================================
 // TYPES
@@ -167,6 +168,39 @@ export function VisualPreviewWorkspace({
   // Refs
   const canvasRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  
+  // Phase 9B: Overlay element refs for bounding box handles
+  const overlayElementRefs = useRef<Map<string, HTMLElement>>(new Map())
+  const [canvasRect, setCanvasRect] = useState<DOMRect | null>(null)
+  const [isScaling, setIsScaling] = useState(false)
+
+  // Phase 9B: Update canvas rect on resize/zoom changes
+  useEffect(() => {
+    if (!canvasRef.current) return
+    
+    const updateCanvasRect = () => {
+      if (canvasRef.current) {
+        setCanvasRect(canvasRef.current.getBoundingClientRect())
+      }
+    }
+    
+    // Initial update
+    updateCanvasRect()
+    
+    // Update on resize
+    const resizeObserver = new ResizeObserver(updateCanvasRect)
+    resizeObserver.observe(canvasRef.current)
+    
+    // Also update on scroll/zoom
+    window.addEventListener('scroll', updateCanvasRect, true)
+    window.addEventListener('resize', updateCanvasRect)
+    
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('scroll', updateCanvasRect, true)
+      window.removeEventListener('resize', updateCanvasRect)
+    }
+  }, [zoom, panOffset])
 
   // ALPHA LIMITATION: static preview frame only (no scrubbing)
   // Auto-load preview when source changes
@@ -569,6 +603,57 @@ export function VisualPreviewWorkspace({
       return () => window.removeEventListener('mouseup', handleGlobalMouseUp)
     }
   }, [isDragging, isPanning])
+
+  // ============================================
+  // Phase 9B: Scale change handler for bounding box handles
+  // ============================================
+  const handleOverlayScaleChange = useCallback((layerId: string, newScale: number) => {
+    if (!overlaySettings || !onOverlaySettingsChange) return
+    
+    const newSettings = { ...overlaySettings }
+    
+    if (newSettings.layers) {
+      const layers = [...newSettings.layers]
+      const layerIndex = layers.findIndex(l => l.id === layerId)
+      if (layerIndex !== -1) {
+        const layer = layers[layerIndex]
+        layers[layerIndex] = {
+          ...layer,
+          settings: {
+            ...layer.settings,
+            scale: newScale,
+          }
+        }
+        newSettings.layers = layers
+        onOverlaySettingsChange(newSettings)
+      }
+    }
+  }, [overlaySettings, onOverlaySettingsChange])
+
+  // Phase 9B: Get selected overlay info for bounding box
+  const getSelectedOverlayInfo = useCallback((): OverlaySizeInfo | null => {
+    if (!selectedLayerId || !overlaySettings?.layers) return null
+    
+    const layer = overlaySettings.layers.find(l => l.id === selectedLayerId)
+    if (!layer) return null
+    
+    const pos = PreviewTransform.resolveOverlayPosition(
+      layer.settings.position || 'center',
+      layer.settings.x,
+      layer.settings.y
+    )
+    
+    const overlayElement = overlayElementRefs.current.get(selectedLayerId) || null
+    
+    return {
+      layerId: selectedLayerId,
+      type: layer.type,
+      position: pos,
+      scale: layer.settings.scale,
+      fontSize: layer.settings.font_size,
+      overlayElement,
+    }
+  }, [selectedLayerId, overlaySettings])
 
   // Wheel zoom handler - zoom follows mouse cursor
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -1138,6 +1223,10 @@ export function VisualPreviewWorkspace({
                 return (
                   <div
                     key={layer.id}
+                    ref={(el) => {
+                      if (el) overlayElementRefs.current.set(layer.id, el)
+                      else overlayElementRefs.current.delete(layer.id)
+                    }}
                     data-testid={`overlay-layer-${layer.id}`}
                     onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
@@ -1154,9 +1243,9 @@ export function VisualPreviewWorkspace({
                       fontFamily: layer.settings.font || 'Arial, sans-serif',
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
-                      cursor: isReadOnly ? 'default' : 'move',
-                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                       userSelect: 'none',
@@ -1172,6 +1261,10 @@ export function VisualPreviewWorkspace({
                 return (
                   <div
                     key={layer.id}
+                    ref={(el) => {
+                      if (el) overlayElementRefs.current.set(layer.id, el)
+                      else overlayElementRefs.current.delete(layer.id)
+                    }}
                     data-testid={`overlay-layer-${layer.id}`}
                     onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
@@ -1179,9 +1272,9 @@ export function VisualPreviewWorkspace({
                       left: `${pos.x * 100}%`,
                       top: `${pos.y * 100}%`,
                       transform: 'translate(-50%, -50%)',
-                      cursor: isReadOnly ? 'default' : 'move',
-                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       borderRadius: 'var(--radius-sm)',
                       padding: '2px',
                       userSelect: 'none',
@@ -1225,6 +1318,10 @@ export function VisualPreviewWorkspace({
                 return (
                   <div
                     key={layer.id}
+                    ref={(el) => {
+                      if (el) overlayElementRefs.current.set(layer.id, el)
+                      else overlayElementRefs.current.delete(layer.id)
+                    }}
                     data-testid={`overlay-layer-${layer.id}`}
                     onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
@@ -1239,9 +1336,9 @@ export function VisualPreviewWorkspace({
                       fontFamily: layer.settings.font || 'Menlo, monospace',
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
-                      cursor: isReadOnly ? 'default' : 'move',
-                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                       letterSpacing: '0.05em',
@@ -1258,6 +1355,10 @@ export function VisualPreviewWorkspace({
                 return (
                   <div
                     key={layer.id}
+                    ref={(el) => {
+                      if (el) overlayElementRefs.current.set(layer.id, el)
+                      else overlayElementRefs.current.delete(layer.id)
+                    }}
                     data-testid={`overlay-layer-${layer.id}`}
                     onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
@@ -1272,9 +1373,9 @@ export function VisualPreviewWorkspace({
                       fontFamily: 'Menlo, monospace',
                       color: 'white',
                       opacity: layer.settings.opacity || 1,
-                      cursor: isReadOnly ? 'default' : 'move',
-                      border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
+                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                       userSelect: 'none',
@@ -1416,6 +1517,17 @@ export function VisualPreviewWorkspace({
               </div>
             )
           })()}
+
+          {/* Phase 9B: Overlay Selection Box with Handles */}
+          <OverlaySelectionBox
+            mode={mode}
+            isReadOnly={isReadOnly}
+            overlayInfo={getSelectedOverlayInfo()}
+            canvasRect={canvasRect}
+            onScaleChange={handleOverlayScaleChange}
+            onScaleStart={() => setIsScaling(true)}
+            onScaleEnd={() => setIsScaling(false)}
+          />
         </div>
 
         {/* ============================================ */}
