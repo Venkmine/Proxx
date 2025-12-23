@@ -649,6 +649,8 @@ export function VisualPreviewWorkspace({
             x,
             y,
             position: 'custom',
+            // Phase 9E: Mark as manually positioned
+            positionSource: 'manual',
           }
         }
         newSettings.layers = layers
@@ -726,6 +728,8 @@ export function VisualPreviewWorkspace({
           settings: {
             ...layerToUpdate.settings,
             scale: newScale,
+            // Phase 9E: Mark as manually positioned
+            positionSource: 'manual',
           }
         }
         newSettings.layers = layers

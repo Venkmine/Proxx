@@ -387,3 +387,40 @@ export function assertModeInteractionAllowed(
   )
 }
 
+// ============================================================================
+// PHASE 9E: PRESET POSITION CONFLICT
+// ============================================================================
+
+/**
+ * Assert that a preset is not overwriting manual preview edits silently.
+ * 
+ * This invariant fires when:
+ * - A preset is being applied
+ * - Overlays with positionSource === "manual" exist
+ * - No confirmation dialog was shown to the user
+ * 
+ * This should NEVER fire in normal operation — the UI must always
+ * show a confirmation dialog when this conflict exists.
+ * 
+ * @param hasManualEdits - Whether any overlay has positionSource === "manual"
+ * @param showedConfirmation - Whether the confirmation dialog was shown
+ * @param component - Where the preset application originated
+ */
+export function assertNoSilentPresetOverwrite(
+  hasManualEdits: boolean,
+  showedConfirmation: boolean,
+  component: string = 'PresetApplication'
+): boolean {
+  // Invariant holds if:
+  // - No manual edits exist (no conflict), OR
+  // - Confirmation was shown (user was informed)
+  const invariantHolds = !hasManualEdits || showedConfirmation
+  
+  return assertInvariant(
+    invariantHolds,
+    'PRESET_POSITION_CONFLICT',
+    'Preset applied over manually edited overlay positions without user confirmation',
+    { component, hasManualEdits, showedConfirmation }
+  )
+}
+

@@ -15,11 +15,12 @@ import { PresetEditorHeader } from './components/PresetEditorHeader'
 import { AppFooter } from './components/AppFooter'
 import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
+import { PresetPositionConflictDialog } from './components/PresetPositionConflictDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { GlobalDropZone } from './components/GlobalDropZone'
 import { InvariantBanner } from './components/InvariantBanner'
 import { DropConfirmationDialog } from './components/DropConfirmationDialog'
-import { assertJobPendingForRender } from './utils/invariants'
+import { assertJobPendingForRender, assertNoSilentPresetOverwrite } from './utils/invariants'
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
 // Alpha: Copilot imports hidden (dev feature)
@@ -283,6 +284,10 @@ function App() {
   const [discardDialogOpen, setDiscardDialogOpen] = useState<boolean>(false)
   const [pendingPresetSwitch, setPendingPresetSwitch] = useState<(() => void) | null>(null)
   
+  // Phase 9E: Preset position conflict dialog
+  const [positionConflictDialogOpen, setPositionConflictDialogOpen] = useState<boolean>(false)
+  const [pendingPresetSettings, setPendingPresetSettings] = useState<DeliverSettings | null>(null)
+  
   // Phase 4C: Dropped files confirmation state
   const [droppedPaths, setDroppedPaths] = useState<string[]>([])
   const [showDropConfirmation, setShowDropConfirmation] = useState<boolean>(false)
@@ -395,10 +400,58 @@ function App() {
   }
 
   // Alpha: Apply client-side preset settings to Deliver panel
-  const applyPresetSettings = (settings: DeliverSettings) => {
-    setDeliverSettings(settings)
+  // Phase 9E: Guard against silent overwrite of manual preview edits
+  const applyPresetSettings = (settings: DeliverSettings, forceApply: boolean = false) => {
+    // Phase 9E: Check if any overlay layers have been manually positioned
+    const hasManualEdits = deliverSettings.overlay?.layers?.some(
+      layer => layer.settings.positionSource === 'manual'
+    ) ?? false
+    
+    // If manual edits exist and not forcing, show confirmation dialog
+    if (hasManualEdits && !forceApply) {
+      // Store pending settings and show dialog
+      setPendingPresetSettings(settings)
+      setPositionConflictDialogOpen(true)
+      return
+    }
+    
+    // Phase 9E: Assert invariant — confirm no silent overwrite
+    assertNoSilentPresetOverwrite(hasManualEdits, forceApply, 'App.applyPresetSettings')
+    
+    // Apply preset settings with positionSource reset to "preset"
+    const settingsWithPresetSource: DeliverSettings = {
+      ...settings,
+      overlay: {
+        ...settings.overlay,
+        layers: settings.overlay?.layers?.map(layer => ({
+          ...layer,
+          settings: {
+            ...layer.settings,
+            positionSource: 'preset' as const,
+          }
+        })) ?? [],
+      }
+    }
+    
+    setDeliverSettings(settingsWithPresetSource)
     const preset = presetManager.getPreset(presetManager.selectedPresetId || '')
     setAppliedPresetName(preset?.name || null)
+  }
+  
+  // Phase 9E: Handle preset position conflict dialog actions
+  const handleKeepManualPosition = () => {
+    setPositionConflictDialogOpen(false)
+    setPendingPresetSettings(null)
+    // Do not apply preset — keep current manual positions
+  }
+  
+  const handleResetToPreset = () => {
+    if (pendingPresetSettings) {
+      // Force apply the preset (user confirmed)
+      applyPresetSettings(pendingPresetSettings, true)
+    }
+    setPositionConflictDialogOpen(false)
+    setPendingPresetSettings(null)
   }
 
   // Phase 17: Fetch DeliverSettings for a backend preset (legacy support)
@@ -2137,6 +2190,13 @@ function App() {
         presetName={presetManager.selectedPresetId 
           ? presetManager.getPreset(presetManager.selectedPresetId)?.name 
           : undefined}
+      />
+      
+      {/* Phase 9E: Preset Position Conflict Dialog */}
+      <PresetPositionConflictDialog
+        isOpen={positionConflictDialogOpen}
+        onKeepManual={handleKeepManualPosition}
+        onResetToPreset={handleResetToPreset}
       />
       
       {/* Phase 4C: Drop Confirmation Dialog */}

@@ -129,6 +129,13 @@ export interface ImageOverlay {
 export type OverlayLayerType = 'image' | 'text' | 'timecode' | 'metadata'
 export type OverlayLayerScope = 'project' | 'clip'
 
+/**
+ * Position source tracking for preset vs preview authority.
+ * - "preset": Position was set by applying a preset (default)
+ * - "manual": Position was set by dragging/scaling in preview
+ */
+export type PositionSource = 'preset' | 'manual'
+
 export interface OverlayLayerSettings {
   // Text layer settings
   text?: string
@@ -150,6 +157,8 @@ export interface OverlayLayerSettings {
   timecode_source?: string
   // Metadata layer settings
   metadata_field?: string
+  // Phase 9E: Position source tracking
+  positionSource?: PositionSource
 }
 
 export interface OverlayLayer {
