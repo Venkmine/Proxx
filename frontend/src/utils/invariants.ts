@@ -350,3 +350,40 @@ export function assertBurninFontSizeStable(
     { component, currentSize, expectedSize, variance }
   )
 }
+
+// ============================================================================
+// PHASE 9D: MODE INTERACTION BOUNDARIES
+// ============================================================================
+
+/**
+ * Assert that an overlay interaction is allowed in the current mode.
+ * 
+ * This invariant fires when an illegal interaction is attempted:
+ * - Any overlay interaction in view mode
+ * - Non-burn-in overlay interaction in burn-in mode
+ * 
+ * This is a HARD BLOCK — the interaction should not proceed.
+ * 
+ * @param allowed - Whether the interaction is allowed
+ * @param mode - Current preview mode
+ * @param overlayId - ID of the overlay being interacted with
+ * @param overlayType - Type of the overlay
+ * @param action - The action being attempted (select, drag, scale)
+ * @param component - Where the violation originated
+ */
+export function assertModeInteractionAllowed(
+  allowed: boolean,
+  mode: string,
+  overlayId: string,
+  overlayType: string,
+  action: string,
+  component: string = 'VisualPreviewWorkspace'
+): boolean {
+  return assertInvariant(
+    allowed,
+    'MODE_INTERACTION_VIOLATION',
+    `Illegal ${action} on ${overlayType} overlay in ${mode} mode`,
+    { component, mode, overlayId, overlayType, action }
+  )
+}
+

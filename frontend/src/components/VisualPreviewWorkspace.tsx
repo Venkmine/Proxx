@@ -22,14 +22,21 @@
  * - Burn-in overlays use BURNIN_FONTS for FFmpeg-representative rendering
  * - Font constants are representative, NOT pixel-identical to FFmpeg
  * - See constants/burnin.ts for parity documentation
+ * 
+ * Phase 9D: Mode interaction boundaries
+ * - All interactions gated through canInteractWithOverlay()
+ * - View mode: no overlay interactions
+ * - Overlays mode: full overlay editing
+ * - Burn-in mode: only burn-in overlays editable
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from './Button'
 import { FEATURE_FLAGS } from '../config/featureFlags'
-import { assertInvariant, assertPreviewTransformUsed } from '../utils/invariants'
+import { assertInvariant, assertPreviewTransformUsed, assertModeInteractionAllowed } from '../utils/invariants'
 import * as PreviewTransform from '../utils/PreviewTransform'
-import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
+import { canInteractWithOverlay, getInteractionCursor } from '../utils/PreviewModeInteraction'
+import type { OverlaySettings, ImageOverlay, TextOverlay, OverlayLayerType } from './DeliverControlPanel'
 import { OverlaySelectionBox, type OverlaySizeInfo } from './OverlaySelectionBox'
 import { 
   BURNIN_FONTS, 
@@ -508,12 +515,35 @@ export function VisualPreviewWorkspace({
   // Drag-to-position handlers
   // ============================================
 
+  // Helper to get layer type by ID for interaction gating
+  const getLayerTypeById = useCallback((layerId: string): OverlayLayerType | null => {
+    const layer = overlaySettings?.layers?.find(l => l.id === layerId)
+    return layer?.type || null
+  }, [overlaySettings])
+
   // Phase 5A: Handle layer mouse down for new layer system
+  // Phase 9D: Gated through canInteractWithOverlay
   const handleLayerMouseDown = useCallback((
     e: React.MouseEvent,
     layerId: string
   ) => {
-    if (isReadOnly) return
+    // Phase 9D: Check mode interaction before any state changes
+    const layerType = getLayerTypeById(layerId)
+    if (!layerType) return
+    
+    const interactionCheck = canInteractWithOverlay(mode, layerType, 'select', isReadOnly)
+    if (!interactionCheck.allowed) {
+      // Fire invariant but do NOT mutate state
+      assertModeInteractionAllowed(
+        false,
+        mode,
+        layerId,
+        layerType,
+        'select',
+        'VisualPreviewWorkspace.handleLayerMouseDown'
+      )
+      return // Hard block — no partial updates
+    }
     
     // Hardening: Assert layer is selected before editing
     assertInvariant(
@@ -528,24 +558,68 @@ export function VisualPreviewWorkspace({
     setIsDragging(true)
     setDragTarget({ type: 'layer', layerId })
     onLayerSelect?.(layerId)
-  }, [isReadOnly, onLayerSelect])
+  }, [mode, isReadOnly, getLayerTypeById, onLayerSelect])
 
+  // Legacy overlay handler with mode gating
   const handleMouseDown = useCallback((
     e: React.MouseEvent,
     type: 'text' | 'image' | 'timecode',
     index?: number
   ) => {
-    if (isReadOnly) return
+    // Phase 9D: Check mode interaction before any state changes
+    const interactionCheck = canInteractWithOverlay(mode, type, 'select', isReadOnly)
+    if (!interactionCheck.allowed) {
+      // Fire invariant but do NOT mutate state
+      assertModeInteractionAllowed(
+        false,
+        mode,
+        index !== undefined ? `${type}-${index}` : type,
+        type,
+        'select',
+        'VisualPreviewWorkspace.handleMouseDown'
+      )
+      return // Hard block — no partial updates
+    }
+    
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(true)
     setDragTarget({ type, index })
     onOverlaySelect?.(type, index)
-  }, [isReadOnly, onOverlaySelect])
+  }, [mode, isReadOnly, onOverlaySelect])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging || !dragTarget || !canvasRef.current || !overlaySettings || !onOverlaySettingsChange) return
-    if (isReadOnly) return
+    
+    // Phase 9D: Get overlay type for drag gating
+    let overlayType: string = dragTarget.type
+    let overlayId: string = dragTarget.layerId || (dragTarget.index !== undefined ? `${dragTarget.type}-${dragTarget.index}` : dragTarget.type)
+    
+    if (dragTarget.type === 'layer' && dragTarget.layerId) {
+      const layer = overlaySettings.layers?.find(l => l.id === dragTarget.layerId)
+      if (layer) {
+        overlayType = layer.type
+        overlayId = dragTarget.layerId
+      }
+    }
+    
+    // Phase 9D: Check mode interaction for drag
+    const interactionCheck = canInteractWithOverlay(mode, overlayType, 'drag', isReadOnly)
+    if (!interactionCheck.allowed) {
+      // Fire invariant and abort drag
+      assertModeInteractionAllowed(
+        false,
+        mode,
+        overlayId,
+        overlayType,
+        'drag',
+        'VisualPreviewWorkspace.handleMouseMove'
+      )
+      // Stop dragging — this should not happen if mouseDown was gated correctly
+      setIsDragging(false)
+      setDragTarget(null)
+      return
+    }
     
     const rect = canvasRef.current.getBoundingClientRect()
     // Phase 9A: All coordinate math through PreviewTransform
@@ -595,7 +669,7 @@ export function VisualPreviewWorkspace({
     }
     
     onOverlaySettingsChange(newSettings)
-  }, [isDragging, dragTarget, overlaySettings, onOverlaySettingsChange, isReadOnly])
+  }, [isDragging, dragTarget, overlaySettings, onOverlaySettingsChange, isReadOnly, mode])
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false)
@@ -617,9 +691,28 @@ export function VisualPreviewWorkspace({
 
   // ============================================
   // Phase 9B: Scale change handler for bounding box handles
+  // Phase 9D: Gated through canInteractWithOverlay
   // ============================================
   const handleOverlayScaleChange = useCallback((layerId: string, newScale: number) => {
     if (!overlaySettings || !onOverlaySettingsChange) return
+    
+    // Phase 9D: Get layer type for scale gating
+    const layer = overlaySettings.layers?.find(l => l.id === layerId)
+    if (!layer) return
+    
+    const interactionCheck = canInteractWithOverlay(mode, layer.type, 'scale', isReadOnly)
+    if (!interactionCheck.allowed) {
+      // Fire invariant but do NOT mutate state
+      assertModeInteractionAllowed(
+        false,
+        mode,
+        layerId,
+        layer.type,
+        'scale',
+        'VisualPreviewWorkspace.handleOverlayScaleChange'
+      )
+      return // Hard block — no partial updates
+    }
     
     const newSettings = { ...overlaySettings }
     
@@ -627,11 +720,11 @@ export function VisualPreviewWorkspace({
       const layers = [...newSettings.layers]
       const layerIndex = layers.findIndex(l => l.id === layerId)
       if (layerIndex !== -1) {
-        const layer = layers[layerIndex]
+        const layerToUpdate = layers[layerIndex]
         layers[layerIndex] = {
-          ...layer,
+          ...layerToUpdate,
           settings: {
-            ...layer.settings,
+            ...layerToUpdate.settings,
             scale: newScale,
           }
         }
@@ -639,7 +732,7 @@ export function VisualPreviewWorkspace({
         onOverlaySettingsChange(newSettings)
       }
     }
-  }, [overlaySettings, onOverlaySettingsChange])
+  }, [mode, isReadOnly, overlaySettings, onOverlaySettingsChange])
 
   // Phase 9B: Get selected overlay info for bounding box
   const getSelectedOverlayInfo = useCallback((): OverlaySizeInfo | null => {
@@ -1254,7 +1347,8 @@ export function VisualPreviewWorkspace({
                       fontFamily: layer.settings.font || 'Arial, sans-serif',
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
-                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      // Phase 9D: Cursor reflects interaction legality
+                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
                       border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                       boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
@@ -1283,7 +1377,8 @@ export function VisualPreviewWorkspace({
                       left: `${pos.x * 100}%`,
                       top: `${pos.y * 100}%`,
                       transform: 'translate(-50%, -50%)',
-                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      // Phase 9D: Cursor reflects interaction legality
+                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
                       border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                       boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       borderRadius: 'var(--radius-sm)',
@@ -1350,7 +1445,8 @@ export function VisualPreviewWorkspace({
                       lineHeight: BURNIN_LINE_HEIGHT,
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
-                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      // Phase 9D: Cursor reflects interaction legality
+                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
                       border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                       boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
@@ -1389,7 +1485,8 @@ export function VisualPreviewWorkspace({
                       lineHeight: BURNIN_LINE_HEIGHT,
                       color: 'white',
                       opacity: layer.settings.opacity || 1,
-                      cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
+                      // Phase 9D: Cursor reflects interaction legality
+                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
                       border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                       boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
@@ -1443,7 +1540,8 @@ export function VisualPreviewWorkspace({
                   fontFamily: extLayer.font || 'Arial, sans-serif',
                   color: extLayer.color || 'white',
                   opacity: layer.opacity,
-                  cursor: 'move',
+                  // Phase 9D: Cursor reflects interaction legality
+                  cursor: getInteractionCursor(mode, 'text', isReadOnly, isScaling),
                   border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                   boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                   whiteSpace: 'nowrap',
@@ -1467,7 +1565,8 @@ export function VisualPreviewWorkspace({
                 left: `${overlaySettings.image_watermark.x * 100}%`,
                 top: `${overlaySettings.image_watermark.y * 100}%`,
                 transform: 'translate(-50%, -50%)',
-                cursor: 'move',
+                // Phase 9D: Cursor reflects interaction legality
+                cursor: getInteractionCursor(mode, 'image', false, false),
                 border: selectedOverlayType === 'image' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                 boxShadow: selectedOverlayType === 'image' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                 borderRadius: 'var(--radius-sm)',
@@ -1521,7 +1620,8 @@ export function VisualPreviewWorkspace({
                   lineHeight: BURNIN_LINE_HEIGHT,
                   color: 'white',
                   opacity: tc.opacity,
-                  cursor: 'move',
+                  // Phase 9D: Cursor reflects interaction legality
+                  cursor: getInteractionCursor(mode, 'timecode', false, false),
                   border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
                   boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                   whiteSpace: 'nowrap',
