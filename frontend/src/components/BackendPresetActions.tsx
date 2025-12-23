@@ -275,7 +275,7 @@ export function BackendPresetActions({
               fontStyle: 'italic',
             }}
           >
-            Current Deliver settings will be saved as a snapshot
+            Current Deliver settings will be saved as a preset snapshot. Applied at job creation only.
           </div>
           
           <div style={{ display: 'flex', gap: '0.5rem' }}>

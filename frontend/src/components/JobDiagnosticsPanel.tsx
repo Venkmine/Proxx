@@ -83,13 +83,14 @@ function getOverlayLayerSummary(layers: OverlayLayer[] | undefined): string {
   const enabledLayers = layers.filter(l => l.enabled)
   if (enabledLayers.length === 0) return `${layers.length} layer(s), all disabled`
   
-  const byType: Record<string, number> = {}
-  for (const layer of enabledLayers) {
-    byType[layer.type] = (byType[layer.type] || 0) + 1
-  }
+  // Phase 7A: Include scope (Project vs Clip-level) per Alpha rules
+  const details = enabledLayers.map(layer => {
+    const typeLabel = layer.type.charAt(0).toUpperCase() + layer.type.slice(1)
+    const scopeLabel = layer.scope === 'project' ? 'Project' : 'Clip'
+    return `${typeLabel} (${scopeLabel})`
+  })
   
-  const parts = Object.entries(byType).map(([type, count]) => `${count} ${type}`)
-  return `${enabledLayers.length} enabled: ${parts.join(', ')}`
+  return `${enabledLayers.length} enabled: ${details.join(', ')}`
 }
 
 function inferLastTransition(data: JobDiagnosticsData): { state: string; timestamp: string } {
@@ -178,30 +179,53 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
           {/* Job ID */}
           <DiagnosticRow label="Job ID" value={data.jobId} mono />
           
-          {/* Phase 6: Preset Source */}
-          {data.sourcePresetId ? (
-            <>
+          {/* Phase 6/7A: Preset Source with improved layout and helper text */}
+          <div
+            style={{
+              marginTop: '0.25rem',
+              marginBottom: '0.25rem',
+              paddingTop: '0.375rem',
+              paddingBottom: '0.375rem',
+              borderTop: '1px solid var(--border-secondary, #333)',
+              borderBottom: '1px solid var(--border-secondary, #333)',
+            }}
+          >
+            {data.sourcePresetId ? (
+              <>
+                <DiagnosticRow 
+                  label="Preset Name" 
+                  value={data.sourcePresetName || 'Unknown'} 
+                />
+                <DiagnosticRow 
+                  label="Preset ID" 
+                  value={data.sourcePresetId} 
+                  mono 
+                />
+                <DiagnosticRow 
+                  label="Fingerprint" 
+                  value={(data.sourcePresetFingerprint || 'N/A').slice(0, 16) + '...'} 
+                  mono 
+                />
+              </>
+            ) : (
               <DiagnosticRow 
-                label="Preset" 
-                value={data.sourcePresetName || 'Unknown'} 
+                label="Configuration" 
+                value="Manual configuration (no preset)" 
               />
-              <DiagnosticRow 
-                label="Preset ID" 
-                value={data.sourcePresetId} 
-                mono 
-              />
-              <DiagnosticRow 
-                label="Fingerprint" 
-                value={data.sourcePresetFingerprint || 'N/A'} 
-                mono 
-              />
-            </>
-          ) : (
-            <DiagnosticRow 
-              label="Configuration" 
-              value="Manual configuration (no preset)" 
-            />
-          )}
+            )}
+            {/* Phase 7A: Helper text explaining preset snapshot semantics */}
+            <div
+              style={{
+                marginTop: '0.25rem',
+                fontSize: '0.5625rem',
+                color: 'var(--text-dim, #666)',
+                fontStyle: 'italic',
+                lineHeight: 1.4,
+              }}
+            >
+              Preset snapshots are copied at job creation and never mutate jobs.
+            </div>
+          </div>
           
           {/* Engine */}
           <DiagnosticRow label="Engine" value={data.engine || 'Not specified'} />

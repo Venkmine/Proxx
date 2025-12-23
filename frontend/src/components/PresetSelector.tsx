@@ -2,7 +2,7 @@
  * PresetSelector — Compact Preset Dropdown Component
  * 
  * A compact dropdown for selecting presets with:
- * - "No preset (use current settings)" as first option
+ * - "No preset (manual)" as first option
  * - Dirty state indicator (unsaved changes badge)
  * - Quick Save button when dirty
  * - Warning before switching with unsaved changes
@@ -226,7 +226,7 @@ export function PresetSelector({
               }
             }}
           >
-            No preset (use current settings)
+            No preset (manual)
           </button>
 
           {presets.length > 0 && (

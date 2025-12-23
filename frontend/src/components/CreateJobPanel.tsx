@@ -7,6 +7,8 @@ import { Select } from './Select'
 import { ExplicitDropZone } from './ExplicitDropZone'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
+import { PresetSummary, getPresetDescriptionLine } from './PresetSummary'
+import type { DeliverSettings } from './DeliverControlPanel'
 
 /**
  * CreateJobPanel component - Sources panel (Phase 3: UX Clarity).
@@ -49,12 +51,14 @@ interface EngineInfo {
   available: boolean
 }
 
-// Phase 6: Settings preset info
+// Phase 6: Settings preset info (Phase 7A: extended for summary preview)
 interface SettingsPresetInfo {
   id: string
   name: string
   description?: string
   fingerprint: string
+  /** Phase 7A: Optional settings snapshot for summary preview */
+  settings_snapshot?: DeliverSettings
 }
 
 interface CreateJobPanelProps {
@@ -140,6 +144,8 @@ export function CreateJobPanel({
   const [pathPromptValue, setPathPromptValue] = useState('')
   // Phase 6: Preset preview collapsed state
   const [showPresetPreview, setShowPresetPreview] = useState(false)
+  // Phase 7A: Raw JSON toggle (collapsed by default)
+  const [showRawSnapshot, setShowRawSnapshot] = useState(false)
   
   // Design mode guard: Add to Queue is blocked in design mode
   const isDesignMode = workspaceMode === 'design'
@@ -485,7 +491,7 @@ export function CreateJobPanel({
           )}
         </div>
 
-        {/* Phase 6: Settings Preset Selector */}
+        {/* Phase 6/7A: Settings Preset Selector with enhanced clarity */}
         <div>
           <label
             style={{
@@ -499,7 +505,7 @@ export function CreateJobPanel({
               letterSpacing: '0.03em',
             }}
           >
-            Preset
+            Preset Snapshot
           </label>
           <Select
             value={selectedSettingsPresetId || ''}
@@ -508,13 +514,37 @@ export function CreateJobPanel({
               { value: '', label: 'No preset (manual)' },
               ...settingsPresets.map(p => ({ 
                 value: p.id, 
-                label: p.name + (p.description ? ` — ${p.description}` : '')
+                // Phase 7A: Show descriptive secondary text with codec, overlays, etc.
+                label: p.name + (p.settings_snapshot 
+                  ? ` · ${getPresetDescriptionLine(p.settings_snapshot)}`
+                  : (p.description ? ` — ${p.description}` : '')
+                )
               }))
             ]}
             disabled={loading || isDesignMode}
             size="sm"
           />
-          {/* Phase 6: Informational label */}
+          {/* Phase 7A: Badge when preset is selected */}
+          {selectedSettingsPresetId && (
+            <div
+              style={{
+                display: 'inline-block',
+                marginTop: '0.375rem',
+                padding: '0.125rem 0.375rem',
+                fontSize: '0.5625rem',
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--text-muted)',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: 'var(--radius-sm)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
+              }}
+            >
+              Applied to new jobs only
+            </div>
+          )}
+          {/* Phase 7A: Informational label with consistent terminology */}
           <div
             style={{
               fontSize: '0.625rem',
@@ -525,11 +555,11 @@ export function CreateJobPanel({
             }}
           >
             {selectedSettingsPresetId 
-              ? 'Preset is copied at job creation. Changes do not affect existing jobs.'
-              : 'Manual configuration — settings from current Deliver panel.'
+              ? 'Preset snapshot is copied at job creation. Does not affect existing jobs.'
+              : 'Job will use current settings from the Deliver panel.'
             }
           </div>
-          {/* Phase 6: Preset preview (collapsed) */}
+          {/* Phase 7A: Preset preview with grouped summary + raw JSON toggle */}
           {selectedPreset && (
             <div style={{ marginTop: '0.375rem' }}>
               <button
@@ -548,23 +578,70 @@ export function CreateJobPanel({
                 }}
               >
                 <span style={{ transform: showPresetPreview ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
-                {showPresetPreview ? 'Hide Preset Info' : 'Show Preset Info'}
+                {showPresetPreview ? 'Hide Preset Preview' : 'Show Preset Preview'}
               </button>
               {showPresetPreview && (
-                <div
-                  style={{
-                    marginTop: '0.25rem',
-                    padding: '0.5rem',
-                    backgroundColor: 'rgba(0, 0, 0, 0.15)',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '0.625rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  <div><strong>Name:</strong> {selectedPreset.name}</div>
-                  {selectedPreset.description && <div><strong>Description:</strong> {selectedPreset.description}</div>}
-                  <div><strong>Fingerprint:</strong> {selectedPreset.fingerprint}</div>
+                <div style={{ marginTop: '0.25rem' }}>
+                  {/* Phase 7A: Grouped summary view (if settings available) */}
+                  {selectedPreset.settings_snapshot ? (
+                    <PresetSummary settings={selectedPreset.settings_snapshot} />
+                  ) : (
+                    /* Fallback: basic info if no settings snapshot */
+                    <div
+                      style={{
+                        padding: '0.5rem',
+                        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.625rem',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      <div><strong>Name:</strong> {selectedPreset.name}</div>
+                      {selectedPreset.description && <div><strong>Description:</strong> {selectedPreset.description}</div>}
+                      <div><strong>Fingerprint:</strong> {selectedPreset.fingerprint.slice(0, 16)}...</div>
+                    </div>
+                  )}
+                  {/* Phase 7A: Raw JSON toggle (collapsed by default) */}
+                  {selectedPreset.settings_snapshot && (
+                    <div style={{ marginTop: '0.375rem' }}>
+                      <button
+                        onClick={() => setShowRawSnapshot(!showRawSnapshot)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-dim)',
+                          padding: '0.125rem 0',
+                          fontSize: '0.5625rem',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        {showRawSnapshot ? 'Hide raw snapshot' : 'View raw snapshot'}
+                      </button>
+                      {showRawSnapshot && (
+                        <pre
+                          style={{
+                            margin: 0,
+                            marginTop: '0.25rem',
+                            padding: '0.5rem',
+                            backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '0.5625rem',
+                            fontFamily: 'var(--font-mono)',
+                            color: 'var(--text-muted)',
+                            lineHeight: 1.4,
+                            overflow: 'auto',
+                            maxHeight: '150px',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {JSON.stringify(selectedPreset.settings_snapshot, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

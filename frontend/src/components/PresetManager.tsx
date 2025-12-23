@@ -449,7 +449,7 @@ export function PresetManager({
           fontFamily: 'var(--font-sans)',
         }}
       >
-        No preset (use current settings)
+        No preset (manual)
       </button>
 
       {/* Preset List */}

@@ -182,7 +182,7 @@ export function PresetEditorHeader({
   
   // Build preset options for dropdown
   const presetOptions = [
-    { value: '', label: 'No preset (use current settings)' },
+    { value: '', label: 'No preset (manual)' },
     ...presets.map(p => ({
       value: p.id,
       label: p.name,
