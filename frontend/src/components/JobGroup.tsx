@@ -3,6 +3,9 @@ import { StatusBadge } from './StatusBadge'
 import { StatBox } from './StatBox'
 import { ClipRow } from './ClipRow'
 import { Button } from './Button'
+import { JobDiagnosticsPanel } from './JobDiagnosticsPanel'
+import { FEATURE_FLAGS } from '../config/featureFlags'
+import type { DeliverSettings } from './DeliverControlPanel'
 
 /**
  * JobGroup component - renders a single job as a collapsible group.
@@ -102,6 +105,14 @@ interface JobGroupProps {
   // Clip selection
   selectedClipIds?: Set<string>
   onClipClick?: (clipId: string, e: React.MouseEvent) => void
+  
+  // Hardening: Diagnostics data for alpha panel
+  diagnostics?: {
+    engine?: string
+    outputDirectory?: string
+    settings?: DeliverSettings
+    lastError?: string | null
+  }
 }
 
 export function JobGroup({
@@ -143,6 +154,7 @@ export function JobGroup({
   onToggleStatusFilter,
   selectedClipIds = new Set(),
   onClipClick,
+  diagnostics,
 }: JobGroupProps) {
   // Phase 4B: Use controlled isExpanded prop instead of internal state
   // The isCollapsed variable is derived for backwards compatibility with existing code
@@ -533,6 +545,27 @@ export function JobGroup({
                 {startedAt && <span>Started: {new Date(startedAt).toLocaleString()}</span>}
                 {completedAt && <span>Completed: {new Date(completedAt).toLocaleString()}</span>}
               </div>
+              
+              {/* Hardening: Job Diagnostics Panel (Alpha-only) */}
+              {FEATURE_FLAGS.ALPHA_DIAGNOSTICS_ENABLED && (
+                <JobDiagnosticsPanel
+                  data={{
+                    jobId: _jobId,
+                    engine: diagnostics?.engine,
+                    outputDirectory: diagnostics?.outputDirectory,
+                    settings: diagnostics?.settings,
+                    status: status,
+                    createdAt: createdAt,
+                    startedAt: startedAt,
+                    completedAt: completedAt,
+                    lastError: diagnostics?.lastError || tasks.find(t => t.failure_reason)?.failure_reason,
+                    totalTasks: totalTasks,
+                    failedCount: failedCount,
+                    completedCount: completedCount,
+                  }}
+                  enabled={true}
+                />
+              )}
             </div>
           )}
 

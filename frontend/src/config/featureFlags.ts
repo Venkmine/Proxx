@@ -19,6 +19,19 @@ export const FEATURE_FLAGS = {
    * Re-enable when the summary bar is properly implemented.
    */
   OUTPUT_SETTINGS_STRIP_ENABLED: false,
+  
+  /**
+   * Alpha Diagnostics Panel
+   * When true: Shows a collapsible diagnostics panel per job with:
+   * - Job ID, engine, output directory
+   * - Settings snapshot (collapsed JSON)
+   * - Overlay layer summary
+   * - Last state transition + timestamp
+   * - Last error message
+   * 
+   * This is a debugging tool for alpha/dev use only.
+   */
+  ALPHA_DIAGNOSTICS_ENABLED: true,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS

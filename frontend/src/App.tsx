@@ -19,6 +19,10 @@ import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { GlobalDropZone } from './components/GlobalDropZone'
+import { InvariantBanner } from './components/InvariantBanner'
+import { assertJobPendingForRender } from './utils/invariants'
+import { normalizeResponseError, createJobError } from './utils/errorNormalize'
+import { logStateTransition } from './utils/logger'
 // Alpha: Copilot imports hidden (dev feature)
 // import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
 import { FEATURE_FLAGS } from './config/featureFlags'
@@ -617,31 +621,19 @@ function App() {
 
   const resumeJob = async (jobId: string) => {
     // Phase 16.4: No confirmation for routine actions
+    const job = jobs.find(j => j.id === jobId)
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/resume`, { method: 'POST' })
       if (!response.ok) {
-        // Normalize backend error payloads to readable messages
-        let errorText = `HTTP ${response.status}`
-        try {
-          const errorData = await response.json()
-          if (errorData) {
-            if (typeof errorData.detail === 'string') {
-              errorText = errorData.detail
-            } else {
-              // stringify non-string details (objects/arrays)
-              errorText = JSON.stringify(errorData)
-            }
-          }
-        } catch (e) {
-          // ignore JSON parse errors and keep generic message
-        }
-        throw new Error(errorText)
+        const normalized = await normalizeResponseError(response, '/control/jobs/resume', jobId)
+        throw new Error(normalized.message)
       }
+      logStateTransition(jobId, job?.status || null, 'RUNNING', 'App.resumeJob')
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
-      setError(`Failed to resume job: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(createJobError('resume', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -656,26 +648,13 @@ function App() {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/retry-failed`, { method: 'POST' })
       if (!response.ok) {
-        // Normalize backend error payloads to readable messages
-        let errorText = `HTTP ${response.status}`
-        try {
-          const errorData = await response.json()
-          if (errorData) {
-            if (typeof errorData.detail === 'string') {
-              errorText = errorData.detail
-            } else {
-              errorText = JSON.stringify(errorData)
-            }
-          }
-        } catch (e) {
-          // ignore parse errors and keep generic message
-        }
-        throw new Error(errorText)
+        const normalized = await normalizeResponseError(response, '/control/jobs/retry-failed', jobId)
+        throw new Error(normalized.message)
       }
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
-      setError(`Failed to retry clips: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(createJobError('retry failed clips on', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -683,20 +662,22 @@ function App() {
 
   const cancelJob = async (jobId: string) => {
     // Phase 19: No confirmation prompts - execute immediately
+    const job = jobs.find(j => j.id === jobId)
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/cancel`, { method: 'POST' })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `HTTP ${response.status}`)
+        const normalized = await normalizeResponseError(response, '/control/jobs/cancel', jobId)
+        throw new Error(normalized.message)
       }
+      logStateTransition(jobId, job?.status || null, 'CANCELLED', 'App.cancelJob')
       await fetchJobDetail(jobId)
       await fetchJobs()
       
       // Note: Cancel is not reversible, but we show a toast for feedback
       setError('')
     } catch (err) {
-      setError(`Failed to cancel job: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(createJobError('cancel', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -707,18 +688,30 @@ function App() {
   // ============================================
 
   const startJob = async (jobId: string) => {
+    // Hardening: Validate job is pending before starting
+    const job = jobs.find(j => j.id === jobId)
+    if (job) {
+      const isPending = assertJobPendingForRender(jobId, job.status, 'App.startJob')
+      if (!isPending) {
+        // Invariant failed but don't block — backend will reject if truly invalid
+        // The invariant banner will show the warning
+      }
+    }
+    
     // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/start`, { method: 'POST' })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `HTTP ${response.status}`)
+        const normalized = await normalizeResponseError(response, '/control/jobs/start', jobId)
+        throw new Error(normalized.message)
       }
+      // Log successful state transition
+      logStateTransition(jobId, job?.status || null, 'RUNNING', 'App.startJob')
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
-      setError(`Failed to start job: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(createJobError('start', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -726,17 +719,19 @@ function App() {
 
   const pauseJob = async (jobId: string) => {
     // Phase 16.4: No confirmation for routine actions
+    const job = jobs.find(j => j.id === jobId)
     try {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/pause`, { method: 'POST' })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `HTTP ${response.status}`)
+        const normalized = await normalizeResponseError(response, '/control/jobs/pause', jobId)
+        throw new Error(normalized.message)
       }
+      logStateTransition(jobId, job?.status || null, 'PAUSED', 'App.pauseJob')
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
-      setError(`Failed to pause job: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(createJobError('pause', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -751,8 +746,8 @@ function App() {
       setLoading(true)
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}`, { method: 'DELETE' })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || `HTTP ${response.status}`)
+        const normalized = await normalizeResponseError(response, '/control/jobs/delete', jobId)
+        throw new Error(normalized.message)
       }
       // Clear selection if deleted job was selected
       if (selectedJobId === jobId) {
@@ -775,7 +770,7 @@ function App() {
         },
       })
     } catch (err) {
-      setError(`Failed to delete job: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(createJobError('delete', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -1586,6 +1581,9 @@ function App() {
         position: 'relative',
       }}
     >
+      {/* Hardening: Invariant Violation Banner (Alpha diagnostics) */}
+      <InvariantBanner enabled={FEATURE_FLAGS.ALPHA_DIAGNOSTICS_ENABLED} />
+      
       {/* Background Layers */}
       <div style={{ position: 'fixed', inset: 0, zIndex: -20, background: 'var(--gradient-base)' }} />
       <div style={{ position: 'fixed', inset: 0, zIndex: -10, pointerEvents: 'none', background: 'var(--radial-overlay-2)' }} />

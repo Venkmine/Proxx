@@ -3,10 +3,12 @@
  * Shows status with dot indicator and optional glow effect for active states.
  * 
  * Phase 16: Resolve-inspired status colors with animated pulse for RUNNING.
+ * Hardening: All backend states explicitly supported.
  */
 
 export type StatusType = 
   | 'PENDING'
+  | 'VALIDATING'  // Hardening: explicit validating state
   | 'RUNNING'
   | 'PAUSED'
   | 'COMPLETED'
@@ -18,6 +20,7 @@ export type StatusType =
   | 'SKIPPED'
   // Backend uses lowercase, normalize in component
   | 'pending'
+  | 'validating'
   | 'running'
   | 'paused'
   | 'completed'
@@ -38,6 +41,11 @@ interface StatusBadgeProps {
 
 const statusColors: Record<string, { bg: string; fg: string; glow?: string; border?: string }> = {
   PENDING: { bg: 'var(--status-pending-bg)', fg: 'var(--status-pending-fg)' },
+  VALIDATING: { 
+    bg: 'var(--status-pending-bg)', 
+    fg: 'var(--status-pending-fg)',
+    border: 'var(--status-pending-fg)',
+  },  // Hardening: validating uses pending colors with border
   RUNNING: { 
     bg: 'var(--status-running-bg)', 
     fg: 'var(--status-running-fg)', 

@@ -20,6 +20,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from './Button'
 import { FEATURE_FLAGS } from '../config/featureFlags'
+import { assertInvariant } from '../utils/invariants'
 import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
 
 // ============================================================================
@@ -374,6 +375,15 @@ export function VisualPreviewWorkspace({
     layerId: string
   ) => {
     if (isReadOnly) return
+    
+    // Hardening: Assert layer is selected before editing
+    assertInvariant(
+      layerId != null && layerId.length > 0,
+      'OVERLAY_DRAG_NO_LAYER',
+      'Overlay drag attempted with no layer ID',
+      { component: 'VisualPreviewWorkspace', layerId }
+    )
+    
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(true)
