@@ -82,6 +82,10 @@ interface CreateJobPanelProps {
   
   // WorkspaceMode — controls layout behaviour (passed from App.tsx)
   workspaceMode?: WorkspaceMode
+  
+  // Phase 4A: Directory navigator toggle
+  showDirectoryNavigator?: boolean
+  onToggleDirectoryNavigator?: () => void
 }
 
 export function CreateJobPanel({
@@ -105,6 +109,8 @@ export function CreateJobPanel({
   hasElectron = false,
   backendUrl: _backendUrl = '',
   workspaceMode = 'configure',
+  showDirectoryNavigator = false,
+  onToggleDirectoryNavigator,
 }: CreateJobPanelProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   // Web mode: show prompt when files dropped without absolute paths
@@ -310,37 +316,85 @@ export function CreateJobPanel({
           Sources
         </h2>
         
-        {/* Chevron toggle to hide panel */}
-        <button
-          onClick={onToggleVisibility}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '1.75rem',
-            height: '1.75rem',
-            background: 'rgba(51, 65, 85, 0.3)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-            color: 'var(--text-muted)',
-            fontSize: '0.75rem',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
-            e.currentTarget.style.borderColor = 'var(--border-hover)'
-            e.currentTarget.style.color = 'var(--text-secondary)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.3)'
-            e.currentTarget.style.borderColor = 'var(--border-primary)'
-            e.currentTarget.style.color = 'var(--text-muted)'
-          }}
-          title="Collapse Panel"
-        >
-          <span style={{ transform: 'rotate(180deg)', display: 'inline-block' }}>▼</span>
-        </button>
+        <div style={{ display: 'flex', gap: '0.375rem' }}>
+          {/* Phase 4A: Browse Folders toggle button */}
+          {onToggleDirectoryNavigator && (
+            <button
+              onClick={onToggleDirectoryNavigator}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.25rem',
+                padding: '0.25rem 0.5rem',
+                background: showDirectoryNavigator 
+                  ? 'rgba(59, 130, 246, 0.15)' 
+                  : 'rgba(51, 65, 85, 0.3)',
+                border: showDirectoryNavigator
+                  ? '1px solid var(--button-primary-bg)'
+                  : '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                color: showDirectoryNavigator 
+                  ? 'var(--button-primary-bg)' 
+                  : 'var(--text-muted)',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                if (!showDirectoryNavigator) {
+                  e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                  e.currentTarget.style.borderColor = 'var(--border-hover)'
+                  e.currentTarget.style.color = 'var(--text-secondary)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!showDirectoryNavigator) {
+                  e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.3)'
+                  e.currentTarget.style.borderColor = 'var(--border-primary)'
+                  e.currentTarget.style.color = 'var(--text-muted)'
+                }
+              }}
+              title={showDirectoryNavigator ? 'Hide directory browser' : 'Browse folders'}
+            >
+              <span style={{ fontSize: '0.75rem' }}>📁</span>
+              Browse
+            </button>
+          )}
+          
+          {/* Chevron toggle to hide panel */}
+          <button
+            onClick={onToggleVisibility}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '1.75rem',
+              height: '1.75rem',
+              background: 'rgba(51, 65, 85, 0.3)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              fontSize: '0.75rem',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+              e.currentTarget.style.borderColor = 'var(--border-hover)'
+              e.currentTarget.style.color = 'var(--text-secondary)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.3)'
+              e.currentTarget.style.borderColor = 'var(--border-primary)'
+              e.currentTarget.style.color = 'var(--text-muted)'
+            }}
+            title="Collapse Panel"
+          >
+            <span style={{ transform: 'rotate(180deg)', display: 'inline-block' }}>▼</span>
+          </button>
+        </div>
       </div>
 
       {/* Drag & Drop Indicator */}
@@ -780,8 +834,8 @@ export function CreateJobPanel({
           }}
         >
           {hasElectron 
-            ? 'Drop source media above, use Select Files, or click "Create Job"'
-            : 'Enter file paths above, then click "Create Job"'
+            ? 'Use Select Files, Browse folders, or drop media above'
+            : 'Enter file paths above, use Browse folders, then click "Create Job"'
           }
         </div>
       </div>

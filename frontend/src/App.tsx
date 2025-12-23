@@ -6,6 +6,7 @@ import { TitleBar } from './components/TitleBar'
 import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
 import { CreateJobPanel } from './components/CreateJobPanel'
+import { DirectoryNavigator } from './components/DirectoryNavigator'
 import { SourceMetadataPanel } from './components/SourceMetadataPanel'
 import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
@@ -216,11 +217,20 @@ function App() {
   }
   const [engines, setEngines] = useState<EngineInfo[]>([])
 
-  // Path favorites (localStorage-backed)
+  // Path favorites (localStorage-backed) - for output directories
   const [pathFavorites, setPathFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('awaire_proxy_path_favorites')
     return saved ? JSON.parse(saved) : []
   })
+  
+  // Folder favorites (Phase 4A) - for directory navigator source browsing
+  const [folderFavorites, setFolderFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('awaire_proxy_folder_favorites')
+    return saved ? JSON.parse(saved) : []
+  })
+  
+  // Directory navigator visibility state (Phase 4A)
+  const [showDirectoryNavigator, setShowDirectoryNavigator] = useState<boolean>(false)
 
   // Drag state for job reordering
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
@@ -920,7 +930,7 @@ function App() {
   }
 
   // ============================================
-  // Path Favorites
+  // Path Favorites (Output Directories)
   // ============================================
 
   const addPathFavorite = (path: string) => {
@@ -935,6 +945,129 @@ function App() {
     const updated = pathFavorites.filter(p => p !== path)
     setPathFavorites(updated)
     localStorage.setItem('awaire_proxy_path_favorites', JSON.stringify(updated))
+  }
+
+  // ============================================
+  // Folder Favorites (Source Browsing) — Phase 4A
+  // ============================================
+
+  const addFolderFavorite = (path: string) => {
+    if (!folderFavorites.includes(path)) {
+      const updated = [...folderFavorites, path]
+      setFolderFavorites(updated)
+      localStorage.setItem('awaire_proxy_folder_favorites', JSON.stringify(updated))
+    }
+  }
+
+  const removeFolderFavorite = (path: string) => {
+    const updated = folderFavorites.filter(p => p !== path)
+    setFolderFavorites(updated)
+    localStorage.setItem('awaire_proxy_folder_favorites', JSON.stringify(updated))
+  }
+
+  // ============================================
+  // Directory Navigator Actions — Phase 4A
+  // ============================================
+
+  // Create job from selected files (DirectoryNavigator)
+  const createJobFromFiles = async (filePaths: string[]) => {
+    if (filePaths.length === 0) {
+      setError('No files selected')
+      return
+    }
+    
+    // Determine effective output directory
+    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
+    
+    if (!effectiveOutputDir) {
+      setError('Output directory required. Please set an output directory first.')
+      return
+    }
+    
+    // Use canonical ingestion pipeline
+    const result = await ingestion.ingest({
+      sourcePaths: filePaths,
+      outputDir: effectiveOutputDir,
+      deliverSettings: deliverSettings,
+      engine: selectedEngine,
+      presetId: presetManager.selectedPresetId,
+    })
+    
+    if (!result.success) {
+      setError(`Failed to create job: ${result.error}`)
+      return
+    }
+    
+    // Success: fetch jobs and select the newly created one
+    await fetchJobs()
+    setSelectedJobId(result.jobId)
+  }
+
+  // Create job from folder (DirectoryNavigator) — enumerates folder first
+  const createJobFromFolder = async (folderPath: string) => {
+    if (!folderPath) {
+      setError('No folder selected')
+      return
+    }
+    
+    // Determine effective output directory
+    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
+    
+    if (!effectiveOutputDir) {
+      setError('Output directory required. Please set an output directory first.')
+      return
+    }
+    
+    setLoading(true)
+    
+    try {
+      // Enumerate folder for supported media files
+      const enumerateResponse = await fetch(
+        `${BACKEND_URL}/filesystem/enumerate?path=${encodeURIComponent(folderPath)}&recursive=true`
+      )
+      
+      if (!enumerateResponse.ok) {
+        const errData = await enumerateResponse.json().catch(() => ({}))
+        throw new Error(errData.detail || `HTTP ${enumerateResponse.status}`)
+      }
+      
+      const enumData = await enumerateResponse.json()
+      
+      if (enumData.error) {
+        setError(`Failed to scan folder: ${enumData.error}`)
+        setLoading(false)
+        return
+      }
+      
+      if (enumData.count === 0) {
+        setError(`No supported media files found in folder: ${folderPath}`)
+        setLoading(false)
+        return
+      }
+      
+      // Use canonical ingestion pipeline with enumerated files
+      const result = await ingestion.ingest({
+        sourcePaths: enumData.files,
+        outputDir: effectiveOutputDir,
+        deliverSettings: deliverSettings,
+        engine: selectedEngine,
+        presetId: presetManager.selectedPresetId,
+      })
+      
+      if (!result.success) {
+        setError(`Failed to create job: ${result.error}`)
+        return
+      }
+      
+      // Success: fetch jobs and select the newly created one
+      await fetchJobs()
+      setSelectedJobId(result.jobId)
+      
+    } catch (err) {
+      setError(`Failed to create job from folder: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ============================================
@@ -1566,7 +1699,30 @@ function App() {
                 loading={loading || ingestion.isIngesting}
                 hasElectron={hasElectron}
                 workspaceMode={workspaceMode}
+                showDirectoryNavigator={showDirectoryNavigator}
+                onToggleDirectoryNavigator={() => setShowDirectoryNavigator(!showDirectoryNavigator)}
               />
+              
+              {/* Phase 4A: Directory Navigator - Tree-based source browser */}
+              {showDirectoryNavigator && (
+                <div style={{
+                  flex: 1,
+                  minHeight: '200px',
+                  maxHeight: '400px',
+                  borderBottom: '1px solid var(--border-primary)',
+                  overflow: 'hidden',
+                }}>
+                  <DirectoryNavigator
+                    backendUrl={BACKEND_URL}
+                    favorites={folderFavorites}
+                    onAddFavorite={addFolderFavorite}
+                    onRemoveFavorite={removeFolderFavorite}
+                    onCreateJobFromFiles={createJobFromFiles}
+                    onCreateJobFromFolder={createJobFromFolder}
+                    disabled={loading || ingestion.isIngesting || workspaceMode === 'design'}
+                  />
+                </div>
+              )}
               
               {/* Source Metadata Panel */}
               <SourceMetadataPanel
