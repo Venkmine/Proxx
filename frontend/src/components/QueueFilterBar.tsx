@@ -33,6 +33,10 @@ interface QueueFilterBarProps {
     cancelled: number
     pending: number
   }
+  
+  // Phase 4B: Expand/Collapse All controls
+  onExpandAll?: () => void
+  onCollapseAll?: () => void
 }
 
 const STATUS_FILTERS = [
@@ -62,6 +66,8 @@ export function QueueFilterBar({
   dateFilter,
   onDateFilterChange,
   statusCounts,
+  onExpandAll,
+  onCollapseAll,
 }: QueueFilterBarProps) {
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   
@@ -159,6 +165,52 @@ export function QueueFilterBar({
             </button>
           )
         })}
+        
+        {/* Phase 4B: Expand/Collapse All buttons - aligned right */}
+        {(onExpandAll || onCollapseAll) && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
+            {onExpandAll && (
+              <button
+                onClick={onExpandAll}
+                title="Expand all jobs"
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  fontFamily: 'var(--font-sans)',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  border: '1px solid transparent',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                ▼ Expand
+              </button>
+            )}
+            {onCollapseAll && (
+              <button
+                onClick={onCollapseAll}
+                title="Collapse all jobs"
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.6875rem',
+                  fontWeight: 500,
+                  fontFamily: 'var(--font-sans)',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  border: '1px solid transparent',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                ▶ Collapse
+              </button>
+            )}
+          </div>
+        )}
       </div>
       
       {/* Search and Date Filter Row */}

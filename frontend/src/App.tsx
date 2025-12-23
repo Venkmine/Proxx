@@ -183,6 +183,13 @@ function App() {
   // Clip selection
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set())
 
+  // Phase 4B: Controlled collapse state for job groups
+  // Jobs with >1 clip default to collapsed, single-clip jobs default to expanded
+  const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set())
+
+  // Phase 4B: Track single selected clip for preview (distinct from multi-select for future batch ops)
+  const [previewClipId, setPreviewClipId] = useState<string | null>(null)
+
   // ============================================
   // CANONICAL INGESTION PIPELINE
   // ============================================
@@ -316,6 +323,26 @@ function App() {
   
   const deliverContext = getDeliverContext()
   const isDeliverReadOnly = deliverContext.type === 'job-running' || deliverContext.type === 'job-completed'
+
+  // Phase 4B: Compute preview source path based on selected clip or fallback to first clip/file
+  const previewSourcePath = useMemo(() => {
+    if (selectedJobId) {
+      const detail = jobDetails.get(selectedJobId)
+      if (!detail?.tasks) return undefined
+      
+      // If a specific clip is selected for preview, use it
+      if (previewClipId) {
+        const clip = detail.tasks.find(t => t.id === previewClipId)
+        if (clip) return clip.source_path
+      }
+      
+      // Fallback to first clip
+      return detail.tasks[0]?.source_path
+    }
+    
+    // No job selected, fall back to pending files
+    return selectedFiles.length > 0 ? selectedFiles[0] : undefined
+  }, [selectedJobId, jobDetails, previewClipId, selectedFiles])
 
   // ============================================
   // Data Fetching
@@ -1227,6 +1254,42 @@ function App() {
   }, [])
 
   // ============================================
+  // Phase 4B: Expand/Collapse Controls
+  // ============================================
+
+  // Toggle a single job's expand state
+  const toggleJobExpanded = useCallback((jobId: string) => {
+    setExpandedJobIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(jobId)) {
+        newSet.delete(jobId)
+      } else {
+        newSet.add(jobId)
+      }
+      return newSet
+    })
+  }, [])
+
+  // Check if a job should be expanded (explicit expand OR single-clip job default)
+  const isJobExpanded = useCallback((jobId: string, totalTasks: number): boolean => {
+    // If user has explicitly toggled, respect that
+    if (expandedJobIds.has(jobId)) return true
+    // Default: single-clip jobs are expanded, multi-clip jobs are collapsed
+    return totalTasks === 1
+  }, [expandedJobIds])
+
+  // Expand all jobs
+  const expandAllJobs = useCallback(() => {
+    const allJobIds = jobs.map(j => j.id)
+    setExpandedJobIds(new Set(allJobIds))
+  }, [jobs])
+
+  // Collapse all jobs (clear the expanded set)
+  const collapseAllJobs = useCallback(() => {
+    setExpandedJobIds(new Set())
+  }, [])
+
+  // ============================================
   // Clip Selection
   // ============================================
 
@@ -1236,6 +1299,9 @@ function App() {
     
     const detail = jobDetails.get(currentJobId)
     if (!detail) return
+
+    // Phase 4B: Always update preview to clicked clip
+    setPreviewClipId(clipId)
 
     if (event.shiftKey && selectedClipIds.size > 0) {
       // Range select
@@ -1726,12 +1792,7 @@ function App() {
               
               {/* Source Metadata Panel */}
               <SourceMetadataPanel
-                sourceFilePath={
-                  // Show selected job's first task source OR first selected file
-                  selectedJobId
-                    ? jobDetails.get(selectedJobId)?.tasks?.[0]?.source_path || selectedFiles[0]
-                    : selectedFiles[0]
-                }
+                sourceFilePath={previewSourcePath}
                 backendUrl={BACKEND_URL}
                 isVisible={selectedFiles.length > 0 || selectedJobId !== null}
               />
@@ -1780,16 +1841,10 @@ function App() {
           }
           centreTop={
             /* CENTRE TOP: VisualPreviewWorkspace — Single Source of Truth for Preview */
-            /* CANONICAL INGESTION PIPELINE: Preview binds to activeJob.tasks[0] when job selected,
-               otherwise falls back to pendingPaths[0] for pre-job preview */
+            /* Phase 4B: Preview binds to selected clip (previewClipId) when a clip is clicked,
+               falls back to first clip of selected job, or pendingPaths[0] for pre-job preview */
             <VisualPreviewWorkspace
-              sourceFilePath={
-                selectedJobId
-                  ? jobDetails.get(selectedJobId)?.tasks?.[0]?.source_path
-                  : selectedFiles.length > 0
-                    ? selectedFiles[0]
-                    : undefined
-              }
+              sourceFilePath={previewSourcePath}
               hasSource={selectedJobId !== null || selectedFiles.length > 0}
               onOpenVisualEditor={openVisualPreviewModal}
               backendUrl={BACKEND_URL}
@@ -1816,6 +1871,8 @@ function App() {
                 dateFilter={dateFilter}
                 onDateFilterChange={setDateFilter}
                 statusCounts={statusCounts}
+                onExpandAll={expandAllJobs}
+                onCollapseAll={collapseAllJobs}
               />
 
               {/* Queue Header */}
@@ -1923,10 +1980,19 @@ function App() {
                         warningCount={job.warning_count}
                         tasks={detail?.tasks || []}
                         isSelected={selectedJobId === job.id}
+                        isExpanded={isJobExpanded(job.id, job.total_tasks)}
+                        onToggleExpand={() => toggleJobExpanded(job.id)}
                         onSelect={() => {
-                          setSelectedJobId(job.id === selectedJobId ? null : job.id)
+                          const isDeselecting = job.id === selectedJobId
+                          setSelectedJobId(isDeselecting ? null : job.id)
                           setSelectedClipIds(new Set())
                           setActiveStatusFilters(new Set())
+                          // Phase 4B: Set preview to first clip of selected job
+                          if (!isDeselecting && detail?.tasks?.[0]) {
+                            setPreviewClipId(detail.tasks[0].id)
+                          } else {
+                            setPreviewClipId(null)
+                          }
                         }}
                         onRevealClip={hasElectron ? revealInFolder : undefined}
                         onStart={() => startJob(job.id)}

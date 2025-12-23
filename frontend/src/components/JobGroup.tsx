@@ -72,6 +72,8 @@ interface JobGroupProps {
   
   // Interaction
   isSelected?: boolean
+  isExpanded?: boolean  // Phase 4B: Controlled collapse state
+  onToggleExpand?: () => void  // Phase 4B: Toggle expand/collapse
   onSelect?: () => void
   onRevealClip?: (path: string) => void
   
@@ -119,6 +121,8 @@ export function JobGroup({
   tasks,
   settingsSummary,
   isSelected = false,
+  isExpanded = true,  // Phase 4B: Default to expanded for backwards compatibility
+  onToggleExpand,
   onSelect,
   onRevealClip,
   onStart,
@@ -140,7 +144,9 @@ export function JobGroup({
   selectedClipIds = new Set(),
   onClipClick,
 }: JobGroupProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  // Phase 4B: Use controlled isExpanded prop instead of internal state
+  // The isCollapsed variable is derived for backwards compatibility with existing code
+  const isCollapsed = !isExpanded
   const [isHovered, setIsHovered] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const runningClipRef = useRef<HTMLDivElement>(null)
@@ -149,12 +155,12 @@ export function JobGroup({
   const normalizedStatus = status.toUpperCase()
   const isJobRunning = normalizedStatus === 'RUNNING'
 
-  // Phase 16.4: Auto-expand when job starts running
+  // Phase 4B: Auto-expand when job starts running (call parent's toggle if collapsed)
   useEffect(() => {
-    if (isJobRunning && isCollapsed) {
-      setIsCollapsed(false)
+    if (isJobRunning && isCollapsed && onToggleExpand) {
+      onToggleExpand()
     }
-  }, [isJobRunning])
+  }, [isJobRunning, isCollapsed, onToggleExpand])
 
   // Phase 16.4: Auto-scroll to first running clip when job starts
   useEffect(() => {
@@ -245,7 +251,7 @@ export function JobGroup({
         <button
           onClick={(e) => {
             e.stopPropagation()
-            setIsCollapsed(!isCollapsed)
+            onToggleExpand?.()
           }}
           style={{
             background: 'none',
@@ -257,6 +263,7 @@ export function JobGroup({
             transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
             transition: 'transform 0.15s',
           }}
+          title={isCollapsed ? 'Expand job' : 'Collapse job'}
         >
           ▼
         </button>

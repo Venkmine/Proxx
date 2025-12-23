@@ -106,9 +106,19 @@ export function ClipRow({
 
   const filename = getFilename(sourcePath)
   const isRunning = status.toUpperCase() === 'RUNNING'
+  const isFailed = status.toUpperCase() === 'FAILED'
   
   // Format metadata for display — use "—" for missing values
   const formatValue = (val?: string) => val || '—'
+
+  // Phase 4B: Visual hierarchy - different backgrounds for running/failed clips
+  const getBackgroundColor = () => {
+    if (isSelected) return 'rgba(59, 130, 246, 0.08)'
+    if (isRunning) return 'rgba(59, 130, 246, 0.04)'
+    if (isFailed) return 'rgba(239, 68, 68, 0.04)'
+    if (isHovered) return 'rgba(255, 255, 255, 0.02)'
+    return 'transparent'
+  }
 
   return (
     <div
@@ -116,14 +126,17 @@ export function ClipRow({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        padding: '0.75rem 1rem',
+        // Phase 4B: Indent clip rows to show hierarchy under job header
+        padding: '0.75rem 1rem 0.75rem 2rem',
         cursor: onClick ? 'pointer' : 'default',
-        backgroundColor: isSelected 
-          ? 'rgba(59, 130, 246, 0.08)' 
-          : isHovered 
-            ? 'rgba(255, 255, 255, 0.02)' 
-            : 'transparent',
-        borderLeft: isSelected ? '3px solid var(--button-primary-bg)' : '3px solid transparent',
+        backgroundColor: getBackgroundColor(),
+        borderLeft: isSelected 
+          ? '3px solid var(--button-primary-bg)' 
+          : isRunning 
+            ? '3px solid var(--status-running-fg)' 
+            : isFailed
+              ? '3px solid var(--status-failed-fg)'
+              : '3px solid transparent',
         borderBottom: '1px solid var(--border-secondary)',
         transition: 'background-color 0.1s, border-left 0.1s',
       }}
