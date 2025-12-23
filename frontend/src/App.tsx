@@ -5,13 +5,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { TitleBar } from './components/TitleBar'
 import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
-import { CreateJobPanel } from './components/CreateJobPanel'
-import { DirectoryNavigator } from './components/DirectoryNavigator'
-import { SourceMetadataPanel } from './components/SourceMetadataPanel'
+import { MediaWorkspace } from './components/MediaWorkspace'
 import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
-import { VisualPreviewWorkspace } from './components/VisualPreviewWorkspace'
+import { VisualPreviewWorkspace, PreviewMode } from './components/VisualPreviewWorkspace'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
 import { PresetEditorHeader } from './components/PresetEditorHeader'
 import { AppFooter } from './components/AppFooter'
@@ -29,6 +27,7 @@ import { logStateTransition } from './utils/logger'
 import { FEATURE_FLAGS } from './config/featureFlags'
 import { usePresets } from './hooks/usePresets'
 import { useIngestion } from './hooks/useIngestion'
+import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 
@@ -194,6 +193,9 @@ function App() {
 
   // Phase 4B: Track single selected clip for preview (distinct from multi-select for future batch ops)
   const [previewClipId, setPreviewClipId] = useState<string | null>(null)
+  
+  // Preview workspace mode (view/overlays/burn-in)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('view')
 
   // ============================================
   // CANONICAL INGESTION PIPELINE
@@ -240,15 +242,31 @@ function App() {
     const saved = localStorage.getItem('awaire_proxy_folder_favorites')
     return saved ? JSON.parse(saved) : []
   })
-  
-  // Directory navigator visibility state (Phase 4A)
-  const [showDirectoryNavigator, setShowDirectoryNavigator] = useState<boolean>(false)
 
   // Drag state for job reordering
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   
-  // Drag state for file drop
-  const [isDraggingFiles, setIsDraggingFiles] = useState<boolean>(false)
+  // ============================================
+  // GLOBAL DRAG & DROP — Authoritative Ingestion
+  // ============================================
+  // useGlobalFileDrop manages document-level drag/drop handling.
+  // Routes all dropped files through the canonical ingestion pipeline.
+  const globalDrop = useGlobalFileDrop({
+    onDropFiles: (paths: string[]) => {
+      if (paths.length > 0) {
+        ingestion.addPendingPaths(paths)
+        setSelectedJobId(null)
+        console.log(`GlobalDrop: Added ${paths.length} source file(s)`)
+      }
+    },
+    onDropOutputDirectory: (path: string) => {
+      if (path) {
+        setOutputDirectory(path)
+        console.log(`GlobalDrop: Set output directory to ${path}`)
+      }
+    },
+    enabled: true, // Always enabled - no feature flag
+  })
 
   // Alpha: Copilot Prompt window state (hidden in Alpha, available for dev)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -333,6 +351,9 @@ function App() {
   
   const deliverContext = getDeliverContext()
   const isDeliverReadOnly = deliverContext.type === 'job-running' || deliverContext.type === 'job-completed'
+  
+  // Phase 8B: Queue diagnostics clarity - is any job currently running?
+  const hasAnyJobRunning = jobs.some(job => job.status.toUpperCase() === 'RUNNING')
 
   // Phase 4B: Compute preview source path based on selected clip or fallback to first clip/file
   const previewSourcePath = useMemo(() => {
@@ -1558,44 +1579,10 @@ function App() {
   }, [draggedJobId])
 
   // ============================================
-  // File Drag & Drop (Global - Phase 19)
+  // File Drag & Drop handlers removed
   // ============================================
-
-  const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    // Only show global drop zone if dragging files (not jobs)
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDraggingFiles(true)
-      e.dataTransfer.dropEffect = 'copy'
-    }
-  }, [])
-
-  const handleGlobalDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    // Only clear if leaving the viewport entirely
-    const relatedTarget = e.relatedTarget as Node | null
-    if (!relatedTarget || !document.body.contains(relatedTarget)) {
-      setIsDraggingFiles(false)
-    }
-  }, [])
-
-  // Alpha: Separate handlers for the two drop zones
-  const handleDropSourceFiles = useCallback((paths: string[]) => {
-    setIsDraggingFiles(false)
-    if (paths.length > 0) {
-      ingestion.addPendingPaths(paths)
-      setSelectedJobId(null)
-      console.log(`GlobalDrop: Added ${paths.length} source file(s)`)
-    }
-  }, [ingestion])
-
-  const handleDropOutputDirectory = useCallback((dir: string) => {
-    setIsDraggingFiles(false)
-    if (dir) {
-      setOutputDirectory(dir)
-      console.log(`GlobalDrop: Set output directory to ${dir}`)
-    }
-  }, [])
+  // Drag & drop now managed by useGlobalFileDrop hook (see above).
+  // All file drops route through ingestion.addPendingPaths().
 
   // ============================================
   // Ordered and Filtered Jobs
@@ -1826,7 +1813,6 @@ function App() {
         ref={appContainerRef}
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        onDragOver={handleGlobalDragOver}
         style={{
           flex: 1,
           display: 'flex',
@@ -1835,77 +1821,56 @@ function App() {
           minWidth: '1280px',
         }}
       >
-        {/* Global Drop Zone Overlay - PHASE 0: Disabled behind feature flag */}
-        {FEATURE_FLAGS.GLOBAL_DRAG_DROP_ENABLED && (
-          <GlobalDropZone
-            isVisible={isDraggingFiles}
-            onDropFiles={handleDropSourceFiles}
-            onDropOutputDirectory={handleDropOutputDirectory}
-            onDragLeave={handleGlobalDragLeave}
-          />
-        )}
+        {/* Global Drop Zone Overlay - Always enabled */}
+        <GlobalDropZone
+          isVisible={globalDrop.isDragging}
+          onDropFiles={globalDrop.handleSourcesDrop}
+          onDropOutputDirectory={globalDrop.handleOutputDrop}
+          onDragLeave={globalDrop.handleDragLeave}
+        />
         
         {/* 4-Region Workspace Layout */}
         <WorkspaceLayout
           leftSidebar={
-            /* LEFT SIDEBAR: Sources + Metadata */
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <CreateJobPanel
-                isVisible={true}
-                onToggleVisibility={() => {}}
-                selectedFiles={selectedFiles}
-                onFilesChange={setSelectedFiles}
-                onSelectFilesClick={selectFiles}
-                onFilesDropped={handleFilesDropped}
-                engines={engines}
-                selectedEngine={selectedEngine}
-                onEngineChange={setSelectedEngine}
-                outputDirectory={outputDirectory}
-                onOutputDirectoryChange={setOutputDirectory}
-                onSelectFolderClick={selectOutputFolder}
-                pathFavorites={pathFavorites}
-                onAddFavorite={addPathFavorite}
-                onRemoveFavorite={removePathFavorite}
-                onCreateJob={createManualJob}
-                onClear={() => {
-                  ingestion.clearPendingPaths()
-                  setOutputDirectory('')
-                }}
-                loading={loading || ingestion.isIngesting}
-                hasElectron={hasElectron}
-                workspaceMode={workspaceMode}
-                showDirectoryNavigator={showDirectoryNavigator}
-                onToggleDirectoryNavigator={() => setShowDirectoryNavigator(!showDirectoryNavigator)}
-              />
-              
-              {/* Phase 4A: Directory Navigator - Tree-based source browser */}
-              {showDirectoryNavigator && (
-                <div style={{
-                  flex: 1,
-                  minHeight: '200px',
-                  maxHeight: '400px',
-                  borderBottom: '1px solid var(--border-primary)',
-                  overflow: 'hidden',
-                }}>
-                  <DirectoryNavigator
-                    backendUrl={BACKEND_URL}
-                    favorites={folderFavorites}
-                    onAddFavorite={addFolderFavorite}
-                    onRemoveFavorite={removeFolderFavorite}
-                    onCreateJobFromFiles={createJobFromFiles}
-                    onCreateJobFromFolder={createJobFromFolder}
-                    disabled={loading || ingestion.isIngesting || workspaceMode === 'design'}
-                  />
-                </div>
-              )}
-              
-              {/* Source Metadata Panel */}
-              <SourceMetadataPanel
-                sourceFilePath={previewSourcePath}
-                backendUrl={BACKEND_URL}
-                isVisible={selectedFiles.length > 0 || selectedJobId !== null}
-              />
-            </div>
+            /* LEFT SIDEBAR: MediaWorkspace - Tabbed Browse/Loaded Media with proper scrolling */
+            <MediaWorkspace
+              selectedFiles={selectedFiles}
+              onFilesChange={setSelectedFiles}
+              onSelectFilesClick={selectFiles}
+              engines={engines}
+              selectedEngine={selectedEngine}
+              onEngineChange={setSelectedEngine}
+              settingsPresets={presetManager.presets.map(p => ({
+                id: p.id,
+                name: p.name,
+                description: p.description || undefined,
+                fingerprint: p.fingerprint,
+                settings_snapshot: p.settings,
+              }))}
+              selectedSettingsPresetId={presetManager.selectedPresetId}
+              onSettingsPresetChange={(id) => presetManager.selectPreset(id)}
+              outputDirectory={outputDirectory}
+              onOutputDirectoryChange={setOutputDirectory}
+              onSelectFolderClick={selectOutputFolder}
+              pathFavorites={pathFavorites}
+              onAddFavorite={addPathFavorite}
+              onRemoveFavorite={removePathFavorite}
+              folderFavorites={folderFavorites}
+              onAddFolderFavorite={addFolderFavorite}
+              onRemoveFolderFavorite={removeFolderFavorite}
+              onCreateJob={createManualJob}
+              onCreateJobFromFiles={createJobFromFiles}
+              onCreateJobFromFolder={createJobFromFolder}
+              onClear={() => {
+                ingestion.clearPendingPaths()
+                setOutputDirectory('')
+              }}
+              loading={loading || ingestion.isIngesting}
+              hasElectron={hasElectron}
+              backendUrl={BACKEND_URL}
+              workspaceMode={workspaceMode}
+              previewSourcePath={previewSourcePath}
+            />
           }
           rightSidebar={
             /* RIGHT SIDEBAR: DeliverControlPanel + Presets */
@@ -1965,6 +1930,8 @@ function App() {
                 resolution: deliverSettings.video?.resolution_policy === 'source' ? 'Source' : deliverSettings.video?.resolution_policy,
                 fps: deliverSettings.video?.frame_rate_policy === 'source' ? 'Source' : deliverSettings.video?.frame_rate_policy,
               }}
+              mode={previewMode}
+              onModeChange={setPreviewMode}
             />
           }
           centreBottom={
@@ -2116,6 +2083,7 @@ function App() {
                         onDragOver={handleJobDragOver(job.id)}
                         onDrop={handleJobDrop(job.id)}
                         isDragging={draggedJobId === job.id}
+                        hasOtherJobRunning={hasAnyJobRunning && job.status.toUpperCase() !== 'RUNNING'}
                         loading={loading}
                         activeStatusFilters={selectedJobId === job.id ? activeStatusFilters : new Set()}
                         onToggleStatusFilter={toggleStatusFilter}

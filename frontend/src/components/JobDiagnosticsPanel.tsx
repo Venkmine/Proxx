@@ -250,6 +250,7 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
                   label="Fingerprint" 
                   value={(data.sourcePresetFingerprint || 'N/A').slice(0, 16) + '...'} 
                   mono 
+                  title="Unique identifier for the settings snapshot used by this job"
                 />
               </>
             ) : (
@@ -258,7 +259,7 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
                 value="Manual configuration (no preset)" 
               />
             )}
-            {/* Phase 7A: Helper text explaining preset snapshot semantics */}
+            {/* Phase 8B: Plain language explanation of preset snapshot semantics */}
             <div
               style={{
                 marginTop: '0.25rem',
@@ -268,7 +269,7 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
                 lineHeight: 1.4,
               }}
             >
-              Preset snapshots are copied at job creation and never mutate jobs.
+              This job used a preset snapshot. The preset may have changed since job creation.
             </div>
           </div>
           
@@ -367,9 +368,10 @@ interface DiagnosticRowProps {
   mono?: boolean
   truncate?: boolean
   highlight?: 'error' | 'warning'
+  title?: string  // Phase 8B: Tooltip for additional context
 }
 
-function DiagnosticRow({ label, value, mono, truncate, highlight }: DiagnosticRowProps) {
+function DiagnosticRow({ label, value, mono, truncate, highlight, title }: DiagnosticRowProps) {
   return (
     <div
       style={{
@@ -400,7 +402,7 @@ function DiagnosticRow({ label, value, mono, truncate, highlight }: DiagnosticRo
           whiteSpace: truncate ? 'nowrap' : undefined,
           wordBreak: truncate ? undefined : 'break-word',
         }}
-        title={truncate ? value : undefined}
+        title={title || (truncate ? value : undefined)}
       >
         {value}
       </span>

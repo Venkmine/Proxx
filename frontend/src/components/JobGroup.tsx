@@ -97,6 +97,9 @@ interface JobGroupProps {
   onDrop?: (e: React.DragEvent) => void
   isDragging?: boolean
   
+  // Phase 8B: Queue diagnostics clarity
+  hasOtherJobRunning?: boolean
+  
   // State
   loading?: boolean
   activeStatusFilters?: Set<string>
@@ -149,6 +152,7 @@ export function JobGroup({
   onDragOver,
   onDrop,
   isDragging = false,
+  hasOtherJobRunning = false,
   loading = false,
   activeStatusFilters = new Set(),
   onToggleStatusFilter,
@@ -293,6 +297,20 @@ export function JobGroup({
         </div>
 
         <StatusBadge status={status} size="md" />
+        
+        {/* Phase 8B: Queue diagnostics clarity - explain why job is waiting */}
+        {normalizedStatus === 'PENDING' && hasOtherJobRunning && (
+          <span
+            style={{
+              fontSize: '0.6875rem',
+              color: 'var(--text-dim)',
+              fontStyle: 'italic',
+            }}
+            title="This job will start when the current job completes"
+          >
+            Waiting — another job is running
+          </span>
+        )}
 
         {/* Aggregate Counters */}
         <div
