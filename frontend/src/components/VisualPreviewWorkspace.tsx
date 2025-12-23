@@ -17,6 +17,11 @@
  * - Collapsible metadata strip
  * - Title-safe and action-safe guides
  * - Fullscreen support
+ * 
+ * Phase 9C: Burn-in preview parity
+ * - Burn-in overlays use BURNIN_FONTS for FFmpeg-representative rendering
+ * - Font constants are representative, NOT pixel-identical to FFmpeg
+ * - See constants/burnin.ts for parity documentation
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
@@ -26,6 +31,12 @@ import { assertInvariant, assertPreviewTransformUsed } from '../utils/invariants
 import * as PreviewTransform from '../utils/PreviewTransform'
 import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
 import { OverlaySelectionBox, type OverlaySizeInfo } from './OverlaySelectionBox'
+import { 
+  BURNIN_FONTS, 
+  BURNIN_PREVIEW_FONT_SCALE, 
+  BURNIN_LINE_HEIGHT,
+  BURNIN_TIMECODE_LETTER_SPACING,
+} from '../constants/burnin'
 
 // ============================================================================
 // TYPES
@@ -1315,6 +1326,8 @@ export function VisualPreviewWorkspace({
               }
               
               if (layer.type === 'timecode') {
+                // Phase 9C: Use BURNIN_FONTS for FFmpeg-representative rendering
+                const timecodeFont = layer.settings.font || BURNIN_FONTS.timecode
                 return (
                   <div
                     key={layer.id}
@@ -1332,8 +1345,9 @@ export function VisualPreviewWorkspace({
                       padding: layer.settings.background ? '0.25rem 0.5rem' : '0',
                       backgroundColor: layer.settings.background ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
                       borderRadius: 'var(--radius-sm)',
-                      fontSize: `${(layer.settings.font_size || 24) * 0.5}px`,
-                      fontFamily: layer.settings.font || 'Menlo, monospace',
+                      fontSize: `${(layer.settings.font_size || 24) * BURNIN_PREVIEW_FONT_SCALE}px`,
+                      fontFamily: timecodeFont,
+                      lineHeight: BURNIN_LINE_HEIGHT,
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
                       cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
@@ -1341,7 +1355,7 @@ export function VisualPreviewWorkspace({
                       boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                      letterSpacing: '0.05em',
+                      letterSpacing: BURNIN_TIMECODE_LETTER_SPACING,
                       userSelect: 'none',
                       zIndex,
                     }}
@@ -1352,6 +1366,7 @@ export function VisualPreviewWorkspace({
               }
               
               if (layer.type === 'metadata') {
+                // Phase 9C: Use BURNIN_FONTS for FFmpeg-representative rendering
                 return (
                   <div
                     key={layer.id}
@@ -1369,8 +1384,9 @@ export function VisualPreviewWorkspace({
                       padding: '0.25rem 0.5rem',
                       backgroundColor: 'rgba(0, 0, 0, 0.6)',
                       borderRadius: 'var(--radius-sm)',
-                      fontSize: `${(layer.settings.font_size || 16) * 0.5}px`,
-                      fontFamily: 'Menlo, monospace',
+                      fontSize: `${(layer.settings.font_size || 16) * BURNIN_PREVIEW_FONT_SCALE}px`,
+                      fontFamily: BURNIN_FONTS.metadata,
+                      lineHeight: BURNIN_LINE_HEIGHT,
                       color: 'white',
                       opacity: layer.settings.opacity || 1,
                       cursor: isReadOnly ? 'default' : (isScaling ? 'default' : 'move'),
@@ -1499,8 +1515,10 @@ export function VisualPreviewWorkspace({
                   padding: tc.background ? '0.25rem 0.5rem' : '0',
                   backgroundColor: tc.background ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
                   borderRadius: 'var(--radius-sm)',
-                  fontSize: `${tc.font_size * 0.5}px`,
-                  fontFamily: tc.font || 'Menlo, monospace',
+                  // Phase 9C: Use burn-in font constants for parity
+                  fontSize: `${tc.font_size * BURNIN_PREVIEW_FONT_SCALE}px`,
+                  fontFamily: tc.font || BURNIN_FONTS.timecode,
+                  lineHeight: BURNIN_LINE_HEIGHT,
                   color: 'white',
                   opacity: tc.opacity,
                   cursor: 'move',
@@ -1508,7 +1526,7 @@ export function VisualPreviewWorkspace({
                   boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
                   whiteSpace: 'nowrap',
                   textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                  letterSpacing: '0.05em',
+                  letterSpacing: BURNIN_TIMECODE_LETTER_SPACING,
                   userSelect: 'none',
                   zIndex: isSelected ? 20 : 10,
                 }}

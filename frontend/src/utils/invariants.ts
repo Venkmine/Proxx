@@ -286,3 +286,67 @@ export function assertOverlayHandleWithinBounds(
     { component, layerId, attemptedScale }
   )
 }
+
+// ============================================================================
+// PHASE 9C: BURN-IN PREVIEW PARITY
+// ============================================================================
+
+/**
+ * Assert that burn-in font matches the expected preview constant.
+ * 
+ * This invariant checks PREVIEW SELF-CONSISTENCY, not output equivalence.
+ * It validates that the preview is using the documented burn-in font,
+ * not that it matches FFmpeg output (which is platform-dependent).
+ * 
+ * WHAT THIS CHECKS:
+ * ✅ Font family equals the chosen constant
+ * ✅ Consistent rendering within preview
+ * 
+ * WHAT THIS DOES NOT CHECK:
+ * ❌ Pixel comparisons to FFmpeg output
+ * ❌ Runtime measurements vs backend output
+ * ❌ Canvas-based font metric calculations
+ * 
+ * @param actualFont - The font currently being used in preview
+ * @param expectedFont - The expected font from burnin.ts constants
+ * @param overlayType - Type of overlay being checked (timecode, metadata, text)
+ * @param component - Where the check originated
+ */
+export function assertBurninFontParity(
+  actualFont: string,
+  expectedFont: string,
+  overlayType: string,
+  component: string = 'VisualPreviewWorkspace'
+): boolean {
+  return assertInvariant(
+    actualFont === expectedFont,
+    'BURNIN_FONT_MISMATCH',
+    `Burn-in ${overlayType} font mismatch: using '${actualFont}', expected '${expectedFont}'`,
+    { component, overlayType, actualFont, expectedFont }
+  )
+}
+
+/**
+ * Assert that burn-in font size is stable (hasn't changed unexpectedly).
+ * 
+ * This invariant helps detect font size drift or reflow during scaling.
+ * 
+ * @param currentSize - Current rendered font size
+ * @param expectedSize - Expected font size based on settings
+ * @param tolerance - Acceptable variance (default 0.1 = 10%)
+ * @param component - Where the check originated
+ */
+export function assertBurninFontSizeStable(
+  currentSize: number,
+  expectedSize: number,
+  tolerance: number = 0.1,
+  component: string = 'VisualPreviewWorkspace'
+): boolean {
+  const variance = Math.abs(currentSize - expectedSize) / expectedSize
+  return assertInvariant(
+    variance <= tolerance,
+    'BURNIN_FONT_SIZE_DRIFT',
+    `Burn-in font size unstable: ${currentSize}px (expected ${expectedSize}px, variance ${(variance * 100).toFixed(1)}%)`,
+    { component, currentSize, expectedSize, variance }
+  )
+}

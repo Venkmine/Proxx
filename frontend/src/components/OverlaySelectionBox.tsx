@@ -1,5 +1,5 @@
 /**
- * OverlaySelectionBox — Phase 9B Overlay Bounding Box Handles
+ * OverlaySelectionBox — Phase 9B/9C Overlay Bounding Box Handles
  * 
  * A preview-only component responsible for:
  * - Drawing a bounding box around the selected overlay
@@ -7,10 +7,15 @@
  * - Handling mouse interactions for scaling
  * 
  * Rules:
- * - Only visible in overlays mode
+ * - Only visible in overlays mode (full interaction)
+ * - Can show in burn-in mode with interaction='none' (visual bounds only)
  * - Only one overlay selectable at a time
- * - Hidden in view mode and burn-in mode
+ * - Hidden in view mode
  * - All coordinate math through PreviewTransform
+ * 
+ * Phase 9C additions:
+ * - interaction='none' mode for burn-ins (visual bounds, no handles/drag)
+ * - Burn-ins must not be interactable outside burn-in mode
  * 
  * Scaling behavior:
  * - Corner handles: scale X+Y together (aspect ratio locked for images)
@@ -32,6 +37,15 @@ export type HandlePosition =
   | 'top-left' | 'top' | 'top-right'
   | 'left' | 'right'
   | 'bottom-left' | 'bottom' | 'bottom-right'
+
+/**
+ * Interaction mode for the selection box.
+ * - 'full': Show bounding box with handles, all interactions enabled
+ * - 'none': Show bounding box only (visual bounds), no handles or drag listeners
+ * 
+ * Phase 9C: Burn-ins use 'none' mode for visual bounds without interactivity.
+ */
+export type InteractionMode = 'full' | 'none'
 
 /** Overlay sizing info for bounding box calculation */
 export interface OverlaySizeInfo {
@@ -64,6 +78,15 @@ interface OverlaySelectionBoxProps {
   onScaleStart?: () => void
   /** Callback when scaling ends */
   onScaleEnd?: () => void
+  /**
+   * Interaction mode for the selection box.
+   * - 'full' (default): Show handles, enable scaling interactions
+   * - 'none': Visual bounds only, no handles or interactions
+   * 
+   * Phase 9C: Burn-ins must not be interactable outside burn-in mode.
+   * Use interaction='none' to show bounds without enabling drag/scale.
+   */
+  interaction?: InteractionMode
 }
 
 // ============================================================================
@@ -91,9 +114,18 @@ export function OverlaySelectionBox({
   onScaleChange,
   onScaleStart,
   onScaleEnd,
+  interaction = 'full',
 }: OverlaySelectionBoxProps) {
-  // Only show in overlays mode with a selected overlay
-  if (mode !== 'overlays' || !overlayInfo || !canvasRect || isReadOnly) {
+  // Phase 9C: Support burn-in mode for visual bounds only
+  // In burn-in mode, we show bounds but with interaction='none'
+  const showInBurnInMode = mode === 'burn-in' && interaction === 'none'
+  
+  // Only show in overlays mode (full interaction) or burn-in mode (visual only)
+  if (!showInBurnInMode && (mode !== 'overlays' || isReadOnly)) {
+    return null
+  }
+  
+  if (!overlayInfo || !canvasRect) {
     return null
   }
 
@@ -271,6 +303,9 @@ export function OverlaySelectionBox({
   }, [isScaling, handleMouseMove, handleMouseUp])
 
   // Render the bounding box and handles
+  // Phase 9C: In 'none' interaction mode, render box only (no handles)
+  const showHandles = interaction === 'full'
+  
   return (
     <div
       data-testid="overlay-selection-box"
@@ -289,14 +324,16 @@ export function OverlaySelectionBox({
         style={{
           position: 'absolute',
           inset: 0,
-          border: '1px solid var(--button-primary-bg, #3b82f6)',
+          border: interaction === 'none' 
+            ? '1px dashed rgba(59, 130, 246, 0.6)' 
+            : '1px solid var(--button-primary-bg, #3b82f6)',
           borderRadius: '2px',
           pointerEvents: 'none',
         }}
       />
 
-      {/* Render all 8 handles */}
-      {(Object.entries(handlePositions) as [HandlePosition, { x: number; y: number }][]).map(
+      {/* Render all 8 handles — only in 'full' interaction mode */}
+      {showHandles && (Object.entries(handlePositions) as [HandlePosition, { x: number; y: number }][]).map(
         ([pos, coords]) => (
           <div
             key={pos}
