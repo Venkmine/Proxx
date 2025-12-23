@@ -32,6 +32,13 @@ export const FEATURE_FLAGS = {
    * This is a debugging tool for alpha/dev use only.
    */
   ALPHA_DIAGNOSTICS_ENABLED: true,
+  
+  /**
+   * Explicit Drop Zone
+   * When true: Enables the explicit drop zone in CreateJobPanel for drag & drop ingestion.
+   * Files/folders dropped must be confirmed before ingestion begins.
+   */
+  EXPLICIT_DROP_ZONE_ENABLED: true,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS

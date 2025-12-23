@@ -1,9 +1,11 @@
 // Alpha scope defined in docs/ALPHA_REALITY.md.
 // Do not add features that contradict it without updating that file first.
 
-import React, { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
+import { ExplicitDropZone } from './ExplicitDropZone'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 
 /**
@@ -56,6 +58,9 @@ interface CreateJobPanelProps {
   onFilesChange: (files: string[]) => void
   onSelectFilesClick: () => void
   
+  // Phase 4C: Explicit drop zone
+  onFilesDropped?: (paths: string[]) => void
+  
   // Phase 16: Engine selection
   engines?: EngineInfo[]
   selectedEngine?: string
@@ -94,6 +99,7 @@ export function CreateJobPanel({
   selectedFiles,
   onFilesChange,
   onSelectFilesClick,
+  onFilesDropped,
   engines = [],
   selectedEngine = 'ffmpeg',
   onEngineChange,
@@ -112,7 +118,6 @@ export function CreateJobPanel({
   showDirectoryNavigator = false,
   onToggleDirectoryNavigator,
 }: CreateJobPanelProps) {
-  const [isDragOver, setIsDragOver] = useState(false)
   // Web mode: show prompt when files dropped without absolute paths
   const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
   const [showPathPrompt, setShowPathPrompt] = useState(false)
@@ -120,74 +125,6 @@ export function CreateJobPanel({
   
   // Design mode guard: Add to Queue is blocked in design mode
   const isDesignMode = workspaceMode === 'design'
-
-  // Drag & drop handlers
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragOver(false)
-
-    const items = e.dataTransfer.items
-    const newPaths: string[] = []
-    const droppedNames: string[] = []
-
-    if (items) {
-      // Use DataTransferItemList interface for file access
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        if (item.kind === 'file') {
-          const file = item.getAsFile()
-          if (file) {
-            // Check for Electron-provided absolute path
-            const filePath = (file as any).path
-            if (filePath && isAbsolutePath(filePath)) {
-              newPaths.push(filePath)
-            } else {
-              // Web browser: no absolute path available
-              // Collect file name to help user enter path
-              droppedNames.push(file.name)
-            }
-          }
-        }
-      }
-    } else {
-      // Fallback for files property
-      const files = e.dataTransfer.files
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        const filePath = (file as any).path
-        if (filePath && isAbsolutePath(filePath)) {
-          newPaths.push(filePath)
-        } else {
-          droppedNames.push(file.name)
-        }
-      }
-    }
-
-    if (newPaths.length > 0) {
-      onFilesChange([...selectedFiles, ...newPaths])
-    }
-    
-    // Web mode: show prompt for user to enter full path
-    if (droppedNames.length > 0 && newPaths.length === 0) {
-      setDroppedFileNames(droppedNames)
-      setShowPathPrompt(true)
-      // Pre-fill with example path containing first file name
-      setPathPromptValue(`/Users/yourname/path/to/${droppedNames[0]}`)
-    }
-  }, [selectedFiles, onFilesChange])
 
   // Alpha: Presets are optional - sources use current preset implicitly
   const canCreate = selectedFiles.length > 0 && outputDirectory && !loading && !isDesignMode
@@ -211,9 +148,6 @@ export function CreateJobPanel({
   return (
     <div
       data-testid="create-job-panel"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
       style={{
         padding: '1.25rem 1.5rem',
         borderBottom: '1px solid var(--border-primary)',
@@ -221,10 +155,6 @@ export function CreateJobPanel({
         background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
         position: 'relative',
         transition: 'all 0.2s ease',
-        ...(isDragOver && {
-          backgroundColor: 'rgba(59, 130, 246, 0.08)',
-          border: '2px dashed var(--button-primary-bg)',
-        }),
       }}
     >
       {/* Path Prompt Dialog for Web Mode */}
@@ -397,35 +327,15 @@ export function CreateJobPanel({
         </div>
       </div>
 
-      {/* Drag & Drop Indicator */}
-      {isDragOver && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            border: '2px dashed var(--button-primary-bg)',
-            borderRadius: 'var(--radius)',
-            zIndex: 10,
-          }}
-        >
-          <div
-            style={{
-              fontSize: '1rem',
-              fontWeight: 600,
-              color: 'var(--button-primary-bg)',
-              fontFamily: 'var(--font-sans)',
-            }}
-          >
-            Drop source media here
-          </div>
-        </div>
-      )}
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {/* Phase 4C: Explicit Drop Zone */}
+        {FEATURE_FLAGS.EXPLICIT_DROP_ZONE_ENABLED && onFilesDropped && (
+          <ExplicitDropZone
+            onFilesDropped={onFilesDropped}
+            disabled={loading || isDesignMode}
+          />
+        )}
+
         {/* File Selection */}
         <div>
           <label

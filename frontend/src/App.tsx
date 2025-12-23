@@ -20,6 +20,7 @@ import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { GlobalDropZone } from './components/GlobalDropZone'
 import { InvariantBanner } from './components/InvariantBanner'
+import { DropConfirmationDialog } from './components/DropConfirmationDialog'
 import { assertJobPendingForRender } from './utils/invariants'
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
@@ -263,6 +264,10 @@ function App() {
   // Phase 22: Discard changes confirmation dialog
   const [discardDialogOpen, setDiscardDialogOpen] = useState<boolean>(false)
   const [pendingPresetSwitch, setPendingPresetSwitch] = useState<(() => void) | null>(null)
+  
+  // Phase 4C: Dropped files confirmation state
+  const [droppedPaths, setDroppedPaths] = useState<string[]>([])
+  const [showDropConfirmation, setShowDropConfirmation] = useState<boolean>(false)
 
   // ============================================
   // Phase 17: DeliverSettings State (Authoritative)
@@ -902,6 +907,110 @@ function App() {
     await fetchJobs()
     setSelectedJobId(result.jobId)
   }
+  
+  // Phase 4C: Drop confirmation flow handlers
+  const handleFilesDropped = useCallback((paths: string[]) => {
+    // Check for blocking conditions
+    if (workspaceMode === 'design') {
+      setError('Cannot ingest files in design mode')
+      return
+    }
+    
+    if (ingestion.isIngesting) {
+      setError('Cannot drop files while ingestion is in progress')
+      return
+    }
+    
+    if (!outputDirectory) {
+      setError('Output directory must be set before dropping files')
+      return
+    }
+    
+    // Show confirmation dialog
+    setDroppedPaths(paths)
+    setShowDropConfirmation(true)
+  }, [workspaceMode, ingestion.isIngesting, outputDirectory])
+  
+  const handleDropConfirm = useCallback(async () => {
+    setShowDropConfirmation(false)
+    
+    if (droppedPaths.length === 0) {
+      return
+    }
+    
+    // Check if any dropped paths are folders (heuristic: no file extension)
+    const folders: string[] = []
+    const files: string[] = []
+    
+    for (const path of droppedPaths) {
+      // Simple heuristic: paths without extensions or ending in / are folders
+      const hasExtension = /\.[a-zA-Z0-9]+$/.test(path)
+      if (!hasExtension || path.endsWith('/')) {
+        folders.push(path)
+      } else {
+        files.push(path)
+      }
+    }
+    
+    // If folders are present, enumerate them
+    let allFiles = [...files]
+    if (folders.length > 0) {
+      for (const folder of folders) {
+        try {
+          const response = await fetch(`${BACKEND_URL}/filesystem/enumerate?path=${encodeURIComponent(folder)}`)
+          if (!response.ok) {
+            setError(`Failed to enumerate folder: ${folder}`)
+            continue
+          }
+          const data = await response.json()
+          if (data.error) {
+            setError(`Error enumerating folder ${folder}: ${data.error}`)
+            continue
+          }
+          if (data.files.length === 0) {
+            setError(`No valid media files found in folder: ${folder}`)
+            continue
+          }
+          allFiles.push(...data.files)
+        } catch (err) {
+          setError(`Failed to enumerate folder ${folder}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+          continue
+        }
+      }
+    }
+    
+    // If no valid files after enumeration, don't create job
+    if (allFiles.length === 0) {
+      setError('No valid media files to ingest')
+      setDroppedPaths([])
+      return
+    }
+    
+    // Use canonical ingestion pipeline with all enumerated files
+    const result = await ingestion.ingest({
+      sourcePaths: allFiles,
+      outputDir: outputDirectory,
+      deliverSettings: deliverSettings,
+      engine: selectedEngine,
+      presetId: presetManager.selectedPresetId,
+    })
+    
+    if (!result.success) {
+      setError(`Failed to ingest dropped files: ${result.error}`)
+    } else {
+      // Fetch jobs and select the newly created one
+      await fetchJobs()
+      setSelectedJobId(result.jobId)
+    }
+    
+    // Clear dropped paths
+    setDroppedPaths([])
+  }, [droppedPaths, outputDirectory, deliverSettings, selectedEngine, presetManager.selectedPresetId, ingestion, fetchJobs])
+  
+  const handleDropCancel = useCallback(() => {
+    setShowDropConfirmation(false)
+    setDroppedPaths([])
+  }, [])
 
   // ============================================
   // File/Folder Selection (Electron)
@@ -1747,6 +1856,7 @@ function App() {
                 selectedFiles={selectedFiles}
                 onFilesChange={setSelectedFiles}
                 onSelectFilesClick={selectFiles}
+                onFilesDropped={handleFilesDropped}
                 engines={engines}
                 selectedEngine={selectedEngine}
                 onEngineChange={setSelectedEngine}
@@ -2059,6 +2169,14 @@ function App() {
         presetName={presetManager.selectedPresetId 
           ? presetManager.getPreset(presetManager.selectedPresetId)?.name 
           : undefined}
+      />
+      
+      {/* Phase 4C: Drop Confirmation Dialog */}
+      <DropConfirmationDialog
+        isOpen={showDropConfirmation}
+        paths={droppedPaths}
+        onConfirm={handleDropConfirm}
+        onCancel={handleDropCancel}
       />
       
       {/* Phase 22: Splash Screen - shown during startup/engine detection */}
