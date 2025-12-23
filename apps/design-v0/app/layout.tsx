@@ -15,7 +15,8 @@ const inter = Inter({ subsets: ["latin"] })
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Proxx — Video Proxy & Render System",
+  // Legacy name: Proxx (deprecated)
+  title: "Awaire Proxy — Video Proxy & Render System",
   description: "Professional unattended video proxy and render queue management",
     generator: 'v0.app'
 }

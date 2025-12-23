@@ -11,7 +11,8 @@ export function ProxxHeader() {
       <div className="max-w-[1600px] mx-auto px-8 py-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-emerald-500" />
-          <h1 className="text-lg font-mono font-semibold tracking-tight text-slate-100">PROXX</h1>
+          {/* Legacy name: Proxx (deprecated) */}
+          <h1 className="text-lg font-mono font-semibold tracking-tight text-slate-100">AWAIRE PROXY</h1>
           <span className="text-xs font-mono text-slate-500 ml-2">v2.4.1</span>
         </div>
         <div className="flex items-center gap-6 text-xs font-mono text-slate-500">

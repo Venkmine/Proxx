@@ -12,6 +12,7 @@
  * - Overlay layer summary
  * - Last state transition + timestamp
  * - Last error message (if any)
+ * - Preset source info with scope (Phase 7B)
  */
 
 import { useState } from 'react'
@@ -20,6 +21,9 @@ import type { DeliverSettings, OverlayLayer } from './DeliverControlPanel'
 // ============================================================================
 // TYPES
 // ============================================================================
+
+// Phase 7B: Preset scope type
+type PresetScope = 'user' | 'workspace'
 
 interface JobDiagnosticsData {
   /** Full job ID */
@@ -54,6 +58,8 @@ interface JobDiagnosticsData {
   sourcePresetName?: string | null
   /** SHA-256 fingerprint of settings snapshot */
   sourcePresetFingerprint?: string | null
+  /** Phase 7B: Scope of preset (user or workspace) */
+  sourcePresetScope?: PresetScope | null
 }
 
 interface JobDiagnosticsPanelProps {
@@ -179,7 +185,7 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
           {/* Job ID */}
           <DiagnosticRow label="Job ID" value={data.jobId} mono />
           
-          {/* Phase 6/7A: Preset Source with improved layout and helper text */}
+          {/* Phase 6/7A/7B: Preset Source with improved layout, scope, and helper text */}
           <div
             style={{
               marginTop: '0.25rem',
@@ -192,10 +198,49 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
           >
             {data.sourcePresetId ? (
               <>
-                <DiagnosticRow 
-                  label="Preset Name" 
-                  value={data.sourcePresetName || 'Unknown'} 
-                />
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    lineHeight: 1.4,
+                    alignItems: 'center',
+                  }}
+                >
+                  <span
+                    style={{
+                      color: 'var(--text-dim, #666)',
+                      minWidth: '85px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    Preset Name:
+                  </span>
+                  <span style={{ color: 'var(--text-secondary, #999)' }}>
+                    {data.sourcePresetName || 'Unknown'}
+                  </span>
+                  {/* Phase 7B: Scope badge */}
+                  {data.sourcePresetScope && (
+                    <span
+                      style={{
+                        padding: '0.0625rem 0.25rem',
+                        fontSize: '0.5rem',
+                        fontWeight: 600,
+                        background: data.sourcePresetScope === 'workspace' 
+                          ? 'rgba(34, 197, 94, 0.15)' 
+                          : 'rgba(59, 130, 246, 0.15)',
+                        color: data.sourcePresetScope === 'workspace' 
+                          ? 'rgb(34, 197, 94)' 
+                          : 'var(--button-primary-bg, #3b82f6)',
+                        borderRadius: '2px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.03em',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {data.sourcePresetScope}
+                    </span>
+                  )}
+                </div>
                 <DiagnosticRow 
                   label="Preset ID" 
                   value={data.sourcePresetId} 

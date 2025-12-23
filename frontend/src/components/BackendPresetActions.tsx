@@ -6,6 +6,11 @@
  * - Duplicate preset (for editing)
  * - Delete preset
  * 
+ * Phase 7B: Added scope selection (user/workspace):
+ * - User presets: available only to you
+ * - Workspace presets: shared with this project
+ * - Scope is immutable after creation
+ * 
  * RULES (NON-NEGOTIABLE):
  * - Presets are snapshots, not live bindings
  * - No PATCH, no mutation
@@ -20,10 +25,14 @@ import type { DeliverSettings } from './DeliverControlPanel'
 // TYPES
 // ============================================================================
 
+// Phase 7B: Preset scope type
+type PresetScope = 'user' | 'workspace'
+
 interface SettingsPresetInfo {
   id: string
   name: string
   description: string
+  scope: PresetScope  // Phase 7B
   fingerprint: string
   tags: string[]
   created_at: string
@@ -33,7 +42,7 @@ interface SettingsPresetInfo {
 interface BackendPresetActionsProps {
   presets: SettingsPresetInfo[]
   currentSettings: DeliverSettings
-  onCreatePreset: (name: string, settings: DeliverSettings, description?: string) => Promise<SettingsPresetInfo | null>
+  onCreatePreset: (name: string, settings: DeliverSettings, description?: string, scope?: PresetScope) => Promise<SettingsPresetInfo | null>
   onDuplicatePreset: (presetId: string, newName?: string) => Promise<SettingsPresetInfo | null>
   onDeletePreset: (presetId: string, force?: boolean) => Promise<{ success: boolean; referencingJobs?: string[] }>
   onRefresh: () => Promise<void>
@@ -56,6 +65,7 @@ export function BackendPresetActions({
   const [isCreating, setIsCreating] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
   const [newPresetDescription, setNewPresetDescription] = useState('')
+  const [newPresetScope, setNewPresetScope] = useState<PresetScope>('user')  // Phase 7B
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showManageList, setShowManageList] = useState(false)
@@ -73,13 +83,15 @@ export function BackendPresetActions({
       const result = await onCreatePreset(
         newPresetName.trim(),
         currentSettings,
-        newPresetDescription.trim() || undefined
+        newPresetDescription.trim() || undefined,
+        newPresetScope  // Phase 7B
       )
       
       if (result) {
         // Success - reset form
         setNewPresetName('')
         setNewPresetDescription('')
+        setNewPresetScope('user')  // Phase 7B: Reset to default
         setIsCreating(false)
       }
     } catch (e) {
@@ -251,6 +263,84 @@ export function BackendPresetActions({
             />
           </div>
           
+          {/* Phase 7B: Scope selector */}
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '0.6875rem',
+                color: 'var(--text-secondary)',
+                marginBottom: '0.25rem',
+              }}
+            >
+              Scope
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '0.375rem 0.625rem',
+                  background: newPresetScope === 'user' ? 'rgba(59, 130, 246, 0.15)' : 'var(--input-bg)',
+                  border: newPresetScope === 'user' ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  fontSize: '0.6875rem',
+                  color: newPresetScope === 'user' ? 'var(--button-primary-bg)' : 'var(--text-secondary)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="presetScope"
+                  value="user"
+                  checked={newPresetScope === 'user'}
+                  onChange={() => setNewPresetScope('user')}
+                  disabled={isSubmitting}
+                  style={{ margin: 0 }}
+                />
+                User
+              </label>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '0.375rem 0.625rem',
+                  background: newPresetScope === 'workspace' ? 'rgba(34, 197, 94, 0.15)' : 'var(--input-bg)',
+                  border: newPresetScope === 'workspace' ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  fontSize: '0.6875rem',
+                  color: newPresetScope === 'workspace' ? 'rgb(34, 197, 94)' : 'var(--text-secondary)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="presetScope"
+                  value="workspace"
+                  checked={newPresetScope === 'workspace'}
+                  onChange={() => setNewPresetScope('workspace')}
+                  disabled={isSubmitting}
+                  style={{ margin: 0 }}
+                />
+                Workspace
+              </label>
+            </div>
+            <div
+              style={{
+                marginTop: '0.25rem',
+                fontSize: '0.5625rem',
+                color: 'var(--text-dim)',
+                fontStyle: 'italic',
+              }}
+            >
+              {newPresetScope === 'user'
+                ? 'User presets are available only to you'
+                : 'Workspace presets are shared with this project'}
+            </div>
+          </div>
+          
           {error && (
             <div
               style={{
@@ -371,15 +461,43 @@ export function BackendPresetActions({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.375rem',
                         fontSize: '0.75rem',
                         fontWeight: 500,
                         color: 'var(--text-primary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
                       }}
                     >
-                      {preset.name}
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {preset.name}
+                      </span>
+                      {/* Phase 7B: Scope badge */}
+                      <span
+                        style={{
+                          padding: '0.0625rem 0.25rem',
+                          fontSize: '0.5rem',
+                          fontWeight: 600,
+                          background: preset.scope === 'workspace' 
+                            ? 'rgba(34, 197, 94, 0.15)' 
+                            : 'rgba(59, 130, 246, 0.15)',
+                          color: preset.scope === 'workspace' 
+                            ? 'rgb(34, 197, 94)' 
+                            : 'var(--button-primary-bg)',
+                          borderRadius: '2px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.03em',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {preset.scope}
+                      </span>
                     </div>
                     {preset.description && (
                       <div

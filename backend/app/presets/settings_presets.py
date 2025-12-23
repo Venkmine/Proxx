@@ -24,10 +24,17 @@ import hashlib
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from app.deliver.settings import DeliverSettings
+
+
+# ============================================================================
+# PHASE 7B: PRESET SCOPE TYPES
+# ============================================================================
+
+PresetScope = Literal["user", "workspace"]
 
 
 # ============================================================================
@@ -40,6 +47,11 @@ class SettingsPreset(BaseModel):
     
     Presets contain a COMPLETE DeliverSettings snapshot.
     No partial presets. No inheritance. No defaults.
+    
+    Phase 7B: Presets have a scope (user or workspace):
+    - scope is metadata only — does NOT affect preset behavior
+    - scope determines storage location (user-level vs workspace-level)
+    - scope is immutable after creation (Alpha rule)
     
     When applied to a job:
     - settings_snapshot is COPIED into job.settings_dict
@@ -56,6 +68,12 @@ class SettingsPreset(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: str = ""
+    
+    # Phase 7B: Preset scope (user or workspace)
+    # - "user" = stored in ~/.proxx/presets.json (available only to you)
+    # - "workspace" = stored in ./.proxx/presets.json (shared with project)
+    # Scope is metadata only — no behavior differences
+    scope: PresetScope = "user"
     
     # Settings snapshot (full DeliverSettings as dict)
     settings_snapshot: Dict[str, Any]
@@ -109,6 +127,7 @@ class SettingsPreset(BaseModel):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "scope": self.scope,  # Phase 7B
             "settings_snapshot": self.settings_snapshot,
             "tags": list(self.tags),
             "created_at": self.created_at,
@@ -122,6 +141,7 @@ class SettingsPreset(BaseModel):
             id=data.get("id", str(uuid.uuid4())),
             name=data["name"],
             description=data.get("description", ""),
+            scope=data.get("scope", "user"),  # Phase 7B: default to "user" for existing presets
             settings_snapshot=data["settings_snapshot"],
             tags=data.get("tags", []),
             created_at=data.get("created_at", datetime.now().isoformat()),
@@ -137,6 +157,13 @@ class SettingsPresetStore:
     """
     JSON file-based storage for settings presets.
     
+    Phase 7B: Supports both user-level and workspace-level presets:
+    - User presets: ~/.proxx/presets.json (available only to you)
+    - Workspace presets: ./.proxx/presets.json (shared with project)
+    
+    Both are loaded and kept distinct internally. Scope is metadata only —
+    no behavior differences between user and workspace presets.
+    
     Alpha-appropriate persistence:
     - Simple JSON file storage
     - No complex database
@@ -146,56 +173,112 @@ class SettingsPresetStore:
     For production, would need locking or database.
     """
     
-    DEFAULT_PATH = Path.home() / ".proxx" / "presets.json"
+    # User-level storage (default)
+    DEFAULT_USER_PATH = Path.home() / ".proxx" / "presets.json"
     
-    def __init__(self, storage_path: Optional[Path] = None):
+    # Workspace-level storage (relative to workspace root)
+    WORKSPACE_PRESET_FILENAME = ".proxx/presets.json"
+    
+    def __init__(
+        self, 
+        user_storage_path: Optional[Path] = None,
+        workspace_root: Optional[Path] = None,
+    ):
         """
         Initialize preset store.
         
         Args:
-            storage_path: Path to JSON storage file (default: ~/.proxx/presets.json)
+            user_storage_path: Path to user-level JSON storage file 
+                               (default: ~/.proxx/presets.json)
+            workspace_root: Path to workspace root for workspace-level presets
+                           (default: None = no workspace presets)
         """
-        self.storage_path = storage_path or self.DEFAULT_PATH
+        self.user_storage_path = user_storage_path or self.DEFAULT_USER_PATH
+        self.workspace_root = workspace_root
+        self.workspace_storage_path: Optional[Path] = None
+        
+        if workspace_root:
+            self.workspace_storage_path = workspace_root / self.WORKSPACE_PRESET_FILENAME
+        
+        # All presets keyed by ID (scope is stored in preset itself)
         self._presets: Dict[str, SettingsPreset] = {}
         self._load()
     
+    def set_workspace_root(self, workspace_root: Optional[Path]) -> None:
+        """
+        Set or change the workspace root for workspace-level presets.
+        
+        Phase 7B: Called when workspace context changes.
+        """
+        self.workspace_root = workspace_root
+        if workspace_root:
+            self.workspace_storage_path = workspace_root / self.WORKSPACE_PRESET_FILENAME
+        else:
+            self.workspace_storage_path = None
+        self._load()  # Reload with new workspace
+    
     def _load(self) -> None:
-        """Load presets from storage."""
-        if not self.storage_path.exists():
-            self._presets = {}
+        """Load presets from both user and workspace storage."""
+        self._presets = {}
+        
+        # Load user presets
+        self._load_from_file(self.user_storage_path, expected_scope="user")
+        
+        # Load workspace presets (if workspace is set)
+        if self.workspace_storage_path:
+            self._load_from_file(self.workspace_storage_path, expected_scope="workspace")
+    
+    def _load_from_file(self, path: Path, expected_scope: PresetScope) -> None:
+        """Load presets from a specific storage file."""
+        if not path.exists():
             return
         
         try:
-            with open(self.storage_path, 'r') as f:
+            with open(path, 'r') as f:
                 data = json.load(f)
             
-            self._presets = {}
             for preset_data in data.get("presets", []):
                 try:
-                    preset = SettingsPreset.from_dict(preset_data)
+                    # Ensure scope matches expected (in case of legacy data)
+                    preset_data_copy = dict(preset_data)
+                    preset_data_copy["scope"] = expected_scope
+                    
+                    preset = SettingsPreset.from_dict(preset_data_copy)
                     self._presets[preset.id] = preset
                 except Exception as e:
                     # Skip invalid presets rather than fail entirely
-                    print(f"Warning: Failed to load preset: {e}")
+                    print(f"Warning: Failed to load preset from {path}: {e}")
         except Exception as e:
-            print(f"Warning: Failed to load presets from {self.storage_path}: {e}")
-            self._presets = {}
+            print(f"Warning: Failed to load presets from {path}: {e}")
     
     def _save(self) -> None:
-        """Persist presets to storage."""
+        """Persist presets to appropriate storage files based on scope."""
+        # Separate presets by scope
+        user_presets = [p for p in self._presets.values() if p.scope == "user"]
+        workspace_presets = [p for p in self._presets.values() if p.scope == "workspace"]
+        
+        # Save user presets
+        self._save_to_file(self.user_storage_path, user_presets)
+        
+        # Save workspace presets (if workspace is set)
+        if self.workspace_storage_path:
+            self._save_to_file(self.workspace_storage_path, workspace_presets)
+    
+    def _save_to_file(self, path: Path, presets: List[SettingsPreset]) -> None:
+        """Persist presets to a specific storage file."""
         # Ensure directory exists
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         
         data = {
             "version": 1,
-            "presets": [p.to_dict() for p in self._presets.values()]
+            "presets": [p.to_dict() for p in presets]
         }
         
         # Atomic write via temp file
-        temp_path = self.storage_path.with_suffix('.tmp')
+        temp_path = path.with_suffix('.tmp')
         with open(temp_path, 'w') as f:
             json.dump(data, f, indent=2)
-        temp_path.replace(self.storage_path)
+        temp_path.replace(path)
     
     def list_presets(self) -> List[SettingsPreset]:
         """
@@ -224,6 +307,7 @@ class SettingsPresetStore:
         settings: DeliverSettings,
         description: str = "",
         tags: Optional[List[str]] = None,
+        scope: PresetScope = "user",  # Phase 7B
     ) -> SettingsPreset:
         """
         Create a new preset from settings snapshot.
@@ -233,13 +317,19 @@ class SettingsPresetStore:
             settings: DeliverSettings to snapshot
             description: Optional description
             tags: Optional tags for organization
+            scope: Preset scope (user or workspace) — Phase 7B
             
         Returns:
             The created preset
             
         Raises:
             ValueError: If name is empty or already taken
+            ValueError: If scope is workspace but no workspace is configured
         """
+        # Phase 7B: Validate workspace scope
+        if scope == "workspace" and not self.workspace_storage_path:
+            raise ValueError("Cannot create workspace preset: no workspace configured")
+        
         # Check for duplicate names
         for existing in self._presets.values():
             if existing.name.lower() == name.strip().lower():
@@ -248,6 +338,7 @@ class SettingsPresetStore:
         preset = SettingsPreset(
             name=name,
             description=description,
+            scope=scope,  # Phase 7B
             settings_snapshot=settings.to_dict(),
             tags=tags or [],
         )
@@ -261,6 +352,7 @@ class SettingsPresetStore:
         self,
         preset_id: str,
         new_name: Optional[str] = None,
+        new_scope: Optional[PresetScope] = None,  # Phase 7B
     ) -> Optional[SettingsPreset]:
         """
         Create a new preset from an existing preset's snapshot.
@@ -272,6 +364,7 @@ class SettingsPresetStore:
         Args:
             preset_id: The preset to duplicate
             new_name: Name for the new preset (default: "Copy of {name}")
+            new_scope: Scope for the new preset (default: same as source) — Phase 7B
             
         Returns:
             The new preset, or None if source preset not found
@@ -279,6 +372,13 @@ class SettingsPresetStore:
         source = self._presets.get(preset_id)
         if not source:
             return None
+        
+        # Phase 7B: Use source scope if not specified
+        scope = new_scope if new_scope is not None else source.scope
+        
+        # Phase 7B: Validate workspace scope
+        if scope == "workspace" and not self.workspace_storage_path:
+            raise ValueError("Cannot create workspace preset: no workspace configured")
         
         # Generate unique name
         base_name = new_name or f"Copy of {source.name}"
@@ -292,6 +392,7 @@ class SettingsPresetStore:
         new_preset = SettingsPreset(
             name=name,
             description=source.description,
+            scope=scope,  # Phase 7B
             settings_snapshot=source.settings_snapshot,
             tags=list(source.tags),
         )

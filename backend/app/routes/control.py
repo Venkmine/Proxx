@@ -10,7 +10,7 @@ No automatic actions. No silent mutations.
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Literal
 import logging
 from pathlib import Path
 
@@ -308,7 +308,12 @@ class OperationResponse(BaseModel):
 
 # ============================================================================
 # PHASE 6: SETTINGS PRESET API MODELS
+# Phase 7B: Added scope field for user vs workspace presets
 # ============================================================================
+
+# Phase 7B: Preset scope type
+PresetScope = Literal["user", "workspace"]
+
 
 class SettingsPresetInfo(BaseModel):
     """Settings preset summary for UI display."""
@@ -318,6 +323,7 @@ class SettingsPresetInfo(BaseModel):
     id: str
     name: str
     description: str = ""
+    scope: PresetScope = "user"  # Phase 7B: user or workspace
     fingerprint: str  # SHA-256 hash prefix for diagnostics
     created_at: str
     updated_at: str
@@ -332,6 +338,7 @@ class SettingsPresetDetail(BaseModel):
     id: str
     name: str
     description: str = ""
+    scope: PresetScope = "user"  # Phase 7B: user or workspace
     settings_snapshot: dict  # Full DeliverSettings dict
     fingerprint: str
     tags: List[str] = []
@@ -354,6 +361,7 @@ class CreateSettingsPresetRequest(BaseModel):
     
     name: str
     description: str = ""
+    scope: PresetScope = "user"  # Phase 7B: user or workspace (default: user)
     settings_snapshot: dict  # Full DeliverSettings dict
     tags: List[str] = []
 
@@ -431,6 +439,7 @@ async def list_settings_presets_endpoint(request: Request):
                 id=p.id,
                 name=p.name,
                 description=p.description,
+                scope=p.scope,  # Phase 7B
                 fingerprint=p.fingerprint,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
@@ -473,6 +482,7 @@ async def get_settings_preset_endpoint(preset_id: str, request: Request):
             id=preset.id,
             name=preset.name,
             description=preset.description,
+            scope=preset.scope,  # Phase 7B
             settings_snapshot=preset.settings_snapshot,
             fingerprint=preset.fingerprint,
             tags=list(preset.tags),
@@ -520,11 +530,12 @@ async def create_settings_preset_endpoint(body: CreateSettingsPresetRequest, req
                 settings=settings,
                 description=body.description,
                 tags=body.tags,
+                scope=body.scope,  # Phase 7B
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-        logger.info(f"Settings preset created: {preset.id} ({preset.name})")
+        logger.info(f"Settings preset created: {preset.id} ({preset.name}, scope={preset.scope})")
         
         return CreateSettingsPresetResponse(
             success=True,
@@ -533,6 +544,7 @@ async def create_settings_preset_endpoint(body: CreateSettingsPresetRequest, req
                 id=preset.id,
                 name=preset.name,
                 description=preset.description,
+                scope=preset.scope,  # Phase 7B
                 fingerprint=preset.fingerprint,
                 created_at=preset.created_at,
                 updated_at=preset.updated_at,
@@ -577,7 +589,7 @@ async def duplicate_settings_preset_endpoint(
         if not new_preset:
             raise HTTPException(status_code=404, detail=f"Settings preset not found: {preset_id}")
         
-        logger.info(f"Settings preset duplicated: {preset_id} -> {new_preset.id} ({new_preset.name})")
+        logger.info(f"Settings preset duplicated: {preset_id} -> {new_preset.id} ({new_preset.name}, scope={new_preset.scope})")
         
         return CreateSettingsPresetResponse(
             success=True,
@@ -586,6 +598,7 @@ async def duplicate_settings_preset_endpoint(
                 id=new_preset.id,
                 name=new_preset.name,
                 description=new_preset.description,
+                scope=new_preset.scope,  # Phase 7B
                 fingerprint=new_preset.fingerprint,
                 created_at=new_preset.created_at,
                 updated_at=new_preset.updated_at,

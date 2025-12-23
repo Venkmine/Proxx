@@ -7,6 +7,11 @@
  * - Editing a preset = duplicate + delete old
  * - No PATCH, no mutation
  * 
+ * Phase 7B: Added scope (user/workspace) for visibility:
+ * - Scope is metadata only — no behavior differences
+ * - User presets: available only to you
+ * - Workspace presets: shared with this project
+ * 
  * This hook manages Phase 6 backend settings presets,
  * NOT to be confused with the client-side presets in usePresets.ts
  */
@@ -18,10 +23,14 @@ import type { DeliverSettings } from '../components/DeliverControlPanel'
 // TYPES
 // ============================================================================
 
+// Phase 7B: Preset scope type
+export type PresetScope = 'user' | 'workspace'
+
 export interface SettingsPresetInfo {
   id: string
   name: string
   description: string
+  scope: PresetScope  // Phase 7B: user or workspace
   fingerprint: string
   tags: string[]
   created_at: string
@@ -40,7 +49,7 @@ export interface UseSettingsPresetsReturn {
   
   // Actions
   refreshPresets: () => Promise<void>
-  createPreset: (name: string, settings: DeliverSettings, description?: string) => Promise<SettingsPresetInfo | null>
+  createPreset: (name: string, settings: DeliverSettings, description?: string, scope?: PresetScope) => Promise<SettingsPresetInfo | null>
   duplicatePreset: (presetId: string, newName?: string) => Promise<SettingsPresetInfo | null>
   deletePreset: (presetId: string, force?: boolean) => Promise<{ success: boolean; referencingJobs?: string[] }>
   getPresetDetails: (presetId: string) => Promise<SettingsPresetDetail | null>
@@ -86,7 +95,8 @@ export function useSettingsPresets(backendUrl: string): UseSettingsPresetsReturn
   const createPreset = useCallback(async (
     name: string,
     settings: DeliverSettings,
-    description: string = ''
+    description: string = '',
+    scope: PresetScope = 'user'  // Phase 7B
   ): Promise<SettingsPresetInfo | null> => {
     try {
       const response = await fetch(`${backendUrl}/control/settings-presets`, {
@@ -95,6 +105,7 @@ export function useSettingsPresets(backendUrl: string): UseSettingsPresetsReturn
         body: JSON.stringify({
           name,
           description,
+          scope,  // Phase 7B
           settings_snapshot: settings,
           tags: [],
         }),

@@ -466,6 +466,7 @@ function setupApplicationMenu() {
         {
           label: 'Awaire Proxy Documentation',
           click: async () => {
+            // Legacy repo name: Proxx (deprecated)
             await shell.openExternal('https://github.com/Venkmine/Proxx')
           }
         }

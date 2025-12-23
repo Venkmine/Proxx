@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Test configuration
+// Note: TEST_MEDIA_DIR uses repository path (not product name)
 export const TEST_MEDIA_DIR = '/Users/leon.grant/projects/Proxx/test_media';
 export const TEST_OUTPUT_DIR = '/tmp/awaire_proxy_test_output';
 export const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8085';

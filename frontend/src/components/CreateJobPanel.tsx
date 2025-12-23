@@ -51,11 +51,15 @@ interface EngineInfo {
   available: boolean
 }
 
-// Phase 6: Settings preset info (Phase 7A: extended for summary preview)
+// Phase 7B: Preset scope type
+type PresetScope = 'user' | 'workspace'
+
+// Phase 6: Settings preset info (Phase 7A: extended for summary preview, Phase 7B: added scope)
 interface SettingsPresetInfo {
   id: string
   name: string
   description?: string
+  scope?: PresetScope  // Phase 7B: user or workspace
   fingerprint: string
   /** Phase 7A: Optional settings snapshot for summary preview */
   settings_snapshot?: DeliverSettings
@@ -421,7 +425,7 @@ export function CreateJobPanel({
                   }}
                 />
                 <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                  Press Enter to add file. Example: /Users/leon.grant/projects/Proxx/test_media/test_input.mp4
+                  Press Enter to add file. Example: ~/test_media/test_input.mp4
                 </span>
               </div>
             )}

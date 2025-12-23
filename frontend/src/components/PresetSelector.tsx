@@ -7,20 +7,33 @@
  * - Quick Save button when dirty
  * - Warning before switching with unsaved changes
  * 
+ * Phase 7B: Added scope grouping and badges:
+ * - Presets grouped into "User Presets" and "Workspace Presets"
+ * - Subtle scope badge (USER/WORKSPACE) on each preset
+ * - Selection behavior unchanged
+ * 
  * ⚠️ VERIFY GUARD:
  * Any change to this component requires Playwright coverage.
  * Run: make verify-ui before committing changes.
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import type { Preset } from '../hooks/usePresets'
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
+// Phase 7B: Preset scope type
+type PresetScope = 'user' | 'workspace'
+
+// Phase 7B: Extended preset type with optional scope
+interface PresetWithScope extends Preset {
+  scope?: PresetScope
+}
+
 interface PresetSelectorProps {
-  presets: Preset[]
+  presets: PresetWithScope[]
   selectedPresetId: string | null
   isDirty: boolean
   onSelectPreset: (id: string | null) => void
@@ -47,6 +60,26 @@ export function PresetSelector({
   const [pendingSelection, setPendingSelection] = useState<string | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Phase 7B: Group presets by scope
+  const { userPresets, workspacePresets } = useMemo(() => {
+    const user: PresetWithScope[] = []
+    const workspace: PresetWithScope[] = []
+    
+    for (const preset of presets) {
+      if (preset.scope === 'workspace') {
+        workspace.push(preset)
+      } else {
+        // Default to user if scope is undefined (legacy presets)
+        user.push(preset)
+      }
+    }
+    
+    return { userPresets: user, workspacePresets: workspace }
+  }, [presets])
+  
+  // Phase 7B: Check if we have any scoped presets
+  const hasWorkspacePresets = workspacePresets.length > 0
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -99,6 +132,66 @@ export function PresetSelector({
     setShowConfirm(false)
     setPendingSelection(null)
   }
+  
+  // Phase 7B: Render a preset option with scope badge
+  const renderPresetOption = (preset: PresetWithScope) => (
+    <button
+      key={preset.id}
+      data-testid={`preset-option-${preset.id}`}
+      onClick={() => handleSelect(preset.id)}
+      style={{
+        width: '100%',
+        padding: '0.5rem 0.75rem',
+        textAlign: 'left',
+        background: selectedPresetId === preset.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+        border: 'none',
+        color: selectedPresetId === preset.id ? 'var(--button-primary-bg)' : 'var(--text-secondary)',
+        fontSize: '0.75rem',
+        fontFamily: 'var(--font-sans)',
+        fontWeight: selectedPresetId === preset.id ? 600 : 400,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.375rem',
+      }}
+      onMouseEnter={(e) => {
+        if (selectedPresetId !== preset.id) {
+          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.05)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (selectedPresetId !== preset.id) {
+          e.currentTarget.style.background = 'transparent'
+        }
+      }}
+    >
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {preset.name}
+      </span>
+      {/* Phase 7B: Scope badge */}
+      {preset.scope && (
+        <span
+          style={{
+            padding: '0.0625rem 0.25rem',
+            fontSize: '0.5rem',
+            fontWeight: 600,
+            background: preset.scope === 'workspace' 
+              ? 'rgba(34, 197, 94, 0.15)' 
+              : 'rgba(59, 130, 246, 0.15)',
+            color: preset.scope === 'workspace' 
+              ? 'rgb(34, 197, 94)' 
+              : 'var(--button-primary-bg)',
+            borderRadius: '2px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.03em',
+            flexShrink: 0,
+          }}
+        >
+          {preset.scope}
+        </span>
+      )}
+    </button>
+  )
 
   return (
     <div
@@ -233,41 +326,54 @@ export function PresetSelector({
             <div style={{ height: '1px', background: 'var(--border-primary)', margin: '0.25rem 0' }} />
           )}
 
-          {/* Preset options */}
-          {presets.map(preset => (
-            <button
-              key={preset.id}
-              data-testid={`preset-option-${preset.id}`}
-              onClick={() => handleSelect(preset.id)}
-              style={{
-                width: '100%',
-                padding: '0.5rem 0.75rem',
-                textAlign: 'left',
-                background: selectedPresetId === preset.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                border: 'none',
-                color: selectedPresetId === preset.id ? 'var(--button-primary-bg)' : 'var(--text-secondary)',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-sans)',
-                fontWeight: selectedPresetId === preset.id ? 600 : 400,
-                cursor: 'pointer',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => {
-                if (selectedPresetId !== preset.id) {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.05)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedPresetId !== preset.id) {
-                  e.currentTarget.style.background = 'transparent'
-                }
-              }}
-            >
-              {preset.name}
-            </button>
-          ))}
+          {/* Phase 7B: Grouped preset options by scope */}
+          {hasWorkspacePresets ? (
+            <>
+              {/* User Presets Group */}
+              {userPresets.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      padding: '0.375rem 0.75rem',
+                      fontSize: '0.5625rem',
+                      fontWeight: 600,
+                      color: 'var(--text-dim)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      background: 'rgba(0, 0, 0, 0.1)',
+                    }}
+                  >
+                    User Presets
+                  </div>
+                  {userPresets.map(renderPresetOption)}
+                </>
+              )}
+              
+              {/* Workspace Presets Group */}
+              {workspacePresets.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      padding: '0.375rem 0.75rem',
+                      fontSize: '0.5625rem',
+                      fontWeight: 600,
+                      color: 'var(--text-dim)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      background: 'rgba(0, 0, 0, 0.1)',
+                      marginTop: userPresets.length > 0 ? '0.25rem' : 0,
+                    }}
+                  >
+                    Workspace Presets
+                  </div>
+                  {workspacePresets.map(renderPresetOption)}
+                </>
+              )}
+            </>
+          ) : (
+            // No workspace presets — render flat list (backward compat)
+            presets.map(renderPresetOption)
+          )}
 
           {presets.length === 0 && (
             <div
