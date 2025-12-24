@@ -1,20 +1,13 @@
-# Awaire Proxy Development Launcher
+# Proxx Development Launcher
 
-**Foolproof script to start the complete Awaire Proxy development environment.**
+**⚠️ This document is deprecated. See [QUICKSTART.md](QUICKSTART.md) instead.**
 
-## Usage
+## Current Launcher
 
-From the project root:
-
-```bash
-bash dev_launch.sh
-```
-
-Or make it executable once and run directly:
+Use the unified `START` script:
 
 ```bash
-chmod +x dev_launch.sh
-./dev_launch.sh
+./START
 ```
 
 ## What It Does
@@ -24,7 +17,7 @@ The script handles the complete startup sequence with health checks:
 1. **Cleanup** — Kills any existing backend/Vite/Electron processes and frees ports
 2. **Backend** — Starts uvicorn on `http://127.0.0.1:8085` and waits for health check
 3. **Vite** — Starts Vite dev server on `http://127.0.0.1:5173` and waits for ready signal
-4. **Electron Build Check** — Rebuilds `dist-electron/` if TypeScript sources changed
+4. **Electron Build** — Rebuilds `dist-electron/` if TypeScript sources changed
 5. **Electron Launch** — Starts Electron with `VITE_DEV_SERVER_URL` pointing to Vite
 
 ## Features
@@ -32,8 +25,8 @@ The script handles the complete startup sequence with health checks:
 - ✅ **Health checks** ensure each service is ready before starting the next
 - ✅ **Auto-rebuild** detects stale Electron builds and recompiles TypeScript
 - ✅ **Process cleanup** on exit (Ctrl+C kills backend + Vite gracefully)
-- ✅ **Logs** written to `/tmp/awaire_proxy_backend.log` and `/tmp/awaire_proxy_vite.log`
-- ✅ **Exponential backoff** for Electron loadURL retries (handles slow Vite startup)
+- ✅ **Logs** written to `/tmp/proxx_backend.log` and `/tmp/proxx_vite.log`
+- ✅ **Colored output** with timestamps for easy debugging
 
 ## Troubleshooting
 
@@ -41,10 +34,10 @@ If launch fails:
 
 ```bash
 # Check backend logs
-tail -f /tmp/awaire_proxy_backend.log
+tail -f /tmp/proxx_backend.log
 
 # Check Vite logs
-tail -f /tmp/awaire_proxy_vite.log
+tail -f /tmp/proxx_vite.log
 
 # Manually verify ports are free
 lsof -ti :8085 :5173

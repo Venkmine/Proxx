@@ -1,4 +1,25 @@
 #!/bin/bash
+# ==============================================================================
+# ⚠️  DEPRECATED - DO NOT USE
+# ==============================================================================
+# This script has been replaced by the unified START script.
+# 
+# Please use instead:
+#   ./START
+#
+# This file remains for historical reference only.
+# ==============================================================================
+
+echo "❌ This script is deprecated."
+echo ""
+echo "Please use the unified launcher instead:"
+echo ""
+echo "    ./START"
+echo ""
+exit 1
+
+# OLD CODE BELOW - KEPT FOR REFERENCE
+# ==============================================================================
 #!/usr/bin/env bash
 set -euo pipefail
 

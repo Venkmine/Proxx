@@ -146,9 +146,22 @@ class IngestionService:
         # 0. PHASE 6: Load settings from preset if specified
         # =====================================================================
         if settings_preset_id and self.settings_preset_store:
+            # Log available presets for diagnostics (Trust Stabilisation)
+            available_presets = [p.id for p in self.settings_preset_store.list_presets()]
+            logger.debug(f"Settings preset resolution: requested='{settings_preset_id}', available={available_presets}")
+            
             settings_preset = self.settings_preset_store.get_preset(settings_preset_id)
             if not settings_preset:
-                raise IngestionError(f"Settings preset not found: {settings_preset_id}")
+                # INVARIANT: PRESET_REFERENCE_MISSING - frontend sent ID not known to backend
+                logger.error(
+                    f"PRESET_REFERENCE_MISSING: Settings preset '{settings_preset_id}' not found. "
+                    f"Available presets: {available_presets}. "
+                    "This indicates frontend/backend preset sync failure."
+                )
+                raise IngestionError(
+                    f"Selected preset is no longer available. Please reselect or use Manual settings. "
+                    f"(Preset ID: {settings_preset_id})"
+                )
             
             # COPY settings from preset (not a reference!)
             deliver_settings = settings_preset.get_settings()
@@ -203,9 +216,22 @@ class IngestionService:
         # =====================================================================
         preset = None
         if preset_id and self.preset_registry:
+            # Log available presets for diagnostics (Trust Stabilisation)
+            available_global = list(self.preset_registry.list_global_presets().keys())
+            logger.debug(f"Legacy preset resolution: requested='{preset_id}', available={available_global}")
+            
             preset = self.preset_registry.get_global_preset(preset_id)
             if not preset:
-                raise IngestionError(f"Preset '{preset_id}' not found")
+                # INVARIANT: PRESET_REFERENCE_MISSING - frontend sent ID not known to backend
+                logger.error(
+                    f"PRESET_REFERENCE_MISSING: Legacy preset '{preset_id}' not found. "
+                    f"Available presets: {available_global}. "
+                    "This indicates frontend/backend preset sync failure."
+                )
+                raise IngestionError(
+                    f"Selected preset is no longer available. Please reselect or use Manual settings. "
+                    f"(Preset ID: {preset_id})"
+                )
         
         # =====================================================================
         # 6. CREATE JOB: UUIDv4 ID generated automatically

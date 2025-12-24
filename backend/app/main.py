@@ -42,7 +42,16 @@ app.state.engine_registry = get_engine_registry()
 
 # Phase 6: Initialize settings preset store (immutable snapshots)
 from app.presets.settings_presets import SettingsPresetStore
+import logging
+_startup_logger = logging.getLogger(__name__)
+
 app.state.settings_preset_store = SettingsPresetStore()
+
+# Trust Stabilisation: Log loaded presets at startup for diagnostics
+_loaded_presets = app.state.settings_preset_store.list_presets()
+_startup_logger.info(f"Settings presets loaded: {len(_loaded_presets)} presets")
+for _p in _loaded_presets:
+    _startup_logger.info(f"  - {_p.name} (id={_p.id}, scope={_p.scope})")
 
 # Initialize job engine with all registries
 app.state.job_engine = JobEngine(

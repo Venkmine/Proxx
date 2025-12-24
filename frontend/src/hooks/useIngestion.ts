@@ -159,10 +159,26 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
     
     try {
       // Build request body for backend
+      // IMPORTANT: Strip fields that backend doesn't accept (extra="forbid"):
+      // - overlay.layers (backend only accepts text_layers, image_watermark, timecode_overlay)
+      // - colour (not accepted in Proxy v1)
+      const overlayForBackend = request.deliverSettings.overlay ? {
+        text_layers: request.deliverSettings.overlay.text_layers,
+        image_watermark: request.deliverSettings.overlay.image_watermark,
+        timecode_overlay: request.deliverSettings.overlay.timecode_overlay,
+        // NOTE: 'layers' field intentionally omitted - backend rejects it
+      } : undefined
+      
+      // NOTE: preset_id is NOT sent to backend because frontend localStorage presets
+      // cannot be resolved by the backend. The deliverSettings already contain all
+      // the settings from the preset. Only settings_preset_id (backend-synced presets)
+      // should be sent.
       const body = {
         source_paths: request.sourcePaths,
-        preset_id: request.presetId || null,
-        settings_preset_id: request.settingsPresetId || null,  // Phase 6
+        // TRUST STABILISATION: Do NOT send localStorage preset IDs to backend
+        // preset_id was for legacy GlobalPreset system which is not used in Alpha
+        preset_id: null,
+        settings_preset_id: request.settingsPresetId || null,  // Phase 6 backend presets only
         engine: request.engine || 'ffmpeg',
         deliver_settings: {
           output_dir: request.outputDir,
@@ -170,7 +186,8 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
           audio: request.deliverSettings.audio,
           file: request.deliverSettings.file,
           metadata: request.deliverSettings.metadata,
-          overlay: request.deliverSettings.overlay,
+          overlay: overlayForBackend,
+          // NOTE: 'colour' field intentionally omitted - backend rejects it in Proxy v1
         },
       }
       
@@ -183,7 +200,22 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
       const data = await response.json()
       
       if (!response.ok) {
-        const error = data.detail || data.message || `HTTP ${response.status}`
+        // Phase 9F: Ensure error is always a human-readable string
+        let error: string
+        if (typeof data.detail === 'string') {
+          error = data.detail
+        } else if (Array.isArray(data.detail)) {
+          // FastAPI validation errors are arrays of {loc, msg, type}
+          error = data.detail.map((e: { msg?: string; message?: string }) => 
+            e.msg || e.message || 'Validation error'
+          ).join('; ')
+        } else if (typeof data.detail === 'object' && data.detail !== null) {
+          error = (data.detail as { message?: string }).message || JSON.stringify(data.detail)
+        } else if (typeof data.message === 'string') {
+          error = data.message
+        } else {
+          error = `HTTP ${response.status}`
+        }
         setLastError(error)
         return { success: false, error }
       }

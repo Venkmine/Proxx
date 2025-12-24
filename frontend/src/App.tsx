@@ -123,6 +123,13 @@ interface JobDetail {
   queued_count: number
   warning_count: number
   tasks: ClipTaskDetail[]
+  // Trust Stabilisation: Settings summary for queue export intent visibility
+  settings_summary?: {
+    preset_name?: string
+    codec?: string
+    container?: string
+    resolution?: string
+  }
 }
 
 interface PresetInfo {
@@ -527,7 +534,9 @@ function App() {
 
   const fetchJobs = async () => {
     try {
-      setError('')
+      // Trust Stabilisation: Do NOT clear error here
+      // Errors must persist until user clicks "Dismiss"
+      // Only fetch errors are set/cleared by this function
       const response = await fetch(`${BACKEND_URL}/monitor/jobs`)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
@@ -753,8 +762,8 @@ function App() {
       await fetchJobDetail(jobId)
       await fetchJobs()
       
-      // Note: Cancel is not reversible, but we show a toast for feedback
-      setError('')
+      // Trust Stabilisation: Do NOT clear errors on success
+      // Errors persist until user clicks "Dismiss"
     } catch (err) {
       setError(createJobError('cancel', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
@@ -2091,6 +2100,12 @@ function App() {
                 ) : (
                   filteredJobs.map((job, index) => {
                     const detail = jobDetails.get(job.id)
+                    // Trust Stabilisation: Build settings summary for queue export intent visibility
+                    const settingsSummary = detail?.settings_summary ? {
+                      codec: detail.settings_summary.codec,
+                      resolution: detail.settings_summary.resolution,
+                      container: detail.settings_summary.container,
+                    } : undefined
                     return (
                       <JobGroup
                         key={job.id}
@@ -2108,6 +2123,7 @@ function App() {
                         queuedCount={job.queued_count}
                         warningCount={job.warning_count}
                         tasks={detail?.tasks || []}
+                        settingsSummary={settingsSummary}
                         isSelected={selectedJobId === job.id}
                         isExpanded={isJobExpanded(job.id, job.total_tasks)}
                         onToggleExpand={() => toggleJobExpanded(job.id)}

@@ -105,6 +105,7 @@ class JobDetail(BaseModel):
     Detailed view of a job including all clip tasks.
     
     Provides complete visibility into job state for monitoring.
+    Trust Stabilisation: Includes settings summary for queue export intent visibility.
     """
     
     model_config = ConfigDict(extra="forbid")
@@ -131,6 +132,10 @@ class JobDetail(BaseModel):
     
     # Task details
     tasks: List[ClipTaskDetail]
+    
+    # Trust Stabilisation: Settings summary for queue export intent visibility
+    # Shows what will be produced, not just that a job exists
+    settings_summary: Optional[dict] = None  # {preset_name, codec, container, resolution}
 
 
 class ReportReference(BaseModel):

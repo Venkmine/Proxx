@@ -344,12 +344,14 @@ export function JobGroup({
           )}
         </div>
 
-        {/* Alpha: Settings Summary */}
+        {/* Trust Stabilisation: Settings Summary - Shows export intent (what will be produced) */}
+        {/* Format: Preset name or "Manual" · Codec Container · Resolution */}
         {settingsSummary && (
           <div
             style={{
               display: 'flex',
-              gap: '0.5rem',
+              alignItems: 'center',
+              gap: '0.375rem',
               fontSize: '0.6875rem',
               color: 'var(--text-muted)',
               fontFamily: 'var(--font-mono)',
@@ -359,15 +361,16 @@ export function JobGroup({
             }}
             title="Output settings for this job"
           >
-            {settingsSummary.codec && <span>{settingsSummary.codec}</span>}
+            {/* Codec + Container (e.g., "ProRes Proxy · MOV") */}
+            {settingsSummary.codec && (
+              <span>
+                {settingsSummary.codec}
+                {settingsSummary.container && ` · ${settingsSummary.container.toUpperCase()}`}
+              </span>
+            )}
+            {/* Resolution (e.g., "1920×1080") */}
             {settingsSummary.resolution && settingsSummary.resolution !== 'Source' && (
               <span>• {settingsSummary.resolution}</span>
-            )}
-            {settingsSummary.fps && settingsSummary.fps !== 'Source' && (
-              <span>• {settingsSummary.fps}</span>
-            )}
-            {settingsSummary.container && (
-              <span>• .{settingsSummary.container}</span>
             )}
           </div>
         )}
@@ -382,6 +385,40 @@ export function JobGroup({
         >
           {totalTasks} clip{totalTasks !== 1 ? 's' : ''}
         </div>
+
+        {/* Trust Stabilisation: Always-visible Remove/Cancel action */}
+        {/* Destructive actions must be obvious, not hidden behind selection/hover */}
+        {(showDelete || showCancel) && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (showCancel) {
+                onCancel?.()
+              } else {
+                onDelete?.()
+              }
+            }}
+            disabled={loading}
+            style={{
+              background: 'none',
+              border: '1px solid var(--error-border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.25rem 0.5rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '0.6875rem',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--error-fg)',
+              opacity: loading ? 0.5 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              transition: 'all 0.15s',
+            }}
+            title={showCancel ? 'Cancel this running job' : 'Remove this job from queue'}
+          >
+            {showCancel ? '⏹ Cancel' : '✕ Remove'}
+          </button>
+        )}
       </div>
 
       {/* Collapsible Content */}

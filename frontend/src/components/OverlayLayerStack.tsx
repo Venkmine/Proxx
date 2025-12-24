@@ -7,12 +7,13 @@
  * - Layer name + type display
  * - Scope badge (Project / Clip)
  * - Delete layer with confirmation
+ * - Inline layer settings when selected
  * 
  * This component reflects backend-backed state only.
  * All layers must be visible, reorderable, and removable.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -30,8 +31,9 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { OverlayLayer, OverlayLayerType, OverlayLayerScope } from './DeliverControlPanel'
+import type { OverlayLayer, OverlayLayerType, OverlayLayerScope, OverlayLayerSettings } from './DeliverControlPanel'
 import { Button } from './Button'
+import { Select } from './Select'
 
 // ============================================================================
 // TYPES
@@ -85,6 +87,660 @@ function getLayerDisplayName(layer: OverlayLayer): string {
     return layer.settings.metadata_field || 'Metadata'
   }
   return `Layer ${layer.id.slice(0, 6)}`
+}
+
+// ============================================================================
+// CONSTANTS FOR LAYER SETTINGS
+// ============================================================================
+
+const POSITION_ANCHORS = [
+  { value: 'top_left', label: 'Top Left' },
+  { value: 'top_center', label: 'Top Center' },
+  { value: 'top_right', label: 'Top Right' },
+  { value: 'center_left', label: 'Center Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'center_right', label: 'Center Right' },
+  { value: 'bottom_left', label: 'Bottom Left' },
+  { value: 'bottom_center', label: 'Bottom Center' },
+  { value: 'bottom_right', label: 'Bottom Right' },
+  { value: 'custom', label: 'Custom (Drag in Preview)' },
+]
+
+const FONT_OPTIONS = [
+  { value: 'Arial', label: 'Arial' },
+  { value: 'Helvetica', label: 'Helvetica' },
+  { value: 'Menlo', label: 'Menlo (Monospace)' },
+  { value: 'Courier', label: 'Courier (Monospace)' },
+  { value: 'Monaco', label: 'Monaco' },
+  { value: 'Georgia', label: 'Georgia (Serif)' },
+  { value: 'Times', label: 'Times New Roman' },
+]
+
+const SIZE_PRESETS = [
+  { value: '12', label: 'Small (12pt)' },
+  { value: '18', label: 'Medium (18pt)' },
+  { value: '24', label: 'Large (24pt)' },
+  { value: '32', label: 'Extra Large (32pt)' },
+  { value: '48', label: 'Huge (48pt)' },
+]
+
+const TIMECODE_SOURCE_OPTIONS = [
+  { value: 'source', label: 'Source TC' },
+  { value: 'record', label: 'Record TC' },
+  { value: 'custom', label: 'Custom Start TC' },
+]
+
+const METADATA_FIELD_OPTIONS = [
+  { value: 'filename', label: 'Filename' },
+  { value: 'date', label: 'Date' },
+  { value: 'timecode', label: 'Timecode' },
+  { value: 'reel', label: 'Reel Name' },
+  { value: 'camera', label: 'Camera' },
+  { value: 'resolution', label: 'Resolution' },
+  { value: 'codec', label: 'Codec' },
+  { value: 'fps', label: 'Frame Rate' },
+]
+
+// Supported image formats
+const SUPPORTED_IMAGE_FORMATS = '.png,.jpg,.jpeg,.tiff,.tif'
+
+// ============================================================================
+// IMAGE FILE PICKER — For image overlay layers
+// ============================================================================
+
+interface ImageFilePickerProps {
+  currentImageName?: string
+  currentImageData?: string
+  onImageSelect: (imageData: string, imageName: string) => void
+  isReadOnly: boolean
+}
+
+function ImageFilePicker({ currentImageName, currentImageData, onImageSelect, isReadOnly }: ImageFilePickerProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/tiff']
+    const validExtensions = /\.(png|jpg|jpeg|tiff|tif)$/i
+    
+    if (!validTypes.includes(file.type) && !validExtensions.test(file.name)) {
+      setError('Unsupported format. Use PNG, JPG, or TIFF.')
+      return
+    }
+
+    // Validate file is readable
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = reader.result as string
+      onImageSelect(base64, file.name)
+      setError(null)
+    }
+    reader.onerror = () => {
+      setError('Failed to read file.')
+    }
+    reader.readAsDataURL(file)
+
+    // Reset input so same file can be re-selected
+    e.target.value = ''
+  }
+
+  return (
+    <div style={{ marginBottom: '0.75rem' }}>
+      <label style={{
+        display: 'block',
+        fontSize: '0.625rem',
+        color: 'var(--text-dim)',
+        marginBottom: '0.25rem',
+        textTransform: 'uppercase',
+      }}>
+        Image File
+      </label>
+      
+      {/* Current image preview and name */}
+      {currentImageData && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          marginBottom: '0.5rem',
+          padding: '0.375rem',
+          background: 'rgba(0, 0, 0, 0.2)',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid var(--border-secondary)',
+        }}>
+          <img
+            src={currentImageData}
+            alt=""
+            style={{
+              width: '32px',
+              height: '24px',
+              objectFit: 'contain',
+              borderRadius: '2px',
+              background: 'rgba(255, 255, 255, 0.05)',
+            }}
+          />
+          <span style={{
+            flex: 1,
+            fontSize: '0.6875rem',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-muted)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {currentImageName || 'Image loaded'}
+          </span>
+        </div>
+      )}
+      
+      {/* File picker button */}
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isReadOnly}
+        data-testid="image-layer-file-picker"
+        style={{
+          width: '100%',
+          padding: '0.5rem',
+          fontSize: '0.6875rem',
+          fontWeight: 500,
+          background: currentImageData ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.2)',
+          border: '1px dashed rgba(59, 130, 246, 0.4)',
+          borderRadius: 'var(--radius-sm)',
+          color: 'var(--button-primary-bg)',
+          cursor: isReadOnly ? 'not-allowed' : 'pointer',
+          opacity: isReadOnly ? 0.5 : 1,
+          transition: 'all 0.15s',
+        }}
+      >
+        {currentImageData ? '🔄 Replace Image...' : '📁 Select Image...'}
+      </button>
+      
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={SUPPORTED_IMAGE_FORMATS}
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+      />
+      
+      {/* Error message */}
+      {error && (
+        <div style={{
+          marginTop: '0.25rem',
+          fontSize: '0.625rem',
+          color: 'var(--status-failed-fg)',
+        }}>
+          {error}
+        </div>
+      )}
+      
+      {/* Format hint */}
+      <div style={{
+        marginTop: '0.25rem',
+        fontSize: '0.5625rem',
+        color: 'var(--text-dim)',
+      }}>
+        Supports PNG, JPG, TIFF
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// LAYER SETTINGS PANEL — Inline settings for selected layer
+// ============================================================================
+
+interface LayerSettingsPanelProps {
+  layer: OverlayLayer
+  onSettingsChange: (settings: Partial<OverlayLayerSettings>) => void
+  isReadOnly: boolean
+}
+
+function LayerSettingsPanel({ layer, onSettingsChange, isReadOnly }: LayerSettingsPanelProps) {
+  const { settings, type } = layer
+  
+  const handleChange = (updates: Partial<OverlayLayerSettings>) => {
+    onSettingsChange(updates)
+  }
+  
+  return (
+    <div
+      data-testid={`layer-settings-${layer.id}`}
+      style={{
+        padding: '0.75rem',
+        background: 'rgba(59, 130, 246, 0.05)',
+        border: '1px solid rgba(59, 130, 246, 0.2)',
+        borderRadius: 'var(--radius-sm)',
+        marginTop: '0.5rem',
+      }}
+    >
+      {/* Common: Position Anchor */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={{
+          display: 'block',
+          fontSize: '0.625rem',
+          color: 'var(--text-dim)',
+          marginBottom: '0.25rem',
+          textTransform: 'uppercase',
+        }}>
+          Position
+        </label>
+        <Select
+          value={settings.position || 'bottom_left'}
+          onChange={(v) => handleChange({ position: v })}
+          options={POSITION_ANCHORS}
+          disabled={isReadOnly}
+          fullWidth
+        />
+      </div>
+      
+      {/* Common: X/Y Position (for custom positioning) */}
+      {settings.position === 'custom' && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <div style={{ flex: 1 }}>
+            <label style={{
+              display: 'block',
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              marginBottom: '0.25rem',
+            }}>
+              X (%)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={Math.round((settings.x ?? 0.5) * 1000) / 10}
+              onChange={(e) => {
+                const percent = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0))
+                handleChange({ x: percent / 100 })
+              }}
+              disabled={isReadOnly}
+              style={{
+                width: '100%',
+                padding: '0.375rem 0.5rem',
+                fontSize: '0.75rem',
+                background: 'var(--input-bg)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{
+              display: 'block',
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              marginBottom: '0.25rem',
+            }}>
+              Y (%)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={Math.round((settings.y ?? 0.5) * 1000) / 10}
+              onChange={(e) => {
+                const percent = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0))
+                handleChange({ y: percent / 100 })
+              }}
+              disabled={isReadOnly}
+              style={{
+                width: '100%',
+                padding: '0.375rem 0.5rem',
+                fontSize: '0.75rem',
+                background: 'var(--input-bg)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+        </div>
+      )}
+      
+      {/* Common: Opacity */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={{
+          display: 'block',
+          fontSize: '0.625rem',
+          color: 'var(--text-dim)',
+          marginBottom: '0.25rem',
+          textTransform: 'uppercase',
+        }}>
+          Opacity
+        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={settings.opacity ?? 1}
+            onChange={(e) => handleChange({ opacity: parseFloat(e.target.value) })}
+            disabled={isReadOnly}
+            style={{ flex: 1 }}
+          />
+          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', width: '36px', textAlign: 'right' }}>
+            {Math.round((settings.opacity ?? 1) * 100)}%
+          </span>
+        </div>
+      </div>
+      
+      {/* TEXT-SPECIFIC SETTINGS */}
+      {type === 'text' && (
+        <>
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              marginBottom: '0.25rem',
+              textTransform: 'uppercase',
+            }}>
+              Text Content
+            </label>
+            <input
+              type="text"
+              value={settings.text || ''}
+              onChange={(e) => handleChange({ text: e.target.value })}
+              disabled={isReadOnly}
+              placeholder="Enter text or use {tokens}..."
+              style={{
+                width: '100%',
+                padding: '0.375rem 0.5rem',
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-mono)',
+                background: 'var(--input-bg)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+          
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.625rem',
+                color: 'var(--text-dim)',
+                marginBottom: '0.25rem',
+              }}>
+                Font
+              </label>
+              <Select
+                value={settings.font || 'Arial'}
+                onChange={(v) => handleChange({ font: v })}
+                options={FONT_OPTIONS}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </div>
+            <div style={{ width: '100px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.625rem',
+                color: 'var(--text-dim)',
+                marginBottom: '0.25rem',
+              }}>
+                Size
+              </label>
+              <Select
+                value={String(settings.font_size || 24)}
+                onChange={(v) => handleChange({ font_size: parseInt(v) })}
+                options={SIZE_PRESETS}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </div>
+          </div>
+          
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '0.6875rem',
+            color: 'var(--text-secondary)',
+            cursor: isReadOnly ? 'not-allowed' : 'pointer',
+          }}>
+            <input
+              type="checkbox"
+              checked={settings.background || false}
+              onChange={(e) => handleChange({ background: e.target.checked })}
+              disabled={isReadOnly}
+              style={{ accentColor: 'var(--button-primary-bg)' }}
+            />
+            Background Box
+          </label>
+        </>
+      )}
+      
+      {/* IMAGE-SPECIFIC SETTINGS */}
+      {type === 'image' && (
+        <>
+          {/* Image File Picker */}
+          <ImageFilePicker
+            currentImageName={settings.image_name}
+            currentImageData={settings.image_data}
+            onImageSelect={(data, name) => handleChange({ image_data: data, image_name: name })}
+            isReadOnly={isReadOnly}
+          />
+          
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              marginBottom: '0.25rem',
+              textTransform: 'uppercase',
+            }}>
+              Scale
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <input
+                type="range"
+                min="0.1"
+                max="2"
+                step="0.1"
+                value={settings.scale ?? 1}
+                onChange={(e) => handleChange({ scale: parseFloat(e.target.value) })}
+                disabled={isReadOnly}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', width: '36px', textAlign: 'right' }}>
+                {Math.round((settings.scale ?? 1) * 100)}%
+              </span>
+            </div>
+          </div>
+          
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '0.6875rem',
+            color: 'var(--text-secondary)',
+            cursor: isReadOnly ? 'not-allowed' : 'pointer',
+          }}>
+            <input
+              type="checkbox"
+              checked={settings.grayscale || false}
+              onChange={(e) => handleChange({ grayscale: e.target.checked })}
+              disabled={isReadOnly}
+              style={{ accentColor: 'var(--button-primary-bg)' }}
+            />
+            Grayscale
+          </label>
+        </>
+      )}
+      
+      {/* TIMECODE-SPECIFIC SETTINGS */}
+      {type === 'timecode' && (
+        <>
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              marginBottom: '0.25rem',
+              textTransform: 'uppercase',
+            }}>
+              Timecode Source
+            </label>
+            <Select
+              value={settings.timecode_source || 'source'}
+              onChange={(v) => handleChange({ timecode_source: v })}
+              options={TIMECODE_SOURCE_OPTIONS}
+              disabled={isReadOnly}
+              fullWidth
+            />
+          </div>
+          
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.625rem',
+                color: 'var(--text-dim)',
+                marginBottom: '0.25rem',
+              }}>
+                Font
+              </label>
+              <Select
+                value={settings.font || 'Menlo'}
+                onChange={(v) => handleChange({ font: v })}
+                options={FONT_OPTIONS}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </div>
+            <div style={{ width: '100px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.625rem',
+                color: 'var(--text-dim)',
+                marginBottom: '0.25rem',
+              }}>
+                Size
+              </label>
+              <Select
+                value={String(settings.font_size || 24)}
+                onChange={(v) => handleChange({ font_size: parseInt(v) })}
+                options={SIZE_PRESETS}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </div>
+          </div>
+          
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '0.6875rem',
+            color: 'var(--text-secondary)',
+            cursor: isReadOnly ? 'not-allowed' : 'pointer',
+          }}>
+            <input
+              type="checkbox"
+              checked={settings.background !== false}
+              onChange={(e) => handleChange({ background: e.target.checked })}
+              disabled={isReadOnly}
+              style={{ accentColor: 'var(--button-primary-bg)' }}
+            />
+            Background Box
+          </label>
+        </>
+      )}
+      
+      {/* METADATA-SPECIFIC SETTINGS */}
+      {type === 'metadata' && (
+        <>
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '0.625rem',
+              color: 'var(--text-dim)',
+              marginBottom: '0.25rem',
+              textTransform: 'uppercase',
+            }}>
+              Metadata Field
+            </label>
+            <Select
+              value={settings.metadata_field || 'filename'}
+              onChange={(v) => handleChange({ metadata_field: v })}
+              options={METADATA_FIELD_OPTIONS}
+              disabled={isReadOnly}
+              fullWidth
+            />
+          </div>
+          
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.625rem',
+                color: 'var(--text-dim)',
+                marginBottom: '0.25rem',
+              }}>
+                Font
+              </label>
+              <Select
+                value={settings.font || 'Arial'}
+                onChange={(v) => handleChange({ font: v })}
+                options={FONT_OPTIONS}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </div>
+            <div style={{ width: '100px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.625rem',
+                color: 'var(--text-dim)',
+                marginBottom: '0.25rem',
+              }}>
+                Size
+              </label>
+              <Select
+                value={String(settings.font_size || 18)}
+                onChange={(v) => handleChange({ font_size: parseInt(v) })}
+                options={SIZE_PRESETS}
+                disabled={isReadOnly}
+                fullWidth
+              />
+            </div>
+          </div>
+          
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '0.6875rem',
+            color: 'var(--text-secondary)',
+            cursor: isReadOnly ? 'not-allowed' : 'pointer',
+          }}>
+            <input
+              type="checkbox"
+              checked={settings.background || false}
+              onChange={(e) => handleChange({ background: e.target.checked })}
+              disabled={isReadOnly}
+              style={{ accentColor: 'var(--button-primary-bg)' }}
+            />
+            Background Box
+          </label>
+        </>
+      )}
+    </div>
+  )
 }
 
 // ============================================================================
@@ -559,6 +1215,23 @@ export function OverlayLayerStack({
     }
   }, [onAddLayer])
 
+  // Handle layer settings change
+  const handleLayerSettingsChange = useCallback((layerId: string, updates: Partial<OverlayLayerSettings>) => {
+    const updatedLayers = layers.map(layer => {
+      if (layer.id === layerId) {
+        return {
+          ...layer,
+          settings: { ...layer.settings, ...updates }
+        }
+      }
+      return layer
+    })
+    onLayersChange(updatedLayers)
+  }, [layers, onLayersChange])
+
+  // Get selected layer for settings panel
+  const selectedLayer = selectedLayerId ? layers.find(l => l.id === selectedLayerId) : null
+
   // Count active layers
   const activeCount = layers.filter(l => l.enabled).length
   const projectCount = layers.filter(l => l.scope === 'project').length
@@ -662,6 +1335,15 @@ export function OverlayLayerStack({
         >
           No overlay layers. Click "Add Overlay" to create one.
         </div>
+      )}
+
+      {/* Selected Layer Settings Panel */}
+      {selectedLayer && (
+        <LayerSettingsPanel
+          layer={selectedLayer}
+          onSettingsChange={(updates) => handleLayerSettingsChange(selectedLayer.id, updates)}
+          isReadOnly={isReadOnly}
+        />
       )}
 
       {/* Read-only indicator */}

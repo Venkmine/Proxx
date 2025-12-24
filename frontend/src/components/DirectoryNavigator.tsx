@@ -664,7 +664,7 @@ export function DirectoryNavigator({
           )}
         </div>
         
-        {/* Action buttons */}
+        {/* Action buttons — Phase 9F: Explicit tooltips for disabled state */}
         <div style={{
           display: 'flex',
           gap: '0.5rem',
@@ -674,6 +674,7 @@ export function DirectoryNavigator({
             size="sm"
             onClick={handleCreateJobFromFiles}
             disabled={disabled || !hasFileSelection}
+            title={!hasFileSelection ? 'Select at least one file first' : 'Create job from selected files'}
             style={{ flex: 1 }}
           >
             Create Job from File{selectedFiles.size > 1 ? 's' : ''}
@@ -683,6 +684,7 @@ export function DirectoryNavigator({
             size="sm"
             onClick={handleCreateJobFromFolder}
             disabled={disabled || !hasFolderSelection}
+            title={!hasFolderSelection ? 'Select a folder first' : 'Create job from folder contents'}
             style={{ flex: 1 }}
           >
             Create Job from Folder

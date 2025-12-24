@@ -35,11 +35,19 @@ Awaire Proxy does exactly one thing well:
 ### Development Setup
 
 ```bash
-# Start both backend and frontend
-./dev_launch.sh
+# Start both backend and frontend with one command
+./START
 ```
 
-Or manually:
+The `START` script handles everything:
+- ✅ Cleans up stale processes
+- ✅ Starts backend with health checks
+- ✅ Starts Vite dev server with health checks  
+- ✅ Builds Electron if needed
+- ✅ Launches Electron app
+- ✅ Ctrl+C stops all services cleanly
+
+Or manually in separate terminals:
 
 ```bash
 # Terminal 1: Backend
@@ -103,6 +111,19 @@ No release is allowed unless `verify proxy full` passes.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System design
 - [docs/CONSTRAINTS.md](docs/CONSTRAINTS.md) — Hard constraints
 - [qa/docs/definition_of_done.md](qa/docs/definition_of_done.md) — QA requirements
+
+### Dogfooding & Testing
+
+- [DOGFOOD_QUICKSTART.md](DOGFOOD_QUICKSTART.md) — Quick start guide for dogfooding
+- [DOGFOOD_PLAN.md](DOGFOOD_PLAN.md) — Comprehensive test plan (84 test cases)
+- [DOGFOOD_CHECKLIST.md](DOGFOOD_CHECKLIST.md) — Fast reference checklist
+- [DOGFOOD_FINDINGS.md](DOGFOOD_FINDINGS.md) — Issue tracking log
+
+**Helper scripts:**
+```bash
+./scripts/dogfood_helper.sh check     # Health check
+./scripts/dogfood_helper.sh media     # Test media status
+```
 
 ## Clean Break Notice
 

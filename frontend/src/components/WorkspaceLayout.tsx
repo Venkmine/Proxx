@@ -146,7 +146,7 @@ export function WorkspaceLayout({
         minWidth: '1280px', // Desktop-only
       }}
     >
-      {/* LEFT SIDEBAR — Fixed width ~320px */}
+      {/* LEFT SIDEBAR — Fixed width ~320px, scrollable */}
       <aside
         data-testid="left-sidebar"
         style={{
@@ -156,7 +156,8 @@ export function WorkspaceLayout({
           borderRight: '1px solid var(--border-primary)',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
         }}
       >

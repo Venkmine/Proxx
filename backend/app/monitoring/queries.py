@@ -242,6 +242,38 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
             thumbnail=task.thumbnail,  # Phase 20: Thumbnail preview
         ))
     
+    # Trust Stabilisation: Build settings summary for queue export intent visibility
+    settings_summary = None
+    settings_dict = getattr(job, 'settings_dict', None)
+    if settings_dict:
+        # Extract codec and container from video settings
+        video_settings = settings_dict.get('video', {})
+        codec = video_settings.get('codec')
+        container = settings_dict.get('file', {}).get('container')
+        
+        # Extract resolution from video settings
+        resolution_policy = video_settings.get('resolution_policy')
+        custom_width = video_settings.get('custom_width')
+        custom_height = video_settings.get('custom_height')
+        
+        resolution = None
+        if resolution_policy == 'source':
+            resolution = 'Source'
+        elif resolution_policy == 'custom' and custom_width and custom_height:
+            resolution = f"{custom_width}×{custom_height}"
+        elif resolution_policy and resolution_policy != 'source':
+            resolution = resolution_policy.replace('_', ' ').title()
+        
+        # Get preset name if available
+        preset_name = getattr(job, 'source_preset_name', None)
+        
+        settings_summary = {
+            'preset_name': preset_name or 'Manual',
+            'codec': codec,
+            'container': container,
+            'resolution': resolution,
+        }
+    
     return JobDetail(
         id=job.id,
         status=job.status,
@@ -255,7 +287,8 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         running_count=job.running_count,
         queued_count=job.queued_count,
         warning_count=job.warning_count,
-        tasks=task_details
+        tasks=task_details,
+        settings_summary=settings_summary,  # Trust Stabilisation: Export intent visibility
     )
 
 

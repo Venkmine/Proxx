@@ -157,8 +157,30 @@ export function CreateJobPanel({
   // Phase 6: Get selected preset for preview
   const selectedPreset = settingsPresets.find(p => p.id === selectedSettingsPresetId)
 
-  // Alpha: Presets are optional - sources use current preset implicitly
-  const canCreate = selectedFiles.length > 0 && outputDirectory && !loading && !isDesignMode
+  // Phase 9F: Explicit validation with human-readable reasons
+  const getCreateJobValidation = (): { canCreate: boolean; reason: string } => {
+    if (loading) {
+      return { canCreate: false, reason: 'Processing...' }
+    }
+    if (isDesignMode) {
+      return { canCreate: false, reason: 'Exit Design mode to create jobs' }
+    }
+    if (selectedFiles.length === 0) {
+      return { canCreate: false, reason: 'Select at least one source file' }
+    }
+    if (!outputDirectory) {
+      return { canCreate: false, reason: 'Set an output directory' }
+    }
+    // Validate paths are absolute
+    const invalidPaths = selectedFiles.filter(p => !isAbsolutePath(p))
+    if (invalidPaths.length > 0) {
+      return { canCreate: false, reason: `Invalid path: ${invalidPaths[0]} (must be absolute)` }
+    }
+    return { canCreate: true, reason: 'Ready to create job' }
+  }
+  
+  const validation = getCreateJobValidation()
+  const canCreate = validation.canCreate
   const favoriteOptions = pathFavorites.map(p => ({ value: p, label: p }))
 
   if (!isVisible) {
@@ -186,6 +208,8 @@ export function CreateJobPanel({
         background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
         position: 'relative',
         transition: 'all 0.2s ease',
+        // Ensure content doesn't shrink and remains scrollable
+        flexShrink: 0,
       }}
     >
       {/* Path Prompt Dialog for Web Mode */}
@@ -879,7 +903,7 @@ export function CreateJobPanel({
                 onClick={onCreateJob}
                 disabled={!canCreate}
                 loading={loading}
-                title={isDesignMode ? 'Exit design mode to queue jobs' : 'Create job from selected files'}
+                title={validation.reason}
               >
                 + Create Job
               </Button>
@@ -893,19 +917,16 @@ export function CreateJobPanel({
                 Clear
               </Button>
             </div>
-            {/* Phase 3: Show feedback hint */}
+            {/* Phase 9F: Show explicit feedback with reason */}
             <div
               style={{
                 fontSize: '0.6875rem',
-                color: 'var(--text-dim)',
+                color: canCreate ? 'var(--text-dim)' : 'var(--status-warning-fg, #f59e0b)',
                 fontFamily: 'var(--font-sans)',
                 fontStyle: 'italic',
               }}
             >
-              {canCreate 
-                ? 'Job will appear in the queue immediately'
-                : 'Select files and output directory to create job'
-              }
+              {validation.reason}
             </div>
           </div>
         </div>

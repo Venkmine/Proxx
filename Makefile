@@ -39,7 +39,7 @@ verify-full:
 
 # Development
 dev:
-	./dev_launch.sh
+	./START
 
 # Backend only
 backend:

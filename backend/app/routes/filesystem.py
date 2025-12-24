@@ -7,12 +7,19 @@ Security constraints:
 - Path normalization to prevent traversal attacks
 - Restrict to user-accessible directories
 - Filter to supported media types only for files
+
+Image Sequence Detection:
+- Detects numbered image sequences (DPX, EXR, TIFF, etc.)
+- Groups sequences into single logical clip
+- Returns pattern-based path (e.g., /path/to/clip.%06d.exr)
 """
 
 import os
+import re
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
+from collections import defaultdict
 from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, HTTPException, Query
 
@@ -30,6 +37,89 @@ SUPPORTED_MEDIA_EXTENSIONS = {
     # Image sequences (single frame)
     'tif', 'tiff', 'png', 'jpg', 'jpeg',
 }
+
+# Image sequence extensions (these get grouped when numbered)
+IMAGE_SEQUENCE_EXTENSIONS = {
+    'dpx', 'exr', 'tif', 'tiff', 'png', 'jpg', 'jpeg', 'cin', 'tga',
+}
+
+# Pattern to detect numbered sequences: name.NNNNN.ext or name_NNNNN.ext
+SEQUENCE_PATTERN = re.compile(r'^(.+?)[\._](\d{2,8})\.([\w]+)$')
+
+
+def detect_image_sequence(files: List[str]) -> Tuple[List[str], List[str]]:
+    """
+    Detect and group numbered image sequences from a list of file paths.
+    
+    Returns:
+        Tuple of (sequence_patterns, standalone_files)
+        - sequence_patterns: List of pattern paths like "/path/clip.%06d.exr"
+        - standalone_files: List of files that aren't part of sequences
+    """
+    # Group files by directory and base name
+    sequence_groups: Dict[str, List[Tuple[int, str, int]]] = defaultdict(list)
+    standalone_files: List[str] = []
+    
+    for file_path in files:
+        path = Path(file_path)
+        ext = path.suffix.lower().lstrip('.')
+        
+        # Only group image sequence extensions
+        if ext not in IMAGE_SEQUENCE_EXTENSIONS:
+            standalone_files.append(file_path)
+            continue
+        
+        # Try to match sequence pattern
+        match = SEQUENCE_PATTERN.match(path.name)
+        if not match:
+            standalone_files.append(file_path)
+            continue
+        
+        base_name, frame_str, extension = match.groups()
+        frame_num = int(frame_str)
+        frame_padding = len(frame_str)
+        
+        # Create group key (directory + base_name + extension + padding)
+        group_key = f"{path.parent}|{base_name}|{extension}|{frame_padding}"
+        sequence_groups[group_key].append((frame_num, str(path.parent), frame_padding))
+    
+    # Convert groups to sequence patterns
+    sequence_patterns: List[str] = []
+    
+    for group_key, frames in sequence_groups.items():
+        if len(frames) < 2:
+            # Single frame files aren't sequences, add to standalone
+            # Reconstruct the file path
+            parts = group_key.split('|')
+            dir_path, base_name, extension, frame_padding = parts[0], parts[1], parts[2], int(parts[3])
+            frame_num = frames[0][0]
+            frame_str = str(frame_num).zfill(frame_padding)
+            file_path = f"{dir_path}/{base_name}.{frame_str}.{extension}"
+            standalone_files.append(file_path)
+            continue
+        
+        # This is a valid sequence
+        parts = group_key.split('|')
+        dir_path, base_name, extension, frame_padding = parts[0], parts[1], parts[2], int(parts[3])
+        
+        # Create FFmpeg-compatible pattern
+        pattern = f"{dir_path}/{base_name}.%0{frame_padding}d.{extension}"
+        
+        # Sort frames to find range
+        sorted_frames = sorted(frames, key=lambda x: x[0])
+        first_frame = sorted_frames[0][0]
+        last_frame = sorted_frames[-1][0]
+        frame_count = len(sorted_frames)
+        
+        # Log sequence detection
+        logger.info(
+            f"Detected image sequence: {pattern} "
+            f"(frames {first_frame}-{last_frame}, {frame_count} files)"
+        )
+        
+        sequence_patterns.append(pattern)
+    
+    return sequence_patterns, standalone_files
 
 
 class DirectoryEntry(BaseModel):
@@ -267,12 +357,17 @@ async def browse_directory(
 async def enumerate_folder_media(
     path: str = Query(..., description="Absolute path to folder to enumerate"),
     recursive: bool = Query(True, description="Recursively scan subfolders"),
+    detect_sequences: bool = Query(True, description="Detect and group image sequences"),
 ):
     """
     Enumerate all supported media files in a folder.
     
     Used for "Create Job from Folder" action.
     Returns absolute paths to all supported media files.
+    
+    When detect_sequences=True (default), numbered image sequences 
+    (e.g., clip.000001.exr through clip.001000.exr) are grouped and 
+    returned as a single pattern path (e.g., /path/clip.%06d.exr).
     """
     resolved = normalize_and_validate_path(path)
     
@@ -303,8 +398,14 @@ async def enumerate_folder_media(
                 if is_supported_media_file(item):
                     media_files.append(str(item))
         
-        # Sort for consistent ordering
-        media_files.sort()
+        # Detect image sequences if requested
+        if detect_sequences and media_files:
+            sequence_patterns, standalone = detect_image_sequence(media_files)
+            # Combine: sequences first, then standalone files
+            final_files = sequence_patterns + standalone
+            final_files.sort()
+        else:
+            final_files = sorted(media_files)
         
     except PermissionError:
         return EnumerateResponse(
@@ -323,6 +424,6 @@ async def enumerate_folder_media(
     
     return EnumerateResponse(
         folder=str(resolved),
-        files=media_files,
-        count=len(media_files),
+        files=final_files,
+        count=len(final_files),
     )

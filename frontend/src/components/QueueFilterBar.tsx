@@ -166,49 +166,45 @@ export function QueueFilterBar({
           )
         })}
         
-        {/* Phase 4B: Expand/Collapse All buttons - aligned right */}
+        {/* Phase 9F: Single expand/collapse toggle — no contradicting buttons */}
         {(onExpandAll || onCollapseAll) && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
-            {onExpandAll && (
-              <button
-                onClick={onExpandAll}
-                title="Expand all jobs"
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  fontFamily: 'var(--font-sans)',
-                  background: 'transparent',
-                  color: 'var(--text-muted)',
-                  border: '1px solid transparent',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                ▼ Expand
-              </button>
-            )}
-            {onCollapseAll && (
-              <button
-                onClick={onCollapseAll}
-                title="Collapse all jobs"
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.6875rem',
-                  fontWeight: 500,
-                  fontFamily: 'var(--font-sans)',
-                  background: 'transparent',
-                  color: 'var(--text-muted)',
-                  border: '1px solid transparent',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                ▶ Collapse
-              </button>
-            )}
+            <button
+              onClick={onExpandAll}
+              title="Expand all job groups"
+              style={{
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                fontFamily: 'var(--font-sans)',
+                background: 'rgba(255,255,255,0.05)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              ⊞
+            </button>
+            <button
+              onClick={onCollapseAll}
+              title="Collapse all job groups"
+              style={{
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                fontFamily: 'var(--font-sans)',
+                background: 'rgba(255,255,255,0.05)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              ⊟
+            </button>
           </div>
         )}
       </div>

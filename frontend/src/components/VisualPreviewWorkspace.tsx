@@ -879,29 +879,54 @@ export function VisualPreviewWorkspace({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Mode Switcher */}
+          {/* Mode Switcher — Phase 9F: Explicit truthful tooltips */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', borderRight: '1px solid var(--border-primary)', paddingRight: '0.75rem' }}>
-            {(['view', 'overlays', 'burn-in'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => onModeChange?.(m)}
-                disabled={!onModeChange}
-                style={{
-                  padding: '0.375rem 0.625rem',
-                  fontSize: '0.6875rem',
-                  fontWeight: 600,
-                  textTransform: 'capitalize',
-                  background: mode === m ? 'var(--button-primary-bg)' : 'rgba(255,255,255,0.05)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: mode === m ? '#fff' : 'var(--text-muted)',
-                  cursor: onModeChange ? 'pointer' : 'default',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {m === 'burn-in' ? 'Burn-In' : m.charAt(0).toUpperCase() + m.slice(1)}
-              </button>
-            ))}
+            {(['view', 'overlays', 'burn-in'] as const).map((m) => {
+              // Phase 9F: Truthful tooltip describing what each mode does
+              const getModeTooltip = (): string => {
+                switch (m) {
+                  case 'view':
+                    return mode === 'view' 
+                      ? 'View mode — Overlays visible but not editable' 
+                      : 'Switch to View mode'
+                  case 'overlays':
+                    return mode === 'overlays'
+                      ? 'Overlays mode — Drag to reposition image/text overlays'
+                      : isReadOnly
+                        ? 'Overlays mode (read-only for running/completed jobs)'
+                        : 'Switch to Overlays mode'
+                  case 'burn-in':
+                    return mode === 'burn-in'
+                      ? 'Burn-In mode — Edit timecode and metadata overlays'
+                      : isReadOnly
+                        ? 'Burn-In mode (read-only for running/completed jobs)'
+                        : 'Switch to Burn-In mode'
+                }
+              }
+              
+              return (
+                <button
+                  key={m}
+                  onClick={() => onModeChange?.(m)}
+                  disabled={!onModeChange}
+                  title={getModeTooltip()}
+                  style={{
+                    padding: '0.375rem 0.625rem',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    textTransform: 'capitalize',
+                    background: mode === m ? 'var(--button-primary-bg)' : 'rgba(255,255,255,0.05)',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: mode === m ? '#fff' : 'var(--text-muted)',
+                    cursor: onModeChange ? 'pointer' : 'default',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {m === 'burn-in' ? 'Burn-In' : m.charAt(0).toUpperCase() + m.slice(1)}
+                </button>
+              )
+            })}
           </div>
           
           <span
@@ -1310,7 +1335,35 @@ export function VisualPreviewWorkspace({
 
           {/* ============================================ */}
           {/* OVERLAY RENDERING — Single Source of Truth */}
+          {/* Phase 9F: Overlay Authority Indicator */}
           {/* ============================================ */}
+          
+          {/* Phase 9F: Show legacy overlay warning when legacy system is in use */}
+          {overlaySettings && (
+            (overlaySettings.text_layers?.length > 0 || 
+             overlaySettings.image_watermark?.enabled || 
+             overlaySettings.timecode_overlay?.enabled) &&
+            (!overlaySettings.layers || overlaySettings.layers.length === 0)
+          ) && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '0.5rem',
+                right: '0.5rem',
+                padding: '0.25rem 0.5rem',
+                background: 'rgba(251, 191, 36, 0.9)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.5625rem',
+                fontWeight: 600,
+                color: '#1a202c',
+                zIndex: 50,
+                pointerEvents: 'none',
+              }}
+              title="Legacy overlay system active. New overlays use the layer system."
+            >
+              Legacy Overlays
+            </div>
+          )}
 
           {/* Phase 5A: Render layers sorted by order (higher order = on top) */}
           {overlaySettings?.layers && [...overlaySettings.layers]
