@@ -12,20 +12,33 @@ Image Sequence Detection:
 - Detects numbered image sequences (DPX, EXR, TIFF, etc.)
 - Groups sequences into single logical clip
 - Returns pattern-based path (e.g., /path/to/clip.%06d.exr)
+
+INC-001 Fix: All directory enumeration is async with timeout protection.
+Network volumes (/Volumes) can hang indefinitely - we now enforce a 3-second
+timeout on all iterdir() operations.
 """
 
 import os
 import re
+import asyncio
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, HTTPException, Query
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/filesystem", tags=["filesystem"])
+
+# INC-001: Timeout for directory enumeration (seconds)
+# Network volumes can hang indefinitely - enforce a reasonable timeout
+DIRECTORY_TIMEOUT_SECONDS = 3.0
+
+# Executor for running blocking filesystem operations in threads
+_fs_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fs_enum")
 
 # Supported media extensions (lowercase, without dot)
 SUPPORTED_MEDIA_EXTENSIONS = {
@@ -216,13 +229,50 @@ def is_supported_media_file(path: Path) -> bool:
     return ext in SUPPORTED_MEDIA_EXTENSIONS
 
 
-def get_directory_entries(
+async def list_directory_with_timeout(
+    directory: Path,
+    timeout: float = DIRECTORY_TIMEOUT_SECONDS,
+) -> List[Path]:
+    """
+    List directory contents with timeout protection.
+    
+    INC-001 Fix: Network volumes (/Volumes) can hang indefinitely when
+    listing contents. This function wraps iterdir() in a timeout.
+    
+    Args:
+        directory: Path to directory to list
+        timeout: Maximum seconds to wait (default: 3.0)
+        
+    Returns:
+        List of Path objects in the directory
+        
+    Raises:
+        asyncio.TimeoutError: If enumeration exceeds timeout
+        PermissionError: If access is denied
+        OSError: For other filesystem errors
+    """
+    loop = asyncio.get_event_loop()
+    
+    def _sync_iterdir() -> List[Path]:
+        """Synchronous directory listing - runs in thread pool."""
+        return list(directory.iterdir())
+    
+    # Run blocking iterdir() in thread pool with timeout
+    return await asyncio.wait_for(
+        loop.run_in_executor(_fs_executor, _sync_iterdir),
+        timeout=timeout,
+    )
+
+
+async def get_directory_entries(
     directory: Path,
     include_hidden: bool = False,
     media_only: bool = True,
 ) -> List[DirectoryEntry]:
     """
     List entries in a directory.
+    
+    INC-001 Fix: Uses timeout-protected directory enumeration.
     
     Args:
         directory: Path to directory to list
@@ -231,25 +281,30 @@ def get_directory_entries(
     
     Returns:
         List of DirectoryEntry objects, sorted (dirs first, then files)
+        
+    Raises:
+        asyncio.TimeoutError: If directory enumeration times out
     """
     entries: List[DirectoryEntry] = []
     
-    try:
-        for item in directory.iterdir():
-            # Skip hidden files unless requested
-            if not include_hidden and item.name.startswith('.'):
-                continue
-            
-            # Skip unreadable items
-            if not os.access(item, os.R_OK):
-                continue
-            
-            if item.is_dir():
-                entries.append(DirectoryEntry(
-                    name=item.name,
-                    path=str(item),
-                    type="dir",
-                ))
+    # INC-001: Use timeout-protected directory listing
+    items = await list_directory_with_timeout(directory)
+    
+    for item in items:
+        # Skip hidden files unless requested
+        if not include_hidden and item.name.startswith('.'):
+            continue
+        
+        # Skip unreadable items
+        if not os.access(item, os.R_OK):
+            continue
+        
+        if item.is_dir():
+            entries.append(DirectoryEntry(
+                name=item.name,
+                path=str(item),
+                type="dir",
+            ))
             elif item.is_file():
                 # Filter by supported extensions if media_only
                 if media_only and not is_supported_media_file(item):
@@ -268,10 +323,6 @@ def get_directory_entries(
                     size=size,
                     extension=ext,
                 ))
-    except PermissionError:
-        logger.warning(f"Permission denied listing directory: {directory}")
-    except OSError as e:
-        logger.warning(f"Error listing directory {directory}: {e}")
     
     # Sort: directories first (alphabetically), then files (alphabetically)
     entries.sort(key=lambda e: (e.type != "dir", e.name.lower()))
@@ -284,21 +335,30 @@ async def get_filesystem_roots():
     """
     Get available filesystem roots for navigation.
     
+    INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
+    on network volumes that are unreachable.
+    
     Returns mounted volumes on macOS, common directories on other platforms.
     """
     roots: List[DirectoryEntry] = []
     
     # macOS: /Volumes contains mounted drives
+    # INC-001: Network volumes can hang indefinitely - use timeout
     volumes_path = Path("/Volumes")
     if volumes_path.exists():
         try:
-            for item in volumes_path.iterdir():
+            # Use timeout-protected enumeration
+            volume_items = await list_directory_with_timeout(volumes_path)
+            for item in volume_items:
                 if item.is_dir() and os.access(item, os.R_OK):
                     roots.append(DirectoryEntry(
                         name=item.name,
                         path=str(item),
                         type="dir",
                     ))
+        except asyncio.TimeoutError:
+            # INC-001: Volumes enumeration timed out - skip but log
+            logger.warning(f"Timeout listing /Volumes - skipping (INC-001)")
         except PermissionError:
             pass
     
@@ -326,6 +386,9 @@ async def browse_directory(
     """
     Browse a directory and return its contents.
     
+    INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
+    on network volumes.
+    
     Returns directories and optionally filtered media files.
     Path must be absolute and accessible.
     """
@@ -337,14 +400,39 @@ async def browse_directory(
             detail=f"Path is not a directory: {path}"
         )
     
-    entries = get_directory_entries(
-        resolved,
-        include_hidden=include_hidden,
-        media_only=media_only,
-    )
-    
     # Compute parent path
     parent = str(resolved.parent) if resolved.parent != resolved else None
+    
+    # INC-001: Use timeout-protected enumeration
+    try:
+        entries = await get_directory_entries(
+            resolved,
+            include_hidden=include_hidden,
+            media_only=media_only,
+        )
+    except asyncio.TimeoutError:
+        # INC-001: Directory enumeration timed out
+        logger.warning(f"Timeout browsing directory: {path} (INC-001)")
+        return BrowseResponse(
+            path=str(resolved),
+            parent=parent,
+            entries=[],
+            error=f"Directory enumeration timed out after {DIRECTORY_TIMEOUT_SECONDS}s. Click to retry.",
+        )
+    except PermissionError:
+        return BrowseResponse(
+            path=str(resolved),
+            parent=parent,
+            entries=[],
+            error="Permission denied",
+        )
+    except OSError as e:
+        return BrowseResponse(
+            path=str(resolved),
+            parent=parent,
+            entries=[],
+            error=str(e),
+        )
     
     return BrowseResponse(
         path=str(resolved),

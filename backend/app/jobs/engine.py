@@ -616,6 +616,8 @@ class JobEngine:
                 task.output_filename = resolved_name
                 
                 # Step 2: Resolve full output path
+                # INC-003: This will raise OutputCollisionError if file exists
+                # and overwrite_policy is 'never' or 'ask'
                 output_path = resolve_output_path(
                     job=job,
                     clip=task,
@@ -627,9 +629,16 @@ class JobEngine:
                 logger.debug(f"Resolved output path for {task.id}: {task.output_path}")
                 
             except Exception as e:
-                logger.error(f"Failed to resolve output path for {task.id}: {e}")
+                # INC-003: Check if this is a collision error
+                error_type = type(e).__name__
+                if "OutputCollisionError" in error_type or "collision" in str(e).lower():
+                    logger.error(f"[INC-003] Output collision for {task.id}: {e}")
+                    task.failure_reason = f"Output collision: {e}"
+                else:
+                    logger.error(f"Failed to resolve output path for {task.id}: {e}")
+                    task.failure_reason = f"Output path resolution failed: {e}"
+                
                 # Mark task as failed before execution even starts
-                task.failure_reason = f"Output path resolution failed: {e}"
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now()
     

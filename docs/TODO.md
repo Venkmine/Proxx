@@ -86,6 +86,42 @@ make verify-full    # + E2E transcodes
 
 ---
 
+## Dogfood Round-2 Trust Blockers (Completed 2025-12-26)
+
+Fixes for INC-001 through INC-005 addressing UI trust violations.
+
+### INC-001 — Filesystem Browser Hang (/Volumes)
+- ✅ Added async timeout protection (3s) to directory enumeration
+- ✅ Backend: `list_directory_with_timeout()` in `filesystem.py`
+- ✅ Frontend: `AbortController` with 5s timeout in `DirectoryNavigator.tsx`
+- ✅ Error state shows "Click to retry" instead of infinite spinner
+
+### INC-002 — Queue Execution Order
+- ✅ Added job-level FIFO queue in `scheduler.py`
+- ✅ Jobs execute in strict enqueue order (single-job serialization)
+- ✅ Queue status endpoint `/control/queue/status` for UI visibility
+- ✅ Cancellation removes job from queue
+
+### INC-003 — Silent Output Overwrite
+- ✅ `OutputCollisionError` raised when file exists and policy is `never`
+- ✅ Collision detection at path resolution (before render starts)
+- ✅ Clear error message: "Output file already exists..."
+- ✅ Default = FAIL (no silent skip, no auto-increment unless chosen)
+
+### INC-004 — Drag & Drop UI
+- ✅ `GlobalDropZone` removed entirely
+- ✅ `useGlobalFileDrop` hook disabled
+- ✅ Users must use explicit "Browse..." buttons
+- ✅ Alpha: Global drag-drop disabled for stability
+
+### INC-005 — Overlay Editing Mode
+- ✅ "Overlays" mode button disabled with clear tooltip
+- ✅ Message: "Spatial editing disabled for Alpha. Use side panel."
+- ✅ View and Burn-In modes still functional
+- ✅ Overlay positioning via side panel controls only
+
+---
+
 ## UX Coherence Pass: Workspace Modes + Queue Layout (Completed)
 
 ### Workspace Mode System

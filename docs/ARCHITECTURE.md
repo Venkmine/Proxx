@@ -1,274 +1,272 @@
-INACTIVE — DOES NOT DESCRIBE CURRENT PRODUCT STATE (ALPHA)
+# AWAIRE PROXY — ARCHITECTURE OVERVIEW
 
-PRODUCT_PROXY_V1.md
-
-QA.md (Verify principles stay, “Definition of Done” does not)
-
-NEXT_AFTER_V1.md
-
-# Awaire Proxy — Architecture Overview
-
-**Last Updated:** December 23, 2025  
-**Status:** Active (describes current product state)
-
-This document describes the current technical structure of Awaire Proxy,
-focusing on the **preview-centric UX architecture** introduced in the December 2025 overhaul.
-
-## High-Level Overview
-
-Awaire Proxy is a desktop application composed of:
-
-- An Electron-based desktop shell
-- A React frontend with **preview-centric multimodal workspace**
-- A local Python backend service
-- Local IPC over HTTP (localhost)
-- FFmpeg for media transcoding
+**Status:** Active
+**Scope:** Describes current, trusted system behaviour only
+**Rule:** If it is not dog-fooded, invariant-protected, and observable, it does not belong here.
 
 ---
 
-## UX Architecture Principles
+## 1. What This System Is
 
-### 1. Preview as Primary Workspace
+Awaire Proxy is a **desktop, user-initiated, deterministic media processing application**.
 
-The **VisualPreviewWorkspace** is THE primary interaction surface, not a passive display.
+It consists of:
 
-**Design principle:** If it's spatial, it renders and edits in the preview workspace.
+* A preview-authoritative React UI
+* A local execution backend
+* Explicit job creation
+* Immutable job snapshots
+* FFmpeg-based processing
+* A visible, inspectable queue
 
-**Modes:**
-- **View** — Playback and viewing
-- **Overlays** — Direct manipulation of overlays (drag, scale, position with bounding boxes)
-- **Burn-In** — Data burn-in preview with full Resolve-style metadata tokens
-
-Side panels are **inspectors only**. They provide settings controls but never render their own previews.
-
-### 2. Global Drag & Drop (Canonical Ingestion)
-
-All file/folder drops route through a **single global drop zone** at the App.tsx root.
-
-**Implementation:**
-- `useGlobalFileDrop` hook attaches document-level listeners
-- `GlobalDropZone` provides visual overlay during drag
-- All drops call `useIngestion.addPendingPaths()` (canonical ingestion entry point)
-- Supports:
-  - Files
-  - Folders (recursive with webkitGetAsEntry)
-  - Deduplication
-
-**No panel-local drop zones.** Everything goes through the authoritative ingestion pipeline.
-
-### 3. Left Sidebar: Browse/Loaded Media Tabs
-
-The left sidebar is a **tabbed media workspace**, not a stacked panel trap.
-
-**Structure:**
-```
-MediaWorkspace
-├── Tab: Loaded Media
-│   └── CreateJobPanel (sources, settings, output)
-└── Tab: Browse
-    └── DirectoryNavigator (filesystem tree browser)
-```
-
-**Scrolling rules:**
-- Container: `display: flex; flex-direction: column; min-height: 0`
-- Active tab: `flex: 1; overflow-y: auto`
-- NO fixed heights anywhere
-- NO nested scroll traps
-
-### 4. Preset Centralization
-
-**Single source of truth:** All presets managed via `usePresets` hook + `PresetManager` component.
-
-Side panels show **"Active Preset: X"** reference only. No duplicate preset selectors.
-
-**Preset types:**
-- Settings presets (codec, resolution, overlays, metadata)
-- Source presets (folder rules)
-- Output presets (paths, naming)
-- Combined presets
-
-**Storage:**
-- Alpha: LocalStorage (`awaire_proxy_presets`)
-- V1: Backend (`/control/presets` API)
-
-### 5. Workspace Mode Authority
-
-`workspaceStore.mode` is the **authoritative layout driver**.
-
-**Modes:**
-- `configure` — Job creation and settings
-- `design` — Overlay editing (spatial)
-- `execute` — Queue monitoring
-
-**Rule:** ALL layout decisions branch on workspace mode. No component may "adapt itself" without checking mode.
+It is **not** a daemon, not autonomous, and not a background automation system.
 
 ---
 
-## Components
+## 2. Authority Model (Critical)
 
-### Frontend
+### 2.1 Preview Is Authoritative
 
-- Electron provides the desktop runtime
-- React renders the UI
-- Frontend communicates with backend via HTTP
-- State derives from backend, never the reverse
+The **preview canvas is the single source of truth** for all spatial state:
 
-Location: `frontend/`
+* Overlay position
+* Overlay scale
+* Anchors
+* Safe-area clamping
+* Coordinate transforms
 
-**Key Components:**
+All spatial interaction happens in the preview.
+Side panels **inspect and configure**, they do not render or decide geometry.
 
-#### VisualPreviewWorkspace
-**Single source of truth for preview.**
+If something cannot be represented in the preview, it is not valid state.
 
-Features:
-- Multimodal (View/Overlays/Burn-In)
-- Video playback with Resolve-grade controls
-- Timecode HUD (REC TC / SRC TC)
-- Drag-to-position overlays
-- Title-safe and action-safe guides
-- Fullscreen support (ESC to exit, overlays + TC persist)
+---
 
-File: `frontend/src/components/VisualPreviewWorkspace.tsx`
+### 2.2 Jobs Are Immutable
 
-#### MediaWorkspace
-**Tabbed left sidebar for Browse/Loaded Media.**
+When a job is created:
 
-Combines:
-- `CreateJobPanel` (Loaded Media tab)
-- `DirectoryNavigator` (Browse tab)
-- `SourceMetadataPanel` (always visible footer)
+* All settings are **snapshotted**
+* Presets are flattened into job data
+* No future preset edits can affect existing jobs
+* No UI interaction mutates a job retroactively
 
-File: `frontend/src/components/MediaWorkspace.tsx`
+Jobs move forward only through explicit user action.
 
-#### GlobalDropZone
-**Full-viewport drag overlay for file/folder drops.**
+---
 
-Two drop zones:
-- Source files (left) — adds to job sources
-- Output directory (right) — sets destination
+### 2.3 No Silent Behaviour
 
-File: `frontend/src/components/GlobalDropZone.tsx`
+Nothing happens unless the user does something observable.
 
-#### useIngestion Hook
-**Canonical entry point for job creation.**
+This includes:
 
-Methods:
-- `addPendingPaths(paths[])` — stage files for ingestion
-- `ingest()` — create job from pending paths
-- `clearPendingPaths()` — reset
+* No background reconciliation
+* No implicit preset re-application
+* No auto-correction
+* No “helpful” fixing
 
-Calls backend: `POST /control/jobs/create`
+If state changes, the user caused it, or it is a bug.
 
-File: `frontend/src/hooks/useIngestion.ts`
+---
 
-#### usePresets Hook
-**Client-side preset management (Alpha).**
+## 3. Frontend Architecture
 
-CRUD operations:
-- `create`, `update`, `rename`, `duplicate`, `delete`
-- `selectPreset(id)` — apply settings
-- `markDirty()` / `clearDirty()` — unsaved changes tracking
-- `exportPresets()` / `importPresets()` — JSON I/O
+### Runtime
 
-File: `frontend/src/hooks/usePresets.ts`
+* Electron shell
+* React application
+* Local IPC via HTTP
 
-Structure:
-```
-frontend/
-├── electron/
-│   ├── main.ts           # Electron main process
-│   └── preload.ts        # Context bridge
-├── src/
-│   ├── App.tsx           # Root component (global drop zone attached here)
-│   ├── main.tsx          # React entry point
-│   ├── components/
-│   │   ├── VisualPreviewWorkspace.tsx  # Preview workspace (multimodal)
-│   │   ├── MediaWorkspace.tsx          # Left sidebar tabs
-│   │   ├── GlobalDropZone.tsx          # Drag & drop overlay
-│   │   ├── CreateJobPanel.tsx          # Loaded Media panel
-│   │   ├── DirectoryNavigator.tsx      # Browse panel
-│   │   └── DeliverControlPanel.tsx     # Settings inspector
-│   ├── hooks/
-│   │   ├── useIngestion.ts             # Canonical ingestion
-│   │   ├── usePresets.ts               # Preset management
-│   │   └── useGlobalFileDrop.ts        # Global drag state
-│   └── stores/
-│       ├── workspaceModeStore.ts       # Authoritative layout mode
-│       └── presetStore.ts              # Preset UI state
-├── index.html
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
-```
+### Core Principle
 
-### Backend
+The frontend **does not invent truth**.
+It renders state, collects intent, and enforces interaction rules.
 
-- Python FastAPI service
-- SQLite for persistence
-- FFmpeg subprocess execution
-- Watch folder scanning
+---
 
-Location: `backend/`
+### 3.1 VisualPreviewWorkspace
 
-Structure:
-```
-backend/
-├── app/
-│   ├── main.py           # FastAPI app initialization
-│   ├── cli/              # CLI commands
-│   ├── deliver/          # Deliver capability model
-│   ├── execution/        # FFmpeg execution engine
-│   ├── jobs/             # Job engine
-│   ├── metadata/         # Media metadata extraction
-│   ├── monitoring/       # Job status server
-│   ├── persistence/      # SQLite storage
-│   ├── presets/          # Preset system
-│   ├── reporting/        # Job/clip reports
-│   ├── routes/           # HTTP endpoints
-│   └── watchfolders/     # Watch folder scanning
-├── requirements.txt
-└── run_dev.sh
-```
+**Role:** Single authoritative spatial workspace.
+
+Responsibilities:
+
+* Video preview
+* Overlay rendering
+* Overlay selection and manipulation
+* Bounding boxes and handles
+* Mode-dependent interaction gating
+
+Modes:
+
+* **View** — playback only
+* **Overlays** — spatial editing enabled
+* **Burn-In** — burn-in overlays editable, others locked
+
+All coordinate math routes through a single transform system.
+
+There is no inline or ad-hoc geometry logic elsewhere.
+
+---
+
+### 3.2 PreviewTransform System
+
+All coordinate conversion is centralized:
+
+* Screen ↔ canvas
+* Canvas ↔ normalized space
+* Safe-area clamping
+* Anchor resolution
+
+This system exists to prevent drift, rounding chaos, and inconsistent math.
+
+Any bypass of this system is a defect.
+
+---
+
+### 3.3 Overlay System
+
+Overlays are explicit data objects with:
+
+* Type (text, image, burn-in)
+* Geometry
+* Source of position (`preset` vs `manual`)
+* Mode-based edit permissions
+
+Manual edits assert authority over presets.
+
+Preset re-application requires explicit confirmation if it would override manual work.
+
+---
+
+### 3.4 Invariants
+
+Invariants are **runtime guards** that detect architectural violations.
+
+They:
+
+* Do not fix state
+* Do not auto-correct
+* Surface errors loudly and persistently
+
+Examples:
+
+* Editing overlays in the wrong mode
+* Preset/manual position conflicts
+* Geometry leaving safe bounds
+* Preview transform bypasses
+
+Invariants are part of the architecture, not debugging helpers.
+
+---
+
+## 4. Preset System (Current Reality)
+
+Presets are **configuration libraries**, not live bindings.
+
+Current behaviour:
+
+* Presets live client-side
+* Applying a preset copies values into working state
+* Jobs store a full snapshot of resolved settings
+* Backend does not resolve or look up presets
+
+Presets can never silently mutate jobs.
+
+---
+
+## 5. Job & Queue Model
+
+### Job Creation
+
+* User selects sources
+* User configures settings
+* User explicitly creates a job
+
+A job contains:
+
+* Source list
+* Resolved settings snapshot
+* Output intent
+
+---
+
+### Queue Semantics
+
+* Jobs are listed explicitly
+* Order is visible
+* Cancel and remove are always available
+* Errors persist until acknowledged
+* Partial success is normal and expected
+
+The queue exists to **prove what was attempted**, not to look efficient.
+
+---
+
+## 6. Backend Architecture (As Implemented)
+
+### Role
+
+The backend executes declared intent. Nothing more.
+
+Responsibilities:
+
+* Receive job definitions
+* Execute FFmpeg processes
+* Report success and failure
+* Validate outputs at a basic level
+
+It does not:
+
+* Invent jobs
+* Mutate job intent
+* Auto-retry
+* Guess user intent
+
+---
 
 ### Execution Engine
 
-FFmpeg is the only supported execution engine.
+* FFmpeg via subprocess
+* One clip failure does not block others
+* Warn-and-continue is the default
 
-The execution pipeline:
-1. Job receives clips from watch folder or manual add
-2. Each clip becomes a task
-3. FFmpeg subprocess generates proxy
-4. ffprobe validates output
-5. Results reported
+Output existence and size are validated.
+Deeper QC is out of scope at this stage.
 
-### Data Flow
+---
 
-```
-Watch Folder → Job Registry → Task Queue → FFmpeg → Output + Report
-                    ↓
-              Persistence (SQLite)
-                    ↓
-              Monitoring Server → Frontend UI
-```
+## 7. What Is Explicitly Not Here
 
-## Execution Model
+These systems do **not** exist yet and must not be assumed:
 
-- Backend and frontend run as separate processes
-- Backend: `uvicorn app.main:app` on port 8085
-- Frontend: Vite dev server on port 5173, Electron shell
-- Combined launcher: `./dev_launch.sh`
+* Watch folders
+* Autonomous ingestion
+* QC pipelines
+* AI analysis
+* Delivery logic
+* Multi-node execution
+* Background daemons
 
-## Data & State
+If it’s not described above, it’s not part of the architecture.
 
-- SQLite database: `./awaire_proxy.db`
-- Job state persisted across restarts
-- Watch folder state tracked for exactly-once ingestion
+---
 
-## QA System
+## 8. Design Posture
 
-Verify is the QA framework. See `qa/` for implementation.
+This architecture prioritizes:
 
-Verification levels:
-- `verify proxy fast` — lint, unit tests, schema validation
-- `verify proxy` — integration tests, watch folder simulation
-- `verify proxy full` — real FFmpeg transcodes, ffprobe validation
+* Truth over convenience
+* Explicit intent over automation
+* Predictability over speed
+* Human trust over feature count
+
+Anything that weakens those is architectural debt.
+
+---
+
+**End of document**
+
+---
+
+

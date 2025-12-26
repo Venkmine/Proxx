@@ -17,7 +17,8 @@ import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { PresetPositionConflictDialog } from './components/PresetPositionConflictDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
-import { GlobalDropZone } from './components/GlobalDropZone'
+// INC-004: GlobalDropZone removed - drag & drop disabled for Alpha stability
+// import { GlobalDropZone } from './components/GlobalDropZone'
 import { InvariantBanner } from './components/InvariantBanner'
 import { DropConfirmationDialog } from './components/DropConfirmationDialog'
 import { assertJobPendingForRender, assertNoSilentPresetOverwrite } from './utils/invariants'
@@ -28,7 +29,8 @@ import { logStateTransition } from './utils/logger'
 import { FEATURE_FLAGS } from './config/featureFlags'
 import { usePresets } from './hooks/usePresets'
 import { useIngestion } from './hooks/useIngestion'
-import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
+// INC-004: Global file drop disabled for Alpha stability
+// import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 
@@ -255,10 +257,12 @@ function App() {
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   
   // ============================================
-  // GLOBAL DRAG & DROP — Authoritative Ingestion
+  // INC-004: GLOBAL DRAG & DROP DISABLED
   // ============================================
-  // useGlobalFileDrop manages document-level drag/drop handling.
-  // Routes all dropped files through the canonical ingestion pipeline.
+  // Drag & drop was causing stability issues (whitescreen crash risk).
+  // Users must use the explicit "Browse..." buttons to add sources.
+  // This is intentional for Alpha - honesty over convenience.
+  /*
   const globalDrop = useGlobalFileDrop({
     onDropFiles: (paths: string[]) => {
       if (paths.length > 0) {
@@ -273,8 +277,9 @@ function App() {
         console.log(`GlobalDrop: Set output directory to ${path}`)
       }
     },
-    enabled: true, // Always enabled - no feature flag
+    enabled: true,
   })
+  */
 
   // Alpha: Copilot Prompt window state (hidden in Alpha, available for dev)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1881,13 +1886,15 @@ function App() {
           minWidth: '1280px',
         }}
       >
-        {/* Global Drop Zone Overlay - Always enabled */}
+        {/* INC-004: Global Drop Zone REMOVED for Alpha stability
+            Use the explicit "Browse..." buttons to add sources.
         <GlobalDropZone
           isVisible={globalDrop.isDragging}
           onDropFiles={globalDrop.handleSourcesDrop}
           onDropOutputDirectory={globalDrop.handleOutputDrop}
           onDragLeave={globalDrop.handleDragLeave}
         />
+        */}
         
         {/* 4-Region Workspace Layout */}
         <WorkspaceLayout

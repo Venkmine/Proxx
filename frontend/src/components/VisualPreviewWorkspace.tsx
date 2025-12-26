@@ -880,8 +880,15 @@ export function VisualPreviewWorkspace({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {/* Mode Switcher — Phase 9F: Explicit truthful tooltips */}
+          {/* INC-005: Overlays mode spatial editing disabled for Alpha.
+              The drag/resize implementation exists but has not been verified.
+              Hiding the mode would break existing workflows, so we disable it
+              with a clear message instead. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', borderRight: '1px solid var(--border-primary)', paddingRight: '0.75rem' }}>
             {(['view', 'overlays', 'burn-in'] as const).map((m) => {
+              // INC-005: Overlays mode is restricted for Alpha
+              const isOverlaysModeDisabled = m === 'overlays'
+              
               // Phase 9F: Truthful tooltip describing what each mode does
               const getModeTooltip = (): string => {
                 switch (m) {
@@ -890,11 +897,8 @@ export function VisualPreviewWorkspace({
                       ? 'View mode — Overlays visible but not editable' 
                       : 'Switch to View mode'
                   case 'overlays':
-                    return mode === 'overlays'
-                      ? 'Overlays mode — Drag to reposition image/text overlays'
-                      : isReadOnly
-                        ? 'Overlays mode (read-only for running/completed jobs)'
-                        : 'Switch to Overlays mode'
+                    // INC-005: Disable spatial editing for Alpha
+                    return 'Overlays mode — Spatial editing disabled for Alpha. Use the side panel to position overlays.'
                   case 'burn-in':
                     return mode === 'burn-in'
                       ? 'Burn-In mode — Edit timecode and metadata overlays'
@@ -907,8 +911,12 @@ export function VisualPreviewWorkspace({
               return (
                 <button
                   key={m}
-                  onClick={() => onModeChange?.(m)}
-                  disabled={!onModeChange}
+                  onClick={() => {
+                    // INC-005: Block switching to overlays mode
+                    if (isOverlaysModeDisabled) return
+                    onModeChange?.(m)
+                  }}
+                  disabled={!onModeChange || isOverlaysModeDisabled}
                   title={getModeTooltip()}
                   style={{
                     padding: '0.375rem 0.625rem',
@@ -918,9 +926,10 @@ export function VisualPreviewWorkspace({
                     background: mode === m ? 'var(--button-primary-bg)' : 'rgba(255,255,255,0.05)',
                     border: '1px solid var(--border-primary)',
                     borderRadius: 'var(--radius-sm)',
-                    color: mode === m ? '#fff' : 'var(--text-muted)',
-                    cursor: onModeChange ? 'pointer' : 'default',
+                    color: mode === m ? '#fff' : isOverlaysModeDisabled ? 'var(--text-disabled, #4a5568)' : 'var(--text-muted)',
+                    cursor: onModeChange && !isOverlaysModeDisabled ? 'pointer' : 'not-allowed',
                     transition: 'all 0.15s ease',
+                    opacity: isOverlaysModeDisabled ? 0.5 : 1,
                   }}
                 >
                   {m === 'burn-in' ? 'Burn-In' : m.charAt(0).toUpperCase() + m.slice(1)}

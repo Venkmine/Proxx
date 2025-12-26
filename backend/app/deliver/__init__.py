@@ -50,6 +50,10 @@ from .settings import (
     DEFAULT_DELIVER_SETTINGS,
 )
 
+from .paths import (
+    OutputCollisionError,
+)
+
 from .codec_specs import (
     CodecSpec,
     CODEC_REGISTRY,
@@ -92,6 +96,9 @@ __all__ = [
     # Settings
     "DeliverSettings",
     "DEFAULT_DELIVER_SETTINGS",
+    
+    # Path Resolution (INC-003)
+    "OutputCollisionError",
     
     # Codec Specs (Phase 20)
     "CodecSpec",

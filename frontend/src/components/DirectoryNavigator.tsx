@@ -293,14 +293,25 @@ function DirectoryNode({
               Loading...
             </div>
           )}
+          {/* INC-001: Error state with retry capability */}
           {dirState.error && (
-            <div style={{
-              paddingLeft: `${0.5 + (level + 1) * 1}rem`,
-              padding: '0.375rem 0.5rem',
-              fontSize: '0.75rem',
-              color: 'var(--text-error, #ef4444)',
-            }}>
-              {dirState.error}
+            <div 
+              onClick={(e) => {
+                e.stopPropagation()
+                // INC-001: Retry by triggering expand again
+                onToggleExpand(entry.path) // collapse
+                setTimeout(() => onToggleExpand(entry.path), 50) // re-expand to retry
+              }}
+              style={{
+                paddingLeft: `${0.5 + (level + 1) * 1}rem`,
+                padding: '0.375rem 0.5rem',
+                fontSize: '0.75rem',
+                color: 'var(--text-error, #ef4444)',
+                cursor: 'pointer',
+              }}
+              title="Click to retry"
+            >
+              ⚠️ {dirState.error}
             </div>
           )}
           {!dirState.loading && !dirState.error && dirState.entries.length === 0 && (
@@ -361,6 +372,22 @@ export function DirectoryNavigator({
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   
+  // INC-001: Request timeout for directory operations (5 seconds)
+  const FETCH_TIMEOUT_MS = 5000
+  
+  // INC-001: Helper to fetch with timeout and abort controller
+  const fetchWithTimeout = useCallback(async (url: string): Promise<Response> => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      return response
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }, [])
+  
   // Fetch roots on mount
   useEffect(() => {
     const fetchRoots = async () => {
@@ -368,21 +395,26 @@ export function DirectoryNavigator({
       setRootsError(null)
       
       try {
-        const response = await fetch(`${backendUrl}/filesystem/roots`)
+        // INC-001: Use timeout-protected fetch
+        const response = await fetchWithTimeout(`${backendUrl}/filesystem/roots`)
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
         }
         const data = await response.json()
         setRoots(data.roots || [])
       } catch (err) {
-        setRootsError(err instanceof Error ? err.message : 'Failed to load roots')
+        if (err instanceof Error && err.name === 'AbortError') {
+          setRootsError('Request timed out. Click to retry.')
+        } else {
+          setRootsError(err instanceof Error ? err.message : 'Failed to load roots')
+        }
       } finally {
         setRootsLoading(false)
       }
     }
     
     fetchRoots()
-  }, [backendUrl])
+  }, [backendUrl, fetchWithTimeout])
   
   // Toggle directory expansion
   const handleToggleExpand = useCallback(async (path: string) => {
@@ -399,13 +431,13 @@ export function DirectoryNavigator({
       // Expand - need to fetch if not loaded
       const updated = new Map(prev)
       
-      if (existing && existing.entries.length > 0) {
-        // Already loaded, just expand
+      if (existing && existing.entries.length > 0 && !existing.error) {
+        // Already loaded successfully, just expand
         updated.set(path, { ...existing, expanded: true })
         return updated
       }
       
-      // Need to fetch
+      // Need to fetch (or retry after error)
       updated.set(path, {
         path,
         parent: null,
@@ -415,10 +447,16 @@ export function DirectoryNavigator({
         expanded: true,
       })
       
-      // Fetch in background
-      fetch(`${backendUrl}/filesystem/browse?path=${encodeURIComponent(path)}`)
+      // INC-001: Fetch with timeout protection
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+      
+      fetch(`${backendUrl}/filesystem/browse?path=${encodeURIComponent(path)}`, {
+        signal: controller.signal,
+      })
         .then(res => res.json())
         .then(data => {
+          clearTimeout(timeoutId)
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {
@@ -426,6 +464,7 @@ export function DirectoryNavigator({
               parent: data.parent,
               entries: data.entries || [],
               loading: false,
+              // INC-001: Backend may return error field for timeouts
               error: data.error || null,
               expanded: true,
             })
@@ -433,6 +472,11 @@ export function DirectoryNavigator({
           })
         })
         .catch(err => {
+          clearTimeout(timeoutId)
+          // INC-001: Handle timeout as retryable error
+          const errorMessage = err.name === 'AbortError' 
+            ? 'Timed out. Click to retry.'
+            : err.message
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {
@@ -440,7 +484,7 @@ export function DirectoryNavigator({
               parent: null,
               entries: [],
               loading: false,
-              error: err.message,
+              error: errorMessage,
               expanded: true,
             })
             return newMap

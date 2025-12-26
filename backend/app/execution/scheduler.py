@@ -2,18 +2,21 @@
 Minimal FIFO scheduler for execution.
 
 Phase 16: Single-node, max 1 concurrent clip, FIFO order.
+INC-002 Fix: Added job-level FIFO queue to ensure strict execution order.
 
 Design rules:
 - No prioritization
-- No parallel execution (yet)
-- Sequential clip processing
+- No parallel execution
+- Sequential job processing (single job at a time)
+- Sequential clip processing within jobs
 - Respects job pause state
 """
 
 import logging
 import threading
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 from collections import deque
+from datetime import datetime
 
 if TYPE_CHECKING:
     from ..jobs.models import Job, ClipTask
@@ -34,6 +37,11 @@ class Scheduler:
     - FIFO order (first in, first out)
     - No prioritization
     
+    INC-002 Fix: Added job-level FIFO queue.
+    - Jobs are queued in strict order when started
+    - Only one job executes at a time
+    - Queue order is visible and provable
+    
     Future phases will add:
     - Parallel execution (Phase 17+)
     - Priority queuing
@@ -51,6 +59,12 @@ class Scheduler:
         self._running_count = 0
         self._lock = threading.Lock()
         self._paused = False
+        
+        # INC-002: Job-level FIFO queue
+        # Stores job_id in order of submission
+        self._job_queue: deque[str] = deque()
+        # Currently executing job (only one at a time)
+        self._current_job_id: Optional[str] = None
     
     @property
     def is_busy(self) -> bool:
@@ -104,6 +118,165 @@ class Scheduler:
             self._running_count = max(0, self._running_count - 1)
             logger.debug(f"[Scheduler] Clip completed, running: {self._running_count}")
     
+    # =========================================================================
+    # INC-002: Job-level FIFO queue methods
+    # =========================================================================
+    
+    def enqueue_job(self, job_id: str) -> int:
+        """
+        Add a job to the FIFO queue.
+        
+        INC-002: Jobs execute in strict order of enqueue.
+        
+        Args:
+            job_id: The job identifier
+            
+        Returns:
+            Position in queue (1-indexed, 1 = will execute next)
+        """
+        with self._lock:
+            # Don't enqueue if already in queue or currently executing
+            if job_id in self._job_queue:
+                position = list(self._job_queue).index(job_id) + 1
+                logger.debug(f"[Scheduler] Job {job_id} already in queue at position {position}")
+                return position
+            
+            if self._current_job_id == job_id:
+                logger.debug(f"[Scheduler] Job {job_id} is currently executing")
+                return 0  # 0 means currently executing
+            
+            self._job_queue.append(job_id)
+            position = len(self._job_queue)
+            logger.info(f"[Scheduler] Job {job_id} enqueued at position {position}")
+            return position
+    
+    def get_queue_position(self, job_id: str) -> int:
+        """
+        Get the current queue position for a job.
+        
+        Returns:
+            Position (1-indexed), 0 if currently executing, -1 if not in queue
+        """
+        with self._lock:
+            if self._current_job_id == job_id:
+                return 0
+            try:
+                return list(self._job_queue).index(job_id) + 1
+            except ValueError:
+                return -1
+    
+    def get_queued_job_ids(self) -> List[str]:
+        """
+        Get list of all queued job IDs in FIFO order.
+        
+        INC-002: This allows UI to show provable queue order.
+        """
+        with self._lock:
+            return list(self._job_queue)
+    
+    def get_current_job_id(self) -> Optional[str]:
+        """Get the currently executing job ID."""
+        with self._lock:
+            return self._current_job_id
+    
+    def is_job_turn(self, job_id: str) -> bool:
+        """
+        Check if it's this job's turn to execute.
+        
+        INC-002: A job can only execute if it's at the front of the queue
+        AND no other job is currently executing.
+        
+        Args:
+            job_id: The job to check
+            
+        Returns:
+            True if this job should execute next
+        """
+        with self._lock:
+            # Already executing
+            if self._current_job_id == job_id:
+                return True
+            
+            # Another job is executing
+            if self._current_job_id is not None:
+                return False
+            
+            # Queue is empty
+            if not self._job_queue:
+                return False
+            
+            # Check if at front of queue
+            return self._job_queue[0] == job_id
+    
+    def acquire_execution(self, job_id: str) -> bool:
+        """
+        Attempt to acquire execution slot for a job.
+        
+        INC-002: Only succeeds if it's this job's turn (FIFO enforced).
+        
+        Args:
+            job_id: The job requesting execution
+            
+        Returns:
+            True if job can now execute, False if it must wait
+        """
+        with self._lock:
+            # Already executing this job
+            if self._current_job_id == job_id:
+                return True
+            
+            # Another job is executing
+            if self._current_job_id is not None:
+                logger.debug(f"[Scheduler] Job {job_id} blocked - {self._current_job_id} executing")
+                return False
+            
+            # Scheduler is paused
+            if self._paused:
+                logger.debug(f"[Scheduler] Job {job_id} blocked - scheduler paused")
+                return False
+            
+            # Queue is empty or job not in queue
+            if not self._job_queue or self._job_queue[0] != job_id:
+                logger.debug(f"[Scheduler] Job {job_id} blocked - not at front of queue")
+                return False
+            
+            # This job is at front - acquire execution slot
+            self._job_queue.popleft()
+            self._current_job_id = job_id
+            logger.info(f"[Scheduler] Job {job_id} acquired execution slot")
+            return True
+    
+    def release_execution(self, job_id: str) -> None:
+        """
+        Release execution slot after job completes.
+        
+        Args:
+            job_id: The job releasing execution
+        """
+        with self._lock:
+            if self._current_job_id == job_id:
+                self._current_job_id = None
+                logger.info(f"[Scheduler] Job {job_id} released execution slot")
+            else:
+                logger.warning(f"[Scheduler] Job {job_id} tried to release but wasn't executing")
+    
+    def remove_from_queue(self, job_id: str) -> bool:
+        """
+        Remove a job from the queue (e.g., on cancellation).
+        
+        Args:
+            job_id: The job to remove
+            
+        Returns:
+            True if job was in queue and removed
+        """
+        with self._lock:
+            if job_id in self._job_queue:
+                self._job_queue.remove(job_id)
+                logger.info(f"[Scheduler] Job {job_id} removed from queue")
+                return True
+            return False
+
     def execute_job_clips(
         self,
         job: "Job",

@@ -12,6 +12,8 @@ CRITICAL RULES:
 2. Result is stored on ClipTask.output_path
 3. Engines receive clip.output_path VERBATIM
 4. Engines NEVER construct filenames or paths
+
+INC-003 Fix: Collision detection is enforced. Silent overwrite is FORBIDDEN.
 """
 
 import logging
@@ -22,6 +24,15 @@ from .settings import DeliverSettings
 from .naming import resolve_filename
 
 logger = logging.getLogger(__name__)
+
+
+class OutputCollisionError(Exception):
+    """
+    INC-003: Raised when output file already exists and overwrite is not allowed.
+    
+    Silent overwrite is FORBIDDEN. This exception forces explicit handling.
+    """
+    pass
 
 
 def resolve_output_path(
@@ -150,6 +161,9 @@ def _handle_overwrite(output_path: Path, policy: str) -> Path:
     For NEVER and ASK policies, this is just a check.
     For INCREMENT, this finds a unique filename.
     For ALWAYS, this returns the path unchanged.
+    
+    INC-003 Fix: NEVER policy now raises OutputCollisionError instead of
+    silently returning the path. Silent overwrite is FORBIDDEN.
     """
     if policy == "always":
         return output_path
@@ -158,20 +172,20 @@ def _handle_overwrite(output_path: Path, policy: str) -> Path:
         return output_path
     
     if policy == "never":
-        # Log warning but return path anyway
-        # The engine will fail when it tries to write
-        logger.warning(
-            f"Output file exists and overwrite policy is 'never': {output_path}"
+        # INC-003: Silent overwrite is FORBIDDEN
+        # Raise an exception so the task fails with a clear message
+        raise OutputCollisionError(
+            f"Output file already exists: {output_path}. "
+            f"Change overwrite policy to 'increment' or 'always' to proceed, "
+            f"or use a different output directory."
         )
-        return output_path
     
     if policy == "ask":
-        # For now, treat same as never
-        # UI should handle this before render starts
-        logger.warning(
-            f"Output file exists and overwrite policy is 'ask': {output_path}"
+        # INC-003: Treat as failure - UI must resolve before render
+        raise OutputCollisionError(
+            f"Output file exists and requires confirmation: {output_path}. "
+            f"Choose 'always' to overwrite or 'increment' to auto-suffix."
         )
-        return output_path
     
     if policy == "increment":
         return _find_unique_path(output_path)

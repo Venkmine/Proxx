@@ -1622,6 +1622,7 @@ async def cancel_job_endpoint(job_id: str, request: Request):
     Cancel a job safely.
     
     Phase 14: Explicit operator action via UI.
+    INC-002 Fix: Also removes job from FIFO queue if waiting.
     Cancellation is operator intent, not failure.
     
     Args:
@@ -1635,9 +1636,15 @@ async def cancel_job_endpoint(job_id: str, request: Request):
         404: Job not found
         500: Cancellation failed
     """
+    from app.execution.scheduler import get_scheduler
+    
     try:
         job_registry = request.app.state.job_registry
         job_engine = request.app.state.job_engine
+        scheduler = get_scheduler()
+        
+        # INC-002: Remove from queue if waiting
+        scheduler.remove_from_queue(job_id)
         
         # Call CLI command without confirmation prompt
         cancel_job(
@@ -1722,6 +1729,9 @@ async def start_job_endpoint(job_id: str, request: Request):
     """
     Start a PENDING job - transitions to RUNNING and begins execution.
     
+    INC-002 Fix: Jobs are queued and execute in strict FIFO order.
+    A job will only execute when all previously started jobs have completed.
+    
     Alpha: Preset is optional. Jobs use their embedded settings_snapshot
     (or override_settings if present). Preset binding is only used for
     codec resolution if available.
@@ -1730,18 +1740,21 @@ async def start_job_endpoint(job_id: str, request: Request):
         job_id: Job identifier
         
     Returns:
-        Operation result
+        Operation result (includes queue position if waiting)
         
     Raises:
         400: Validation failed (job not in PENDING state)
         404: Job not found
         500: Execution failed
     """
+    from app.execution.scheduler import get_scheduler
+    
     try:
         job_registry = request.app.state.job_registry
         binding_registry = request.app.state.binding_registry
         preset_registry = request.app.state.preset_registry
         job_engine = request.app.state.job_engine
+        scheduler = get_scheduler()
         
         # Retrieve job
         job = job_registry.get_job(job_id)
@@ -1757,6 +1770,19 @@ async def start_job_endpoint(job_id: str, request: Request):
                        f"Only PENDING jobs can be started."
             )
         
+        # INC-002: Enqueue job for FIFO execution
+        queue_position = scheduler.enqueue_job(job_id)
+        logger.info(f"[INC-002] Job {job_id} enqueued at position {queue_position}")
+        
+        # INC-002: Attempt to acquire execution slot (only succeeds if at front)
+        if not scheduler.acquire_execution(job_id):
+            # Job is queued but must wait for others ahead
+            return OperationResponse(
+                success=True,
+                message=f"Job {job_id} queued at position {queue_position}. "
+                        f"Will execute after {queue_position - 1} job(s) complete."
+            )
+        
         # Alpha: Preset is optional - get if available
         preset_id = binding_registry.get_preset_id(job_id)
         if preset_id:
@@ -1766,13 +1792,17 @@ async def start_job_endpoint(job_id: str, request: Request):
                 logger.warning(f"Bound preset '{preset_id}' not found for job {job_id}, proceeding with job settings")
                 preset_id = None
         
-        # Execute the job using embedded settings (preset optional)
-        job_engine.execute_job(
-            job=job,
-            global_preset_id=preset_id,  # May be None - engine uses job.settings
-            preset_registry=preset_registry,
-            generate_reports=True,
-        )
+        try:
+            # Execute the job using embedded settings (preset optional)
+            job_engine.execute_job(
+                job=job,
+                global_preset_id=preset_id,  # May be None - engine uses job.settings
+                preset_registry=preset_registry,
+                generate_reports=True,
+            )
+        finally:
+            # INC-002: Release execution slot when done
+            scheduler.release_execution(job_id)
         
         logger.info(f"Job {job_id} started via control endpoint")
         
@@ -2083,3 +2113,39 @@ async def retry_clip_endpoint(task_id: str, request: Request):
     except Exception as e:
         logger.error(f"Retry failed for clip {task_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Retry failed: {e}")
+
+
+# =============================================================================
+# INC-002: Queue Status Endpoint
+# =============================================================================
+
+class QueueStatusResponse(BaseModel):
+    """Response for queue status query."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    current_job_id: Optional[str] = None
+    queued_job_ids: List[str] = []
+    queue_length: int = 0
+
+
+@router.get("/queue/status", response_model=QueueStatusResponse)
+async def get_queue_status():
+    """
+    Get current execution queue status.
+    
+    INC-002 Fix: Provides provable FIFO queue order for UI.
+    
+    Returns:
+        Current executing job and queue of waiting jobs
+    """
+    from app.execution.scheduler import get_scheduler
+    
+    scheduler = get_scheduler()
+    queued_ids = scheduler.get_queued_job_ids()
+    
+    return QueueStatusResponse(
+        current_job_id=scheduler.get_current_job_id(),
+        queued_job_ids=queued_ids,
+        queue_length=len(queued_ids),
+    )
