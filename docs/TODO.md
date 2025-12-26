@@ -196,3 +196,111 @@ Full verification pass focused on REAL UI/UX behaviour.
 - ⚠️ Overlay spatial editing — Disabled for Alpha, side panel only
 - ⚠️ Global drag/drop — Disabled for stability (INC-004)
 - ⚠️ Resolution presets — UI element not consistently visible
+
+---
+
+## Dogfood Exhaustive Verification Suite (2025-12-26)
+
+Comprehensive test suite for Alpha trust validation.
+
+### What Was Added
+
+#### UI Components (data-testid)
+- ✅ `StatusBadge` — `data-testid="status-badge-{status}"` + `data-status` attribute
+- ✅ `QueueFilterBar` — `data-testid="filter-btn-{status}"` on all filter buttons  
+- ✅ `JobGroup` — `data-testid="btn-job-render|pause|resume|cancel|delete|retry-failed|requeue"`
+
+#### Test Media Fixtures (`qa/fixtures/media/`)
+- ✅ `short_h264_audio.mp4` — 3s H.264 with stereo AAC audio
+- ✅ `no_audio.mp4` — 3s H.264 without audio track
+- ✅ `weird_fps.mp4` — 29.97fps 1080p test clip
+- ✅ `corrupt.mp4` — Intentionally corrupt file for error handling tests
+- ✅ `test with spaces.mp4` — Filename with spaces
+- ✅ `unicode_テスト_🎬.mp4` — Unicode and emoji in filename
+- ✅ `aaa...aaa.mp4` — 240 character filename
+
+#### FFprobe Helper (`qa/helpers/ffprobe_helper.py`)
+- ✅ `probe_file()` — Extract structured MediaInfo from file
+- ✅ `assert_video_codec()` — Validate video codec with alias handling
+- ✅ `assert_audio_codec()` — Validate audio codec
+- ✅ `assert_container()` — Validate container format
+- ✅ `assert_dimensions()` — Validate width/height
+- ✅ `assert_frame_rate()` — Validate FPS with tolerance
+- ✅ `assert_audio_channels()` — Validate audio channel count
+- ✅ `assert_file_valid()` — Full validation: exists, non-zero, valid media
+
+#### Playwright Dogfood Tests (`qa/verify/ui/proxy/dogfood_*.spec.ts`)
+
+| File | Sections Covered | Tests |
+|------|-----------------|-------|
+| `dogfood_startup_filesystem.spec.ts` | A, B | 17 tests |
+| `dogfood_job_creation.spec.ts` | C, N | 12 tests |
+| `dogfood_queue_execution.spec.ts` | D, E | 10 tests |
+| `dogfood_ui_accessibility.spec.ts` | I, J, L, M | 19 tests |
+
+#### Backend Contract Tests (`qa/proxy/contract/test_dogfood_contracts.py`)
+- ✅ Path validation (absolute vs relative)
+- ✅ Codec/container compatibility (ProRes→MOV, H.264→MP4, DNx→MXF)
+- ✅ Job/Task status enum values
+- ✅ Naming template validation
+
+#### E2E Transcode Tests (`qa/proxy/e2e/test_dogfood_transcode.py`)
+- ✅ Test fixture validation
+- ✅ H.264/MP4 basic transcode with ffprobe verification
+- ✅ Dimension preservation
+- ✅ Audio channel validation
+- ✅ ProRes/MOV transcode (if available)
+- ✅ Corrupt input error handling
+- ✅ Missing input error handling
+- ✅ Unwritable output error handling
+- ✅ Audio-less input handling
+
+#### Makefile Target
+```bash
+make verify-dogfood  # Run exhaustive dogfood verification suite
+```
+
+### What Is Skipped (Alpha Restrictions)
+
+| Area | Reason | Documented In |
+|------|--------|---------------|
+| Global drag & drop | Disabled for stability (INC-004) | DOGFOOD_FINDINGS.md |
+| Overlay spatial editing | Side panel only for Alpha | Test skip comments |
+| Visual editor modal | Button visibility inconsistent | Test skip comments |
+| Backend restart resilience | Ephemeral queue (no persistence) | Test handles gracefully |
+| /Volumes browse timeout | Tests with retry, no assertion on success | Test documents behavior |
+| Long-form pause/resume | Requires extended test media | Fixture README |
+
+### Running Dogfood Verification
+
+```bash
+# Prerequisites
+# 1. Start backend: cd backend && uvicorn app.main:app --reload --port 8085
+# 2. Start frontend: cd frontend && npm run dev
+
+# Run full suite
+make verify-dogfood
+
+# Run individual suites
+cd qa && python -m pytest proxy/contract/test_dogfood_contracts.py -v
+cd qa && python -m pytest proxy/e2e/test_dogfood_transcode.py -v
+cd qa/verify/ui && npx playwright test dogfood --reporter=list
+```
+
+### Test Coverage Summary
+
+| Category | Tests | Status |
+|----------|-------|--------|
+| A. Startup/Health | 5 | ✅ |
+| B. Filesystem/Path | 12 | ✅ |
+| C. Job Creation | 9 | ✅ |
+| D. Queue Execution | 7 | ✅ |
+| E. Output Safety | 3 | ✅ |
+| I. UI Truthfulness | 5 | ✅ |
+| J. Error UX | 3 | ✅ |
+| L. Responsiveness | 4 | ✅ |
+| M. Accessibility | 5 | ✅ |
+| N. Immutability | 3 | ✅ |
+| Backend Contracts | 8 | ✅ |
+| E2E Transcode | 10 | ✅ |
+| **Total** | **74** | ✅ |

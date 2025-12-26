@@ -492,6 +492,7 @@ export function JobGroup({
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {showStart && (
                   <Button
+                    data-testid="btn-job-render"
                     variant="success"
                     size="sm"
                     onClick={onStart}
@@ -502,6 +503,7 @@ export function JobGroup({
                 )}
                 {showPause && (
                   <Button
+                    data-testid="btn-job-pause"
                     variant="warning"
                     size="sm"
                     onClick={onPause}
@@ -512,6 +514,7 @@ export function JobGroup({
                 )}
                 {showResume && (
                   <Button
+                    data-testid="btn-job-resume"
                     variant="primary"
                     size="sm"
                     onClick={onResume}
@@ -522,6 +525,7 @@ export function JobGroup({
                 )}
                 {showRetryFailed && (
                   <Button
+                    data-testid="btn-job-retry-failed"
                     variant="warning"
                     size="sm"
                     onClick={onRetryFailed}
@@ -532,6 +536,7 @@ export function JobGroup({
                 )}
                 {showRequeue && onRequeue && (
                   <Button
+                    data-testid="btn-job-requeue"
                     variant="secondary"
                     size="sm"
                     onClick={onRequeue}
@@ -543,6 +548,7 @@ export function JobGroup({
                 )}
                 {showCancel && (
                   <Button
+                    data-testid="btn-job-cancel"
                     variant="destructive"
                     size="sm"
                     onClick={onCancel}
@@ -553,6 +559,7 @@ export function JobGroup({
                 )}
                 {showDelete && (
                   <Button
+                    data-testid="btn-job-delete"
                     variant="destructive"
                     size="sm"
                     onClick={onDelete}

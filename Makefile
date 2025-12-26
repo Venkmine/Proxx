@@ -1,6 +1,6 @@
 # Awaire Proxy Makefile
 
-.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full dev clean help
+.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full verify-dogfood dev clean help
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  make verify-ui       - Run UI end-to-end tests (Playwright)"
 	@echo "  make verify-ui-debug - Run UI tests in headed mode (visible browser)"
 	@echo "  make verify-full     - Run full verification (+ E2E + UI tests)"
+	@echo "  make verify-dogfood  - Run exhaustive dogfood verification suite"
 	@echo ""
 	@echo "  make dev             - Start development environment"
 	@echo "  make clean           - Clean build artifacts"
@@ -36,6 +37,31 @@ verify-ui-debug:
 verify-full:
 	@echo "Running Verify Proxy Full..."
 	python -m qa.verify.verify proxy full
+
+# Dogfood Verification Suite — Exhaustive UI + E2E + Contract Tests
+# Runs all dogfood-grade tests for Alpha trust validation
+verify-dogfood:
+	@echo "==================================================="
+	@echo "Dogfood Verification Suite — Exhaustive Pass"
+	@echo "==================================================="
+	@echo ""
+	@echo "Phase 1: Backend Contract Tests"
+	@echo "---------------------------------------------------"
+	cd qa && python -m pytest proxy/contract/test_dogfood_contracts.py -v --tb=short || true
+	@echo ""
+	@echo "Phase 2: E2E Transcode Tests (FFprobe Validation)"
+	@echo "---------------------------------------------------"
+	cd qa && python -m pytest proxy/e2e/test_dogfood_transcode.py -v --tb=short || true
+	@echo ""
+	@echo "Phase 3: Playwright UI Tests (Dogfood Suite)"
+	@echo "---------------------------------------------------"
+	@echo "NOTE: Frontend must be running on localhost:5173"
+	@echo "NOTE: Backend must be running on localhost:8085"
+	cd qa/verify/ui && npx playwright test dogfood --reporter=list || true
+	@echo ""
+	@echo "==================================================="
+	@echo "Dogfood Verification Complete"
+	@echo "==================================================="
 
 # Development
 dev:

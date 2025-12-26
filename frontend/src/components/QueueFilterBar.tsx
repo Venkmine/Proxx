@@ -121,6 +121,7 @@ export function QueueFilterBar({
           return (
             <button
               key={key}
+              data-testid={`filter-btn-${key}`}
               onClick={() => {
                 if (key === 'all') {
                   onClearStatusFilters()
@@ -128,7 +129,7 @@ export function QueueFilterBar({
                   onToggleStatusFilter(key.toUpperCase())
                 }
               }}
-              style={{
+              style={
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.375rem',

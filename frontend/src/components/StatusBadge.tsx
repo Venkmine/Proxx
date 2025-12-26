@@ -83,6 +83,8 @@ export function StatusBadge({ status, size = 'md', showDot = true, onClick, clic
 
   return (
     <span
+      data-testid={`status-badge-${normalizedStatus.toLowerCase()}`}
+      data-status={normalizedStatus}
       onClick={onClick}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
