@@ -305,24 +305,24 @@ async def get_directory_entries(
                 path=str(item),
                 type="dir",
             ))
-            elif item.is_file():
-                # Filter by supported extensions if media_only
-                if media_only and not is_supported_media_file(item):
-                    continue
-                
-                ext = item.suffix.lower().lstrip('.') or None
-                try:
-                    size = item.stat().st_size
-                except (OSError, IOError):
-                    size = None
-                
-                entries.append(DirectoryEntry(
-                    name=item.name,
-                    path=str(item),
-                    type="file",
-                    size=size,
-                    extension=ext,
-                ))
+        elif item.is_file():
+            # Filter by supported extensions if media_only
+            if media_only and not is_supported_media_file(item):
+                continue
+            
+            ext = item.suffix.lower().lstrip('.') or None
+            try:
+                size = item.stat().st_size
+            except (OSError, IOError):
+                size = None
+            
+            entries.append(DirectoryEntry(
+                name=item.name,
+                path=str(item),
+                type="file",
+                size=size,
+                extension=ext,
+            ))
     
     # Sort: directories first (alphabetically), then files (alphabetically)
     entries.sort(key=lambda e: (e.type != "dir", e.name.lower()))
