@@ -44,16 +44,16 @@ export function TitleBar() {
       } as React.CSSProperties}
     >
       {/* App Title */}
-      <div
+      <img
+        src="/branding/awaire-logo.png"
+        alt="Awaire"
         style={{
-          fontSize: '0.875rem',
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          letterSpacing: '0.02em',
+          height: '1rem',
+          width: 'auto',
+          userSelect: 'none',
+          pointerEvents: 'none',
         }}
-      >
-        Awaire Proxy
-      </div>
+      />
 
       {/* Window Controls (non-draggable) */}
       <div

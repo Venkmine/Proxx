@@ -1764,18 +1764,16 @@ function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <h1
+          <img
+            src="/branding/awaire-logo.png"
+            alt="Awaire"
             style={{
-              margin: 0,
-              fontSize: '1.25rem',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              letterSpacing: '-0.02em',
-              fontFamily: 'var(--font-sans)',
+              height: '1.5rem',
+              width: 'auto',
+              userSelect: 'none',
+              pointerEvents: 'none',
             }}
-          >
-            Awaire Proxy
-          </h1>
+          />
           
           {/* System Status Indicators — Minimal, textual, low visual weight */}
           <div style={{ 
@@ -2073,7 +2071,18 @@ function App() {
                   >
                     {allOrderedJobs.length === 0 ? (
                       <>
-                        <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem', opacity: 0.3 }}>📁</div>
+                        <img
+                          src="/branding/awaire-logo.png"
+                          alt="Awaire"
+                          style={{
+                            opacity: 0.1,
+                            height: '5rem',
+                            width: 'auto',
+                            marginBottom: '1rem',
+                            userSelect: 'none',
+                            pointerEvents: 'none',
+                          }}
+                        />
                         <div style={{ fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 600 }}>No jobs in queue</div>
                         <div style={{ fontSize: '0.6875rem', lineHeight: 1.5 }}>
                           Add files in the left panel and click "Add to Queue"

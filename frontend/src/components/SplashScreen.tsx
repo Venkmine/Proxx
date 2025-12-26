@@ -102,18 +102,17 @@ export function SplashScreen({
           textAlign: 'center',
         }}
       >
-        {/* Placeholder logo - simple text for now */}
-        <div
+        {/* Awaire logo */}
+        <img
+          src="/branding/awaire-logo.png"
+          alt="Awaire"
           style={{
-            fontSize: '2rem',
-            fontWeight: 700,
-            fontFamily: 'var(--font-sans)',
-            color: 'var(--text-primary)',
-            letterSpacing: '-0.02em',
+            height: '3rem',
+            width: 'auto',
+            userSelect: 'none',
+            pointerEvents: 'none',
           }}
-        >
-          Awaire Proxy
-        </div>
+        />
         <div
           style={{
             fontSize: '0.75rem',
