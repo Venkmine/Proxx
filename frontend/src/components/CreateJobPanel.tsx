@@ -749,6 +749,7 @@ export function CreateJobPanel({
               placeholder="/Users/yourname/Desktop/OUTPUT"
               disabled={loading}
               title="Paste output directory path or click Browse..."
+              data-testid="output-directory-input"
               style={{
                 flex: 1,
                 padding: '0.375rem 0.5rem',

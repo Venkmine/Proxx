@@ -81,43 +81,99 @@ async function dragOverlay(page: Page, selector: string, deltaX: number, deltaY:
 
 /**
  * Helper: Open preset selector dropdown
+ * Note: The preset selector uses a native <select> element, not a custom dropdown.
+ * For native selects, we use selectOption() instead of click-based interaction.
  */
-async function openPresetSelector(page: Page): Promise<void> {
+async function openPresetSelector(page: Page): Promise<boolean> {
   const selector = page.locator(SELECTORS.presetSelector)
-  if (await selector.isVisible()) {
+  if (await selector.count() === 0) {
+    return false
+  }
+  const isNativeSelect = await selector.evaluate((el) => el.tagName.toLowerCase() === 'select')
+  if (!isNativeSelect) {
+    // Legacy custom dropdown behavior
     await selector.click()
-    // Wait for dropdown to open
     await expect(page.locator('[role="listbox"], [data-state="open"]').first()).toBeVisible({ timeout: 5000 })
   }
+  // For native select, no "open" action needed - selectOption handles it
+  return true
 }
 
 /**
- * Helper: Select a preset by clicking its option
+ * Helper: Select a preset by value
+ * Works with native <select> elements.
  */
-async function selectPresetOption(page: Page, presetId?: string): Promise<void> {
-  if (presetId) {
-    await page.locator(`[data-testid="preset-option-${presetId}"]`).click()
+async function selectPresetOption(page: Page, presetValue?: string): Promise<boolean> {
+  const selector = page.locator(SELECTORS.presetSelector)
+  if (await selector.count() === 0) {
+    return false
+  }
+  
+  const isNativeSelect = await selector.evaluate((el) => el.tagName.toLowerCase() === 'select')
+  
+  if (isNativeSelect) {
+    // Native select - use selectOption
+    const options = await selector.locator('option').all()
+    if (options.length <= 1) {
+      // Only placeholder option exists, no presets available
+      return false
+    }
+    if (presetValue) {
+      await selector.selectOption(presetValue)
+    } else {
+      // Select first non-placeholder option
+      const firstValue = await options[1].getAttribute('value')
+      if (firstValue) {
+        await selector.selectOption(firstValue)
+      }
+    }
+    return true
   } else {
-    // Select first available preset
-    await page.locator(SELECTORS.presetOption).first().click()
+    // Custom dropdown - click option
+    if (presetValue) {
+      await page.locator(`[data-testid="preset-option-${presetValue}"]`).click()
+    } else {
+      // Select first available preset
+      await page.locator(SELECTORS.presetOption).first().click()
+    }
+    return true
   }
 }
 
 /**
  * Helper: Create a test preset if none exist
+ * Updated to work with native <select> elements.
  */
 async function ensurePresetExists(page: Page): Promise<string | null> {
-  // Try to find existing preset
-  await openPresetSelector(page)
-  const options = page.locator(SELECTORS.presetOption)
-  if (await options.count() > 0) {
-    const firstOption = options.first()
-    const testId = await firstOption.getAttribute('data-testid')
-    await page.keyboard.press('Escape') // Close dropdown
-    return testId?.replace('preset-option-', '') || null
+  const selector = page.locator(SELECTORS.presetSelector)
+  if (await selector.count() === 0) {
+    return null
   }
-  await page.keyboard.press('Escape') // Close dropdown
-  return null
+  
+  const isNativeSelect = await selector.evaluate((el) => el.tagName.toLowerCase() === 'select')
+  
+  if (isNativeSelect) {
+    // Native select - check options
+    const options = await selector.locator('option').all()
+    // First option is placeholder, need at least one more
+    if (options.length <= 1) {
+      return null
+    }
+    // Return the value of first non-placeholder option
+    return await options[1].getAttribute('value')
+  } else {
+    // Legacy custom dropdown
+    await openPresetSelector(page)
+    const options = page.locator(SELECTORS.presetOption)
+    if (await options.count() > 0) {
+      const firstOption = options.first()
+      const testId = await firstOption.getAttribute('data-testid')
+      await page.keyboard.press('Escape') // Close dropdown
+      return testId?.replace('preset-option-', '') || null
+    }
+    await page.keyboard.press('Escape') // Close dropdown
+    return null
+  }
 }
 
 test.describe('Preset Reapply Prompt (Phase 9E)', () => {

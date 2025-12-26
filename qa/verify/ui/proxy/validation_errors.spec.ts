@@ -72,7 +72,8 @@ test.describe('Input Validation Errors', () => {
       await fileInput.press('Enter');
     }
     
-    const outputInput = page.getByPlaceholder('/path/to/output/directory');
+    // Set output directory using data-testid input
+    const outputInput = page.locator('[data-testid="output-directory-input"]');
     if (await outputInput.isVisible()) {
       await outputInput.fill(TEST_OUTPUT_DIR);
     }
