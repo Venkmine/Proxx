@@ -129,7 +129,7 @@ export function QueueFilterBar({
                   onToggleStatusFilter(key.toUpperCase())
                 }
               }}
-              style={
+              style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.375rem',
