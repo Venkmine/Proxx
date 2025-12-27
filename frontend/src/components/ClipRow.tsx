@@ -228,107 +228,43 @@ export function ClipRow({
             )}
           </div>
           
-          {/* Phase 16.4 + Phase 20: Progress bar for running clips */}
-          {/* STRUCTURAL FIX: Show honest progress indicator */}
+          {/* Job Lifecycle Truth: Spinner + "Encoding" label for running clips */}
+          {/* No fake percentages - spinner disappears on terminal state */}
           {isRunning && (
-            <div style={{ marginTop: '0.5rem' }}>
-              {/* Phase 20: Status phase indicator - show ENCODING when we have progress */}
-              <div
+            <div 
+              style={{ 
+                marginTop: '0.5rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+              }}
+            >
+              {/* Spinner */}
+              <span
                 style={{
-                  marginBottom: '0.25rem',
-                  fontSize: '0.625rem',
+                  display: 'inline-block',
+                  width: '0.875rem',
+                  height: '0.875rem',
+                  borderRadius: '50%',
+                  border: '2px solid var(--text-muted)',
+                  borderTopColor: 'var(--button-primary-bg)',
+                  animation: 'spin 1s linear infinite',
+                  flexShrink: 0,
+                }}
+              />
+              {/* Label */}
+              <span
+                style={{
+                  fontSize: '0.6875rem',
                   fontFamily: 'var(--font-mono)',
                   fontWeight: 600,
-                  color: progressPercent > 0 ? 'var(--button-primary-bg)' : 'var(--text-muted)',
+                  color: 'var(--button-primary-bg)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
                 }}
               >
-                {/* Show spinner when no progress yet */}
-                {progressPercent === 0 && (
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: '0.75rem',
-                      height: '0.75rem',
-                      borderRadius: '50%',
-                      border: '2px solid var(--text-muted)',
-                      borderTopColor: 'var(--button-primary-bg)',
-                      animation: 'spin 1s linear infinite',
-                    }}
-                  />
-                )}
-                {progressPercent > 0 ? (phase || 'ENCODING') : 'Encoding (no live progress yet)'}
-              </div>
-              
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                }}
-              >
-                {/* Progress bar container */}
-                <div
-                  style={{
-                    flex: 1,
-                    height: '4px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    borderRadius: '2px',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.min(100, Math.max(0, progressPercent))}%`,
-                      height: '100%',
-                      backgroundColor: 'var(--button-primary-bg)',
-                      borderRadius: '2px',
-                      transition: 'width 0.3s ease-out',
-                    }}
-                  />
-                </div>
-                
-                {/* Progress percentage */}
-                <span
-                  style={{
-                    fontSize: '0.6875rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-muted)',
-                    minWidth: '3rem',
-                    textAlign: 'right',
-                  }}
-                >
-                  {Math.round(progressPercent)}%
-                </span>
-              </div>
-              
-              {/* Phase 20: Enhanced progress display */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '1rem',
-                  marginTop: '0.25rem',
-                  fontSize: '0.625rem',
-                  fontFamily: 'var(--font-mono)',
-                  color: 'var(--text-dim)',
-                }}
-              >
-                {/* ETA */}
-                {etaSeconds != null && etaSeconds > 0 && (
-                  <span>~{formatEta(etaSeconds)} remaining</span>
-                )}
-                
-                {/* Encode FPS */}
-                {encodeFps != null && encodeFps > 0 && (
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    {encodeFps.toFixed(1)} fps
-                  </span>
-                )}
-              </div>
+                Encoding
+              </span>
             </div>
           )}
         </div>

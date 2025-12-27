@@ -1477,9 +1477,16 @@ function App() {
   }, [])
 
   // Check if a job should be expanded (explicit expand OR single-clip job default)
-  const isJobExpanded = useCallback((jobId: string, totalTasks: number): boolean => {
+  // Job Lifecycle Truth: Auto-collapse terminal jobs to reduce visual noise
+  const isJobExpanded = useCallback((jobId: string, totalTasks: number, status?: string): boolean => {
     // If user has explicitly toggled, respect that
     if (expandedJobIds.has(jobId)) return true
+    
+    // Job Lifecycle Truth: Auto-collapse completed/terminal jobs
+    const normalizedStatus = status?.toUpperCase() || ''
+    const isTerminal = ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
+    if (isTerminal) return false
+    
     // Default: single-clip jobs are expanded, multi-clip jobs are collapsed
     return totalTasks === 1
   }, [expandedJobIds])
@@ -2154,7 +2161,7 @@ function App() {
                         tasks={detail?.tasks || []}
                         settingsSummary={settingsSummary}
                         isSelected={selectedJobId === job.id}
-                        isExpanded={isJobExpanded(job.id, job.total_tasks)}
+                        isExpanded={isJobExpanded(job.id, job.total_tasks, job.status)}
                         onToggleExpand={() => toggleJobExpanded(job.id)}
                         onSelect={() => {
                           const isDeselecting = job.id === selectedJobId

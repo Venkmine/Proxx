@@ -170,6 +170,10 @@ export function JobGroup({
   // Normalize status to uppercase for comparison
   const normalizedStatus = status.toUpperCase()
   const isJobRunning = normalizedStatus === 'RUNNING'
+  
+  // Job Lifecycle Truth: Detect terminal states for visual dimming
+  const isTerminalState = ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
+  const isCompleted = normalizedStatus === 'COMPLETED' || normalizedStatus === 'COMPLETED_WITH_WARNINGS'
 
   // Phase 4B: Auto-expand when job starts running (call parent's toggle if collapsed)
   useEffect(() => {
@@ -221,13 +225,15 @@ export function JobGroup({
         borderRadius: 'var(--radius)',
         border: isSelected 
           ? '1px solid var(--button-primary-bg)' 
-          : '1px solid var(--border-primary)',
-        backgroundColor: 'var(--card-bg)',
-        opacity: isDragging ? 0.5 : 1,
+          : isTerminalState
+            ? '1px solid var(--border-secondary)'
+            : '1px solid var(--border-primary)',
+        backgroundColor: isTerminalState && !isSelected ? 'var(--bg-secondary)' : 'var(--card-bg)',
+        opacity: isDragging ? 0.5 : isTerminalState && !isSelected ? 0.7 : 1,
         transition: 'all 0.15s ease',
         boxShadow: isSelected 
           ? '0 0 0 1px var(--button-primary-bg), 0 4px 12px rgba(0,0,0,0.2)' 
-          : isHovered 
+          : isHovered && !isTerminalState
             ? '0 4px 12px rgba(0,0,0,0.15)' 
             : 'none',
       }}
