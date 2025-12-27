@@ -879,65 +879,7 @@ export function VisualPreviewWorkspace({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Mode Switcher — Phase 9F: Explicit truthful tooltips */}
-          {/* INC-005: Overlays mode spatial editing disabled for Alpha.
-              The drag/resize implementation exists but has not been verified.
-              Hiding the mode would break existing workflows, so we disable it
-              with a clear message instead. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', borderRight: '1px solid var(--border-primary)', paddingRight: '0.75rem' }}>
-            {(['view', 'overlays', 'burn-in'] as const).map((m) => {
-              // INC-005: Overlays mode is restricted for Alpha
-              const isOverlaysModeDisabled = m === 'overlays'
-              
-              // Phase 9F: Truthful tooltip describing what each mode does
-              const getModeTooltip = (): string => {
-                switch (m) {
-                  case 'view':
-                    return mode === 'view' 
-                      ? 'View mode — Overlays visible but not editable' 
-                      : 'Switch to View mode'
-                  case 'overlays':
-                    // INC-005: Disable spatial editing for Alpha
-                    return 'Overlays mode — Spatial editing disabled for Alpha. Use the side panel to position overlays.'
-                  case 'burn-in':
-                    return mode === 'burn-in'
-                      ? 'Burn-In mode — Edit timecode and metadata overlays'
-                      : isReadOnly
-                        ? 'Burn-In mode (read-only for running/completed jobs)'
-                        : 'Switch to Burn-In mode'
-                }
-              }
-              
-              return (
-                <button
-                  key={m}
-                  onClick={() => {
-                    // INC-005: Block switching to overlays mode
-                    if (isOverlaysModeDisabled) return
-                    onModeChange?.(m)
-                  }}
-                  disabled={!onModeChange || isOverlaysModeDisabled}
-                  title={getModeTooltip()}
-                  style={{
-                    padding: '0.375rem 0.625rem',
-                    fontSize: '0.6875rem',
-                    fontWeight: 600,
-                    textTransform: 'capitalize',
-                    background: mode === m ? 'var(--button-primary-bg)' : 'rgba(255,255,255,0.05)',
-                    border: '1px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: mode === m ? '#fff' : isOverlaysModeDisabled ? 'var(--text-disabled, #4a5568)' : 'var(--text-muted)',
-                    cursor: onModeChange && !isOverlaysModeDisabled ? 'pointer' : 'not-allowed',
-                    transition: 'all 0.15s ease',
-                    opacity: isOverlaysModeDisabled ? 0.5 : 1,
-                  }}
-                >
-                  {m === 'burn-in' ? 'Burn-In' : m.charAt(0).toUpperCase() + m.slice(1)}
-                </button>
-              )
-            })}
-          </div>
-          
+          {/* UI Honesty Freeze: Mode switcher removed. Preview is read-only. */}
           <span
             style={{
               fontSize: '0.75rem',
@@ -947,7 +889,7 @@ export function VisualPreviewWorkspace({
               letterSpacing: '0.03em',
             }}
           >
-            Preview
+            Preview (read-only)
           </span>
           {fileName && (
             <span
@@ -1068,18 +1010,26 @@ export function VisualPreviewWorkspace({
             {isFullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
           </button>
           
-          {onOpenVisualEditor && hasSource && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onOpenVisualEditor}
-              data-testid="open-visual-editor-btn"
-              style={{ marginLeft: '0.5rem' }}
-            >
-              Edit Overlays
-            </Button>
-          )}
+          {/* UI Honesty Freeze: Edit Overlays button removed — overlays not rendered to output */}
         </div>
+      </div>
+
+      {/* UI Honesty Freeze: Read-only preview notice */}
+      <div
+        style={{
+          padding: '0.5rem 0.75rem',
+          background: 'rgba(251, 191, 36, 0.1)',
+          borderBottom: '1px solid rgba(251, 191, 36, 0.2)',
+          fontSize: '0.6875rem',
+          color: 'rgb(251, 191, 36)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+        data-testid="preview-readonly-notice"
+      >
+        <span style={{ fontSize: '0.875rem' }}>ℹ️</span>
+        <span>Preview is currently read-only. Visual overlays are not yet rendered into output.</span>
       </div>
 
       {/* Preview Area - Resizes with panel */}

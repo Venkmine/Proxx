@@ -1495,110 +1495,32 @@ export function DeliverControlPanel({
           </div>
         </Section>
         
-        {/* Overlays Section — Text overlays, image overlay, timecode overlay */}
+        {/* Overlays Section — UI Honesty Freeze: Entire section disabled */}
         <Section
           title="Overlays"
           isOpen={openSections.has('overlay')}
           onToggle={() => toggleSection('overlay')}
-          badge={activeOverlays > 0 || settings.overlay.image_watermark?.enabled || settings.overlay.timecode_overlay?.enabled ? 'ACTIVE' : 'NONE'}
+          badge="DISABLED"
           data-testid="overlays-section"
         >
-          {/* Visual Editor Button */}
-          {onOpenVisualEditor && (
-            <div style={{ marginBottom: '0.75rem' }}>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={onOpenVisualEditor}
-                disabled={isReadOnly || !hasQueuedJobSelected}
-                fullWidth
-                data-testid="open-visual-editor"
-              >
-                🎨 Open Visual Editor
-              </Button>
-              {!hasQueuedJobSelected && (
-                <div style={{
-                  marginTop: '0.375rem',
-                  fontSize: '0.625rem',
-                  color: 'var(--text-dim)',
-                  textAlign: 'center',
-                  fontStyle: 'italic',
-                }}>
-                  Select a queued job to enable visual editor
-                </div>
-              )}
-            </div>
-          )}
-          
-          {/* Phase 5A: Overlay Layer Stack */}
-          <OverlayLayerStack
-            layers={settings.overlay.layers || []}
-            onLayersChange={handleLayersChange}
-            selectedLayerId={selectedLayerId}
-            onLayerSelect={setSelectedLayerId}
-            isReadOnly={isReadOnly}
-            onAddLayer={handleAddOverlayLayer}
-          />
-          
-          {/* Legacy overlays (deprecated, shown for backwards compatibility) */}
-          {/* STRUCTURAL FIX: Clarify that these overlays ARE rendered to output */}
-          {(settings.overlay.text_layers.length > 0 || settings.overlay.image_watermark?.enabled || settings.overlay.timecode_overlay?.enabled) && (
+          {/* UI Honesty Freeze: Overlays not rendered to output — all controls disabled */}
+          <div style={{
+            padding: '0.75rem',
+            background: 'rgba(100, 116, 139, 0.1)',
+            border: '1px solid rgba(100, 116, 139, 0.2)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
             <div style={{
-              marginTop: '1rem',
-              padding: '0.5rem',
-              background: 'rgba(59, 130, 246, 0.1)',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.6875rem',
+              color: 'var(--text-dim)',
+              textAlign: 'center',
+              fontStyle: 'italic',
             }}>
-              <div style={{ fontSize: '0.625rem', color: 'rgb(59, 130, 246)', fontWeight: 600, marginBottom: '0.5rem' }}>
-                Active Overlays (Will Render to Output)
-              </div>
-              
-              {/* Text Layers List */}
-              {settings.overlay.text_layers.map((layer, index) => (
-                <div 
-                  key={index}
-                  style={{
-                    padding: '0.375rem',
-                    marginBottom: '0.375rem',
-                    background: layer.enabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(51, 65, 85, 0.15)',
-                    border: `1px solid ${layer.enabled ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-secondary)'}`,
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '0.6875rem',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      Text: {layer.text || '(empty)'} 
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        const updated = settings.overlay.text_layers.filter((_, i) => i !== index)
-                        updateOverlaySettings({ text_layers: updated })
-                      }}
-                      disabled={isReadOnly}
-                      style={{ padding: '0.125rem 0.25rem', fontSize: '0.5rem' }}
-                    >
-                      ✕
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              
-              {settings.overlay.image_watermark?.enabled && (
-                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  • Image Overlay (enabled)
-                </div>
-              )}
-              {settings.overlay.timecode_overlay?.enabled && (
-                <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>
-                  • Timecode Overlay (enabled)
-                </div>
-              )}
+              Visual overlays are not yet rendered into output.
+              <br />
+              This feature is disabled in the current version.
             </div>
-          )}
+          </div>
         </Section>
       </div>
       
