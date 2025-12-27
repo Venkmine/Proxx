@@ -4,11 +4,47 @@ State transition validation for jobs and tasks.
 GOLDEN PATH: Strictly enforces single-clip workflow.
 Job lifecycle: PENDING → RUNNING → COMPLETED | FAILED
 No pause, recovery, or cancellation allowed.
+
+INVARIANT: Terminal job states (COMPLETED, COMPLETED_WITH_WARNINGS, FAILED, CANCELLED)
+are immutable. Once a job enters a terminal state, no state transition is allowed.
+Polling, refresh, or UI re-render must never regress a terminal state to RUNNING.
 """
 
-from typing import Set, Tuple
+from typing import FrozenSet, Set, Tuple
 from .models import JobStatus, TaskStatus
 from .errors import InvalidStateTransitionError
+
+
+# ============================================================================
+# TERMINAL STATE INVARIANT
+# ============================================================================
+# Once a job reaches any of these states, it MUST NOT transition to any other state.
+# This is enforced at multiple layers:
+#   1. state.py: is_job_terminal() and can_transition_job() block illegal transitions
+#   2. engine.py: compute_job_status() returns current status for terminal jobs
+#   3. Frontend: fetchJobs() preserves terminal states from prior state
+# ============================================================================
+TERMINAL_JOB_STATES: FrozenSet[JobStatus] = frozenset({
+    JobStatus.COMPLETED,
+    JobStatus.COMPLETED_WITH_WARNINGS,
+    JobStatus.FAILED,
+    JobStatus.CANCELLED,
+})
+
+
+def is_job_terminal(status: JobStatus) -> bool:
+    """
+    Check if a job status is terminal (immutable).
+    
+    Terminal states represent completed execution and must never change.
+    
+    Args:
+        status: The job status to check
+        
+    Returns:
+        True if the status is terminal, False otherwise
+    """
+    return status in TERMINAL_JOB_STATES
 
 
 # GOLDEN PATH: Legal job state transitions (strict)
@@ -53,6 +89,8 @@ def can_transition_job(from_status: JobStatus, to_status: JobStatus) -> bool:
     """
     Check if a job state transition is legal.
     
+    INVARIANT: Terminal states cannot transition to any other state.
+    
     Args:
         from_status: Current job status
         to_status: Target job status
@@ -63,6 +101,10 @@ def can_transition_job(from_status: JobStatus, to_status: JobStatus) -> bool:
     # Allow staying in same state (idempotent operations)
     if from_status == to_status:
         return True
+    
+    # INVARIANT: Terminal states are immutable — no transitions allowed
+    if is_job_terminal(from_status):
+        return False
     
     return (from_status, to_status) in _JOB_TRANSITIONS
 

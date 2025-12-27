@@ -59,6 +59,22 @@ import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 
 const BACKEND_URL = 'http://127.0.0.1:8085'
 
+// ============================================================================
+// TERMINAL STATE INVARIANT
+// ============================================================================
+// Once a job reaches any of these states, it MUST NOT transition to any other state.
+// Polling, refresh, or re-render must never regress a terminal state.
+// This invariant is enforced at multiple layers:
+//   1. Backend state.py: is_job_terminal() blocks illegal transitions
+//   2. Backend engine.py: compute_job_status() returns current status for terminal jobs
+//   3. Frontend: fetchJobs() preserves terminal states from prior state
+// ============================================================================
+const TERMINAL_JOB_STATES = new Set(['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'])
+
+function isJobTerminal(status: string): boolean {
+  return TERMINAL_JOB_STATES.has(status.toUpperCase())
+}
+
 // Electron IPC types
 declare global {
   interface Window {
@@ -541,7 +557,27 @@ function App() {
       const response = await fetch(`${BACKEND_URL}/monitor/jobs`)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
-      setJobs(data.jobs)
+      
+      // TERMINAL STATE INVARIANT: Never regress a terminal state.
+      // If frontend knows a job is terminal, preserve that state even if
+      // backend response temporarily shows a stale non-terminal state.
+      setJobs(prev => {
+        const prevTerminalStates = new Map<string, string>()
+        for (const job of prev) {
+          if (isJobTerminal(job.status)) {
+            prevTerminalStates.set(job.id, job.status.toUpperCase())
+          }
+        }
+        
+        return (data.jobs as JobSummary[]).map(job => {
+          const prevTerminal = prevTerminalStates.get(job.id)
+          // If we previously knew this job was terminal, preserve that status
+          if (prevTerminal && !isJobTerminal(job.status)) {
+            return { ...job, status: prevTerminal }
+          }
+          return job
+        })
+      })
       setBackendConnected(true)
 
       // Update job order - add new jobs, keep existing order
@@ -563,8 +599,17 @@ function App() {
     try {
       const response = await fetch(`${BACKEND_URL}/monitor/jobs/${jobId}`)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const detail = await response.json()
-      setJobDetails(prev => new Map(prev).set(jobId, detail))
+      const detail = await response.json() as JobDetail
+      
+      // TERMINAL STATE INVARIANT: Preserve terminal states from prior detail
+      setJobDetails(prev => {
+        const prevDetail = prev.get(jobId)
+        if (prevDetail && isJobTerminal(prevDetail.status) && !isJobTerminal(detail.status)) {
+          // Prior state was terminal but new state is not — preserve terminal state
+          return new Map(prev).set(jobId, { ...detail, status: prevDetail.status })
+        }
+        return new Map(prev).set(jobId, detail)
+      })
     } catch (err) {
       console.error(`Failed to fetch job detail for ${jobId}:`, err)
     }
