@@ -38,12 +38,7 @@ interface ClipRowProps {
   onClick?: (e: React.MouseEvent) => void
   onReveal?: () => void
   onSettingsClick?: () => void
-  // Phase 16.4: Progress tracking
-  progressPercent?: number
-  etaSeconds?: number | null
-  // Phase 20: Enhanced progress
-  encodeFps?: number | null
-  phase?: string | null  // PREPARING | ENCODING | FINALIZING
+  // Thumbnail preview
   thumbnail?: string | null
 }
 
@@ -63,24 +58,7 @@ function truncatePath(path: string, maxLength: number = 40): string {
   return path.slice(0, remaining) + '/.../' + filename
 }
 
-// Phase 16.4: Format ETA for display
-function formatEta(etaSeconds: number | null | undefined): string {
-  if (etaSeconds == null || etaSeconds < 0) return ''
-  
-  if (etaSeconds < 60) {
-    return `${Math.round(etaSeconds)}s`
-  }
-  
-  if (etaSeconds < 3600) {
-    const minutes = Math.floor(etaSeconds / 60)
-    const seconds = Math.round(etaSeconds % 60)
-    return `${minutes}m ${seconds}s`
-  }
-  
-  const hours = Math.floor(etaSeconds / 3600)
-  const minutes = Math.floor((etaSeconds % 3600) / 60)
-  return `${hours}h ${minutes}m`
-}
+// Removed: formatEta - no longer displaying fake ETA
 
 export function ClipRow({
   id: _id,
@@ -95,10 +73,6 @@ export function ClipRow({
   onClick,
   onReveal,
   onSettingsClick,
-  progressPercent = 0,
-  etaSeconds,
-  encodeFps,
-  phase,
   thumbnail,
 }: ClipRowProps) {
   const [isHovered, setIsHovered] = useState(false)

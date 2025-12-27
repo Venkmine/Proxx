@@ -712,11 +712,6 @@ export function JobGroup({
                           ? () => onRevealClip(task.output_path!) 
                           : undefined
                       }
-                      // Phase 16.4 + Phase 20: Progress tracking
-                      progressPercent={task.progress_percent || 0}
-                      etaSeconds={task.eta_seconds}
-                      encodeFps={task.encode_fps}
-                      phase={task.phase}
                       thumbnail={task.thumbnail}
                     />
                   </div>
