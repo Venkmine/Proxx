@@ -1271,25 +1271,39 @@ export function VisualPreviewWorkspace({
             </div>
           )}
 
-          {/* Safe Area Guides - Toggleable */}
+          {/* Safe Area Guides - Inside video bounds, scale with zoom */}
           {hasSource && (
-            <>
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
               {/* Title Safe (10% inset) */}
               {showTitleSafe && (
-                <div style={{ position: 'absolute', inset: '10%', border: '1px dashed rgba(251, 191, 36, 0.4)', borderRadius: '2px', pointerEvents: 'none' }} />
+                <>
+                  <div style={{ position: 'absolute', inset: '10%', border: '1px dashed rgba(251, 191, 36, 0.4)', borderRadius: '2px' }} />
+                  <div style={{
+                    position: 'absolute',
+                    top: '10%',
+                    left: '10%',
+                    fontSize: '0.5rem',
+                    color: 'rgba(251, 191, 36, 0.7)',
+                    fontFamily: 'var(--font-mono)',
+                    transform: 'translateY(-100%)',
+                    padding: '0 0.25rem',
+                  }}>
+                    TITLE SAFE
+                  </div>
+                </>
               )}
               {/* Action Safe (5% inset) */}
               {showActionSafe && (
-                <div style={{ position: 'absolute', inset: '5%', border: '1px dashed rgba(59, 130, 246, 0.3)', borderRadius: '2px', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', inset: '5%', border: '1px dashed rgba(59, 130, 246, 0.3)', borderRadius: '2px' }} />
               )}
               {/* Center Cross */}
               {showCenterCross && (
                 <>
-                  <div style={{ position: 'absolute', left: '50%', top: '40%', height: '20%', width: '1px', background: 'rgba(34, 197, 94, 0.5)', pointerEvents: 'none' }} />
-                  <div style={{ position: 'absolute', top: '50%', left: '40%', width: '20%', height: '1px', background: 'rgba(34, 197, 94, 0.5)', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', left: '50%', top: '40%', height: '20%', width: '1px', background: 'rgba(34, 197, 94, 0.5)' }} />
+                  <div style={{ position: 'absolute', top: '50%', left: '40%', width: '20%', height: '1px', background: 'rgba(34, 197, 94, 0.5)' }} />
                 </>
               )}
-            </>
+            </div>
           )}
 
           {/* ============================================ */}
@@ -1749,108 +1763,13 @@ export function VisualPreviewWorkspace({
           </div>
         )}
 
-        {/* ============================================ */}
-        {/* Timecode Reader — REC TC & SRC TC Display */}
-        {/* ============================================ */}
-        {hasSource && (
-          <div
-            data-testid="timecode-reader"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '1.5rem',
-              marginTop: '0.5rem',
-              padding: '0.5rem 1rem',
-              background: 'rgba(0, 0, 0, 0.6)',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-primary)',
-              width: '100%',
-              maxWidth: '960px',
-            }}
-          >
-            {/* REC TC - Player-based timecode starting at 00:00:00:00 */}
-            <div style={{ textAlign: 'center' }}>
-              <div style={{
-                fontSize: '0.5625rem',
-                fontWeight: 600,
-                color: 'var(--text-dim)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '0.125rem',
-              }}>
-                REC TC
-              </div>
-              <div
-                data-testid="rec-timecode"
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '1.125rem',
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  letterSpacing: '0.03em',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                }}
-              >
-                {formatTimecode(currentTime)}
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div style={{
-              width: '1px',
-              height: '2rem',
-              background: 'var(--border-secondary)',
-            }} />
-
-            {/* SRC TC - Source metadata timecode */}
-            <div style={{ textAlign: 'center' }}>
-              <div style={{
-                fontSize: '0.5625rem',
-                fontWeight: 600,
-                color: 'var(--text-dim)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '0.125rem',
-              }}>
-                SRC TC
-              </div>
-              <div
-                data-testid="src-timecode"
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '1.125rem',
-                  fontWeight: 600,
-                  color: metadata?.timecode_start ? 'rgb(59, 130, 246)' : 'var(--text-dim)',
-                  letterSpacing: '0.03em',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                }}
-              >
-                {getSrcTimecode()}
-              </div>
-            </div>
-
-            {/* Frame Rate Badge */}
-            <div style={{
-              marginLeft: '0.5rem',
-              padding: '0.125rem 0.375rem',
-              fontSize: '0.5625rem',
-              fontWeight: 600,
-              background: 'rgba(59, 130, 246, 0.15)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-muted)',
-            }}>
-              {metadata?.fps || '24 fps'}
-            </div>
-          </div>
-        )}
+        {/* Timecode reader integrated into metadata banner */}
 
         {/* ============================================ */}
-        {/* Metadata Strip — Collapsible */}
+        {/* Metadata Strip with Timecode — Collapsible */}
         {/* ============================================ */}
         {hasSource && (
-          <div data-testid="metadata-strip" style={{ marginTop: '0.75rem', width: '100%', maxWidth: '960px' }}>
+          <div data-testid="metadata-strip" style={{ marginTop: '0.5rem', width: '100%', maxWidth: '960px' }}>
             <button
               onClick={() => setMetadataExpanded(!metadataExpanded)}
               style={{
@@ -1867,9 +1786,27 @@ export function VisualPreviewWorkspace({
                 color: 'var(--text-muted)',
               }}
             >
-              <span style={{ fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                Source Metadata
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  Source Metadata
+                </span>
+                {/* Compact Timecode Display */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={{ fontSize: '0.5rem', color: 'var(--text-dim)', fontWeight: 600 }}>REC</span>
+                    <span data-testid="rec-timecode" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6875rem', color: 'var(--text-primary)' }}>
+                      {formatTimecode(currentTime)}
+                    </span>
+                  </div>
+                  <div style={{ width: '1px', height: '1rem', background: 'var(--border-secondary)' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={{ fontSize: '0.5rem', color: 'var(--text-dim)', fontWeight: 600 }}>SRC</span>
+                    <span data-testid="src-timecode" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6875rem', color: metadata?.timecode_start ? 'rgb(59, 130, 246)' : 'var(--text-dim)' }}>
+                      {getSrcTimecode()}
+                    </span>
+                  </div>
+                </div>
+              </div>
               <span style={{ fontSize: '0.625rem', transform: metadataExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
                 ▼
               </span>
