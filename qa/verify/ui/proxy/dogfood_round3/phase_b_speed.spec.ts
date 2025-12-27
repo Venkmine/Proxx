@@ -186,7 +186,7 @@ test.describe('Phase B: State Consistency Under Speed', () => {
     const jobCard = page.locator('[data-job-id]').first();
     await jobCard.click();
     
-    const renderBtnBefore = page.locator('[data-testid="btn-job-render"]');
+    const renderBtnBefore = page.locator('[data-testid="btn-job-render"]').first();
     const beforeDisabled = await renderBtnBefore.isDisabled().catch(() => false);
     
     // Start job

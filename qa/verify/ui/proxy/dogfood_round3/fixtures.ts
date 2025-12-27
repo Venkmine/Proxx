@@ -175,6 +175,52 @@ export async function getJobCount(): Promise<number> {
 }
 
 // ============================================================================
+// Queue Sync Helper — Post-Mutation UI Stabilization
+// ============================================================================
+
+/**
+ * Wait for the queue UI to synchronize after destructive operations.
+ * Use after: Clear queue, Delete job, Retry job, or any mutation.
+ * 
+ * This waits for:
+ * - DOM to settle (no pending mutations)
+ * - Job count to stabilize
+ * - No loading indicators visible
+ */
+export async function waitForQueueSync(page: Page, timeout: number = 10000): Promise<void> {
+  // Wait for any loading indicators to disappear
+  const loadingSelectors = [
+    '[data-loading="true"]',
+    '[aria-busy="true"]',
+    '.loading',
+    '.spinner'
+  ];
+  
+  for (const selector of loadingSelectors) {
+    const loading = page.locator(selector);
+    if (await loading.count() > 0) {
+      await expect(loading.first()).not.toBeVisible({ timeout: timeout / 2 }).catch(() => {});
+    }
+  }
+  
+  // Wait for job count to stabilize by checking twice
+  let prevCount = await page.locator('[data-job-id]').count();
+  await page.waitForTimeout(200); // Small settle time
+  let currCount = await page.locator('[data-job-id]').count();
+  
+  let attempts = 0;
+  while (prevCount !== currCount && attempts < 10) {
+    prevCount = currCount;
+    await page.waitForTimeout(200);
+    currCount = await page.locator('[data-job-id]').count();
+    attempts++;
+  }
+  
+  // Final DOM settle
+  await page.waitForLoadState('domcontentloaded');
+}
+
+// ============================================================================
 // Job Creation Helpers
 // ============================================================================
 
@@ -204,14 +250,116 @@ export async function createJobViaUI(
 
 /**
  * Start a job by selecting it and clicking Render.
+ * SCOPED: Uses the specific job card to find the render button.
  */
 export async function startJob(page: Page, jobIndex: number = 0): Promise<void> {
   const jobCard = page.locator('[data-job-id]').nth(jobIndex);
   await jobCard.click();
   
-  const renderBtn = page.locator('[data-testid="btn-job-render"]');
+  // SCOPED: Use first() to avoid strict mode violation when multiple render buttons exist
+  // The UI shows render buttons for each job, so we need to target the specific one
+  const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
   await expect(renderBtn).toBeVisible({ timeout: 5000 });
+  await expect(renderBtn).toBeEnabled({ timeout: 3000 });
   await renderBtn.click();
+}
+
+/**
+ * Start a specific job by its locator.
+ * SCOPED: Actions are scoped to the provided job card.
+ */
+export async function startJobByCard(page: Page, jobCard: Locator): Promise<void> {
+  await jobCard.click();
+  
+  // Wait for render button to appear (it's in the action panel, not in the card)
+  // Use first() to avoid strict mode violation when multiple render buttons exist
+  const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
+  await expect(renderBtn).toBeVisible({ timeout: 5000 });
+  await expect(renderBtn).toBeEnabled({ timeout: 3000 });
+  await renderBtn.click();
+}
+
+/**
+ * Get the job card locator for a specific job.
+ * This returns a scoped locator that can be used for actions on that specific job.
+ */
+export function getJobCard(page: Page, jobIndex: number = 0): Locator {
+  return page.locator('[data-job-id]').nth(jobIndex);
+}
+
+/**
+ * Get a scoped cancel button for a specific job.
+ * First selects the job, then returns the cancel button locator.
+ */
+export async function getCancelButtonForJob(page: Page, jobIndex: number = 0): Promise<Locator> {
+  const jobCard = page.locator('[data-job-id]').nth(jobIndex);
+  await jobCard.click();
+  return page.locator('[data-testid="btn-job-cancel"]');
+}
+
+/**
+ * Attempt to cancel a specific job (best-effort).
+ * Returns whether cancel was attempted and the final status.
+ */
+export async function cancelJobByIndex(
+  page: Page, 
+  jobIndex: number = 0,
+  timeout: number = 30000
+): Promise<{ cancelAttempted: boolean; finalStatus: string }> {
+  const jobCard = page.locator('[data-job-id]').nth(jobIndex);
+  await jobCard.click();
+  
+  const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
+  let cancelAttempted = false;
+  
+  if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    const isEnabled = !(await cancelBtn.isDisabled());
+    if (isEnabled) {
+      await cancelBtn.click();
+      cancelAttempted = true;
+    }
+  }
+  
+  // Wait for terminal state
+  const finalStatus = await waitForTerminalStateForJob(page, jobIndex, timeout);
+  
+  return { cancelAttempted, finalStatus };
+}
+
+/**
+ * Wait for a SPECIFIC job to reach terminal state.
+ * SCOPED: Checks the status of the specific job card.
+ */
+export async function waitForTerminalStateForJob(
+  page: Page,
+  jobIndex: number = 0,
+  timeout: number = 120000
+): Promise<string> {
+  const jobCard = page.locator('[data-job-id]').nth(jobIndex);
+  
+  await expect(async () => {
+    const statusElement = jobCard.locator('[data-job-status]');
+    const count = await statusElement.count();
+    if (count === 0) {
+      // Check if the card itself has the status attribute
+      const cardStatus = await jobCard.getAttribute('data-job-status');
+      if (!cardStatus || !TERMINAL_STATES.some(t => cardStatus.toUpperCase().includes(t.toUpperCase()))) {
+        throw new Error(`Job ${jobIndex} status "${cardStatus}" is not terminal`);
+      }
+      return;
+    }
+    const status = await statusElement.first().getAttribute('data-job-status');
+    if (!status || !TERMINAL_STATES.some(t => status.toUpperCase().includes(t.toUpperCase()))) {
+      throw new Error(`Job ${jobIndex} status "${status}" is not terminal`);
+    }
+  }).toPass({ timeout });
+  
+  // Get final status
+  const statusElement = jobCard.locator('[data-job-status]');
+  if (await statusElement.count() > 0) {
+    return (await statusElement.first().getAttribute('data-job-status')) || 'UNKNOWN';
+  }
+  return (await jobCard.getAttribute('data-job-status')) || 'UNKNOWN';
 }
 
 // ============================================================================

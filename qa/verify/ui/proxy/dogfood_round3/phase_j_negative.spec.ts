@@ -23,6 +23,7 @@ import {
   startJob,
   resetBackendQueue,
   prepareOutputDir,
+  TERMINAL_STATES,
 } from './fixtures';
 
 // ============================================================================
@@ -134,12 +135,17 @@ test.describe('Phase J: Negative Assertions (System Limits)', () => {
     // Wait briefly for job to potentially start
     await page.waitForTimeout(500);
     
-    // Try to cancel
+    // Try to cancel - check both visibility AND enabled state
     const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
     let cancelAttempted = false;
     if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await cancelBtn.click();
-      cancelAttempted = true;
+      const isEnabled = !(await cancelBtn.isDisabled());
+      if (isEnabled) {
+        await cancelBtn.click();
+        cancelAttempted = true;
+      } else {
+        console.log('[R3-J4] Cancel button visible but disabled — job may have completed');
+      }
     }
     
     // Wait for terminal state — no infinite waiting
@@ -158,14 +164,17 @@ test.describe('Phase J: Negative Assertions (System Limits)', () => {
   // J5: Auto-retry does NOT exist
   // --------------------------------------------------------------------------
   test('R3-J5: Auto-retry does NOT exist', async ({ page }) => {
-    // Look for retry settings or auto-retry indicators
-    const autoRetryElements = await page.locator(
-      '[data-testid*="auto-retry"], ' +
-      '[data-testid*="autoretry"], ' +
-      'input[name*="retry"], ' +
-      'text=auto-retry, ' +
-      'text=automatic retry'
-    ).count();
+    // Look for retry settings or auto-retry indicators using separate locators
+    let autoRetryElements = 0;
+    
+    // Check data-testid attributes
+    autoRetryElements += await page.locator('[data-testid*="auto-retry"]').count();
+    autoRetryElements += await page.locator('[data-testid*="autoretry"]').count();
+    autoRetryElements += await page.locator('input[name*="retry"]').count();
+    
+    // Check for text containing auto-retry (using getByText for text search)
+    autoRetryElements += await page.getByText('auto-retry', { exact: false }).count();
+    autoRetryElements += await page.getByText('automatic retry', { exact: false }).count();
     
     expect(autoRetryElements).toBe(0);
     

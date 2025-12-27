@@ -60,7 +60,7 @@ test.describe('Phase C: Rapid User Abuse', () => {
     const jobCard = page.locator('[data-job-id]').first();
     await jobCard.click();
     
-    const renderBtn = page.locator('[data-testid="btn-job-render"]');
+    const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
     await expect(renderBtn).toBeVisible({ timeout: 5000 });
     
     // Double-click rapidly
@@ -93,7 +93,7 @@ test.describe('Phase C: Rapid User Abuse', () => {
     const jobCard = page.locator('[data-job-id]').first();
     await jobCard.click();
     
-    const renderBtn = page.locator('[data-testid="btn-job-render"]');
+    const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
     await expect(renderBtn).toBeVisible({ timeout: 5000 });
     
     // Click render
@@ -102,10 +102,13 @@ test.describe('Phase C: Rapid User Abuse', () => {
     // Wait briefly for operation to start
     await page.waitForTimeout(200);
     
-    // Try to cancel (may or may not be visible)
+    // Try to cancel (may or may not be visible, may or may not be enabled)
     const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
     if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await cancelBtn.click();
+      const isEnabled = !(await cancelBtn.isDisabled());
+      if (isEnabled) {
+        await cancelBtn.click();
+      }
     }
     
     // Wait for terminal state
@@ -171,7 +174,7 @@ test.describe('Phase C: Rapid User Abuse', () => {
     
     // Now start second job (if it's still PENDING)
     await jobCards.nth(1).click();
-    const renderBtn = page.locator('[data-testid="btn-job-render"]');
+    const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
     
     if (await renderBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       const isDisabled = await renderBtn.isDisabled();
@@ -232,6 +235,7 @@ test.describe('Phase C: Rapid User Abuse', () => {
   /**
    * Tests idempotency guard on job creation.
    * With DOGFOOD FIX in useIngestion, rapid clicks should only create 1 job.
+   * The button may become disabled after first click, which is correct behavior.
    */
   test('R3-C6: Rapid Add to Queue does not create duplicates', async ({ page }) => {
     const filePathInput = page.locator('[data-testid="file-path-input"]');
@@ -244,10 +248,16 @@ test.describe('Phase C: Rapid User Abuse', () => {
     const createBtn = page.locator('[data-testid="add-to-queue-button"]');
     await expect(createBtn).toBeEnabled({ timeout: 5000 });
     
-    // Click multiple times rapidly — idempotency guard should block duplicates
+    // Click once - button may become disabled immediately (idempotency guard)
     await createBtn.click();
-    await createBtn.click();
-    await createBtn.click();
+    
+    // Attempt additional clicks - may be blocked by disabled state
+    // This tests that the button doesn't allow rapid duplicate clicks
+    for (let i = 0; i < 2; i++) {
+      if (await createBtn.isEnabled().catch(() => false)) {
+        await createBtn.click();
+      }
+    }
     
     // Wait for queue to stabilize
     await page.waitForTimeout(1000);

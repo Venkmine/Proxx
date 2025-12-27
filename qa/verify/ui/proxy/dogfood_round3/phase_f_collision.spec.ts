@@ -96,7 +96,7 @@ test.describe('Phase F: Collision Safety', () => {
     const jobCards = page.locator('[data-job-id]');
     await jobCards.nth(1).click();
     
-    const renderBtn = page.locator('[data-testid="btn-job-render"]');
+    const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
     if (await renderBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       if (!(await renderBtn.isDisabled())) {
         await renderBtn.click();

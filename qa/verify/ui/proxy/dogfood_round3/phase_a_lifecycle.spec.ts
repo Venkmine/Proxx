@@ -197,9 +197,16 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
     // Wait briefly then attempt cancel
     await page.waitForTimeout(500);
     
+    // HONEST: Cancel button may be disabled or not visible
+    // We only attempt if it's visible AND enabled
     const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
     if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await cancelBtn.click();
+      const isEnabled = !(await cancelBtn.isDisabled());
+      if (isEnabled) {
+        await cancelBtn.click();
+      } else {
+        console.log('[R3-A6] Cancel button visible but disabled — job may have completed');
+      }
     }
     
     // Wait for terminal state — no infinite waiting
@@ -305,7 +312,7 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
       const jobCard = page.locator('[data-job-id]').first();
       await jobCard.click();
       
-      const renderBtn = page.locator('[data-testid="btn-job-render"]');
+      const renderBtn = page.locator('[data-testid="btn-job-render"]').first();
       
       // Render button should either be:
       // - Not visible (hidden)
