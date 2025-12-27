@@ -17,7 +17,7 @@
  * Note: Watch folders use backend IngestionService directly.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { DeliverSettings } from '../components/DeliverControlPanel'
 
 // ============================================================================
@@ -94,6 +94,11 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
   const [isIngesting, setIsIngesting] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   
+  // DOGFOOD FIX: Idempotency guard to prevent duplicate submissions
+  // React state updates are async, so rapid clicks can call ingest() before
+  // isIngesting=true has been rendered. Use a ref to block immediately.
+  const ingestionInFlight = useRef(false)
+  
   // Path management
   const setPendingPaths = useCallback((paths: string[]) => {
     setPendingPathsState(paths)
@@ -133,8 +138,16 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
   
   // Canonical ingestion method
   const ingest = useCallback(async (request: IngestionRequest): Promise<IngestionOutcome> => {
+    // DOGFOOD FIX: Idempotency guard — reject duplicate submissions immediately
+    if (ingestionInFlight.current) {
+      console.debug('[useIngestion] Blocked duplicate submission')
+      return { success: false, error: 'Job creation already in progress' }
+    }
+    ingestionInFlight.current = true
+    
     // Pre-flight validation
     if (!request.sourcePaths.length) {
+      ingestionInFlight.current = false
       const error = 'At least one source file required'
       setLastError(error)
       return { success: false, error }
@@ -143,12 +156,14 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
     // Validate paths are absolute (contain /)
     const invalidPaths = request.sourcePaths.filter(p => !p.includes('/'))
     if (invalidPaths.length > 0) {
+      ingestionInFlight.current = false
       const error = `Invalid source paths (must be absolute): ${invalidPaths.join(', ')}`
       setLastError(error)
       return { success: false, error, invalidPaths }
     }
     
     if (!request.outputDir) {
+      ingestionInFlight.current = false
       const error = 'Output directory is required'
       setLastError(error)
       return { success: false, error }
@@ -236,6 +251,7 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
       return { success: false, error }
     } finally {
       setIsIngesting(false)
+      ingestionInFlight.current = false  // DOGFOOD FIX: Reset idempotency guard
     }
   }, [backendUrl, clearPendingPaths])
   

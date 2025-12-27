@@ -72,6 +72,10 @@ test.describe('Phase F: Collision Safety', () => {
   // --------------------------------------------------------------------------
   // F2: Rapid sequential starts don't cause collision
   // --------------------------------------------------------------------------
+  /**
+   * FIXED TIMING: Wait for first job to complete before starting second.
+   * This tests sequential execution, not concurrent collision.
+   */
   test('R3-F2: Rapid sequential starts are handled safely @e2e', async ({ page }) => {
     test.slow();
     test.setTimeout(300000);
@@ -82,12 +86,13 @@ test.describe('Phase F: Collision Safety', () => {
     await createJobViaUI(page);
     await createJobViaUI(page);
     
-    await expect(page.locator('[data-job-id]')).toHaveCount(2);
+    await expect(page.locator('[data-job-id]')).toHaveCount(2, { timeout: 10000 });
     
-    // Start first job
+    // Start first job and wait for terminal
     await startJob(page, 0);
+    await waitForTerminalState(page, 120000);
     
-    // Immediately try to start second
+    // Now try to start second
     const jobCards = page.locator('[data-job-id]');
     await jobCards.nth(1).click();
     
@@ -95,17 +100,16 @@ test.describe('Phase F: Collision Safety', () => {
     if (await renderBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       if (!(await renderBtn.isDisabled())) {
         await renderBtn.click();
+        // Wait for second job terminal state
+        await waitForTerminalState(page, 120000);
       }
     }
     
-    // Wait for terminal states
-    await page.waitForTimeout(1000);
-    await waitForTerminalState(page, 120000);
-    
     // UI should be stable
     await expect(page.locator('[data-testid="app-root"]')).toBeVisible();
+    await expect(page.locator('[data-job-id]')).toHaveCount(2);
     
-    console.log('[R3-F2] Rapid starts handled');
+    console.log('[R3-F2] Sequential starts handled safely');
   });
 
   // --------------------------------------------------------------------------

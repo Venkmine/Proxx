@@ -342,26 +342,30 @@ class IngestionService:
     
     def _validate_output_dir(self, output_dir: str) -> None:
         """
-        Validate output directory exists and is writable.
+        Validate output directory is suitable for job creation.
+        
+        Note: We don't require the directory to exist at job creation time.
+        The directory will be created when the job executes. This allows
+        users to queue jobs with output directories that don't exist yet.
+        
+        At creation time, we only validate:
+        - Path is absolute
+        - Path is syntactically valid
+        
+        Actual directory creation and writability checks happen at execution time.
         
         Raises:
-            IngestionError: If output directory is invalid
+            IngestionError: If output directory path is invalid
         """
         output_path = Path(output_dir)
         
-        if not output_path.exists():
-            raise IngestionError(f"Output directory does not exist: {output_dir}")
+        # Only validate path syntax - don't create or check existence
+        if not output_path.is_absolute():
+            raise IngestionError(f"Output directory must be absolute path: {output_dir}")
         
-        if not output_path.is_dir():
+        # If the directory exists, verify it's actually a directory
+        if output_path.exists() and not output_path.is_dir():
             raise IngestionError(f"Output path is not a directory: {output_dir}")
-        
-        # Test writability
-        try:
-            test_file = output_path / ".awaire_proxy_write_test"
-            test_file.touch()
-            test_file.unlink()
-        except Exception:
-            raise IngestionError(f"Output directory not writable: {output_dir}")
     
     def _validate_engine(self, engine: str) -> None:
         """

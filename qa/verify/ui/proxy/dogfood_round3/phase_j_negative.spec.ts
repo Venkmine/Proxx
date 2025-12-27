@@ -113,37 +113,45 @@ test.describe('Phase J: Negative Assertions (System Limits)', () => {
   });
 
   // --------------------------------------------------------------------------
-  // J4: Cancel is NOT guaranteed to stop execution
+  // J4: Cancel is NOT guaranteed to stop execution — EXPECTED LIMIT
   // --------------------------------------------------------------------------
+  /**
+   * RECLASSIFIED: This is an EXPECTED SYSTEM LIMIT.
+   * 
+   * RATIONALE:
+   * - FFmpeg cannot be interrupted mid-frame atomically
+   * - Process kill is asynchronous and may race with completion
+   * - Cancel button disappears when job completes naturally
+   * - Any terminal state after cancel attempt is valid
+   */
   test('R3-J4: Cancel is best-effort, NOT guaranteed', async ({ page }) => {
     test.slow();
-    
-    /**
-     * NEGATIVE ASSERTION:
-     * Cancel may or may not work depending on timing.
-     * This test documents the behavior, not a requirement.
-     */
+    test.setTimeout(180000); // Allow 3 minutes
     
     await createJobViaUI(page);
     await startJob(page);
     
-    // Try to cancel immediately
-    const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
+    // Wait briefly for job to potentially start
+    await page.waitForTimeout(500);
     
+    // Try to cancel
+    const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
     let cancelAttempted = false;
-    if (await cancelBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+    if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await cancelBtn.click();
       cancelAttempted = true;
     }
     
+    // Wait for terminal state — no infinite waiting
     const finalStatus = await waitForTerminalState(page, 120000);
     
-    const wasCancelled = finalStatus.toUpperCase().includes('CANCELLED');
+    // Any terminal state is valid
+    expect(
+      TERMINAL_STATES.some(t => finalStatus.toUpperCase().includes(t))
+    ).toBe(true);
     
-    console.log(`[R3-J4] Cancel attempted: ${cancelAttempted}, Result: ${finalStatus}`);
-    console.log(`[R3-J4] CONFIRMED: Cancel is best-effort (was cancelled: ${wasCancelled})`);
-    
-    // Test passes regardless — we're documenting behavior
+    console.log(`[R3-J4] Cancel attempted: ${cancelAttempted}, Final: ${finalStatus}`);
+    console.log(`[R3-J4] CONFIRMED: Cancel is best-effort (any terminal state is valid)`);
   });
 
   // --------------------------------------------------------------------------

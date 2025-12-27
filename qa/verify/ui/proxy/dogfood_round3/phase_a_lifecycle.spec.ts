@@ -85,10 +85,20 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
   });
 
   // --------------------------------------------------------------------------
-  // A3: RUNNING is not required to be observed
+  // A3: RUNNING is not required to be observed — EXPECTED NON-GUARANTEE
   // --------------------------------------------------------------------------
+  /**
+   * RECLASSIFIED: RUNNING visibility is an EXPECTED NON-GUARANTEE.
+   * 
+   * RATIONALE:
+   * - Fast transcodes may complete before UI polls
+   * - Polling interval may miss short RUNNING windows
+   * - PENDING → COMPLETED directly is valid behavior
+   * - We only guarantee terminal states, not transient ones
+   */
   test('R3-A3: Job may skip directly to COMPLETED (no RUNNING required)', async ({ page }) => {
     test.slow();
+    test.setTimeout(180000);
     
     await createJobViaUI(page);
     
@@ -99,23 +109,14 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
     // Start job
     await startJob(page);
     
-    // Wait for execution to start or complete
-    const intermediateStatus = await waitForExecutionStart(page, 30000);
+    // Wait for terminal state ONLY — do NOT wait for RUNNING
+    const finalStatus = await waitForTerminalState(page, 120000);
     
-    // TRUTH: Either RUNNING or terminal is acceptable
-    const isRunning = TRANSIENT_STATES.some(t => intermediateStatus.toUpperCase().includes(t));
-    const isTerminal = TERMINAL_STATES.some(t => intermediateStatus.toUpperCase().includes(t));
+    // Terminal state must be reached
+    expect(TERMINAL_STATES.some(t => finalStatus.toUpperCase().includes(t))).toBe(true);
     
-    expect(isRunning || isTerminal).toBe(true);
-    
-    // If we saw RUNNING, wait for terminal
-    if (isRunning) {
-      const finalStatus = await waitForTerminalState(page, 120000);
-      expect(TERMINAL_STATES.some(t => finalStatus.toUpperCase().includes(t))).toBe(true);
-    }
-    
-    // Document what we observed
-    console.log(`[R3-A3] Intermediate status: ${intermediateStatus}, RUNNING observed: ${isRunning}`);
+    // Document whether RUNNING was observed (for informational purposes only)
+    console.log(`[R3-A3] Final status: ${finalStatus} (RUNNING visibility is not guaranteed)`);
   });
 
   // --------------------------------------------------------------------------
@@ -167,10 +168,22 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
   });
 
   // --------------------------------------------------------------------------
-  // A6: Cancel after start — best effort
+  // A6: Cancel after start — EXPECTED NON-GUARANTEE
   // --------------------------------------------------------------------------
+  /**
+   * RECLASSIFIED: This is an EXPECTED SYSTEM LIMIT, not a product bug.
+   * 
+   * RATIONALE:
+   * - Cancel is best-effort by design
+   * - FFmpeg processes may complete before signal arrives
+   * - No race-free cancel is possible without process cooperation
+   * - Any terminal state (CANCELLED, COMPLETED, FAILED) is valid
+   * 
+   * This test documents behavior, not a requirement.
+   */
   test('R3-A6: Cancel after start is best-effort', async ({ page }) => {
     test.slow();
+    test.setTimeout(180000); // Allow 3 minutes for slow transcodes
     
     await createJobViaUI(page);
     await startJob(page);
@@ -179,15 +192,25 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
     // - CANCELLED (cancel worked)
     // - COMPLETED (job finished before cancel)
     // - FAILED (job failed before cancel)
+    // All are valid outcomes — we do NOT wait for RUNNING.
     
-    const result = await cancelJobAndAcceptOutcome(page, 120000);
+    // Wait briefly then attempt cancel
+    await page.waitForTimeout(500);
+    
+    const cancelBtn = page.locator('[data-testid="btn-job-cancel"]');
+    if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await cancelBtn.click();
+    }
+    
+    // Wait for terminal state — no infinite waiting
+    const finalStatus = await waitForTerminalState(page, 120000);
     
     // All terminal states are acceptable
     expect(
-      TERMINAL_STATES.some(t => result.finalStatus.toUpperCase().includes(t))
+      TERMINAL_STATES.some(t => finalStatus.toUpperCase().includes(t))
     ).toBe(true);
     
-    console.log(`[R3-A6] Cancel attempted: ${result.cancelled}, Final status: ${result.finalStatus}`);
+    console.log(`[R3-A6] Final status: ${finalStatus} (any terminal state is valid)`);
   });
 
   // --------------------------------------------------------------------------
@@ -231,6 +254,10 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
   // --------------------------------------------------------------------------
   // A8: Multiple jobs complete independently
   // --------------------------------------------------------------------------
+  /**
+   * FIXED TIMING: Uses terminal state polling, not execution start.
+   * Tests that multiple jobs can coexist and reach terminal states.
+   */
   test('R3-A8: Multiple jobs reach terminal states independently', async ({ page }) => {
     test.slow();
     test.setTimeout(300000); // 5 minutes for multiple jobs
@@ -246,15 +273,16 @@ test.describe('Phase A: Job Lifecycle Truth', () => {
     // Start first job
     await startJob(page, 0);
     
-    // Wait for first to complete or move on
-    await waitForExecutionStart(page, 30000);
+    // Wait for first job to reach terminal state
+    const finalStatus = await waitForTerminalState(page, 120000);
     
-    // After first job execution starts/completes, second job should still be actionable
-    // This tests that jobs don't interfere with each other
+    // First job should be terminal
+    expect(TERMINAL_STATES.some(t => finalStatus.toUpperCase().includes(t))).toBe(true);
     
-    const status1 = await page.locator('[data-job-status]').first().getAttribute('data-job-status');
+    // Both jobs should still exist in UI
+    await expect(jobCards).toHaveCount(2, { timeout: 5000 });
     
-    console.log(`[R3-A8] First job status: ${status1}`);
+    console.log(`[R3-A8] First job status: ${finalStatus}, UI stable with 2 jobs`);
     
     // Test passes if UI remains stable
     expect(await page.locator('[data-testid="app-root"]').isVisible()).toBe(true);

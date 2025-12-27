@@ -20,11 +20,27 @@
 
 import { FullConfig } from '@playwright/test';
 
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8085';
+
 async function globalSetup(config: FullConfig): Promise<void> {
   console.log('\n=== Playwright UI Test Setup ===');
   console.log('⚠️  Frontend must be running at http://localhost:5173');
   console.log('⚠️  Backend must be running at http://localhost:8085');
   console.log('=== No server probing - tests will fail fast if services are down ===\n');
+  
+  // Reset queue state before tests to ensure test isolation
+  try {
+    const response = await fetch(`${BACKEND_URL}/control/queue/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    if (response.ok) {
+      console.log('✓ Queue state cleared before tests');
+    }
+  } catch (error) {
+    // Backend may not be available yet - tests will handle this
+  }
 }
 
 export default globalSetup;

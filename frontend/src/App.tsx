@@ -183,6 +183,11 @@ function App() {
   const [jobOrder, setJobOrder] = useState<string[]>([]) // Frontend-only ordering
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
+  
+  // DOGFOOD FIX: Idempotency guards for job operations
+  // React state updates are async, so rapid clicks can trigger duplicate operations
+  // before loading=true has been rendered. Use refs to block immediately.
+  const jobOperationInFlight = useRef<Set<string>>(new Set())
 
   // Global status filters (Phase 16: applies to job list)
   const [globalStatusFilters, setGlobalStatusFilters] = useState<Set<string>>(new Set())
@@ -781,6 +786,13 @@ function App() {
   // ============================================
 
   const startJob = async (jobId: string) => {
+    // DOGFOOD FIX: Idempotency guard — reject duplicate start requests immediately
+    if (jobOperationInFlight.current.has(jobId)) {
+      console.debug(`[startJob] Blocked duplicate start for ${jobId}`)
+      return
+    }
+    jobOperationInFlight.current.add(jobId)
+    
     // Hardening: Validate job is pending before starting
     const job = jobs.find(j => j.id === jobId)
     if (job) {
@@ -807,6 +819,7 @@ function App() {
       setError(createJobError('start', jobId, err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setLoading(false)
+      jobOperationInFlight.current.delete(jobId)  // DOGFOOD FIX: Reset guard
     }
   }
 
