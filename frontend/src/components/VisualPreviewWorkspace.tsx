@@ -456,34 +456,20 @@ export function VisualPreviewWorkspace({
     }
   }, [isPanning])
 
-  // Wheel zoom handler - zoom follows mouse cursor
+  // Wheel zoom handler
+  // Preview zoom is center-anchored. Zoom must never bias vertically.
+  // TODO(v2): support cursor-anchored zoom (calculate delta from mouse coords)
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     
     if (!canvasRef.current) return
     
-    const rect = canvasRef.current.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-    
-    // Calculate normalized mouse position (0-1)
-    const normX = mouseX / rect.width
-    const normY = mouseY / rect.height
-    
+    // Center-anchored zoom: simply adjust zoom level
+    // No pan offset adjustment needed for center-anchored transforms
     setZoom(prevZoom => {
       const currentZoom = prevZoom === 'fit' ? 1 : prevZoom
       const delta = e.deltaY > 0 ? 0.9 : 1.1 // Scroll down = zoom out, up = zoom in
       const newZoom = Math.max(0.25, Math.min(4, currentZoom * delta))
-      
-      // Adjust pan to keep mouse position stable
-      if (newZoom !== currentZoom) {
-        const zoomDelta = newZoom / currentZoom
-        setPanOffset(prev => ({
-          x: normX - (normX - prev.x) * zoomDelta,
-          y: normY - (normY - prev.y) * zoomDelta,
-        }))
-      }
-      
       return newZoom
     })
   }, [])
@@ -737,6 +723,18 @@ export function VisualPreviewWorkspace({
         }}
       >
         {/* 16:9 Preview Container with Zoom/Pan */}
+        {/*
+         * ZOOM INVARIANT: Preview zoom is center-anchored.
+         * Zoom must never bias vertically or horizontally.
+         * 
+         * Implementation:
+         * - Container maintains base size (100% width, aspect-ratio 16/9)
+         * - Zoom uses CSS transform: scale() NOT width changes
+         * - transformOrigin: 'center center' ensures symmetric scaling
+         * - Pan offset is applied via translate() combined with scale()
+         * 
+         * TODO(v2): support cursor-anchored zoom (calculate delta from mouse coords)
+         */}
         <div
           ref={canvasRef}
           data-testid="preview-viewport-container"
@@ -747,16 +745,20 @@ export function VisualPreviewWorkspace({
           onWheel={handleWheel}
           style={{
             position: 'relative',
-            width: zoom === 'fit' ? '100%' : `${(zoom as number) * 100}%`,
-            maxWidth: zoom === 'fit' ? '100%' : 'none',
+            width: '100%',
+            maxWidth: '100%',
             aspectRatio: '16 / 9',
-            transform: zoom !== 'fit' ? `translate(${panOffset.x * 50}px, ${panOffset.y * 50}px)` : undefined,
+            // Zoom is center-anchored via scale transform, not width changes
+            transform: zoom === 'fit' 
+              ? undefined 
+              : `scale(${zoom}) translate(${panOffset.x * 50}px, ${panOffset.y * 50}px)`,
+            transformOrigin: 'center center',
             background: 'linear-gradient(135deg, rgba(30, 35, 45, 0.9) 0%, rgba(20, 24, 30, 0.95) 100%)',
             borderRadius: 'var(--radius-md, 6px)',
             border: '1px solid var(--border-primary)',
             overflow: 'hidden',
             cursor: isPanning ? 'grabbing' : 'default',
-            transition: zoom === 'fit' ? 'width 0.2s ease' : undefined,
+            // No transition - zoom must be immediate with no animation or easing
           }}
         >
           {/* Video element for playback - only for supported formats */}
