@@ -719,28 +719,7 @@ function App() {
     }
   }
 
-  const retryFailedClips = async (jobId: string) => {
-    const detail = jobDetails.get(jobId)
-    if (!detail) return
-
-    // Phase 16.4: No confirmation for routine actions
-    try {
-      setLoading(true)
-      const retryCount = detail.failed_count
-      const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/retry-failed`, { method: 'POST' })
-      if (!response.ok) {
-        const normalized = await normalizeResponseError(response, '/control/jobs/retry-failed', jobId)
-        throw new Error(normalized.message)
-      }
-      addStatusLogEntry(statusMessages.jobRetrying(jobId, retryCount))
-      await fetchJobDetail(jobId)
-      await fetchJobs()
-    } catch (err) {
-      setError(createJobError('retry failed clips on', jobId, err instanceof Error ? err.message : 'Unknown error'))
-    } finally {
-      setLoading(false)
-    }
-  }
+  // REMOVED: retryFailedClips - violates golden path (no retry logic)
 
   const cancelJob = async (jobId: string) => {
     // Phase 19: No confirmation prompts - execute immediately
@@ -898,72 +877,7 @@ function App() {
     }
   }
 
-  // ============================================
-  // Phase 19: Requeue Job
-  // ============================================
-
-  const requeueJob = async (jobId: string) => {
-    // Get the job details to recreate with same settings
-    const detail = jobDetails.get(jobId)
-    if (!detail) {
-      setError('Cannot requeue: job details not available')
-      return
-    }
-
-    try {
-      setLoading(true)
-      
-      // Fetch the job's deliver settings to preserve them
-      const settingsResponse = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/deliver-settings`)
-      let jobDeliverSettings = null
-      if (settingsResponse.ok) {
-        jobDeliverSettings = await settingsResponse.json()
-      }
-      
-      // Get source paths from the job's tasks
-      const sourcePaths = detail.tasks.map(t => t.source_path)
-      
-      // Create a new job with the same settings
-      // Alpha: preset_id is optional
-      const response = await fetch(`${BACKEND_URL}/control/jobs/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source_paths: sourcePaths,
-          preset_id: presetManager.selectedPresetId || null,
-          engine: selectedEngine,
-          deliver_settings: jobDeliverSettings,
-        }),
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
-          : JSON.stringify(errorData.detail || errorData)
-        throw new Error(errorMessage)
-      }
-      
-      const result = await response.json()
-      await fetchJobs()
-      setSelectedJobId(result.job_id)
-      
-      // Show success via undo toast (informational, not actually undoable)
-      undoStack.push({
-        message: 'Job requeued',
-        doAction: async () => {},
-        undoAction: async () => {
-          // Delete the newly created job
-          await fetch(`${BACKEND_URL}/control/jobs/${result.job_id}`, { method: 'DELETE' })
-          await fetchJobs()
-        },
-      })
-    } catch (err) {
-      setError(`Failed to requeue job: ${err instanceof Error ? err.message : 'Unknown error'}`)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // REMOVED: requeueJob - violates golden path (no requeue logic)
 
   // ============================================
   // Create Job — Canonical Ingestion Pipeline
@@ -2161,8 +2075,6 @@ function App() {
                         onStart={() => startJob(job.id)}
                         onPause={() => pauseJob(job.id)}
                         onResume={() => resumeJob(job.id)}
-                        onRetryFailed={() => retryFailedClips(job.id)}
-                        onRequeue={() => requeueJob(job.id)}
                         onCancel={() => cancelJob(job.id)}
                         onDelete={() => deleteJob(job.id)}
                         onRebindPreset={() => setSelectedJobId(job.id)}

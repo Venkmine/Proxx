@@ -1,8 +1,9 @@
 """
 State transition validation for jobs and tasks.
 
-Defines legal state transitions and provides validation functions.
-Prevents illegal state jumps and ensures deterministic behavior.
+GOLDEN PATH: Strictly enforces single-clip workflow.
+Job lifecycle: PENDING → RUNNING → COMPLETED | FAILED
+No pause, recovery, or cancellation allowed.
 """
 
 from typing import Set, Tuple
@@ -10,50 +11,41 @@ from .models import JobStatus, TaskStatus
 from .errors import InvalidStateTransitionError
 
 
-# Legal job state transitions: (from_state, to_state)
+# GOLDEN PATH: Legal job state transitions (strict)
 _JOB_TRANSITIONS: Set[Tuple[JobStatus, JobStatus]] = {
     # Starting a job
     (JobStatus.PENDING, JobStatus.RUNNING),
     
-    # Pausing and resuming
-    (JobStatus.RUNNING, JobStatus.PAUSED),
-    (JobStatus.PAUSED, JobStatus.RUNNING),
+    # REMOVED: Pausing/resuming - violates golden path
+    # (JobStatus.RUNNING, JobStatus.PAUSED),
+    # (JobStatus.PAUSED, JobStatus.RUNNING),
+    # (JobStatus.RECOVERY_REQUIRED, JobStatus.RUNNING),
     
-    # Phase 12: Recovery resumption
-    (JobStatus.RECOVERY_REQUIRED, JobStatus.RUNNING),
-    
-    # Completing successfully
+    # Terminal states
     (JobStatus.RUNNING, JobStatus.COMPLETED),
-    
-    # Completing with warnings/failures
-    (JobStatus.RUNNING, JobStatus.COMPLETED_WITH_WARNINGS),
-    
-    # Engine failure
-    (JobStatus.PENDING, JobStatus.FAILED),
     (JobStatus.RUNNING, JobStatus.FAILED),
-    (JobStatus.PAUSED, JobStatus.FAILED),
     
-    # Phase 13: Cancellation (operator intent)
-    (JobStatus.PENDING, JobStatus.CANCELLED),
-    (JobStatus.RUNNING, JobStatus.CANCELLED),
-    (JobStatus.PAUSED, JobStatus.CANCELLED),
-    (JobStatus.RECOVERY_REQUIRED, JobStatus.CANCELLED),
+    # REMOVED: COMPLETED_WITH_WARNINGS - simplify to COMPLETED or FAILED
+    # (JobStatus.RUNNING, JobStatus.COMPLETED_WITH_WARNINGS),
+    
+    # REMOVED: Cancellation - violates golden path
+    # (JobStatus.PENDING, JobStatus.CANCELLED),
+    # (JobStatus.RUNNING, JobStatus.CANCELLED),
+    
+    # REMOVED: PAUSED/RECOVERY_REQUIRED transitions - violate golden path
 }
 
 
-# Legal task state transitions: (from_state, to_state)
+# GOLDEN PATH: Legal task state transitions (strict)
 _TASK_TRANSITIONS: Set[Tuple[TaskStatus, TaskStatus]] = {
-    # Normal execution flow
+    # Normal execution flow only
     (TaskStatus.QUEUED, TaskStatus.RUNNING),
     (TaskStatus.RUNNING, TaskStatus.COMPLETED),
     (TaskStatus.RUNNING, TaskStatus.FAILED),
-    (TaskStatus.RUNNING, TaskStatus.SKIPPED),
     
-    # Early skip (e.g., validation failure before execution)
-    (TaskStatus.QUEUED, TaskStatus.SKIPPED),
-    
-    # Phase 13: Retry failed clips (reset to queued)
-    (TaskStatus.FAILED, TaskStatus.QUEUED),
+    # REMOVED: SKIPPED - violates golden path (encode always runs)
+    # (TaskStatus.RUNNING, TaskStatus.SKIPPED),
+    # (TaskStatus.QUEUED, TaskStatus.SKIPPED),
 }
 
 

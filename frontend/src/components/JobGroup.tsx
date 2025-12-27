@@ -80,12 +80,12 @@ interface JobGroupProps {
   onSelect?: () => void
   onRevealClip?: (path: string) => void
   
-  // Actions (Phase 16: Full operator control, Phase 19: Requeue)
+  // Actions (Phase 16: Full operator control)
   onStart?: () => void
   onPause?: () => void
   onResume?: () => void
-  onRetryFailed?: () => void
-  onRequeue?: () => void  // Phase 19: Requeue entire job
+  // REMOVED: onRetryFailed - violates golden path
+  // REMOVED: onRequeue - violates golden path
   onCancel?: () => void
   onDelete?: () => void
   onRebindPreset?: () => void
@@ -142,8 +142,8 @@ export function JobGroup({
   onStart,
   onPause,
   onResume,
-  onRetryFailed,
-  onRequeue,  // Phase 19
+  // REMOVED: onRetryFailed
+  // REMOVED: onRequeue
   onCancel,
   onDelete,
   onRebindPreset,
@@ -202,8 +202,8 @@ export function JobGroup({
   const showStart = normalizedStatus === 'PENDING'
   const showPause = normalizedStatus === 'RUNNING'
   const showResume = normalizedStatus === 'RECOVERY_REQUIRED' || normalizedStatus === 'PAUSED'
-  const showRetryFailed = failedCount > 0 && ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED'].includes(normalizedStatus)
-  const showRequeue = ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)  // Phase 19
+  // REMOVED: showRetryFailed - violates golden path
+  // REMOVED: showRequeue - violates golden path
   const showCancel = ['PENDING', 'RUNNING', 'PAUSED', 'RECOVERY_REQUIRED'].includes(normalizedStatus)
   const showDelete = ['PENDING', 'COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
   const showRebind = normalizedStatus === 'PENDING' || normalizedStatus === 'RECOVERY_REQUIRED'
@@ -575,29 +575,7 @@ export function JobGroup({
                     ▶ Resume
                   </Button>
                 )}
-                {showRetryFailed && (
-                  <Button
-                    data-testid="btn-job-retry-failed"
-                    variant="warning"
-                    size="sm"
-                    onClick={onRetryFailed}
-                    disabled={loading}
-                  >
-                    🔁 Retry Failed
-                  </Button>
-                )}
-                {showRequeue && onRequeue && (
-                  <Button
-                    data-testid="btn-job-requeue"
-                    variant="secondary"
-                    size="sm"
-                    onClick={onRequeue}
-                    disabled={loading}
-                    title="Create new job with same settings"
-                  >
-                    ↺ Requeue
-                  </Button>
-                )}
+                {/* REMOVED: Retry Failed and Requeue buttons - violate golden path */}
                 {showDelete && (
                   <Button
                     data-testid="btn-job-delete"

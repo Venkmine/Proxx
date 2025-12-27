@@ -184,6 +184,12 @@ class IngestionService:
         if not source_paths:
             raise IngestionError("At least one source file required")
         
+        # GOLDEN PATH: Hard limit = 1 clip
+        if len(source_paths) > 1:
+            raise IngestionError(
+                f"Multi-clip jobs are disabled. Only 1 clip allowed (received {len(source_paths)})"
+            )
+        
         validated_paths, invalid_paths = self._validate_paths(source_paths)
         
         if invalid_paths:

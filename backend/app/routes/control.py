@@ -1197,54 +1197,10 @@ async def resume_job_endpoint(job_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Resume failed: {e}")
 
 
-@router.post("/jobs/{job_id}/retry-failed", response_model=OperationResponse)
-async def retry_failed_clips_endpoint(job_id: str, request: Request):
-    """
-    Retry only FAILED clips in a job.
-    
-    Phase 14: Explicit operator action via UI.
-    COMPLETED clips are NEVER re-run.
-    
-    Args:
-        job_id: Job identifier
-        
-    Returns:
-        Operation result
-        
-    Raises:
-        400: Validation failed
-        404: Job not found
-        500: Execution failed
-    """
-    try:
-        job_registry = request.app.state.job_registry
-        binding_registry = request.app.state.binding_registry
-        preset_registry = request.app.state.preset_registry
-        job_engine = request.app.state.job_engine
-        
-        # Call CLI command without confirmation prompt
-        retry_failed_clips(
-            job_id=job_id,
-            job_registry=job_registry,
-            binding_registry=binding_registry,
-            preset_registry=preset_registry,
-            job_engine=job_engine,
-            require_confirmation=False,  # UI handles confirmation
-        )
-        
-        logger.info(f"Failed clips retried for job {job_id} via control endpoint")
-        
-        return OperationResponse(
-            success=True,
-            message=f"Failed clips retried successfully for job {job_id}"
-        )
-        
-    except ValidationError as e:
-        logger.warning(f"Retry validation failed for job {job_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Retry failed for job {job_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Retry failed: {e}")
+# REMOVED: retry-failed endpoint - violates golden path (no retry logic)
+# @router.post("/jobs/{job_id}/retry-failed", response_model=OperationResponse)
+# async def retry_failed_clips_endpoint(job_id: str, request: Request):
+#     ...
 
 
 @router.put("/jobs/{job_id}/settings", response_model=OperationResponse)
@@ -2068,55 +2024,10 @@ async def cancel_clip_endpoint(task_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Cancel failed: {e}")
 
 
-@router.post("/clips/{task_id}/retry", response_model=OperationResponse)
-async def retry_clip_endpoint(task_id: str, request: Request):
-    """
-    Retry a failed clip.
-    
-    Phase 16.1: Resets FAILED clip to QUEUED.
-    Does NOT re-execute automatically - job must be started/resumed.
-    
-    Args:
-        task_id: Clip task identifier
-        
-    Returns:
-        Operation result
-    """
-    try:
-        job_registry = request.app.state.job_registry
-        
-        # Find task across all jobs
-        for job in job_registry.list_jobs():
-            for task in job.tasks:
-                if task.id == task_id:
-                    if task.status != TaskStatus.FAILED:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Can only retry FAILED clips. Current status: {task.status.value}"
-                        )
-                    
-                    # Reset to queued
-                    task.status = TaskStatus.QUEUED
-                    task.failure_reason = None
-                    task.started_at = None
-                    task.completed_at = None
-                    task.output_path = None
-                    task.retry_count += 1
-                    
-                    logger.info(f"Clip {task_id} reset to QUEUED for retry (attempt {task.retry_count})")
-                    
-                    return OperationResponse(
-                        success=True,
-                        message=f"Clip {task_id} queued for retry"
-                    )
-        
-        raise HTTPException(status_code=404, detail=f"Clip task not found: {task_id}")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Retry failed for clip {task_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Retry failed: {e}")
+# REMOVED: retry clip endpoint - violates golden path (no retry logic)
+# @router.post("/clips/{task_id}/retry", response_model=OperationResponse)
+# async def retry_clip_endpoint(task_id: str, request: Request):
+#     ...
 
 
 # =============================================================================

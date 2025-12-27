@@ -92,8 +92,7 @@ class ClipTask(BaseModel):
     failure_reason: Optional[str] = None  # Set when status is FAILED or SKIPPED
     warnings: List[str] = Field(default_factory=list)  # Non-blocking warnings
     
-    # Future-proofing (stub only, no behavior)
-    retry_count: int = 0
+    # REMOVED: retry_count - violates golden path (no retry logic)
     
     # Media metadata (populated at ingest, Phase 16.1)
     width: Optional[int] = None

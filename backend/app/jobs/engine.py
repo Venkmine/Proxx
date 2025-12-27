@@ -79,6 +79,12 @@ class JobEngine:
         if not source_paths:
             raise ValueError("Cannot create job with empty source paths list")
         
+        # GOLDEN PATH: Hard limit = 1 clip
+        if len(source_paths) > 1:
+            raise ValueError(
+                f"Multi-clip jobs are disabled. Only 1 clip allowed (received {len(source_paths)})"
+            )
+        
         import logging
         logger = logging.getLogger(__name__)
         
