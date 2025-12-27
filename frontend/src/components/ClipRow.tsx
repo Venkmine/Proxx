@@ -375,10 +375,10 @@ export function ClipRow({
             paddingLeft: '1.5rem',
             fontSize: '0.75rem',
             color: 'var(--status-failed-fg)',
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font-mono)',
           }}
         >
-          Error: {failureReason}
+          <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 500 }}>Error:</span> {failureReason}
         </div>
       )}
 
@@ -390,10 +390,10 @@ export function ClipRow({
             paddingLeft: '1.5rem',
             fontSize: '0.75rem',
             color: 'var(--status-warning-fg)',
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font-mono)',
           }}
         >
-          Warnings: {warnings.join(', ')}
+          <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 500 }}>Warnings:</span> {warnings.join(', ')}
         </div>
       )}
 

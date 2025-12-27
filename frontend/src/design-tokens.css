@@ -197,13 +197,44 @@ button {
   line-height: 1.25;
 }
 
-/* Monospace - code, paths, IDs */
-code, pre, .monospace,
+/* Monospace - code, paths, IDs, timestamps, technical metadata */
+code, pre, .monospace, .font-mono,
 [style*="font-family: monospace"],
 [style*="font-family: var(--font-mono)"] {
   font-family: var(--font-mono);
   font-weight: 400;
   font-size: 0.8125em;
+  letter-spacing: -0.02em;
+}
+
+/* ==============================================
+   SEMANTIC TYPOGRAPHY UTILITIES
+   Per v0 design: clear separation of human UI from machine data
+   ============================================== */
+
+/* Human UI text: headings, labels, buttons, descriptions */
+.font-sans, .font-ui {
+  font-family: var(--font-sans);
+}
+
+/* Machine data: job IDs, file paths, timecodes, timestamps, metadata */
+.font-mono, .font-data {
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+/* Mixed content utility: label + value pattern */
+.label-value-pair .label {
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+.label-value-pair .value {
+  font-family: var(--font-mono);
+}
+
+/* Technical identifiers: always mono */
+.job-id, .clip-id, .file-path, .timecode, .timestamp {
+  font-family: var(--font-mono);
   letter-spacing: -0.02em;
 }
 

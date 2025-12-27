@@ -417,7 +417,7 @@ export function JobGroup({
               ▶ Render
             </button>
           )}
-          {/* Cancel button for RUNNING jobs */}
+          {/* Cancel button for RUNNING jobs - UI Honesty: styled as subdued/best-effort */}
           {showCancel && onCancel && (
             <button
               data-testid="btn-job-cancel"
@@ -428,22 +428,22 @@ export function JobGroup({
               disabled={loading}
               style={{
                 background: 'none',
-                border: '1px solid var(--error-border)',
+                border: '1px solid var(--border-secondary)',
                 borderRadius: 'var(--radius-sm)',
                 padding: '0.25rem 0.5rem',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 fontSize: '0.6875rem',
                 fontFamily: 'var(--font-sans)',
-                color: 'var(--error-fg)',
-                opacity: loading ? 0.5 : 1,
+                color: 'var(--text-muted)',
+                opacity: loading ? 0.5 : 0.8,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.25rem',
                 transition: 'all 0.15s',
               }}
-              title="Cancel this running job"
+              title="Request cancellation (best-effort, may not stop immediately)"
             >
-              ⏹ Cancel
+              ⏹ Stop
             </button>
           )}
           {/* Delete button for non-running jobs */}
@@ -456,14 +456,14 @@ export function JobGroup({
               disabled={loading}
               style={{
                 background: 'none',
-                border: '1px solid var(--error-border)',
+                border: '1px solid var(--border-secondary)',
                 borderRadius: 'var(--radius-sm)',
                 padding: '0.25rem 0.5rem',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 fontSize: '0.6875rem',
                 fontFamily: 'var(--font-sans)',
-                color: 'var(--error-fg)',
-                opacity: loading ? 0.5 : 1,
+                color: 'var(--text-muted)',
+                opacity: loading ? 0.5 : 0.8,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.25rem',
@@ -471,7 +471,7 @@ export function JobGroup({
               }}
               title="Remove this job from queue"
             >
-              ✕ Remove
+              ✕
             </button>
           )}
         </div>
@@ -627,20 +627,32 @@ export function JobGroup({
                 )}
               </div>
 
-              {/* Timestamps */}
+              {/* Timestamps - labels use sans, values use mono */}
               <div
                 style={{
                   marginTop: '0.75rem',
                   fontSize: '0.6875rem',
                   color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
                   display: 'flex',
                   gap: '1.5rem',
                 }}
               >
-                <span>Created: {new Date(createdAt).toLocaleString()}</span>
-                {startedAt && <span>Started: {new Date(startedAt).toLocaleString()}</span>}
-                {completedAt && <span>Completed: {new Date(completedAt).toLocaleString()}</span>}
+                <span>
+                  <span style={{ fontFamily: 'var(--font-sans)' }}>Created </span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(createdAt).toLocaleString()}</span>
+                </span>
+                {startedAt && (
+                  <span>
+                    <span style={{ fontFamily: 'var(--font-sans)' }}>Started </span>
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(startedAt).toLocaleString()}</span>
+                  </span>
+                )}
+                {completedAt && (
+                  <span>
+                    <span style={{ fontFamily: 'var(--font-sans)' }}>Completed </span>
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{new Date(completedAt).toLocaleString()}</span>
+                  </span>
+                )}
               </div>
               
               {/* Hardening: Job Diagnostics Panel (Alpha-only) */}
