@@ -4,8 +4,9 @@
 import { useState } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
-import { ExplicitDropZone } from './ExplicitDropZone'
-import { FEATURE_FLAGS } from '../config/featureFlags'
+// REMOVED: Drag & drop completely removed from UI for honesty
+// import { ExplicitDropZone } from './ExplicitDropZone'
+// import { FEATURE_FLAGS } from '../config/featureFlags'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import { PresetSummary, getPresetDescriptionLine } from './PresetSummary'
 import type { DeliverSettings } from './DeliverControlPanel'
@@ -22,14 +23,16 @@ import type { DeliverSettings } from './DeliverControlPanel'
  * Phase 3 improvements:
  * - Clearer labels: "Add to Queue" becomes explicit job creation
  * - Immediate feedback when job is created
- * - File selection paths unchanged (working ingestion pipeline preserved)
- * - Drag & drop unchanged (working ingestion pipeline preserved)
+ * - Explicit file/folder selection via buttons (no drag & drop)
  * 
  * Architecture:
  * - File selection (Electron: file picker, Browser: manual path entry)
  * - Output directory (required)
  * - Engine selection (FFmpeg only)
  * - "Add to Queue" triggers useIngestion.ingest() → job appears in queue
+ * 
+ * NOTE: Drag & drop removed from UI for honesty.
+ * Use explicit "Select Files" and "Select Folder" buttons.
  * 
  * LAYOUT RULE: This component receives space from App.tsx.
  * It MUST NOT set its own max-width or decide its visibility.
@@ -383,13 +386,17 @@ export function CreateJobPanel({
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {/* Phase 4C: Explicit Drop Zone */}
-        {FEATURE_FLAGS.EXPLICIT_DROP_ZONE_ENABLED && onFilesDropped && (
-          <ExplicitDropZone
-            onFilesDropped={onFilesDropped}
-            disabled={loading || isDesignMode}
-          />
-        )}
+        {/* REMOVED: Drag & drop completely removed from UI for honesty.
+            Use explicit "Select Files" and "Select Folder" buttons instead.
+            
+            Previous code:
+            {FEATURE_FLAGS.EXPLICIT_DROP_ZONE_ENABLED && onFilesDropped && (
+              <ExplicitDropZone
+                onFilesDropped={onFilesDropped}
+                disabled={loading || isDesignMode}
+              />
+            )}
+        */}
 
         {/* File Selection */}
         <div>

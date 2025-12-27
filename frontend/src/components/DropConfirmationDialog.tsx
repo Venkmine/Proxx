@@ -1,5 +1,14 @@
 import React from 'react';
 
+/**
+ * DropConfirmationDialog — DEPRECATED (not used in UI)
+ * 
+ * @deprecated Drag & drop completely removed from UI for honesty.
+ * Use explicit "Select Files" and "Select Folder" buttons instead.
+ * 
+ * This component is kept for reference but is not imported anywhere.
+ */
+
 interface DropConfirmationDialogProps {
   isOpen: boolean;
   paths: string[];

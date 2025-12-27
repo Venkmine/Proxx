@@ -8,11 +8,13 @@
  * This component combines text and image overlays into a single spatial editor
  * that temporarily takes over the centre panel. Features:
  * - Static 16:9 preview canvas
- * - Drag positioning for overlays
+ * - Click-to-position overlays
  * - Text layer controls (font, size, position, opacity, tokens)
- * - Image overlay controls (drag-drop upload, scale, opacity, grayscale)
+ * - Image overlay controls (file selection, scale, opacity, grayscale)
  * - Title/Action safe guides
  * - Exit returns to Preset Editor with state preserved
+ * 
+ * NOTE: Drag & drop removed from UI for honesty. Use explicit file selection.
  */
 
 import React, { useState, useRef } from 'react'
@@ -108,7 +110,7 @@ export function BurnInsEditor({
   const [selectedLayerIndex, setSelectedLayerIndex] = useState<number | null>(
     settings.text_layers.length > 0 ? 0 : null
   )
-  const [isDraggingImage, setIsDraggingImage] = useState(false)
+  // REMOVED: isDraggingImage state - drag & drop removed from UI
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
 
@@ -178,19 +180,7 @@ export function BurnInsEditor({
     reader.readAsDataURL(file)
   }
 
-  const handleFileDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDraggingImage(false)
-    
-    const files = e.dataTransfer.files
-    if (files.length > 0) {
-      const file = files[0]
-      const validTypes = ['image/png', 'image/jpeg', 'image/tiff']
-      if (validTypes.includes(file.type) || file.name.match(/\.(png|jpg|jpeg|tiff|tif)$/i)) {
-        handleFileUpload(file)
-      }
-    }
-  }
+  // REMOVED: handleFileDrop - drag & drop removed from UI for honesty
 
   const updateImageOverlay = (updates: Partial<ImageOverlay & { scale?: number; grayscale?: boolean }>) => {
     if (!settings.image_watermark) return
@@ -884,25 +874,15 @@ export function BurnInsEditor({
             {activeTab === 'image' && (
               <div data-testid="burnins-image-controls">
                 {!settings.image_watermark ? (
-                  // Upload zone
+                  // Upload zone - click only, no drag & drop
                   <div
                     data-testid="burnins-image-upload"
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                      setIsDraggingImage(true)
-                    }}
-                    onDragLeave={() => setIsDraggingImage(false)}
-                    onDrop={handleFileDrop}
                     onClick={() => !disabled && fileInputRef.current?.click()}
                     style={{
                       padding: '2rem',
-                      border: isDraggingImage
-                        ? '2px dashed var(--button-primary-bg)'
-                        : '2px dashed var(--border-primary)',
+                      border: '2px dashed var(--border-primary)',
                       borderRadius: 'var(--radius-sm)',
-                      background: isDraggingImage
-                        ? 'rgba(59, 130, 246, 0.1)'
-                        : 'rgba(51, 65, 85, 0.1)',
+                      background: 'rgba(51, 65, 85, 0.1)',
                       textAlign: 'center',
                       cursor: disabled ? 'not-allowed' : 'pointer',
                     }}
@@ -919,13 +899,11 @@ export function BurnInsEditor({
                     <div
                       style={{
                         fontSize: '0.75rem',
-                        color: isDraggingImage
-                          ? 'var(--button-primary-bg)'
-                          : 'var(--text-secondary)',
+                        color: 'var(--text-secondary)',
                         marginBottom: '0.25rem',
                       }}
                     >
-                      {isDraggingImage ? 'Drop image here' : 'Drag & drop image here'}
+                      Click to select image
                     </div>
                     <div
                       style={{
@@ -933,7 +911,7 @@ export function BurnInsEditor({
                         color: 'var(--text-dim)',
                       }}
                     >
-                      or click to browse • PNG, JPG, TIFF
+                      PNG, JPG, TIFF
                     </div>
                   </div>
                 ) : (

@@ -17,10 +17,11 @@ import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { PresetPositionConflictDialog } from './components/PresetPositionConflictDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
-// INC-004: GlobalDropZone removed - drag & drop disabled for Alpha stability
+// REMOVED: All drag & drop completely removed from UI for honesty
 // import { GlobalDropZone } from './components/GlobalDropZone'
 import { InvariantBanner } from './components/InvariantBanner'
-import { DropConfirmationDialog } from './components/DropConfirmationDialog'
+// REMOVED: DropConfirmationDialog - drag & drop removed from UI
+// import { DropConfirmationDialog } from './components/DropConfirmationDialog'
 import { assertJobPendingForRender, assertNoSilentPresetOverwrite } from './utils/invariants'
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
@@ -29,7 +30,7 @@ import { logStateTransition } from './utils/logger'
 import { FEATURE_FLAGS } from './config/featureFlags'
 import { usePresets } from './hooks/usePresets'
 import { useIngestion } from './hooks/useIngestion'
-// INC-004: Global file drop disabled for Alpha stability
+// REMOVED: Drag & drop completely removed from UI for honesty
 // import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
@@ -48,7 +49,7 @@ import { useWorkspaceModeStore } from './stores/workspaceModeStore'
  * - ALL jobs visible at all times (no inspector-style single job view)
  * - Each job is a GROUP showing its clips by default
  * - Selecting a job changes AVAILABLE CONTROLS, not VISIBILITY
- * - Jobs are reorderable via drag & drop
+ * - Jobs are reorderable in the queue
  * - Create Job panel persists after job creation
  * 
  * Phase 16: Full operator control with start, pause, delete, global filters.
@@ -258,33 +259,15 @@ function App() {
     return saved ? JSON.parse(saved) : []
   })
 
-  // Drag state for job reordering
+  // Drag state for job reordering (not file drag & drop)
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   
   // ============================================
-  // INC-004: GLOBAL DRAG & DROP DISABLED
+  // DRAG & DROP REMOVED FOR HONESTY
   // ============================================
-  // Drag & drop was causing stability issues (whitescreen crash risk).
-  // Users must use the explicit "Browse..." buttons to add sources.
-  // This is intentional for Alpha - honesty over convenience.
-  /*
-  const globalDrop = useGlobalFileDrop({
-    onDropFiles: (paths: string[]) => {
-      if (paths.length > 0) {
-        ingestion.addPendingPaths(paths)
-        setSelectedJobId(null)
-        console.log(`GlobalDrop: Added ${paths.length} source file(s)`)
-      }
-    },
-    onDropOutputDirectory: (path: string) => {
-      if (path) {
-        setOutputDirectory(path)
-        console.log(`GlobalDrop: Set output directory to ${path}`)
-      }
-    },
-    enabled: true,
-  })
-  */
+  // Drag & drop completely removed from UI.
+  // Users must use the explicit "Select Files" and "Select Folder" buttons.
+  // This is intentional - honesty over convenience.
 
   // Alpha: Copilot Prompt window state (hidden in Alpha, available for dev)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -305,9 +288,9 @@ function App() {
   const [positionConflictDialogOpen, setPositionConflictDialogOpen] = useState<boolean>(false)
   const [pendingPresetSettings, setPendingPresetSettings] = useState<DeliverSettings | null>(null)
   
-  // Phase 4C: Dropped files confirmation state
-  const [droppedPaths, setDroppedPaths] = useState<string[]>([])
-  const [showDropConfirmation, setShowDropConfirmation] = useState<boolean>(false)
+  // REMOVED: Drag & drop completely removed from UI for honesty
+  // const [droppedPaths, setDroppedPaths] = useState<string[]>([])
+  // const [showDropConfirmation, setShowDropConfirmation] = useState<boolean>(false)
 
   // ============================================
   // Phase 17: DeliverSettings State (Authoritative)
@@ -593,74 +576,20 @@ function App() {
     }
   }, [outputDirectory])
 
-  // Phase 20: Global document-level drag/drop handlers for authoritative file intake
-  // PHASE 0 STABILIZATION: Disabled behind feature flag to prevent whitescreen crashes
+  // DRAG & DROP REMOVED: Prevent browser default file opening behavior
+  // Drag & drop is completely removed from UI for honesty.
+  // Users must use explicit "Select Files" and "Select Folder" buttons.
   useEffect(() => {
-    // Feature flag gate: skip if drag/drop is disabled
-    if (!FEATURE_FLAGS.GLOBAL_DRAG_DROP_ENABLED) {
-      // Prevent browser default (opening files) but don't enable our drop handling
-      const preventDefaultDrop = (e: DragEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-      }
-      document.addEventListener('dragover', preventDefaultDrop)
-      document.addEventListener('drop', preventDefaultDrop)
-      return () => {
-        document.removeEventListener('dragover', preventDefaultDrop)
-        document.removeEventListener('drop', preventDefaultDrop)
-      }
-    }
-
-    const handleDocumentDragOver = (e: DragEvent) => {
-      // Prevent browser default (which would open the file)
-      e.preventDefault()
-      if (e.dataTransfer?.types.includes('Files')) {
-        setIsDraggingFiles(true)
-        e.dataTransfer.dropEffect = 'copy'
-      }
-    }
-
-    const handleDocumentDragLeave = (e: DragEvent) => {
-      // Only hide overlay if leaving the window entirely
-      if (e.relatedTarget === null) {
-        setIsDraggingFiles(false)
-      }
-    }
-
-    const handleDocumentDrop = (e: DragEvent) => {
+    // Prevent browser default (opening files when dropped)
+    const preventDefaultDrop = (e: DragEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      setIsDraggingFiles(false)
-
-      const newPaths: string[] = []
-      const files = e.dataTransfer?.files
-      if (files) {
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i]
-          // ALPHA BLOCKER FIX: Only use absolute paths from Electron
-          const filePath = (file as any).path
-          // Validate path is absolute (contains /)
-          if (filePath && filePath.includes('/')) {
-            newPaths.push(filePath)
-          }
-        }
-      }
-
-      if (newPaths.length > 0) {
-        console.log('Document drop: Adding files to intake:', newPaths)
-        ingestion.addPendingPaths(newPaths)
-        setSelectedJobId(null)
-      }
     }
-
-    document.addEventListener('dragover', handleDocumentDragOver)
-    document.addEventListener('dragleave', handleDocumentDragLeave)
-    document.addEventListener('drop', handleDocumentDrop)
-
+    document.addEventListener('dragover', preventDefaultDrop)
+    document.addEventListener('drop', preventDefaultDrop)
     return () => {
-      document.removeEventListener('dragover', handleDocumentDragOver)
-      document.removeEventListener('dragleave', handleDocumentDragLeave)
-      document.removeEventListener('drop', handleDocumentDrop)
+      document.removeEventListener('dragover', preventDefaultDrop)
+      document.removeEventListener('drop', preventDefaultDrop)
     }
   }, [])
 
@@ -1009,6 +938,9 @@ function App() {
     setSelectedJobId(result.jobId)
   }
   
+  /* REMOVED: Drag & drop completely removed from UI for honesty
+   * Use explicit "Select Files" and "Select Folder" buttons instead.
+   *
   // Phase 4C: Drop confirmation flow handlers
   const handleFilesDropped = useCallback((paths: string[]) => {
     // Check for blocking conditions
@@ -1112,6 +1044,7 @@ function App() {
     setShowDropConfirmation(false)
     setDroppedPaths([])
   }, [])
+  */
 
   // ============================================
   // File/Folder Selection (Electron)
@@ -1625,7 +1558,7 @@ function App() {
   }, [selectedJobId, jobDetails, selectedClipIds, selectedFiles, undoStack, deleteJob])
 
   // ============================================
-  // Job Drag & Drop Reordering
+  // Job Reordering (internal drag between queue items only)
   // ============================================
 
   const handleJobDragStart = useCallback((jobId: string) => (e: React.DragEvent) => {
@@ -1664,12 +1597,6 @@ function App() {
 
     setDraggedJobId(null)
   }, [draggedJobId])
-
-  // ============================================
-  // File Drag & Drop handlers removed
-  // ============================================
-  // Drag & drop now managed by useGlobalFileDrop hook (see above).
-  // All file drops route through ingestion.addPendingPaths().
 
   // ============================================
   // Ordered and Filtered Jobs
@@ -1876,7 +1803,7 @@ function App() {
         LEFT SIDEBAR (fixed ~320px):
         - Sources panel
         - Volumes panel (placeholder)
-        - Drag-and-drop ingestion
+        - File/folder selection (explicit buttons)
         
         CENTRE TOP (flexible, 70% default):
         - VisualPreviewWorkspace (always visible)
@@ -1906,15 +1833,7 @@ function App() {
           minWidth: '1280px',
         }}
       >
-        {/* INC-004: Global Drop Zone REMOVED for Alpha stability
-            Use the explicit "Browse..." buttons to add sources.
-        <GlobalDropZone
-          isVisible={globalDrop.isDragging}
-          onDropFiles={globalDrop.handleSourcesDrop}
-          onDropOutputDirectory={globalDrop.handleOutputDrop}
-          onDragLeave={globalDrop.handleDragLeave}
-        />
-        */}
+        {/* DRAG & DROP REMOVED - Use explicit "Select Files" and "Select Folder" buttons */}
         
         {/* 4-Region Workspace Layout */}
         <WorkspaceLayout
@@ -2251,13 +2170,14 @@ function App() {
         onResetToPreset={handleResetToPreset}
       />
       
-      {/* Phase 4C: Drop Confirmation Dialog */}
+      {/* REMOVED: Drag & drop completely removed from UI for honesty
       <DropConfirmationDialog
         isOpen={showDropConfirmation}
         paths={droppedPaths}
         onConfirm={handleDropConfirm}
         onCancel={handleDropCancel}
       />
+      */}
       
       {/* Phase 22: Splash Screen - shown during startup/engine detection */}
       {showSplash && (

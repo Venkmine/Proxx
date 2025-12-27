@@ -35,10 +35,10 @@ export const FEATURE_FLAGS = {
   
   /**
    * Explicit Drop Zone
-   * When true: Enables the explicit drop zone in CreateJobPanel for drag & drop ingestion.
-   * Files/folders dropped must be confirmed before ingestion begins.
+   * REMOVED: Drag & drop completely removed from UI for honesty.
+   * Use explicit "Select Files" and "Select Folder" buttons instead.
    */
-  EXPLICIT_DROP_ZONE_ENABLED: true,
+  EXPLICIT_DROP_ZONE_ENABLED: false,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS

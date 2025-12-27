@@ -1,14 +1,12 @@
 import React, { useState, useCallback } from 'react'
 
 /**
- * GlobalDropZone — Full-viewport drag overlay (Alpha)
+ * GlobalDropZone — DEPRECATED (not used in UI)
  * 
- * Alpha redesign: Two distinct drop zones
- * - Source files: Accept media files (video/audio)
- * - Output directory: Accept folder drops
+ * @deprecated Drag & drop completely removed from UI for honesty.
+ * Use explicit "Select Files" and "Select Folder" buttons instead.
  * 
- * Clear visual affordances for each zone.
- * Uses the same ingestion pipeline as "Browse..." selection.
+ * This component is kept for reference but is not imported anywhere.
  */
 
 interface GlobalDropZoneProps {

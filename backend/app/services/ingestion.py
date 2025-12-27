@@ -3,9 +3,11 @@ IngestionService — Canonical Job Ingestion Pipeline.
 
 This is THE SINGLE ENTRY POINT for all job creation:
 - File browser selection
-- Drag & drop
-- Watch folder automation
-- Directory navigator (future)
+- Directory navigator selection
+- Watch folder automation (future)
+
+NOTE: Drag & drop removed from UI for honesty.
+Use explicit "Select Files" and "Select Folder" buttons.
 
 All paths flow through ingest_sources() which:
 1. Validates paths exist and are readable files

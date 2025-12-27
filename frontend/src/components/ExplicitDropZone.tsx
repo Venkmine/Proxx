@@ -1,5 +1,14 @@
 import React, { useState, useCallback } from 'react';
 
+/**
+ * ExplicitDropZone — DEPRECATED (not used in UI)
+ * 
+ * @deprecated Drag & drop completely removed from UI for honesty.
+ * Use explicit "Select Files" and "Select Folder" buttons instead.
+ * 
+ * This component is kept for reference but is disabled via feature flag.
+ */
+
 // ============================================================================
 // FILE EXTENSIONS
 // ============================================================================
