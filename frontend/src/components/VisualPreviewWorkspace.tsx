@@ -1043,18 +1043,20 @@ export function VisualPreviewWorkspace({
                       left: `${pos.x * 100}%`,
                       top: `${pos.y * 100}%`,
                       transform: 'translate(-50%, -50%)',
+                      // FFmpeg: box=1:boxcolor=black@0.5:boxborderw=5
                       padding: '0.25rem 0.5rem',
-                      backgroundColor: layer.settings.background 
-                        ? (layer.settings.background_color || 'rgba(0, 0, 0, 0.6)') 
-                        : 'rgba(0, 0, 0, 0.6)',
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
                       borderRadius: 'var(--radius-sm)',
+                      // FFmpeg: fontsize={font_size} (scaled for preview)
                       fontSize: `${(layer.settings.font_size || 24) * 0.5}px`,
-                      fontFamily: layer.settings.font || 'Arial, sans-serif',
-                      color: layer.settings.color || 'white',
+                      // FFmpeg uses system default font
+                      fontFamily: 'system-ui, sans-serif',
+                      // FFmpeg: fontcolor=white@{opacity}
+                      color: 'white',
                       opacity: layer.settings.opacity || 1,
                       cursor: 'default',
                       whiteSpace: 'nowrap',
-                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                      // No textShadow - FFmpeg doesn't support it
                       userSelect: 'none',
                       pointerEvents: 'none',
                       zIndex,
@@ -1197,8 +1199,6 @@ export function VisualPreviewWorkspace({
               layer.x,
               layer.y
             )
-            // Type assertion for extended properties
-            const extLayer = layer as TextOverlay & { font?: string; color?: string; background?: boolean; background_color?: string; background_opacity?: number }
             
             return (
               <div
@@ -1209,18 +1209,20 @@ export function VisualPreviewWorkspace({
                   left: `${pos.x * 100}%`,
                   top: `${pos.y * 100}%`,
                   transform: 'translate(-50%, -50%)',
+                  // FFmpeg: box=1:boxcolor=black@0.5:boxborderw=5
                   padding: '0.25rem 0.5rem',
-                  backgroundColor: extLayer.background 
-                    ? (extLayer.background_color || 'rgba(0, 0, 0, 0.6)') 
-                    : 'rgba(0, 0, 0, 0.6)',
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
                   borderRadius: 'var(--radius-sm)',
+                  // FFmpeg: fontsize={font_size} (scaled for preview)
                   fontSize: `${layer.font_size * 0.5}px`,
-                  fontFamily: extLayer.font || 'Arial, sans-serif',
-                  color: extLayer.color || 'white',
+                  // FFmpeg uses system default font
+                  fontFamily: 'system-ui, sans-serif',
+                  // FFmpeg: fontcolor=white@{opacity}
+                  color: 'white',
                   opacity: layer.opacity,
                   cursor: 'default',
                   whiteSpace: 'nowrap',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                  // No textShadow - FFmpeg doesn't support it
                   userSelect: 'none',
                   pointerEvents: 'none',
                   zIndex: 10,

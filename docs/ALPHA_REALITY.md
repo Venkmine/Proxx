@@ -68,3 +68,43 @@ Alpha ends when:
 - Feature set stops changing weekly
 
 Only then do v1 rules apply.
+
+## Preview vs Output Parity (Text Watermark)
+
+### What Preview Shows = What FFmpeg Renders
+
+Text watermark rendering is now aligned between preview and output.
+
+**FFmpeg Output Parameters (engine_mapping.py):**
+```
+drawtext=text='{text}'
+        :fontsize={font_size}
+        :fontcolor=white@{opacity}
+        :x={position_x}:y={position_y}
+        :box=1:boxcolor=black@0.5:boxborderw=5
+```
+
+**Preview Matches:**
+- Font: system-ui (system default) — FFmpeg uses system default
+- Font size: `font_size * scale_factor` — scaled for preview display
+- Color: white — hardcoded in both
+- Opacity: from `layer.opacity` — same in both
+- Background: always visible, rgba(0,0,0,0.5) — matches `black@0.5`
+- Position: anchor-based only — no x,y pixel offsets
+
+### Intentional Differences
+
+| Feature | Preview | FFmpeg | Reason |
+|---------|---------|--------|--------|
+| Font size scaling | `* 0.4` or `* 0.5` | Actual pixels | Preview is smaller than video |
+| Border radius | CSS radius | None | Visual polish in preview only |
+
+### Not Supported (Removed from Preview)
+
+These fields exist in `TextOverlay` interface but are **ignored** by FFmpeg:
+- `font` — FFmpeg uses system default font
+- `color` — FFmpeg hardcodes white
+- `x`, `y` offsets — FFmpeg only uses position anchors
+- `textShadow` — FFmpeg doesn't support shadows
+
+These were removed from preview rendering to maintain parity.

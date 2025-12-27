@@ -244,14 +244,19 @@ export const PreviewViewport16x9 = forwardRef<HTMLDivElement, PreviewViewport16x
                 }}
                 style={{
                   position: 'absolute',
-                  left: `calc(${pos.x * 100}% + ${layer.x || 0}px)`,
-                  top: `calc(${pos.y * 100}% + ${layer.y || 0}px)`,
+                  // FFmpeg uses position anchors only - no x,y pixel offsets
+                  left: `${pos.x * 100}%`,
+                  top: `${pos.y * 100}%`,
                   transform: 'translate(-50%, -50%)',
+                  // FFmpeg: box=1:boxcolor=black@0.5:boxborderw=5
                   padding: '0.25rem 0.5rem',
-                  backgroundColor: (layer as any).background ? 'rgba(0, 0, 0, 0.6)' : 'transparent',
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
                   borderRadius: 'var(--radius-sm)',
+                  // FFmpeg: fontsize={font_size} (scaled for preview display)
                   fontSize: `${layer.font_size * 0.4}px`,
-                  fontFamily: (layer as any).font || 'Arial',
+                  // FFmpeg uses system default font
+                  fontFamily: 'system-ui, sans-serif',
+                  // FFmpeg: fontcolor=white@{opacity}
                   color: 'white',
                   opacity: layer.opacity,
                   cursor: 'pointer',
@@ -259,7 +264,7 @@ export const PreviewViewport16x9 = forwardRef<HTMLDivElement, PreviewViewport16x
                     ? '2px solid var(--button-primary-bg)' 
                     : '2px solid transparent',
                   whiteSpace: 'nowrap',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                  // No textShadow - FFmpeg doesn't support it
                   pointerEvents: 'auto',
                 }}
               >
