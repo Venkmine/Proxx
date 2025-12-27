@@ -1809,10 +1809,10 @@ function App() {
       >
         {/* DRAG & DROP REMOVED - Use explicit "Select Files" and "Select Folder" buttons */}
         
-        {/* 4-Region Workspace Layout */}
+        {/* 3-Zone Rigid Layout */}
         <WorkspaceLayout
-          leftSidebar={
-            /* LEFT SIDEBAR: MediaWorkspace - Tabbed Browse/Loaded Media with proper scrolling */
+          leftZone={
+            /* LEFT ZONE: MediaWorkspace - Sources */
             <MediaWorkspace
               selectedFiles={selectedFiles}
               onFilesChange={setSelectedFiles}
@@ -1852,8 +1852,23 @@ function App() {
               previewSourcePath={previewSourcePath}
             />
           }
-          rightSidebar={
-            /* RIGHT SIDEBAR: DeliverControlPanel + Presets */
+          centerZone={
+            /* CENTER ZONE: VisualPreviewWorkspace — Preview ONLY */
+            <VisualPreviewWorkspace
+              sourceFilePath={previewSourcePath}
+              hasSource={selectedJobId !== null || selectedFiles.length > 0}
+              backendUrl={BACKEND_URL}
+              overlaySettings={deliverSettings.overlay}
+              outputSummary={{
+                codec: deliverSettings.video?.codec?.toUpperCase(),
+                container: deliverSettings.file?.container,
+                resolution: deliverSettings.video?.resolution_policy === 'source' ? 'Source' : deliverSettings.video?.resolution_policy,
+                fps: deliverSettings.video?.frame_rate_policy === 'source' ? 'Source' : deliverSettings.video?.frame_rate_policy,
+              }}
+            />
+          }
+          rightZoneSettings={
+            /* RIGHT ZONE SETTINGS TAB: DeliverControlPanel + Presets */
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               {/* Preset Editor Header */}
               <PresetEditorHeader
@@ -1893,24 +1908,8 @@ function App() {
               />
             </div>
           }
-          centreTop={
-            /* CENTRE TOP: VisualPreviewWorkspace — Single Source of Truth for Preview */
-            /* v1: View-only preview, no overlay editing */
-            <VisualPreviewWorkspace
-              sourceFilePath={previewSourcePath}
-              hasSource={selectedJobId !== null || selectedFiles.length > 0}
-              backendUrl={BACKEND_URL}
-              overlaySettings={deliverSettings.overlay}
-              outputSummary={{
-                codec: deliverSettings.video?.codec?.toUpperCase(),
-                container: deliverSettings.file?.container,
-                resolution: deliverSettings.video?.resolution_policy === 'source' ? 'Source' : deliverSettings.video?.resolution_policy,
-                fps: deliverSettings.video?.frame_rate_policy === 'source' ? 'Source' : deliverSettings.video?.frame_rate_policy,
-              }}
-            />
-          }
-          centreBottom={
-            /* CENTRE BOTTOM: Queue Panel */
+          rightZoneQueue={
+            /* RIGHT ZONE QUEUE TAB: Queue Panel */
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               {/* Queue Filter Bar */}
               <QueueFilterBar
