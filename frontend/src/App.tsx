@@ -76,8 +76,9 @@ const BACKEND_URL = 'http://127.0.0.1:8085'
 //   1. Backend state.py: is_job_terminal() blocks illegal transitions
 //   2. Backend engine.py: compute_job_status() returns current status for terminal jobs
 //   3. Frontend: fetchJobs() preserves terminal states from prior state
+// V1: COMPLETED_WITH_WARNINGS removed - jobs are either COMPLETED or FAILED
 // ============================================================================
-const TERMINAL_JOB_STATES = new Set(['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'])
+const TERMINAL_JOB_STATES = new Set(['COMPLETED', 'FAILED', 'CANCELLED'])
 
 function isJobTerminal(status: string): boolean {
   return TERMINAL_JOB_STATES.has(status.toUpperCase())
@@ -710,14 +711,6 @@ function App() {
             job.completed_count,
             job.total_tasks
           ))
-        } else if (currentStatus === 'COMPLETED_WITH_WARNINGS') {
-          addStatusLogEntry(statusMessages.jobCompletedWithWarnings(
-            job.id,
-            job.completed_count,
-            job.failed_count,
-            job.skipped_count,
-            job.total_tasks
-          ))
         } else if (currentStatus === 'FAILED') {
           addStatusLogEntry(statusMessages.jobFailed(job.id))
         }
@@ -878,6 +871,8 @@ function App() {
         setSelectedJobId(null)
         setSelectedClipIds(new Set())
       }
+      // V1 Hardening: Clear any error banner when job is successfully deleted
+      setError('')
       addStatusLogEntry(statusMessages.jobDeleted(jobId))
       await fetchJobs()
       
@@ -1443,8 +1438,9 @@ function App() {
     if (expandedJobIds.has(jobId)) return true
     
     // Job Lifecycle Truth: Auto-collapse completed/terminal jobs
+    // V1: COMPLETED_WITH_WARNINGS removed - only COMPLETED, FAILED, CANCELLED are terminal
     const normalizedStatus = status?.toUpperCase() || ''
-    const isTerminal = ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
+    const isTerminal = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
     if (isTerminal) return false
     
     // Default: single-clip jobs are expanded, multi-clip jobs are collapsed
@@ -1682,11 +1678,11 @@ function App() {
     }
     
     jobs.forEach(job => {
+      // V1: COMPLETED_WITH_WARNINGS removed - only COMPLETED or FAILED
       const status = job.status.toLowerCase()
       if (status === 'running') counts.running++
       else if (status === 'pending') counts.pending++
       else if (status === 'completed') counts.completed++
-      else if (status === 'completed_with_warnings') counts.completed++
       else if (status === 'failed') counts.failed++
       else if (status === 'cancelled') counts.cancelled++
       

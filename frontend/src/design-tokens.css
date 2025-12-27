@@ -97,7 +97,8 @@
   --status-skipped-fg: #fbbf24;
   --status-skipped-bg: rgba(120, 53, 15, 0.25);
 
-  /* Status: COMPLETED_WITH_WARNINGS */
+  /* Status: WARNING (used for warning indicators, not a job status) */
+  /* V1: COMPLETED_WITH_WARNINGS removed - jobs are COMPLETED or FAILED */
   --status-warning-fg: #fb923c;
   --status-warning-bg: rgba(67, 20, 7, 0.35);
 

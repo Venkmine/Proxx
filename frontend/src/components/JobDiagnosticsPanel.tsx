@@ -11,12 +11,77 @@
  * - Settings snapshot (collapsed JSON)
  * - Overlay layer summary
  * - Last state transition + timestamp
- * - Last error message (if any)
+ * - Last error message (if any) — humanized for users
  * - Preset source info with scope (Phase 7B)
+ * 
+ * V1 Hardening:
+ * - Failure reasons are mapped to human-readable messages
+ * - No stack traces or raw Python errors shown to users
  */
 
 import { useState } from 'react'
 import type { DeliverSettings, OverlayLayer } from './DeliverControlPanel'
+
+// ============================================================================
+// FAILURE REASON MAPPING
+// ============================================================================
+// Maps technical error patterns to human-readable messages.
+// This prevents raw Python errors from appearing in the UI.
+// ============================================================================
+
+function humanizeFailureReason(reason: string | null | undefined): string | null {
+  if (!reason) return null
+  
+  // Normalize for pattern matching
+  const normalized = reason.toLowerCase()
+  
+  // Output file issues
+  if (normalized.includes('output file not found') || normalized.includes('output missing')) {
+    return 'Output file was not created. Check disk space and permissions.'
+  }
+  if (normalized.includes('output collision') || normalized.includes('file exists')) {
+    return 'Output file already exists. Change naming or enable overwrite.'
+  }
+  
+  // FFmpeg specific
+  if (normalized.includes('ffmpeg') && normalized.includes('not found')) {
+    return 'FFmpeg is not installed or not in PATH.'
+  }
+  if (normalized.includes('exit code') || normalized.includes('non-zero')) {
+    return 'Encoding failed. Check source file compatibility.'
+  }
+  
+  // Permission issues
+  if (normalized.includes('permission denied') || normalized.includes('access denied')) {
+    return 'Permission denied. Check file and folder permissions.'
+  }
+  
+  // Source file issues
+  if (normalized.includes('source') && (normalized.includes('not found') || normalized.includes('missing'))) {
+    return 'Source file not found. File may have been moved or deleted.'
+  }
+  if (normalized.includes('invalid') && normalized.includes('source')) {
+    return 'Source file is invalid or corrupted.'
+  }
+  
+  // Codec issues
+  if (normalized.includes('codec') && (normalized.includes('unsupported') || normalized.includes('not supported'))) {
+    return 'Unsupported codec. Try a different output format.'
+  }
+  
+  // Generic execution failures - hide technical details
+  if (normalized.includes('engine execution failed')) {
+    return 'Encoding engine failed. See logs for details.'
+  }
+  
+  // If the reason is short and readable, use it directly
+  if (reason.length < 60 && !normalized.includes('traceback') && !normalized.includes('exception')) {
+    return reason
+  }
+  
+  // Fallback: truncate long technical messages
+  return 'Encoding failed. Check system logs for details.'
+}
 
 // ============================================================================
 // TYPES
@@ -297,11 +362,11 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
             value={`${lastTransition.state} at ${formatTimestamp(lastTransition.timestamp)}`}
           />
           
-          {/* Last Error (if any) */}
+          {/* Last Error (if any) - humanized for user display */}
           {data.lastError && (
             <DiagnosticRow
               label="Last Error"
-              value={data.lastError}
+              value={humanizeFailureReason(data.lastError) || 'Unknown error'}
               highlight="error"
             />
           )}

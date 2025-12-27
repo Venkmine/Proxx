@@ -4,6 +4,7 @@
  * 
  * Phase 16: Resolve-inspired status colors with animated pulse for RUNNING.
  * Hardening: All backend states explicitly supported.
+ * V1: COMPLETED_WITH_WARNINGS removed - jobs are either COMPLETED or FAILED.
  */
 
 export type StatusType = 
@@ -12,7 +13,6 @@ export type StatusType =
   | 'RUNNING'
   | 'PAUSED'
   | 'COMPLETED'
-  | 'COMPLETED_WITH_WARNINGS'
   | 'FAILED'
   | 'CANCELLED'
   | 'RECOVERY_REQUIRED'
@@ -24,7 +24,6 @@ export type StatusType =
   | 'running'
   | 'paused'
   | 'completed'
-  | 'completed_with_warnings'
   | 'failed'
   | 'cancelled'
   | 'recovery_required'
@@ -54,7 +53,7 @@ const statusColors: Record<string, { bg: string; fg: string; glow?: string; bord
   },
   PAUSED: { bg: 'var(--status-paused-bg)', fg: 'var(--status-paused-fg)' },
   COMPLETED: { bg: 'var(--status-completed-bg)', fg: 'var(--status-completed-fg)', glow: 'var(--status-completed-glow)' },
-  COMPLETED_WITH_WARNINGS: { bg: 'var(--status-warning-bg)', fg: 'var(--status-warning-fg)' },
+  // V1: COMPLETED_WITH_WARNINGS removed - use COMPLETED (warnings logged) or FAILED
   FAILED: { bg: 'var(--status-failed-bg)', fg: 'var(--status-failed-fg)', glow: 'var(--status-failed-glow)' },
   CANCELLED: { bg: 'var(--status-cancelled-bg)', fg: 'var(--status-cancelled-fg)' },
   RECOVERY_REQUIRED: { bg: 'var(--status-recovery-bg)', fg: 'var(--status-recovery-fg)', glow: 'var(--status-recovery-glow)' },
