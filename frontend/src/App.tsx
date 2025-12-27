@@ -17,6 +17,7 @@ import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { PresetPositionConflictDialog } from './components/PresetPositionConflictDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
+import { StatusLog, StatusLogEntry } from './components/StatusLog'
 // REMOVED: All drag & drop completely removed from UI for honesty
 // import { GlobalDropZone } from './components/GlobalDropZone'
 import { InvariantBanner } from './components/InvariantBanner'
@@ -25,6 +26,7 @@ import { InvariantBanner } from './components/InvariantBanner'
 import { assertJobPendingForRender, assertNoSilentPresetOverwrite } from './utils/invariants'
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
+import * as statusMessages from './utils/statusMessages'
 // Alpha: Copilot imports hidden (dev feature)
 // import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
 import { FEATURE_FLAGS } from './config/featureFlags'
@@ -189,6 +191,9 @@ function App() {
   // React state updates are async, so rapid clicks can trigger duplicate operations
   // before loading=true has been rendered. Use refs to block immediately.
   const jobOperationInFlight = useRef<Set<string>>(new Set())
+  
+  // Status log: Track previous job statuses to detect transitions
+  const prevJobStatuses = useRef<Map<string, string>>(new Map())
 
   // Global status filters (Phase 16: applies to job list)
   const [globalStatusFilters, setGlobalStatusFilters] = useState<Set<string>>(new Set())
@@ -196,6 +201,12 @@ function App() {
   // Search and date filter
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week'>('all')
+
+  // Status log entries
+  const [statusLogEntries, setStatusLogEntries] = useState<StatusLogEntry[]>([])
+  const addStatusLogEntry = useCallback((entry: StatusLogEntry) => {
+    setStatusLogEntries(prev => [...prev, entry])
+  }, [])
 
   // Per-job clip status filters
   const [activeStatusFilters, setActiveStatusFilters] = useState<Set<string>>(new Set())
@@ -633,6 +644,47 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJobId])
+  
+  // Detect job status transitions for status log
+  useEffect(() => {
+    jobs.forEach(job => {
+      const prevStatus = prevJobStatuses.current.get(job.id)
+      const currentStatus = job.status.toUpperCase()
+      
+      // Only log if status actually changed
+      if (prevStatus && prevStatus !== currentStatus) {
+        // Check for terminal states
+        if (currentStatus === 'COMPLETED') {
+          addStatusLogEntry(statusMessages.jobCompleted(
+            job.id,
+            job.completed_count,
+            job.total_tasks
+          ))
+        } else if (currentStatus === 'COMPLETED_WITH_WARNINGS') {
+          addStatusLogEntry(statusMessages.jobCompletedWithWarnings(
+            job.id,
+            job.completed_count,
+            job.failed_count,
+            job.skipped_count,
+            job.total_tasks
+          ))
+        } else if (currentStatus === 'FAILED') {
+          addStatusLogEntry(statusMessages.jobFailed(job.id))
+        }
+      }
+      
+      // Update tracked status
+      prevJobStatuses.current.set(job.id, currentStatus)
+    })
+    
+    // Clean up statuses for jobs that no longer exist
+    const currentJobIds = new Set(jobs.map(j => j.id))
+    Array.from(prevJobStatuses.current.keys()).forEach(jobId => {
+      if (!currentJobIds.has(jobId)) {
+        prevJobStatuses.current.delete(jobId)
+      }
+    })
+  }, [jobs, addStatusLogEntry])
 
   // ============================================
   // Phase 19: Undo Stack (Memory-only)
@@ -657,6 +709,7 @@ function App() {
         throw new Error(normalized.message)
       }
       logStateTransition(jobId, job?.status || null, 'RUNNING', 'App.resumeJob')
+      addStatusLogEntry(statusMessages.jobResumed(jobId))
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
@@ -673,11 +726,13 @@ function App() {
     // Phase 16.4: No confirmation for routine actions
     try {
       setLoading(true)
+      const retryCount = detail.failed_count
       const response = await fetch(`${BACKEND_URL}/control/jobs/${jobId}/retry-failed`, { method: 'POST' })
       if (!response.ok) {
         const normalized = await normalizeResponseError(response, '/control/jobs/retry-failed', jobId)
         throw new Error(normalized.message)
       }
+      addStatusLogEntry(statusMessages.jobRetrying(jobId, retryCount))
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
@@ -698,6 +753,7 @@ function App() {
         throw new Error(normalized.message)
       }
       logStateTransition(jobId, job?.status || null, 'CANCELLED', 'App.cancelJob')
+      addStatusLogEntry(statusMessages.jobCancelled(jobId))
       await fetchJobDetail(jobId)
       await fetchJobs()
       
@@ -742,6 +798,9 @@ function App() {
       }
       // Log successful state transition
       logStateTransition(jobId, job?.status || null, 'RUNNING', 'App.startJob')
+      if (job) {
+        addStatusLogEntry(statusMessages.jobStarted(jobId, job.total_tasks))
+      }
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
@@ -763,6 +822,7 @@ function App() {
         throw new Error(normalized.message)
       }
       logStateTransition(jobId, job?.status || null, 'PAUSED', 'App.pauseJob')
+      addStatusLogEntry(statusMessages.jobPaused(jobId))
       await fetchJobDetail(jobId)
       await fetchJobs()
     } catch (err) {
@@ -789,6 +849,7 @@ function App() {
         setSelectedJobId(null)
         setSelectedClipIds(new Set())
       }
+      addStatusLogEntry(statusMessages.jobDeleted(jobId))
       await fetchJobs()
       
       // Push to undo stack with restore action
@@ -1167,6 +1228,7 @@ function App() {
     // Success: fetch jobs and select the newly created one
     await fetchJobs()
     setSelectedJobId(result.jobId)
+    addStatusLogEntry(statusMessages.jobQueued(result.jobId, result.taskCount))
   }
 
   // Create job from folder (DirectoryNavigator) — enumerates folder first
@@ -1228,6 +1290,7 @@ function App() {
       // Success: fetch jobs and select the newly created one
       await fetchJobs()
       setSelectedJobId(result.jobId)
+      addStatusLogEntry(statusMessages.jobQueued(result.jobId, result.taskCount))
       
     } catch (err) {
       setError(`Failed to create job from folder: ${err instanceof Error ? err.message : 'Unknown error'}`)
@@ -2198,6 +2261,9 @@ function App() {
         </>
       )}
       */}
+      
+      {/* Status Log - bottom-left panel with plain English status messages */}
+      <StatusLog entries={statusLogEntries} />
     </div>
   )
 }
