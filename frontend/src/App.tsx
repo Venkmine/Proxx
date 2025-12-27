@@ -2006,7 +2006,7 @@ function App() {
               </div>
 
               {/* Job Groups */}
-              <div style={{ padding: '0.5rem', flex: 1, overflow: 'auto' }}>
+              <div style={{ padding: '0.5rem', flex: 1, overflow: 'auto', maxHeight: '100%' }}>
                 {filteredJobs.length === 0 ? (
                   <div
                     style={{

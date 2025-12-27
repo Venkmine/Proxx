@@ -229,7 +229,8 @@ export function WorkspaceLayout({
           style={{
             flex: 1,
             minHeight: `${MIN_CENTRE_BOTTOM_HEIGHT}px`,
-            overflow: 'auto',
+            maxHeight: `${(1 - splitterRatio) * 100}%`,
+            overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
           }}
