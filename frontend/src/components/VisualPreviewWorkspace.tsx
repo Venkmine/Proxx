@@ -1,43 +1,26 @@
 /**
  * VisualPreviewWorkspace — Single Source of Truth for Visual Preview
  * 
- * MULTIMODAL WORKSPACE:
- * This is THE primary interaction surface for the application.
- * Supports three modes:
- * - View: Playback and viewing only
- * - Overlays: Direct manipulation of overlays (drag, scale, position)
- * - Burn-In: Data burn-in preview and editing
+ * VIEW-ONLY WORKSPACE (v1):
+ * This is THE primary interaction surface for video preview.
+ * Supports playback and viewing only — no overlay editing.
  * 
- * Side panels are INSPECTORS ONLY. All spatial editing happens here.
+ * v1 Decision: Overlays are preview-only, not editable.
+ * See docs/DECISIONS.md for rationale.
  * 
  * Features:
  * - Static preview frame (thumbnail from backend)
  * - Video playback with controls
- * - Overlay rendering with drag-to-position
+ * - Static overlay rendering (preview-only, non-interactive)
  * - Collapsible metadata strip
  * - Title-safe and action-safe guides
  * - Fullscreen support
- * 
- * Phase 9C: Burn-in preview parity
- * - Burn-in overlays use BURNIN_FONTS for FFmpeg-representative rendering
- * - Font constants are representative, NOT pixel-identical to FFmpeg
- * - See constants/burnin.ts for parity documentation
- * 
- * Phase 9D: Mode interaction boundaries
- * - All interactions gated through canInteractWithOverlay()
- * - View mode: no overlay interactions
- * - Overlays mode: full overlay editing
- * - Burn-in mode: only burn-in overlays editable
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Button } from './Button'
 import { FEATURE_FLAGS } from '../config/featureFlags'
-import { assertInvariant, assertPreviewTransformUsed, assertModeInteractionAllowed } from '../utils/invariants'
 import * as PreviewTransform from '../utils/PreviewTransform'
-import { canInteractWithOverlay, getInteractionCursor } from '../utils/PreviewModeInteraction'
-import type { OverlaySettings, ImageOverlay, TextOverlay, OverlayLayerType } from './DeliverControlPanel'
-import { OverlaySelectionBox, type OverlaySizeInfo } from './OverlaySelectionBox'
+import type { OverlaySettings, ImageOverlay, TextOverlay } from './DeliverControlPanel'
 import { 
   BURNIN_FONTS, 
   BURNIN_PREVIEW_FONT_SCALE, 
@@ -48,9 +31,8 @@ import {
 // ============================================================================
 // TYPES
 // ============================================================================
-
-// Preview workspace mode
-export type PreviewMode = 'view' | 'overlays' | 'burn-in'
+// v1: Preview mode is always 'view' — kept for type compatibility
+export type PreviewMode = 'view'
 
 interface SourceMetadata {
   resolution?: string
@@ -82,32 +64,12 @@ interface VisualPreviewWorkspaceProps {
   sourceFilePath?: string
   /** Whether a source is loaded */
   hasSource?: boolean
-  /** Callback to open the visual editor modal */
-  onOpenVisualEditor?: () => void
   /** Backend URL for thumbnail fetching */
   backendUrl?: string
-  /** Overlay settings for rendering */
+  /** Overlay settings for rendering (preview-only, non-interactive) */
   overlaySettings?: OverlaySettings
-  /** Callback when overlay settings change (for drag positioning) */
-  onOverlaySettingsChange?: (settings: OverlaySettings) => void
-  /** Currently selected overlay type (legacy) */
-  selectedOverlayType?: 'text' | 'image' | 'timecode' | null
-  /** Currently selected text layer index (legacy) */
-  selectedTextLayerIndex?: number | null
-  /** Callback when an overlay is selected (legacy) */
-  onOverlaySelect?: (type: 'text' | 'image' | 'timecode' | null, index?: number) => void
   /** Output summary for compact header row */
   outputSummary?: OutputSummary
-  /** Phase 5A: Currently selected layer ID */
-  selectedLayerId?: string | null
-  /** Phase 5A: Callback when a layer is selected */
-  onLayerSelect?: (layerId: string | null) => void
-  /** Phase 5A: Read-only mode (for running/completed jobs) */
-  isReadOnly?: boolean
-  /** Preview mode (view/overlays/burn-in) */
-  mode?: PreviewMode
-  /** Callback when mode changes */
-  onModeChange?: (mode: PreviewMode) => void
 }
 
 // ============================================================================
@@ -132,21 +94,9 @@ const ZOOM_PRESETS = [
 export function VisualPreviewWorkspace({
   sourceFilePath,
   hasSource = false,
-  onOpenVisualEditor,
   backendUrl = 'http://127.0.0.1:8085',
   overlaySettings,
-  onOverlaySettingsChange,
-  selectedOverlayType,
-  selectedTextLayerIndex,
-  onOverlaySelect,
   outputSummary,
-  // Phase 5A: Layer-based selection
-  selectedLayerId,
-  onLayerSelect,
-  isReadOnly = false,
-  // Multimodal preview
-  mode = 'view',
-  onModeChange,
 }: VisualPreviewWorkspaceProps) {
   // Extract filename from path
   const fileName = sourceFilePath ? sourceFilePath.split('/').pop() : null
@@ -156,8 +106,6 @@ export function VisualPreviewWorkspace({
   const [thumbnailLoading, setThumbnailLoading] = useState(false)
   const [metadata, setMetadata] = useState<SourceMetadata | null>(null)
   const [metadataExpanded, setMetadataExpanded] = useState(true)
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragTarget, setDragTarget] = useState<{ type: 'text' | 'image' | 'timecode' | 'layer'; index?: number; layerId?: string } | null>(null)
   
   // Zoom state
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
@@ -186,39 +134,6 @@ export function VisualPreviewWorkspace({
   // Refs
   const canvasRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  
-  // Phase 9B: Overlay element refs for bounding box handles
-  const overlayElementRefs = useRef<Map<string, HTMLElement>>(new Map())
-  const [canvasRect, setCanvasRect] = useState<DOMRect | null>(null)
-  const [isScaling, setIsScaling] = useState(false)
-
-  // Phase 9B: Update canvas rect on resize/zoom changes
-  useEffect(() => {
-    if (!canvasRef.current) return
-    
-    const updateCanvasRect = () => {
-      if (canvasRef.current) {
-        setCanvasRect(canvasRef.current.getBoundingClientRect())
-      }
-    }
-    
-    // Initial update
-    updateCanvasRect()
-    
-    // Update on resize
-    const resizeObserver = new ResizeObserver(updateCanvasRect)
-    resizeObserver.observe(canvasRef.current)
-    
-    // Also update on scroll/zoom
-    window.addEventListener('scroll', updateCanvasRect, true)
-    window.addEventListener('resize', updateCanvasRect)
-    
-    return () => {
-      resizeObserver.disconnect()
-      window.removeEventListener('scroll', updateCanvasRect, true)
-      window.removeEventListener('resize', updateCanvasRect)
-    }
-  }, [zoom, panOffset])
 
   // ALPHA LIMITATION: static preview frame only (no scrubbing)
   // Auto-load preview when source changes
@@ -512,256 +427,23 @@ export function VisualPreviewWorkspace({
   }, [isFullscreen])
 
   // ============================================
-  // Drag-to-position handlers
+  // Pan handlers (for zoom navigation only)
+  // v1: Overlay drag/scale removed - overlays are view-only
   // ============================================
-
-  // Helper to get layer type by ID for interaction gating
-  const getLayerTypeById = useCallback((layerId: string): OverlayLayerType | null => {
-    const layer = overlaySettings?.layers?.find(l => l.id === layerId)
-    return layer?.type || null
-  }, [overlaySettings])
-
-  // Phase 5A: Handle layer mouse down for new layer system
-  // Phase 9D: Gated through canInteractWithOverlay
-  const handleLayerMouseDown = useCallback((
-    e: React.MouseEvent,
-    layerId: string
-  ) => {
-    // Phase 9D: Check mode interaction before any state changes
-    const layerType = getLayerTypeById(layerId)
-    if (!layerType) return
-    
-    const interactionCheck = canInteractWithOverlay(mode, layerType, 'select', isReadOnly)
-    if (!interactionCheck.allowed) {
-      // Fire invariant but do NOT mutate state
-      assertModeInteractionAllowed(
-        false,
-        mode,
-        layerId,
-        layerType,
-        'select',
-        'VisualPreviewWorkspace.handleLayerMouseDown'
-      )
-      return // Hard block — no partial updates
-    }
-    
-    // Hardening: Assert layer is selected before editing
-    assertInvariant(
-      layerId != null && layerId.length > 0,
-      'OVERLAY_DRAG_NO_LAYER',
-      'Overlay drag attempted with no layer ID',
-      { component: 'VisualPreviewWorkspace', layerId }
-    )
-    
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(true)
-    setDragTarget({ type: 'layer', layerId })
-    onLayerSelect?.(layerId)
-  }, [mode, isReadOnly, getLayerTypeById, onLayerSelect])
-
-  // Legacy overlay handler with mode gating
-  const handleMouseDown = useCallback((
-    e: React.MouseEvent,
-    type: 'text' | 'image' | 'timecode',
-    index?: number
-  ) => {
-    // Phase 9D: Check mode interaction before any state changes
-    const interactionCheck = canInteractWithOverlay(mode, type, 'select', isReadOnly)
-    if (!interactionCheck.allowed) {
-      // Fire invariant but do NOT mutate state
-      assertModeInteractionAllowed(
-        false,
-        mode,
-        index !== undefined ? `${type}-${index}` : type,
-        type,
-        'select',
-        'VisualPreviewWorkspace.handleMouseDown'
-      )
-      return // Hard block — no partial updates
-    }
-    
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(true)
-    setDragTarget({ type, index })
-    onOverlaySelect?.(type, index)
-  }, [mode, isReadOnly, onOverlaySelect])
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !dragTarget || !canvasRef.current || !overlaySettings || !onOverlaySettingsChange) return
-    
-    // Phase 9D: Get overlay type for drag gating
-    let overlayType: string = dragTarget.type
-    let overlayId: string = dragTarget.layerId || (dragTarget.index !== undefined ? `${dragTarget.type}-${dragTarget.index}` : dragTarget.type)
-    
-    if (dragTarget.type === 'layer' && dragTarget.layerId) {
-      const layer = overlaySettings.layers?.find(l => l.id === dragTarget.layerId)
-      if (layer) {
-        overlayType = layer.type
-        overlayId = dragTarget.layerId
-      }
-    }
-    
-    // Phase 9D: Check mode interaction for drag
-    const interactionCheck = canInteractWithOverlay(mode, overlayType, 'drag', isReadOnly)
-    if (!interactionCheck.allowed) {
-      // Fire invariant and abort drag
-      assertModeInteractionAllowed(
-        false,
-        mode,
-        overlayId,
-        overlayType,
-        'drag',
-        'VisualPreviewWorkspace.handleMouseMove'
-      )
-      // Stop dragging — this should not happen if mouseDown was gated correctly
-      setIsDragging(false)
-      setDragTarget(null)
-      return
-    }
-    
-    const rect = canvasRef.current.getBoundingClientRect()
-    // Phase 9A: All coordinate math through PreviewTransform
-    const rawPoint = PreviewTransform.screenToNormalized(
-      { x: e.clientX, y: e.clientY },
-      rect
-    )
-    
-    // Clamp to title-safe area via PreviewTransform
-    const { x, y } = PreviewTransform.clampToSafeArea(rawPoint, 'title')
-    
-    // Phase 9A: Defensive invariant — validate coordinates before applying
-    assertPreviewTransformUsed({ x, y }, 'VisualPreviewWorkspace.handleMouseMove')
-    
-    const newSettings = { ...overlaySettings }
-    
-    // Phase 5A: Handle layer-based dragging
-    if (dragTarget.type === 'layer' && dragTarget.layerId && newSettings.layers) {
-      const layers = [...newSettings.layers]
-      const layerIndex = layers.findIndex(l => l.id === dragTarget.layerId)
-      if (layerIndex !== -1) {
-        const layer = layers[layerIndex]
-        layers[layerIndex] = {
-          ...layer,
-          settings: {
-            ...layer.settings,
-            x,
-            y,
-            position: 'custom',
-            // Phase 9E: Mark as manually positioned
-            positionSource: 'manual',
-          }
-        }
-        newSettings.layers = layers
-      }
-    } else if (dragTarget.type === 'text' && dragTarget.index !== undefined) {
-      const layers = [...newSettings.text_layers]
-      layers[dragTarget.index] = {
-        ...layers[dragTarget.index],
-        x,
-        y,
-        position: 'custom',
-      }
-      newSettings.text_layers = layers
-    } else if (dragTarget.type === 'image' && newSettings.image_watermark) {
-      newSettings.image_watermark = { ...newSettings.image_watermark, x, y }
-    } else if (dragTarget.type === 'timecode' && newSettings.timecode_overlay) {
-      newSettings.timecode_overlay = { ...newSettings.timecode_overlay, x, y, position: 'custom' }
-    }
-    
-    onOverlaySettingsChange(newSettings)
-  }, [isDragging, dragTarget, overlaySettings, onOverlaySettingsChange, isReadOnly, mode])
-
+  
   const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
-    setDragTarget(null)
     setIsPanning(false)
   }, [])
 
   useEffect(() => {
-    if (isDragging || isPanning) {
+    if (isPanning) {
       const handleGlobalMouseUp = () => {
-        setIsDragging(false)
-        setDragTarget(null)
         setIsPanning(false)
       }
       window.addEventListener('mouseup', handleGlobalMouseUp)
       return () => window.removeEventListener('mouseup', handleGlobalMouseUp)
     }
-  }, [isDragging, isPanning])
-
-  // ============================================
-  // Phase 9B: Scale change handler for bounding box handles
-  // Phase 9D: Gated through canInteractWithOverlay
-  // ============================================
-  const handleOverlayScaleChange = useCallback((layerId: string, newScale: number) => {
-    if (!overlaySettings || !onOverlaySettingsChange) return
-    
-    // Phase 9D: Get layer type for scale gating
-    const layer = overlaySettings.layers?.find(l => l.id === layerId)
-    if (!layer) return
-    
-    const interactionCheck = canInteractWithOverlay(mode, layer.type, 'scale', isReadOnly)
-    if (!interactionCheck.allowed) {
-      // Fire invariant but do NOT mutate state
-      assertModeInteractionAllowed(
-        false,
-        mode,
-        layerId,
-        layer.type,
-        'scale',
-        'VisualPreviewWorkspace.handleOverlayScaleChange'
-      )
-      return // Hard block — no partial updates
-    }
-    
-    const newSettings = { ...overlaySettings }
-    
-    if (newSettings.layers) {
-      const layers = [...newSettings.layers]
-      const layerIndex = layers.findIndex(l => l.id === layerId)
-      if (layerIndex !== -1) {
-        const layerToUpdate = layers[layerIndex]
-        layers[layerIndex] = {
-          ...layerToUpdate,
-          settings: {
-            ...layerToUpdate.settings,
-            scale: newScale,
-            // Phase 9E: Mark as manually positioned
-            positionSource: 'manual',
-          }
-        }
-        newSettings.layers = layers
-        onOverlaySettingsChange(newSettings)
-      }
-    }
-  }, [mode, isReadOnly, overlaySettings, onOverlaySettingsChange])
-
-  // Phase 9B: Get selected overlay info for bounding box
-  const getSelectedOverlayInfo = useCallback((): OverlaySizeInfo | null => {
-    if (!selectedLayerId || !overlaySettings?.layers) return null
-    
-    const layer = overlaySettings.layers.find(l => l.id === selectedLayerId)
-    if (!layer) return null
-    
-    const pos = PreviewTransform.resolveOverlayPosition(
-      layer.settings.position || 'center',
-      layer.settings.x,
-      layer.settings.y
-    )
-    
-    const overlayElement = overlayElementRefs.current.get(selectedLayerId) || null
-    
-    return {
-      layerId: selectedLayerId,
-      type: layer.type,
-      position: pos,
-      scale: layer.settings.scale,
-      fontSize: layer.settings.font_size,
-      overlayElement,
-    }
-  }, [selectedLayerId, overlaySettings])
+  }, [isPanning])
 
   // Wheel zoom handler - zoom follows mouse cursor
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -813,8 +495,6 @@ export function VisualPreviewWorkspace({
       })
     }
   }, [isPanning, panStart])
-
-  const extendedImageOverlay = overlaySettings?.image_watermark as (ImageOverlay & { scale?: number; grayscale?: boolean }) | undefined
 
   // Reset zoom/pan when source changes
   useEffect(() => {
@@ -1050,7 +730,7 @@ export function VisualPreviewWorkspace({
           ref={canvasRef}
           data-testid="preview-viewport-container"
           onMouseDown={handleMouseDownPan}
-          onMouseMove={(e) => { handleMouseMove(e); handleMouseMovePan(e); }}
+          onMouseMove={handleMouseMovePan}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
@@ -1064,7 +744,7 @@ export function VisualPreviewWorkspace({
             borderRadius: 'var(--radius-md, 6px)',
             border: '1px solid var(--border-primary)',
             overflow: 'hidden',
-            cursor: isPanning ? 'grabbing' : isDragging ? 'grabbing' : 'default',
+            cursor: isPanning ? 'grabbing' : 'default',
             transition: zoom === 'fit' ? 'width 0.2s ease' : undefined,
           }}
         >
@@ -1090,7 +770,7 @@ export function VisualPreviewWorkspace({
           )}
           
           {/* Fallback thumbnail - shown for unsupported formats, error states, or while generating */}
-          {thumbnailUrl && (previewStatus !== 'ready' || previewStatus === 'unsupported') && (
+          {thumbnailUrl && previewStatus !== 'ready' && (
             <img
               src={thumbnailUrl}
               alt="Preview thumbnail"
@@ -1333,13 +1013,13 @@ export function VisualPreviewWorkspace({
                 zIndex: 50,
                 pointerEvents: 'none',
               }}
-              title="Alpha: Text and image overlays ARE rendered to output. Timecode burn-in works. Position editing is preview-only for now."
+              title="v1: Overlays are preview-only. Text watermark is rendered to output."
             >
-              Preview + Render (Position preview-only)
+              Preview Only
             </div>
           )}
 
-          {/* Phase 5A: Render layers sorted by order (higher order = on top) */}
+          {/* Phase 5A: Render layers sorted by order (view-only, no interaction) */}
           {overlaySettings?.layers && [...overlaySettings.layers]
             .filter(layer => layer.enabled)
             .sort((a, b) => a.order - b.order)
@@ -1350,20 +1030,14 @@ export function VisualPreviewWorkspace({
                 layer.settings.x,
                 layer.settings.y
               )
-              const isSelected = layer.id === selectedLayerId
-              const zIndex = isSelected ? 30 : 10 + layer.order
+              const zIndex = 10 + layer.order
               
-              // Render based on layer type
+              // Render based on layer type (view-only, no interaction handlers)
               if (layer.type === 'text') {
                 return (
                   <div
                     key={layer.id}
-                    ref={(el) => {
-                      if (el) overlayElementRefs.current.set(layer.id, el)
-                      else overlayElementRefs.current.delete(layer.id)
-                    }}
                     data-testid={`overlay-layer-${layer.id}`}
-                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
                       position: 'absolute',
                       left: `${pos.x * 100}%`,
@@ -1378,13 +1052,11 @@ export function VisualPreviewWorkspace({
                       fontFamily: layer.settings.font || 'Arial, sans-serif',
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
-                      // Phase 9D: Cursor reflects interaction legality
-                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
-                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: 'default',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                       userSelect: 'none',
+                      pointerEvents: 'none',
                       zIndex,
                     }}
                   >
@@ -1397,24 +1069,17 @@ export function VisualPreviewWorkspace({
                 return (
                   <div
                     key={layer.id}
-                    ref={(el) => {
-                      if (el) overlayElementRefs.current.set(layer.id, el)
-                      else overlayElementRefs.current.delete(layer.id)
-                    }}
                     data-testid={`overlay-layer-${layer.id}`}
-                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
                       position: 'absolute',
                       left: `${pos.x * 100}%`,
                       top: `${pos.y * 100}%`,
                       transform: 'translate(-50%, -50%)',
-                      // Phase 9D: Cursor reflects interaction legality
-                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
-                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: 'default',
                       borderRadius: 'var(--radius-sm)',
                       padding: '2px',
                       userSelect: 'none',
+                      pointerEvents: 'none',
                       zIndex,
                     }}
                   >
@@ -1452,17 +1117,11 @@ export function VisualPreviewWorkspace({
               }
               
               if (layer.type === 'timecode') {
-                // Phase 9C: Use BURNIN_FONTS for FFmpeg-representative rendering
                 const timecodeFont = layer.settings.font || BURNIN_FONTS.timecode
                 return (
                   <div
                     key={layer.id}
-                    ref={(el) => {
-                      if (el) overlayElementRefs.current.set(layer.id, el)
-                      else overlayElementRefs.current.delete(layer.id)
-                    }}
                     data-testid={`overlay-layer-${layer.id}`}
-                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
                       position: 'absolute',
                       left: `${pos.x * 100}%`,
@@ -1476,14 +1135,12 @@ export function VisualPreviewWorkspace({
                       lineHeight: BURNIN_LINE_HEIGHT,
                       color: layer.settings.color || 'white',
                       opacity: layer.settings.opacity || 1,
-                      // Phase 9D: Cursor reflects interaction legality
-                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
-                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: 'default',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                       letterSpacing: BURNIN_TIMECODE_LETTER_SPACING,
                       userSelect: 'none',
+                      pointerEvents: 'none',
                       zIndex,
                     }}
                   >
@@ -1493,16 +1150,10 @@ export function VisualPreviewWorkspace({
               }
               
               if (layer.type === 'metadata') {
-                // Phase 9C: Use BURNIN_FONTS for FFmpeg-representative rendering
                 return (
                   <div
                     key={layer.id}
-                    ref={(el) => {
-                      if (el) overlayElementRefs.current.set(layer.id, el)
-                      else overlayElementRefs.current.delete(layer.id)
-                    }}
                     data-testid={`overlay-layer-${layer.id}`}
-                    onMouseDown={(e) => handleLayerMouseDown(e, layer.id)}
                     style={{
                       position: 'absolute',
                       left: `${pos.x * 100}%`,
@@ -1516,13 +1167,11 @@ export function VisualPreviewWorkspace({
                       lineHeight: BURNIN_LINE_HEIGHT,
                       color: 'white',
                       opacity: layer.settings.opacity || 1,
-                      // Phase 9D: Cursor reflects interaction legality
-                      cursor: getInteractionCursor(mode, layer.type, isReadOnly, isScaling),
-                      border: isSelected && mode !== 'overlays' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                      boxShadow: isSelected && mode !== 'overlays' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                      cursor: 'default',
                       whiteSpace: 'nowrap',
                       textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                       userSelect: 'none',
+                      pointerEvents: 'none',
                       zIndex,
                     }}
                   >
@@ -1539,7 +1188,7 @@ export function VisualPreviewWorkspace({
               return null
             })}
 
-          {/* Legacy Text Overlay Layers */}
+          {/* Legacy Text Overlay Layers (view-only) */}
           {overlaySettings?.text_layers.map((layer, index) => {
             if (!layer.enabled) return null
             // Phase 9A: All position resolution through PreviewTransform
@@ -1548,7 +1197,6 @@ export function VisualPreviewWorkspace({
               layer.x,
               layer.y
             )
-            const isSelected = selectedOverlayType === 'text' && selectedTextLayerIndex === index
             // Type assertion for extended properties
             const extLayer = layer as TextOverlay & { font?: string; color?: string; background?: boolean; background_color?: string; background_opacity?: number }
             
@@ -1556,7 +1204,6 @@ export function VisualPreviewWorkspace({
               <div
                 key={`text-${index}`}
                 data-testid={`overlay-text-${index}`}
-                onMouseDown={(e) => handleMouseDown(e, 'text', index)}
                 style={{
                   position: 'absolute',
                   left: `${pos.x * 100}%`,
@@ -1571,14 +1218,12 @@ export function VisualPreviewWorkspace({
                   fontFamily: extLayer.font || 'Arial, sans-serif',
                   color: extLayer.color || 'white',
                   opacity: layer.opacity,
-                  // Phase 9D: Cursor reflects interaction legality
-                  cursor: getInteractionCursor(mode, 'text', isReadOnly, isScaling),
-                  border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                  boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                  cursor: 'default',
                   whiteSpace: 'nowrap',
                   textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                   userSelect: 'none',
-                  zIndex: isSelected ? 20 : 10,
+                  pointerEvents: 'none',
+                  zIndex: 10,
                 }}
               >
                 {layer.text || `Text Layer ${index + 1}`}
@@ -1586,24 +1231,21 @@ export function VisualPreviewWorkspace({
             )
           })}
 
-          {/* Image Overlay (Watermark) */}
+          {/* Image Overlay (Watermark) - view-only */}
           {overlaySettings?.image_watermark?.enabled && overlaySettings.image_watermark.image_data && (
             <div
               data-testid="overlay-image"
-              onMouseDown={(e) => handleMouseDown(e, 'image')}
               style={{
                 position: 'absolute',
                 left: `${overlaySettings.image_watermark.x * 100}%`,
                 top: `${overlaySettings.image_watermark.y * 100}%`,
                 transform: 'translate(-50%, -50%)',
-                // Phase 9D: Cursor reflects interaction legality
-                cursor: getInteractionCursor(mode, 'image', false, false),
-                border: selectedOverlayType === 'image' ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                boxShadow: selectedOverlayType === 'image' ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                cursor: 'default',
                 borderRadius: 'var(--radius-sm)',
                 padding: '2px',
                 userSelect: 'none',
-                zIndex: selectedOverlayType === 'image' ? 20 : 10,
+                pointerEvents: 'none',
+                zIndex: 10,
               }}
             >
               <img
@@ -1611,10 +1253,10 @@ export function VisualPreviewWorkspace({
                 alt=""
                 draggable={false}
                 style={{
-                  maxWidth: `${(extendedImageOverlay?.scale || 1.0) * 100}px`,
-                  maxHeight: `${(extendedImageOverlay?.scale || 1.0) * 75}px`,
+                  maxWidth: `${(overlaySettings.image_watermark.scale || 1.0) * 100}px`,
+                  maxHeight: `${(overlaySettings.image_watermark.scale || 1.0) * 75}px`,
                   opacity: overlaySettings.image_watermark.opacity,
-                  filter: extendedImageOverlay?.grayscale ? 'grayscale(100%)' : 'none',
+                  filter: (overlaySettings.image_watermark as ImageOverlay & { grayscale?: boolean })?.grayscale ? 'grayscale(100%)' : 'none',
                   borderRadius: '2px',
                   pointerEvents: 'none',
                 }}
@@ -1622,7 +1264,7 @@ export function VisualPreviewWorkspace({
             </div>
           )}
 
-          {/* Timecode Overlay */}
+          {/* Timecode Overlay - view-only */}
           {overlaySettings?.timecode_overlay?.enabled && (() => {
             const tc = overlaySettings.timecode_overlay!
             // Phase 9A: All position resolution through PreviewTransform
@@ -1631,12 +1273,10 @@ export function VisualPreviewWorkspace({
               tc.x,
               tc.y
             )
-            const isSelected = selectedOverlayType === 'timecode'
             
             return (
               <div
                 data-testid="overlay-timecode"
-                onMouseDown={(e) => handleMouseDown(e, 'timecode')}
                 style={{
                   position: 'absolute',
                   left: `${pos.x * 100}%`,
@@ -1645,38 +1285,24 @@ export function VisualPreviewWorkspace({
                   padding: tc.background ? '0.25rem 0.5rem' : '0',
                   backgroundColor: tc.background ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
                   borderRadius: 'var(--radius-sm)',
-                  // Phase 9C: Use burn-in font constants for parity
                   fontSize: `${tc.font_size * BURNIN_PREVIEW_FONT_SCALE}px`,
                   fontFamily: tc.font || BURNIN_FONTS.timecode,
                   lineHeight: BURNIN_LINE_HEIGHT,
                   color: 'white',
                   opacity: tc.opacity,
-                  // Phase 9D: Cursor reflects interaction legality
-                  cursor: getInteractionCursor(mode, 'timecode', false, false),
-                  border: isSelected ? '2px solid var(--button-primary-bg)' : '2px solid transparent',
-                  boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                  cursor: 'default',
                   whiteSpace: 'nowrap',
                   textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                   letterSpacing: BURNIN_TIMECODE_LETTER_SPACING,
                   userSelect: 'none',
-                  zIndex: isSelected ? 20 : 10,
+                  pointerEvents: 'none',
+                  zIndex: 10,
                 }}
               >
                 {metadata?.timecode_start || '00:00:00:00'}
               </div>
             )
           })()}
-
-          {/* Phase 9B: Overlay Selection Box with Handles */}
-          <OverlaySelectionBox
-            mode={mode}
-            isReadOnly={isReadOnly}
-            overlayInfo={getSelectedOverlayInfo()}
-            canvasRect={canvasRect}
-            onScaleChange={handleOverlayScaleChange}
-            onScaleStart={() => setIsScaling(true)}
-            onScaleEnd={() => setIsScaling(false)}
-          />
         </div>
 
         {/* ============================================ */}

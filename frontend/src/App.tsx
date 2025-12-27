@@ -9,7 +9,7 @@ import { MediaWorkspace } from './components/MediaWorkspace'
 import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
-import { VisualPreviewWorkspace, PreviewMode } from './components/VisualPreviewWorkspace'
+import { VisualPreviewWorkspace } from './components/VisualPreviewWorkspace'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
 import { PresetEditorHeader } from './components/PresetEditorHeader'
 import { AppFooter } from './components/AppFooter'
@@ -220,9 +220,6 @@ function App() {
 
   // Phase 4B: Track single selected clip for preview (distinct from multi-select for future batch ops)
   const [previewClipId, setPreviewClipId] = useState<string | null>(null)
-  
-  // Preview workspace mode (view/overlays/burn-in)
-  const [previewMode, setPreviewMode] = useState<PreviewMode>('view')
 
   // ============================================
   // CANONICAL INGESTION PIPELINE
@@ -1898,23 +1895,18 @@ function App() {
           }
           centreTop={
             /* CENTRE TOP: VisualPreviewWorkspace — Single Source of Truth for Preview */
-            /* Phase 4B: Preview binds to selected clip (previewClipId) when a clip is clicked,
-               falls back to first clip of selected job, or pendingPaths[0] for pre-job preview */
+            /* v1: View-only preview, no overlay editing */
             <VisualPreviewWorkspace
               sourceFilePath={previewSourcePath}
               hasSource={selectedJobId !== null || selectedFiles.length > 0}
-              onOpenVisualEditor={openVisualPreviewModal}
               backendUrl={BACKEND_URL}
               overlaySettings={deliverSettings.overlay}
-              onOverlaySettingsChange={(overlay) => handleDeliverSettingsChange({ overlay })}
               outputSummary={{
                 codec: deliverSettings.video?.codec?.toUpperCase(),
                 container: deliverSettings.file?.container,
                 resolution: deliverSettings.video?.resolution_policy === 'source' ? 'Source' : deliverSettings.video?.resolution_policy,
                 fps: deliverSettings.video?.frame_rate_policy === 'source' ? 'Source' : deliverSettings.video?.frame_rate_policy,
               }}
-              mode={previewMode}
-              onModeChange={setPreviewMode}
             />
           }
           centreBottom={

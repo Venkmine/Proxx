@@ -42,9 +42,8 @@ export type { Preset } from '../hooks/usePresets'
 // Alpha: Naming Template Builder
 export { TokenPalette } from './TokenPalette'
 
-// Alpha: Watermark & Burn-In Panels
+// Alpha: Text Burn-In Panel (legacy watermark)
 export { TextBurnInPanel } from './TextBurnInPanel'
-export { ImageOverlayPanel } from './ImageOverlayPanel'
 
 // Phase 23: Unified Visual Preview Modal
 export { VisualPreviewModal } from './VisualPreviewModal'
