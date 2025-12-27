@@ -304,3 +304,87 @@ cd qa/verify/ui && npx playwright test dogfood --reporter=list
 | Backend Contracts | 8 | ✅ |
 | E2E Transcode | 10 | ✅ |
 | **Total** | **74** | ✅ |
+
+---
+
+## Dogfood Round 3: System Truth Testing (2025-12-27)
+
+A SECOND, independent, full-gamut dogfood verification suite focused on
+**REAL BEHAVIOUR**, not idealized behaviour.
+
+### Core Philosophy
+
+This suite assumes the following truths:
+- Job execution is synchronous
+- RUNNING is not a stable or UI-observable state
+- Cancel is best-effort and may only apply before execution begins
+- COMPLETED may occur immediately after START
+- Determinism and honesty matter more than feature completeness
+
+### Test Location
+
+All tests are in `qa/verify/ui/proxy/dogfood_round3/`:
+
+| File | Phase | Tests |
+|------|-------|-------|
+| `phase_a_lifecycle.spec.ts` | A: Job Lifecycle Truth | 9 |
+| `phase_b_speed.spec.ts` | B: State Consistency Under Speed | 7 |
+| `phase_c_abuse.spec.ts` | C: Rapid User Abuse | 9 |
+| `phase_d_queue.spec.ts` | D: Queue Invariants | 8 |
+| `phase_e_output.spec.ts` | E: Output Forensics | 8 |
+| `phase_f_collision.spec.ts` | F: Overwrite & Collision Safety | 6 |
+| `phase_g_honesty.spec.ts` | G: UI Honesty Audit | 10 |
+| `phase_h_persistence.spec.ts` | H: Persistence & Reset Honesty | 10 |
+| `phase_i_logging.spec.ts` | I: Logging & Safety | 9 |
+| `phase_j_negative.spec.ts` | J: Negative Assertions | 10 |
+| **Total** | | **86** |
+
+### Running Round 3 Tests
+
+```bash
+cd qa/verify/ui
+npx playwright test proxy/dogfood_round3 --reporter=list
+```
+
+### Verified System Truths
+
+| Behavior | Status | Notes |
+|----------|--------|-------|
+| Jobs start in PENDING | ✅ Verified | Guaranteed |
+| Jobs reach terminal state | ✅ Verified | COMPLETED, FAILED, or CANCELLED |
+| FIFO order preserved | ✅ Verified | Job numbers are stable |
+| Output files created for COMPLETED | ✅ Verified | ffprobe validated |
+| UI stable under rapid actions | ✅ Verified | No crashes |
+| No silent data loss | ✅ Verified | Collisions detected |
+
+### Explicit Non-Guarantees
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| RUNNING state visible in UI | ⚠️ NOT GUARANTEED | May be too fast to observe |
+| Cancel stops executing job | ⚠️ BEST EFFORT | May complete before cancel |
+| Pause/resume | ❌ NOT SUPPORTED | No UI controls exist |
+| Real-time progress | ⚠️ NOT GUARANTEED | May jump 0→100 |
+| Auto-retry on failure | ❌ NOT SUPPORTED | Must be explicit |
+| Queue reordering | ❌ NOT SUPPORTED | FIFO only |
+| Batch selection | ❌ NOT SUPPORTED | Single job selection |
+
+### Multi-Outcome Testing
+
+Many tests accept **multiple valid outcomes** where system behavior legitimately varies:
+
+```typescript
+// Example: Cancel is best-effort
+const result = await cancelJobAndAcceptOutcome(page);
+// CANCELLED, COMPLETED, or FAILED are all valid outcomes
+expect(TERMINAL_STATES.some(t => result.finalStatus.includes(t))).toBe(true);
+```
+
+### Key Differences from Round 2
+
+| Aspect | Round 2 | Round 3 |
+|--------|---------|---------|
+| RUNNING state | Required to observe | Optional, may skip |
+| Cancel behavior | Expected to work | Best-effort documented |
+| Test assertions | Binary pass/fail | Multi-outcome acceptance |
+| Focus | Feature coverage | Truth/honesty |
