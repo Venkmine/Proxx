@@ -34,7 +34,8 @@ export const TEST_FILES = {
 // Terminal States — The only guaranteed observable states
 // ============================================================================
 
-export const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CANCELLED', 'COMPLETED_WITH_WARNINGS'];
+// V1: COMPLETED_WITH_WARNINGS removed - only COMPLETED, FAILED, CANCELLED are terminal
+export const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CANCELLED'];
 export const VALID_START_STATES = ['PENDING'];
 export const TRANSIENT_STATES = ['RUNNING']; // May or may not be observable
 

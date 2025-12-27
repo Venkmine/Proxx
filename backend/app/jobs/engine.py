@@ -374,15 +374,18 @@ class JobEngine:
         """
         Compute the appropriate job status based on task states.
         
-        Rules:
-        - FAILED: Only if job engine itself cannot continue
+        V1 GOLDEN PATH Rules (strict terminal states):
+        - COMPLETED: All tasks in terminal states (output file verified)
+        - FAILED: Any task failed or output file missing
         - CANCELLED: Explicitly set by operator (terminal)
-        - COMPLETED: All tasks in terminal states, no failures, no warnings
-        - COMPLETED_WITH_WARNINGS: All tasks in terminal states, but some failed/skipped/warned
         - RUNNING: At least one task is running or queued
         - PAUSED: Explicitly set by user
         - RECOVERY_REQUIRED: Explicitly set after process restart (terminal until resume)
         - PENDING: No tasks started yet
+        
+        Note: COMPLETED_WITH_WARNINGS was intentionally removed in V1.
+        Jobs with warnings but successful output → COMPLETED.
+        Jobs with failures or missing output → FAILED.
         
         Args:
             job: The job to evaluate
@@ -390,11 +393,10 @@ class JobEngine:
         Returns:
             The computed job status
         """
-        # Terminal states remain unchanged
+        # Terminal states remain unchanged (V1: strict COMPLETED or FAILED only)
         if job.status in (
             JobStatus.FAILED,
             JobStatus.COMPLETED,
-            JobStatus.COMPLETED_WITH_WARNINGS,
             JobStatus.RECOVERY_REQUIRED,
             JobStatus.CANCELLED,  # Phase 13: Terminal state
         ):
@@ -411,12 +413,12 @@ class JobEngine:
             return JobStatus.RUNNING
         
         # All tasks are terminal - determine completion status
+        # V1 GOLDEN PATH: If any task failed → FAILED. Otherwise → COMPLETED.
+        # Warnings are logged but do not affect terminal state.
         has_failures = job.failed_count > 0
-        has_skipped = job.skipped_count > 0
-        has_warnings = job.warning_count > 0
         
-        if has_failures or has_skipped or has_warnings:
-            return JobStatus.COMPLETED_WITH_WARNINGS
+        if has_failures:
+            return JobStatus.FAILED
         
         return JobStatus.COMPLETED
     
@@ -430,11 +432,22 @@ class JobEngine:
         Job completion truth: Status is determined by task outcomes,
         which have already been verified (output files checked).
         
+        V1 INVARIANT: Only allows transitions:
+          RUNNING → COMPLETED
+          RUNNING → FAILED
+        
         Args:
             job: The job to finalize
         """
         import logging
+        from .state import TERMINAL_JOB_STATES
+        
         logger = logging.getLogger(__name__)
+        
+        # SAFETY GUARD: Prevent finalization of already-terminal jobs
+        assert job.status not in TERMINAL_JOB_STATES, (
+            f"Cannot finalize job {job.id}: already in terminal state {job.status.value}"
+        )
         
         final_status = self.compute_job_status(job)
         logger.info(f"[LIFECYCLE] finalize_job() called for job {job.id}, current: {job.status.value}, computed: {final_status.value}")
@@ -448,7 +461,7 @@ class JobEngine:
             logger.info(f"[LIFECYCLE] Job {job.id} transitioned: {old_status.value} -> {final_status.value}")
         
         # Set completion timestamp if job is terminal
-        if final_status in (JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS):
+        if final_status == JobStatus.COMPLETED:
             job.completed_at = datetime.now()
             # Log completion with verification summary
             verified_outputs = sum(
@@ -502,6 +515,10 @@ class JobEngine:
         Returns:
             ExecutionResult from the engine or legacy pipeline
         """
+        # Logger must be explicitly scoped; closures must not capture it implicitly
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Phase 16.1: Use engine if bound to job
         if job.engine and self.engine_registry:
             from ..execution.base import EngineType
@@ -519,8 +536,6 @@ class JobEngine:
                     try:
                         resolved_params = preset_registry.resolve_preset_params(global_preset_id)
                     except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
                         logger.warning(f"Preset resolution failed for '{global_preset_id}': {e}")
                 
                 # Fall back to job settings

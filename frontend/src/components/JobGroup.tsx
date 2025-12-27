@@ -172,8 +172,9 @@ export function JobGroup({
   const isJobRunning = normalizedStatus === 'RUNNING'
   
   // Job Lifecycle Truth: Detect terminal states for visual dimming
-  const isTerminalState = ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
-  const isCompleted = normalizedStatus === 'COMPLETED' || normalizedStatus === 'COMPLETED_WITH_WARNINGS'
+  // V1: COMPLETED_WITH_WARNINGS removed - only COMPLETED, FAILED, CANCELLED are terminal
+  const isTerminalState = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
+  const isCompleted = normalizedStatus === 'COMPLETED'
 
   // Phase 4B: Auto-expand when job starts running (call parent's toggle if collapsed)
   useEffect(() => {
@@ -205,7 +206,8 @@ export function JobGroup({
   // REMOVED: showRetryFailed - violates golden path
   // REMOVED: showRequeue - violates golden path
   const showCancel = ['PENDING', 'RUNNING', 'PAUSED', 'RECOVERY_REQUIRED'].includes(normalizedStatus)
-  const showDelete = ['PENDING', 'COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
+  // V1: COMPLETED_WITH_WARNINGS removed
+  const showDelete = ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
   const showRebind = normalizedStatus === 'PENDING' || normalizedStatus === 'RECOVERY_REQUIRED'
 
   return (
@@ -544,8 +546,8 @@ export function JobGroup({
                     label="Warnings"
                     value={warningCount}
                     color="var(--stat-warning)"
-                    isActive={activeStatusFilters.has('COMPLETED_WITH_WARNINGS')}
-                    onClick={() => onToggleStatusFilter?.('COMPLETED_WITH_WARNINGS')}
+                    isActive={activeStatusFilters.has('WARNING')}
+                    onClick={() => onToggleStatusFilter?.('WARNING')}
                   />
                 )}
               </div>

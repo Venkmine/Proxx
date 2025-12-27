@@ -5,9 +5,13 @@ GOLDEN PATH: Strictly enforces single-clip workflow.
 Job lifecycle: PENDING → RUNNING → COMPLETED | FAILED
 No pause, recovery, or cancellation allowed.
 
-INVARIANT: Terminal job states (COMPLETED, COMPLETED_WITH_WARNINGS, FAILED, CANCELLED)
+INVARIANT: Terminal job states (COMPLETED, FAILED, CANCELLED)
 are immutable. Once a job enters a terminal state, no state transition is allowed.
 Polling, refresh, or UI re-render must never regress a terminal state to RUNNING.
+
+Note: COMPLETED_WITH_WARNINGS was intentionally removed in V1.
+Jobs with warnings but successful output → COMPLETED.
+Jobs with failures or missing output → FAILED.
 """
 
 from typing import FrozenSet, Set, Tuple
@@ -23,10 +27,11 @@ from .errors import InvalidStateTransitionError
 #   1. state.py: is_job_terminal() and can_transition_job() block illegal transitions
 #   2. engine.py: compute_job_status() returns current status for terminal jobs
 #   3. Frontend: fetchJobs() preserves terminal states from prior state
+#
+# V1: COMPLETED_WITH_WARNINGS removed. Use COMPLETED or FAILED only.
 # ============================================================================
 TERMINAL_JOB_STATES: FrozenSet[JobStatus] = frozenset({
     JobStatus.COMPLETED,
-    JobStatus.COMPLETED_WITH_WARNINGS,
     JobStatus.FAILED,
     JobStatus.CANCELLED,
 })

@@ -125,9 +125,6 @@ def wait_for_completion(job_id, timeout=120):
         if status == "COMPLETED":
             print("✓ Job completed successfully")
             return job
-        elif status == "COMPLETED_WITH_WARNINGS":
-            print("✓ Job completed with warnings")
-            return job
         elif status == "FAILED":
             print("✗ Job failed")
             return job
@@ -194,7 +191,7 @@ def main():
         sys.exit(1)
     
     status = final_job.get("status", "").upper()
-    if status not in ("COMPLETED", "COMPLETED_WITH_WARNINGS"):
+    if status != "COMPLETED":
         print(f"\n✗ FAILED: Job ended with status {status}")
         if final_job.get("tasks"):
             for task in final_job["tasks"]:

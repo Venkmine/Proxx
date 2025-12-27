@@ -31,14 +31,18 @@ class JobStatus(str, Enum):
     Job-level status.
     
     A job moves through these states as its clips are processed.
+    
+    V1 GOLDEN PATH: Terminal states are COMPLETED, FAILED, or CANCELLED only.
+    COMPLETED_WITH_WARNINGS was intentionally removed - warnings are logged
+    but do not affect the terminal state.
     """
     
     PENDING = "pending"  # Created, not yet started
     RUNNING = "running"  # At least one clip is being processed
     PAUSED = "paused"  # Paused by user, can be resumed
-    COMPLETED = "completed"  # All clips completed, no failures or warnings
-    COMPLETED_WITH_WARNINGS = "completed_with_warnings"  # All clips terminal, some failed/skipped/warned
-    FAILED = "failed"  # Job engine itself cannot continue
+    COMPLETED = "completed"  # All clips completed successfully (output verified)
+    # V1: COMPLETED_WITH_WARNINGS removed - use COMPLETED (with warnings logged) or FAILED
+    FAILED = "failed"  # Job engine itself cannot continue or any task failed
     RECOVERY_REQUIRED = "recovery_required"  # Process restarted mid-execution, requires explicit resume
     CANCELLED = "cancelled"  # Phase 13: Cancelled by operator (terminal)
 

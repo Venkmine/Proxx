@@ -1841,7 +1841,7 @@ async def delete_job_endpoint(job_id: str, request: Request):
     Delete a job from the queue.
     
     Phase 16: Removes job completely from registry.
-    Only PENDING, COMPLETED, COMPLETED_WITH_WARNINGS, FAILED, or CANCELLED jobs can be deleted.
+    Only PENDING, COMPLETED, FAILED, or CANCELLED jobs can be deleted.
     RUNNING or PAUSED jobs must be cancelled first.
     
     Args:

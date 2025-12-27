@@ -102,7 +102,8 @@ function getOverlayLayerSummary(layers: OverlayLayer[] | undefined): string {
 function inferLastTransition(data: JobDiagnosticsData): { state: string; timestamp: string } {
   const status = data.status.toUpperCase()
   
-  if (data.completedAt && ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED', 'CANCELLED'].includes(status)) {
+  // V1: COMPLETED_WITH_WARNINGS removed - only COMPLETED, FAILED, CANCELLED are terminal
+  if (data.completedAt && ['COMPLETED', 'FAILED', 'CANCELLED'].includes(status)) {
     return { state: status, timestamp: data.completedAt }
   }
   if (data.startedAt && ['RUNNING', 'PAUSED'].includes(status)) {

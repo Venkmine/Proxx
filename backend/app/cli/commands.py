@@ -286,8 +286,8 @@ def cancel_job(
     if not job:
         raise ValidationError(f"Job not found: {job_id}")
     
-    # Validate job can be cancelled
-    if job.status in (JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS, JobStatus.FAILED, JobStatus.CANCELLED):
+    # Validate job can be cancelled (V1: only COMPLETED, FAILED, CANCELLED are terminal)
+    if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
         raise ValidationError(
             f"Job {job_id} cannot be cancelled. "
             f"Current status: {job.status.value} (terminal state)."
