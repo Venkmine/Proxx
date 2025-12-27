@@ -419,6 +419,9 @@ class JobEngine:
         Should be called when all tasks have reached terminal states.
         Updates job status and completion timestamp.
         
+        Job completion truth: Status is determined by task outcomes,
+        which have already been verified (output files checked).
+        
         Args:
             job: The job to finalize
         """
@@ -439,7 +442,24 @@ class JobEngine:
         # Set completion timestamp if job is terminal
         if final_status in (JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS):
             job.completed_at = datetime.now()
-            logger.info(f"[LIFECYCLE] Job {job.id} completed at {job.completed_at.isoformat()}")
+            # Log completion with verification summary
+            verified_outputs = sum(
+                1 for task in job.tasks 
+                if task.status == TaskStatus.COMPLETED and task.output_path and Path(task.output_path).is_file()
+            )
+            logger.info(
+                f"[COMPLETION] Job {job.id} finalized as {final_status.value} at {job.completed_at.isoformat()}. "
+                f"Verified outputs: {verified_outputs}/{len(job.tasks)}"
+            )
+        elif final_status == JobStatus.FAILED:
+            job.completed_at = datetime.now()
+            failed_tasks = [t for t in job.tasks if t.status == TaskStatus.FAILED]
+            reasons = [t.failure_reason for t in failed_tasks if t.failure_reason]
+            logger.error(
+                f"[COMPLETION] Job {job.id} finalized as FAILED at {job.completed_at.isoformat()}. "
+                f"Failed tasks: {len(failed_tasks)}/{len(job.tasks)}. "
+                f"Reasons: {reasons[:3]}"  # Log first 3 reasons
+            )
     
     # Execution stubs for Phase 5+ integration
 
@@ -764,16 +784,50 @@ class JobEngine:
             if result.output_path:
                 task.output_path = result.output_path
             
-            # Map ExecutionResult to task status
-            if result.status == ExecutionStatus.SUCCESS:
-                self.update_task_status(task, TaskStatus.COMPLETED)
-            elif result.status == ExecutionStatus.SUCCESS_WITH_WARNINGS:
+            # Map ExecutionResult to task status with OUTPUT VERIFICATION
+            # Job completion truth: COMPLETED requires exit_code==0 AND output file exists
+            success_statuses = {
+                ExecutionStatus.SUCCESS,
+                ExecutionStatus.SUCCESS_WITH_WARNINGS,
+                ExecutionStatus.COMPLETED,  # Legacy alias for SUCCESS
+            }
+            
+            if result.status in success_statuses:
+                # CRITICAL: Verify output file exists on disk before marking COMPLETED
+                output_verified = False
+                if result.output_path:
+                    output_verified = Path(result.output_path).is_file()
+                
+                if output_verified:
+                    # Output exists - task is truly COMPLETED
+                    logger.info(f"[COMPLETION] Task {task.id} output verified: {result.output_path}")
+                    if result.status == ExecutionStatus.SUCCESS_WITH_WARNINGS:
+                        self.update_task_status(
+                            task,
+                            TaskStatus.COMPLETED,
+                            warnings=result.warnings,
+                        )
+                    else:
+                        self.update_task_status(task, TaskStatus.COMPLETED)
+                else:
+                    # Engine reported success but output file missing - FAIL the task
+                    logger.error(f"[COMPLETION] Task {task.id} FAILED: output file not found at {result.output_path}")
+                    self.update_task_status(
+                        task,
+                        TaskStatus.FAILED,
+                        failure_reason=f"Output file not found: {result.output_path}",
+                    )
+            elif result.status == ExecutionStatus.CANCELLED:
+                # Cancelled by operator - mark as failed with reason
+                logger.info(f"[COMPLETION] Task {task.id} cancelled")
                 self.update_task_status(
                     task,
-                    TaskStatus.COMPLETED,
-                    warnings=result.warnings,
+                    TaskStatus.FAILED,
+                    failure_reason=result.failure_reason or "Cancelled by operator",
                 )
-            else:  # ExecutionStatus.FAILED
+            else:
+                # ExecutionStatus.FAILED
+                logger.error(f"[COMPLETION] Task {task.id} FAILED: {result.failure_reason}")
                 self.update_task_status(
                     task,
                     TaskStatus.FAILED,
