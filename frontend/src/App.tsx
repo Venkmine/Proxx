@@ -1,3 +1,11 @@
+// ============================================================================
+// V1 GUARDRAIL
+// ============================================================================
+// If you are about to add: drag & drop, progress bars, overlay editing,
+// retry/requeue, pause/resume, multi-clip jobs, or batch operations —
+// STOP and read docs/DECISIONS.md first. These are intentionally absent.
+// ============================================================================
+
 // Alpha scope defined in docs/ALPHA_REALITY.md.
 // Do not add features that contradict it without updating that file first.
 

@@ -7,6 +7,16 @@
  * - Failed
  * 
  * No fake progress, no percentage, no ETA, no interpolation.
+ * 
+ * ============================================================================
+ * V1 INTENTIONAL OMISSION: No progress bar, no percentage, no ETA
+ * ============================================================================
+ * Why: Progress estimation requires frame count analysis and FFmpeg output
+ * parsing that was not reliable in testing. Users saw "80%" stuck for minutes.
+ * The simple status badge ("Encoding") is honest about what we know.
+ * 
+ * If you are about to add a progress bar, stop and read DECISIONS.md.
+ * ============================================================================
  */
 
 // ============================================================================

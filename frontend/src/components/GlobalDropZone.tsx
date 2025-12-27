@@ -7,6 +7,16 @@ import React, { useState, useCallback } from 'react'
  * Use explicit "Select Files" and "Select Folder" buttons instead.
  * 
  * This component is kept for reference but is not imported anywhere.
+ * 
+ * ============================================================================
+ * V1 INTENTIONAL OMISSION: No drag & drop for file ingestion
+ * ============================================================================
+ * Why: Electron's drag & drop path extraction is platform-dependent and
+ * failed silently on network drives. The "Select Files" button uses the
+ * native dialog which reliably returns absolute paths.
+ * 
+ * If you are about to reintroduce drag & drop, stop and read DECISIONS.md.
+ * ============================================================================
  */
 
 interface GlobalDropZoneProps {

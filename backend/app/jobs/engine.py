@@ -9,6 +9,14 @@ Phase 4 scope: State management only, no execution.
 Execution hooks are stubs for Phase 5+ integration.
 Phase 8: Reporting integration for job and clip diagnostics.
 Phase 16: Execution engine integration (FFmpeg first).
+
+============================================================================
+V1 GUARDRAIL
+============================================================================
+If you are about to add: retry logic, requeue mechanism, pause/resume,
+multi-clip batching, progress percentage, or overlay coordinate wiring —
+STOP and read docs/DECISIONS.md first. These are intentionally absent.
+============================================================================
 """
 
 from datetime import datetime

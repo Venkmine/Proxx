@@ -265,6 +265,47 @@ Anything that weakens those is architectural debt.
 
 ---
 
+## 9. V1 INVARIANTS
+
+These constraints are **non-negotiable** for v1. Do not re-litigate.
+If you are about to violate one, stop and read DECISIONS.md first.
+
+### 9.1 One Clip Per Job
+
+A job contains exactly one source clip. Multi-clip batching is deferred.
+This simplifies state management, error reporting, and user mental model.
+Do not add batch/queue-all-at-once workflows in v1.
+
+### 9.2 Preview Is Advisory, Output Is Authoritative
+
+The preview shows what *could* be rendered. The FFmpeg output is the truth.
+Preview overlays are non-interactive and not persisted to job payloads.
+Do not wire preview geometry to execution in v1.
+
+### 9.3 Terminal States Never Regress
+
+Once a job reaches COMPLETED, FAILED, CANCELLED, or COMPLETED_WITH_WARNINGS:
+- It cannot transition to any other state
+- Polling cannot regress it to RUNNING
+- UI refresh cannot resurrect it
+
+This is enforced at backend (state.py), engine (engine.py), and frontend.
+
+### 9.4 No Retries, No Requeue, No Pause
+
+The execution model is: create → start → done.
+There is no pause button, no retry button, no requeue mechanism.
+Failed jobs stay failed. Create a new job to try again.
+This eliminates a class of state machine bugs and user confusion.
+
+### 9.5 Read-Only Preview During Execution
+
+Once a job is RUNNING, its preview is locked.
+No editing, no geometry changes, no overlay manipulation.
+The user watches; they do not intervene.
+
+---
+
 **End of document**
 
 ---

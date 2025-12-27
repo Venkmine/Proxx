@@ -73,6 +73,16 @@ _JOB_TRANSITIONS: Set[Tuple[JobStatus, JobStatus]] = {
 
 
 # GOLDEN PATH: Legal task state transitions (strict)
+# ============================================================================
+# V1 INTENTIONAL OMISSION: No retry, no requeue, no pause transitions
+# ============================================================================
+# Why: Retry/requeue creates complex state machine edge cases (what if retry
+# fails? what if user cancels during retry? what if preset changed?). The v1
+# model is simple: create job → run → done. Failed? Create a new job.
+#
+# If you are about to add FAILED→QUEUED or PAUSED→RUNNING, stop and read
+# DECISIONS.md.
+# ============================================================================
 _TASK_TRANSITIONS: Set[Tuple[TaskStatus, TaskStatus]] = {
     # Normal execution flow only
     (TaskStatus.QUEUED, TaskStatus.RUNNING),

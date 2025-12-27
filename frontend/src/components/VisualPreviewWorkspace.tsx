@@ -15,6 +15,17 @@
  * - Collapsible metadata strip
  * - Title-safe and action-safe guides
  * - Fullscreen support
+ * 
+ * ============================================================================
+ * V1 INTENTIONAL OMISSION: No overlay editing (drag, scale, position)
+ * ============================================================================
+ * Why: The overlay coordinate system in preview does not match FFmpeg's
+ * drawtext coordinate system. Users dragged overlays to "correct" positions
+ * but output was wrong. Rather than ship broken geometry, v1 removes editing.
+ * Overlays render at preset-defined positions only.
+ * 
+ * If you are about to add drag handles or resize, stop and read DECISIONS.md.
+ * ============================================================================
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
