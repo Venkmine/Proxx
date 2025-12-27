@@ -1769,31 +1769,28 @@ function App() {
       )}
 
       {/* ============================================ */}
-      {/* WORKSPACE LAYOUT — 4-Region Persistent Layout */}
+      {/* 3-ZONE IMMUTABLE LAYOUT                     */}
       {/* ============================================ */}
       {/* 
-        Phase 24: 4-region persistent workspace layout.
+        RIGID 3-ZONE LAYOUT — IMMUTABLE STRUCTURE
         
-        LEFT SIDEBAR (fixed ~320px):
-        - Sources panel
-        - Volumes panel (placeholder)
-        - File/folder selection (explicit buttons)
+        ┌────────────┬─────────────────┬────────────┐
+        │   LEFT     │     CENTER      │   RIGHT    │
+        │   352px    │   (Preview)     │   420px    │
+        │  IMMUTABLE │  fills remain   │  IMMUTABLE │
+        │  Sources   │   Preview ONLY  │  Settings  │
+        │            │                 │   /Queue   │
+        │            │                 │  [tabbed]  │
+        └────────────┴─────────────────┴────────────┘
         
-        CENTRE TOP (flexible, 70% default):
-        - VisualPreviewWorkspace (always visible)
-        - No modal behavior, no close button
+        INVARIANTS:
+        1. Queue NEVER resizes Preview
+        2. Preview NEVER resizes due to jobs
+        3. Left/Right zones are FIXED width
+        4. NO animations, NO dynamic resizing
+        5. StatusLog floats independently (fixed position)
         
-        CENTRE BOTTOM (flexible, 30% default):
-        - Queue panel
-        - Horizontal draggable splitter above
-        
-        RIGHT SIDEBAR (fixed ~380px):
-        - DeliverControlPanel
-        - Preset selector + CRUD
-        - File naming, metadata, video, audio settings
-        
-        Desktop-only layout. Minimum width: 1280px.
-        Splitter ratio persists in localStorage.
+        Desktop-only. Minimum width: 1280px.
       */}
       <div 
         ref={appContainerRef}

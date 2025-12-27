@@ -1,7 +1,13 @@
 /**
- * StatusLog — Minimal User-Facing Status Log
+ * StatusLog — FLOATING Status Panel (Independent of Layout)
  * 
- * Bottom-left panel showing:
+ * ╔════════════════════════════════════════════════════════════════════╗
+ * ║  FLOATS INDEPENDENTLY — NOT PART OF 3-ZONE LAYOUT                  ║
+ * ║  Uses position: fixed to overlay bottom-left corner                ║
+ * ║  NEVER affects layout or zone dimensions                           ║
+ * ╚════════════════════════════════════════════════════════════════════╝
+ * 
+ * Bottom-left floating panel showing:
  * - Job queued
  * - Encoding started
  * - Job completed / failed
