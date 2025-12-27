@@ -7,6 +7,18 @@
 
 export const FEATURE_FLAGS = {
   /**
+   * Demo Mode — V1 Stability Guardrails
+   * When true:
+   * - Disables advanced UI elements (diagnostics panel, verbose toggles)
+   * - Suppresses raw backend error banners (shows simplified errors)
+   * - Forces StatusLog to simple mode (no details toggle)
+   * 
+   * Enable this for customer demos and presentations.
+   * Default: false (development mode with full diagnostics)
+   */
+  DEMO_MODE: false,
+  
+  /**
    * Global Drag & Drop
    * When false: Disables document-level drag/drop listeners to prevent whitescreen crashes.
    * Re-enable only after thorough testing of drag/drop handling.

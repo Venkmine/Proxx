@@ -219,6 +219,10 @@ function App() {
   
   // Status log: Track previous job statuses to detect transitions
   const prevJobStatuses = useRef<Map<string, string>>(new Map())
+  
+  // V1 Demo: Heartbeat tracking for long-running encodes
+  const lastHeartbeatTime = useRef<Map<string, number>>(new Map())
+  const HEARTBEAT_INTERVAL_MS = 15000 // 15 seconds between heartbeat messages
 
   // Global status filters (Phase 16: applies to job list)
   const [globalStatusFilters, setGlobalStatusFilters] = useState<Set<string>>(new Set())
@@ -725,6 +729,31 @@ function App() {
     Array.from(prevJobStatuses.current.keys()).forEach(jobId => {
       if (!currentJobIds.has(jobId)) {
         prevJobStatuses.current.delete(jobId)
+      }
+    })
+  }, [jobs, addStatusLogEntry])
+  
+  // V1 Demo: Heartbeat messages for long-running encodes
+  // Truthful feedback without fake progress percentages or ETAs
+  useEffect(() => {
+    const runningJobs = jobs.filter(job => job.status.toUpperCase() === 'RUNNING')
+    const now = Date.now()
+    
+    runningJobs.forEach(job => {
+      const lastHeartbeat = lastHeartbeatTime.current.get(job.id) || 0
+      
+      // Emit heartbeat if enough time has passed
+      if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+        addStatusLogEntry(statusMessages.encodingHeartbeat(job.id))
+        lastHeartbeatTime.current.set(job.id, now)
+      }
+    })
+    
+    // Clean up heartbeat tracking for completed/cancelled jobs
+    Array.from(lastHeartbeatTime.current.keys()).forEach(jobId => {
+      const job = jobs.find(j => j.id === jobId)
+      if (!job || job.status.toUpperCase() !== 'RUNNING') {
+        lastHeartbeatTime.current.delete(jobId)
       }
     })
   }, [jobs, addStatusLogEntry])
@@ -1715,7 +1744,8 @@ function App() {
       }}
     >
       {/* Hardening: Invariant Violation Banner (Alpha diagnostics) */}
-      <InvariantBanner enabled={FEATURE_FLAGS.ALPHA_DIAGNOSTICS_ENABLED} />
+      {/* V1 Demo: Suppress in demo mode for cleaner presentations */}
+      <InvariantBanner enabled={FEATURE_FLAGS.ALPHA_DIAGNOSTICS_ENABLED && !FEATURE_FLAGS.DEMO_MODE} />
       
       {/* Background Layers */}
       <div style={{ position: 'fixed', inset: 0, zIndex: -20, background: 'var(--gradient-base)' }} />
@@ -1796,8 +1826,8 @@ function App() {
         </div>
       </header>
 
-      {/* Error Banner */}
-      {error && (
+      {/* Error Banner — V1 Demo: Suppress raw backend errors in demo mode */}
+      {error && !FEATURE_FLAGS.DEMO_MODE && (
         <div
           style={{
             padding: '0.75rem 1.5rem',
@@ -2212,7 +2242,7 @@ function App() {
       */}
       
       {/* Status Log - bottom-left panel with plain English status messages */}
-      <StatusLog entries={statusLogEntries} />
+      <StatusLog entries={statusLogEntries} demoMode={FEATURE_FLAGS.DEMO_MODE} />
     </div>
   )
 }

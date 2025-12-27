@@ -40,13 +40,16 @@ export interface StatusLogEntry {
 interface StatusLogProps {
   entries: StatusLogEntry[]
   maxHeight?: number
+  /** Demo mode: hides details toggle, forces simple view */
+  demoMode?: boolean
 }
 
 // ============================================================================
 // COMPONENT
 // ============================================================================
 
-export function StatusLog({ entries, maxHeight = 200 }: StatusLogProps) {
+export function StatusLog({ entries, maxHeight = 200, demoMode = false }: StatusLogProps) {
+  // In demo mode, always force simple view (no details toggle)
   const [showDetails, setShowDetails] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -135,19 +138,22 @@ export function StatusLog({ entries, maxHeight = 200 }: StatusLogProps) {
           Status
         </span>
         
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setShowDetails(!showDetails)}
-          title={showDetails ? 'Hide details' : 'Show details'}
-          style={{
-            fontSize: '10px',
-            padding: '2px 6px',
-            height: 'auto',
-          }}
-        >
-          {showDetails ? 'Simple' : 'Details'}
-        </Button>
+        {/* Demo mode: hide details toggle for cleaner presentation */}
+        {!demoMode && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowDetails(!showDetails)}
+            title={showDetails ? 'Hide details' : 'Show details'}
+            style={{
+              fontSize: '10px',
+              padding: '2px 6px',
+              height: 'auto',
+            }}
+          >
+            {showDetails ? 'Simple' : 'Details'}
+          </Button>
+        )}
       </div>
 
       {/* Log entries */}
@@ -229,8 +235,8 @@ export function StatusLog({ entries, maxHeight = 200 }: StatusLogProps) {
                 {entry.message}
               </div>
 
-              {/* Optional details (only shown when toggle is on) */}
-              {showDetails && entry.details && (
+              {/* Optional details (only shown when toggle is on AND not in demo mode) */}
+              {!demoMode && showDetails && entry.details && (
                 <div
                   style={{
                     marginTop: '4px',

@@ -204,3 +204,15 @@ export function errorOccurred(message: string, details?: string): StatusLogEntry
 export function infoMessage(message: string, details?: string): StatusLogEntry {
   return createEntry('info', message, details)
 }
+
+/**
+ * Heartbeat message for long-running encodes.
+ * Truthful feedback without fake progress percentages or ETAs.
+ */
+export function encodingHeartbeat(jobId: string): StatusLogEntry {
+  return createEntry(
+    'info',
+    'Encoding in progress… still working',
+    `Job ID: ${jobId}`
+  )
+}

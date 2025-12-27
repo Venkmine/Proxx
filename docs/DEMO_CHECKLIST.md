@@ -4,6 +4,35 @@
 
 ---
 
+## Demo Mode (V1 Stability Guardrails)
+
+Before giving a demo, enable DEMO_MODE in the feature flags:
+
+**File:** `frontend/src/config/featureFlags.ts`
+```typescript
+DEMO_MODE: true,  // Enable for demos
+```
+
+### What DEMO_MODE Does:
+
+| Behavior | Effect |
+|----------|--------|
+| Hides Diagnostics Panel | `ALPHA_DIAGNOSTICS_ENABLED` suppressed |
+| Hides StatusLog Details Toggle | Forces simple view, no verbose logs |
+| Suppresses Raw Error Banners | Backend errors don't display as red banners |
+| Shows Heartbeat Messages | "Encoding in progress… still working" every 15s |
+
+### Why Use DEMO_MODE:
+
+- **Prevents accidental footguns** — no raw error strings visible
+- **Cleaner UI** — diagnostic details hidden from audience
+- **Long encode reassurance** — heartbeat messages show activity without fake progress
+- **Consistent experience** — same view for all demo sessions
+
+**Remember to disable DEMO_MODE after the demo for development work.**
+
+---
+
 ## What To Show
 
 1. **Select a single source file** using the "Select Files" button
@@ -72,6 +101,28 @@
 5. **Execute** (1:30) — start job, watch status change, wait for completion
 6. **Verify output** (1:00) — show in Finder, play output file
 7. **Show diagnostics** (0:30) — click job to show source/output metadata
+
+---
+
+## V1 Explicit Non-Goals (Locked in Code)
+
+The following features are **intentionally absent from V1** and protected by code guardrails:
+
+| Feature | Why Not |
+|---------|---------|
+| Progress bars / percentages | FFmpeg progress parsing unreliable across codecs |
+| ETA estimation | Inaccurate for variable bitrate content |
+| Frame previews during encode | Adds complexity, potential for stale frames |
+| Retry / requeue failed jobs | Creates ambiguous job history |
+| Pause / resume execution | State machine complexity, partial output issues |
+| Drag & drop file ingestion | Platform-specific bugs with network paths |
+| Multi-clip batch jobs | Error isolation requires one clip per job |
+| Overlay position editing | Preview coordinates don't match FFmpeg output |
+| Watch folders | Autonomous ingestion is v2 scope |
+
+**These are not bugs. They are deliberate scope constraints.**
+
+See also: `docs/PRODUCT.md` section 7 for product-level non-goals.
 
 ---
 
