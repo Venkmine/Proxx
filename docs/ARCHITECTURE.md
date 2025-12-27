@@ -306,6 +306,38 @@ The user watches; they do not intervene.
 
 ---
 
+### 9.6 Preview Transform Invariants
+
+Zoom behavior is governed by strict invariants to prevent layout regression.
+
+**INVARIANT 1: Preview container is FIXED-SIZE**
+
+* Container dimensions are set once based on available viewport space
+* Container uses `aspectRatio: '16 / 9'` to maintain proportions
+* Zoom NEVER changes container width, height, or aspect ratio
+
+**INVARIANT 2: Zoom is TRANSFORM-ONLY**
+
+* Zoom is applied exclusively via CSS `transform: scale()`
+* `transformOrigin: 'center center'` ensures symmetric, center-anchored scaling
+* Pan is applied via `translate()` combined with `scale()`
+
+**INVARIANT 3: No dimension mutation during zoom**
+
+* NEVER modify width, height, maxWidth, or aspectRatio based on zoom level
+* Changing dimensions breaks overlay coordinate math
+* Changing dimensions causes cumulative drift on repeated zoom operations
+
+**Rationale:**
+
+Previous bugs occurred when zoom logic modified container size instead of using pure transforms.
+This caused overlay position drift, preview-vs-output mismatch, and degraded UX.
+
+The frontend includes a dev-only assertion in `VisualPreviewWorkspace.tsx` that warns
+if container dimensions are modified when zoom ≠ 1.
+
+---
+
 **End of document**
 
 ---

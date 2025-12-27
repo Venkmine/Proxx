@@ -724,17 +724,51 @@ export function VisualPreviewWorkspace({
       >
         {/* 16:9 Preview Container with Zoom/Pan */}
         {/*
-         * ZOOM INVARIANT: Preview zoom is center-anchored.
-         * Zoom must never bias vertically or horizontally.
+         * ============================================================================
+         * PREVIEW TRANSFORM INVARIANTS — DO NOT VIOLATE
+         * ============================================================================
          * 
-         * Implementation:
-         * - Container maintains base size (100% width, aspect-ratio 16/9)
-         * - Zoom uses CSS transform: scale() NOT width changes
-         * - transformOrigin: 'center center' ensures symmetric scaling
-         * - Pan offset is applied via translate() combined with scale()
+         * These invariants exist to prevent layout regression bugs.
+         * If you are about to change zoom behavior, read this first.
          * 
-         * TODO(v2): support cursor-anchored zoom (calculate delta from mouse coords)
+         * INVARIANT 1: Preview container is FIXED-SIZE
+         *   - Container width/height are set once based on available space
+         *   - Container uses aspectRatio: '16 / 9' to maintain proportions
+         *   - Zoom NEVER changes container dimensions
+         * 
+         * INVARIANT 2: Zoom is TRANSFORM-ONLY
+         *   - Zoom is applied via CSS transform: scale()
+         *   - transformOrigin: 'center center' ensures symmetric scaling
+         *   - Pan uses translate() combined with scale()
+         * 
+         * INVARIANT 3: No width/height mutation when zooming
+         *   - NEVER modify width, height, maxWidth, or aspectRatio based on zoom
+         *   - Changing dimensions breaks overlay positioning math
+         *   - Changing dimensions causes cumulative drift on repeated zoom
+         * 
+         * WHY: Previous bugs occurred when zoom modified container size.
+         * Overlays drifted, preview vs output mismatched, and UX degraded.
+         * 
+         * See: docs/ARCHITECTURE.md "Preview Transform Invariants"
+         * ============================================================================
          */}
+        {/* DEV ASSERTION: Warn if container dimensions could drift */}
+        {process.env.NODE_ENV === 'development' && zoom !== 'fit' && zoom !== 1 && (() => {
+          // This IIFE runs in dev mode to detect invariant violations.
+          // If you see this warning, someone changed zoom to modify dimensions.
+          const container = canvasRef.current;
+          if (container) {
+            const style = container.style;
+            // These properties should NEVER be dynamic based on zoom
+            if (style.width && style.width !== '100%') {
+              console.warn('[Preview Invariant Violation] Container width was modified. Zoom must use transform only.');
+            }
+            if (style.maxWidth && style.maxWidth !== '100%') {
+              console.warn('[Preview Invariant Violation] Container maxWidth was modified. Zoom must use transform only.');
+            }
+          }
+          return null;
+        })()}
         <div
           ref={canvasRef}
           data-testid="preview-viewport-container"
