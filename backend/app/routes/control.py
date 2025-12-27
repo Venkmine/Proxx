@@ -1748,6 +1748,7 @@ async def start_job_endpoint(job_id: str, request: Request):
         500: Execution failed
     """
     from app.execution.scheduler import get_scheduler
+    from datetime import datetime as dt
     
     try:
         job_registry = request.app.state.job_registry
@@ -1760,6 +1761,8 @@ async def start_job_endpoint(job_id: str, request: Request):
         job = job_registry.get_job(job_id)
         if not job:
             raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        
+        logger.info(f"[LIFECYCLE] HTTP start_job_endpoint BEGIN for job {job_id} at {dt.now().isoformat()}")
         
         # Validate job status - only PENDING jobs can be started
         if job.status != JobStatus.PENDING:
@@ -1792,6 +1795,7 @@ async def start_job_endpoint(job_id: str, request: Request):
                 logger.warning(f"Bound preset '{preset_id}' not found for job {job_id}, proceeding with job settings")
                 preset_id = None
         
+        logger.info(f"[LIFECYCLE] Calling execute_job() SYNCHRONOUSLY for job {job_id} at {dt.now().isoformat()}")
         try:
             # Execute the job using embedded settings (preset optional)
             job_engine.execute_job(
@@ -1804,7 +1808,7 @@ async def start_job_endpoint(job_id: str, request: Request):
             # INC-002: Release execution slot when done
             scheduler.release_execution(job_id)
         
-        logger.info(f"Job {job_id} started via control endpoint")
+        logger.info(f"[LIFECYCLE] HTTP start_job_endpoint END for job {job_id} at {dt.now().isoformat()}, final status: {job.status.value}")
         
         return OperationResponse(
             success=True,

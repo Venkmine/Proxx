@@ -386,39 +386,95 @@ export function JobGroup({
           {totalTasks} clip{totalTasks !== 1 ? 's' : ''}
         </div>
 
-        {/* Trust Stabilisation: Always-visible Remove/Cancel action */}
-        {/* Destructive actions must be obvious, not hidden behind selection/hover */}
-        {(showDelete || showCancel) && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              if (showCancel) {
-                onCancel?.()
-              } else {
-                onDelete?.()
-              }
-            }}
-            disabled={loading}
-            style={{
-              background: 'none',
-              border: '1px solid var(--error-border)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '0.25rem 0.5rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '0.6875rem',
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--error-fg)',
-              opacity: loading ? 0.5 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.25rem',
-              transition: 'all 0.15s',
-            }}
-            title={showCancel ? 'Cancel this running job' : 'Remove this job from queue'}
-          >
-            {showCancel ? '⏹ Cancel' : '✕ Remove'}
-          </button>
-        )}
+        {/* Trust Stabilisation: Always-visible action buttons in header */}
+        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+          {/* Render button for PENDING jobs - always visible */}
+          {showStart && onStart && (
+            <button
+              data-testid="btn-job-render"
+              onClick={(e) => {
+                e.stopPropagation()
+                onStart()
+              }}
+              disabled={loading}
+              style={{
+                background: 'var(--success-bg)',
+                border: '1px solid var(--success-border)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.25rem 0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '0.6875rem',
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--success-fg)',
+                opacity: loading ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                transition: 'all 0.15s',
+              }}
+              title="Start rendering this job"
+            >
+              ▶ Render
+            </button>
+          )}
+          {/* Cancel button for RUNNING jobs */}
+          {showCancel && onCancel && (
+            <button
+              data-testid="btn-job-cancel"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancel()
+              }}
+              disabled={loading}
+              style={{
+                background: 'none',
+                border: '1px solid var(--error-border)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.25rem 0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '0.6875rem',
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--error-fg)',
+                opacity: loading ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                transition: 'all 0.15s',
+              }}
+              title="Cancel this running job"
+            >
+              ⏹ Cancel
+            </button>
+          )}
+          {/* Delete button for non-running jobs */}
+          {showDelete && onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              disabled={loading}
+              style={{
+                background: 'none',
+                border: '1px solid var(--error-border)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.25rem 0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '0.6875rem',
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--error-fg)',
+                opacity: loading ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                transition: 'all 0.15s',
+              }}
+              title="Remove this job from queue"
+            >
+              ✕ Remove
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Collapsible Content */}
@@ -488,19 +544,9 @@ export function JobGroup({
                 )}
               </div>
 
-              {/* Action Buttons */}
+              {/* Action Buttons - excludes Start/Cancel which are in header */}
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {showStart && (
-                  <Button
-                    data-testid="btn-job-render"
-                    variant="success"
-                    size="sm"
-                    onClick={onStart}
-                    disabled={loading}
-                  >
-                    ▶ Render
-                  </Button>
-                )}
+                {/* NOTE: Render and Cancel buttons are in the header for single-control-surface principle */}
                 {showPause && (
                   <Button
                     data-testid="btn-job-pause"
@@ -544,17 +590,6 @@ export function JobGroup({
                     title="Create new job with same settings"
                   >
                     ↺ Requeue
-                  </Button>
-                )}
-                {showCancel && (
-                  <Button
-                    data-testid="btn-job-cancel"
-                    variant="destructive"
-                    size="sm"
-                    onClick={onCancel}
-                    disabled={loading}
-                  >
-                    ⏹ Stop
                   </Button>
                 )}
                 {showDelete && (

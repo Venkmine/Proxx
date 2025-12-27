@@ -106,17 +106,9 @@ export async function waitForJobInQueue(page: Page, expectedStatus?: string): Pr
  * Uses data-job-status attribute to avoid matching filter button labels.
  */
 export async function waitForJobStatus(page: Page, status: string, timeout: number = 60000): Promise<void> {
-  // Match against data-job-status attribute (uppercase values like RUNNING, COMPLETED)
-  // The status parameter can be a regex pattern like 'running|encoding|processing'
   const statusPattern = status.toUpperCase().replace(/\|/g, '|');
   const attrSelector = `[data-job-status]`;
   
-  // Find a job element whose data-job-status matches the pattern
-  const jobStatusLocator = page.locator(attrSelector).filter({
-    has: page.locator(':scope'),
-  }).first();
-  
-  // Use a custom matcher to check the attribute value
   await expect(async () => {
     const elements = await page.locator(attrSelector).all();
     for (const el of elements) {
@@ -384,6 +376,8 @@ export async function resetBackendQueue(): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
+    // Wait for UI polling to pick up the change (polling is 200ms)
+    await new Promise(r => setTimeout(r, 300));
   } catch {
     // Backend may not be available
   }
@@ -612,7 +606,15 @@ interface ProxyFixtures {
   errorDisplayPage: ErrorDisplayPage;
 }
 
-export const test = base.extend<ProxyFixtures>({
+// Custom test that resets queue before each test for proper isolation
+const testWithReset = base.extend<ProxyFixtures>({
+  // Auto-fixture that runs before each test
+  page: async ({ page }, use) => {
+    // Reset queue before test runs
+    await resetBackendQueue();
+    await use(page);
+  },
+  
   createJobPage: async ({ page }, use) => {
     const createJobPage = new CreateJobPage(page);
     await createJobPage.goto();
@@ -629,5 +631,7 @@ export const test = base.extend<ProxyFixtures>({
     await use(errorDisplayPage);
   },
 });
+
+export const test = testWithReset;
 
 export { expect } from '@playwright/test';

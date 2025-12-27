@@ -176,10 +176,16 @@ class JobEngine:
         Raises:
             InvalidStateTransitionError: If job is not in PENDING state
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[LIFECYCLE] start_job() called for job {job.id}, current status: {job.status.value}")
+        
         validate_job_transition(job.status, JobStatus.RUNNING)
         
+        old_status = job.status
         job.status = JobStatus.RUNNING
         job.started_at = datetime.now()
+        logger.info(f"[LIFECYCLE] Job {job.id} transitioned: {old_status.value} -> RUNNING at {job.started_at.isoformat()}")
     
     def pause_job(self, job: Job) -> None:
         """
@@ -234,6 +240,10 @@ class JobEngine:
         Raises:
             InvalidStateTransitionError: If job is already in a terminal state
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[LIFECYCLE] cancel_job() called for job {job.id}, current status: {job.status.value}")
+        
         validate_job_transition(job.status, JobStatus.CANCELLED)
         
         # Mark all queued clips as skipped
@@ -243,8 +253,10 @@ class JobEngine:
                 task.failure_reason = reason
                 task.completed_at = datetime.now()
         
+        old_status = job.status
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now()
+        logger.info(f"[LIFECYCLE] Job {job.id} transitioned: {old_status.value} -> CANCELLED at {job.completed_at.isoformat()}")
     
     def retry_failed_clips(
         self,
@@ -404,17 +416,24 @@ class JobEngine:
         Args:
             job: The job to finalize
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         final_status = self.compute_job_status(job)
+        logger.info(f"[LIFECYCLE] finalize_job() called for job {job.id}, current: {job.status.value}, computed: {final_status.value}")
         
         # Only update if status changed
         if job.status != final_status:
             # Validate the transition is legal
             validate_job_transition(job.status, final_status)
+            old_status = job.status
             job.status = final_status
+            logger.info(f"[LIFECYCLE] Job {job.id} transitioned: {old_status.value} -> {final_status.value}")
         
         # Set completion timestamp if job is terminal
         if final_status in (JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_WARNINGS):
             job.completed_at = datetime.now()
+            logger.info(f"[LIFECYCLE] Job {job.id} completed at {job.completed_at.isoformat()}")
     
     # Execution stubs for Phase 5+ integration
 
