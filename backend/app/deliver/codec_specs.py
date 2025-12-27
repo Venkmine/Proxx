@@ -58,20 +58,6 @@ BITRATE_PRESETS_H264 = BitratePresetValues(
     broadcast="50M",
 )
 
-BITRATE_PRESETS_H265 = BitratePresetValues(
-    low="3M",
-    medium="10M",
-    high="25M",
-    broadcast="40M",
-)
-
-BITRATE_PRESETS_AV1 = BitratePresetValues(
-    low="2M",
-    medium="8M",
-    high="20M",
-    broadcast="35M",
-)
-
 
 @dataclass(frozen=True)
 class CodecSpec:
@@ -413,7 +399,7 @@ CODEC_REGISTRY: Dict[str, CodecSpec] = {
         crf_max=51,
         crf_default=23,
         bitrate_presets=BITRATE_PRESETS_H264,
-        supported_containers=("mp4", "mov", "mkv"),
+        supported_containers=("mp4", "mov"),
         default_container="mp4",
         supported_pixel_formats=("yuv420p", "yuv422p", "yuv444p"),
         default_pixel_format="yuv420p",
@@ -425,53 +411,9 @@ CODEC_REGISTRY: Dict[str, CodecSpec] = {
         notes="Universal delivery codec. CRF 18-23 for high quality.",
     ),
     
-    "h265": CodecSpec(
-        name="H.265 / HEVC",
-        codec_id="h265",
-        category="delivery",
-        supports_crf=True,
-        supports_bitrate=True,
-        supports_constant_qp=True,
-        default_rate_control=RateControlMode.CRF,
-        crf_min=0,
-        crf_max=51,
-        crf_default=28,
-        bitrate_presets=BITRATE_PRESETS_H265,
-        supported_containers=("mp4", "mov", "mkv"),
-        default_container="mp4",
-        supported_pixel_formats=("yuv420p", "yuv420p10le", "yuv422p", "yuv444p"),
-        default_pixel_format="yuv420p",
-        supported_color_spaces=("source", "rec709", "rec2020", "p3d65"),
-        supports_lut=True,
-        supports_hdr_metadata=True,
-        is_lossless=False,
-        is_intraframe=False,
-        notes="Efficient delivery. ~50% size reduction vs H.264 at same quality.",
-    ),
-    
-    "av1": CodecSpec(
-        name="AV1",
-        codec_id="av1",
-        category="delivery",
-        supports_crf=True,
-        supports_bitrate=True,
-        supports_constant_qp=True,
-        default_rate_control=RateControlMode.CRF,
-        crf_min=0,
-        crf_max=63,
-        crf_default=30,
-        bitrate_presets=BITRATE_PRESETS_AV1,
-        supported_containers=("mp4", "mkv", "webm"),
-        default_container="mp4",
-        supported_pixel_formats=("yuv420p", "yuv420p10le", "yuv444p"),
-        default_pixel_format="yuv420p",
-        supported_color_spaces=("source", "rec709", "rec2020", "p3d65"),
-        supports_lut=True,
-        supports_hdr_metadata=True,
-        is_lossless=False,
-        is_intraframe=False,
-        notes="Next-gen codec. Best compression but slow encoding. HDR support.",
-    ),
+    # NOTE: H.265/HEVC and AV1 removed for reliability.
+    # These codecs ARE mapped in ffmpeg.py but have variable encoding 
+    # performance and compatibility. Re-add after thorough testing.
 }
 
 
@@ -484,20 +426,15 @@ CONTAINER_CODEC_MAP: Dict[str, List[str]] = {
         "prores_proxy", "prores_lt", "prores_422", "prores_422_hq",
         "prores_4444", "prores_4444_xq",
         "dnxhr_lb", "dnxhr_sq", "dnxhr_hq", "dnxhr_hqx", "dnxhr_444",
-        "h264", "h265",
+        "h264",
     ],
     "mxf": [
         "dnxhr_lb", "dnxhr_sq", "dnxhr_hq", "dnxhr_hqx", "dnxhr_444",
     ],
     "mp4": [
-        "h264", "h265", "av1",
+        "h264",
     ],
-    "mkv": [
-        "h264", "h265", "av1",
-    ],
-    "webm": [
-        "av1",
-    ],
+    # NOTE: mkv and webm removed - only had h265/av1 which are not mapped.
 }
 
 

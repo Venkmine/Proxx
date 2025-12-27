@@ -594,8 +594,7 @@ export function DeliverControlPanel({
       mov: 'QuickTime (.mov)',
       mxf: 'MXF OP1a (.mxf)',
       mp4: 'MP4 (.mp4)',
-      mkv: 'Matroska (.mkv)',
-      webm: 'WebM (.webm)',
+      // NOTE: mkv and webm removed - codecs that used them (h265, av1) are not yet mapped
     }
     
     return currentCodecSpec.supported_containers.map(c => ({

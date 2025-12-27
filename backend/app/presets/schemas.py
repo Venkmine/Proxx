@@ -64,7 +64,8 @@ class CodecPreset(CategoryPreset):
         if not v or not v.strip():
             raise ValueError("Container cannot be empty")
         v = v.strip().lower()
-        allowed = {"mov", "mxf"}
+        # Allowed containers per CONTAINER_CODEC_MAP in codec_specs.py
+        allowed = {"mov", "mxf", "mp4"}
         if v not in allowed:
             raise ValueError(f"Container must be one of: {', '.join(sorted(allowed))}")
         return v

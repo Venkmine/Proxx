@@ -38,6 +38,8 @@ if TYPE_CHECKING:
     from ..deliver.settings import DeliverSettings
 
 from ..jobs.models import Job, JobStatus
+from ..deliver.codec_specs import validate_codec_container, CODEC_REGISTRY
+from ..execution.ffmpeg import FFMPEG_CODEC_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +222,11 @@ class IngestionService:
             self._validate_engine(engine)
         
         # =====================================================================
+        # 4b. VALIDATE CODEC/CONTAINER COMPATIBILITY
+        # =====================================================================
+        self._validate_codec_container(deliver_settings, engine)
+        
+        # =====================================================================
         # 5. VALIDATE PRESET (if provided and registry available)
         # =====================================================================
         preset = None
@@ -374,6 +381,54 @@ class IngestionService:
         # If the directory exists, verify it's actually a directory
         if output_path.exists() and not output_path.is_dir():
             raise IngestionError(f"Output path is not a directory: {output_dir}")
+    
+    def _validate_codec_container(self, deliver_settings: "DeliverSettings", engine: str) -> None:
+        """
+        Validate codec/container compatibility and engine support.
+        
+        Blocks job creation if:
+        1. Codec is not in CODEC_REGISTRY (unknown codec)
+        2. Container is not valid for the codec
+        3. Codec is not mapped in FFmpeg engine (for FFmpeg engine)
+        
+        This ensures the UI cannot create jobs that will fail at execution.
+        
+        Raises:
+            IngestionError: With clear message for StatusLog display
+        """
+        video_codec = deliver_settings.video.codec.lower() if deliver_settings.video else "prores_422"
+        container = deliver_settings.file.container.lower() if deliver_settings.file else "mov"
+        
+        # 1. Check codec exists in registry
+        codec_spec = CODEC_REGISTRY.get(video_codec)
+        if not codec_spec:
+            raise IngestionError(
+                f"Unsupported codec '{video_codec}'. "
+                f"Available codecs: {', '.join(sorted(CODEC_REGISTRY.keys()))}. "
+                "Please select a different codec."
+            )
+        
+        # 2. Check container is valid for codec
+        if not validate_codec_container(video_codec, container):
+            valid_containers = ", ".join(codec_spec.supported_containers)
+            raise IngestionError(
+                f"Container '{container}' is not compatible with codec '{codec_spec.name}'. "
+                f"Supported containers for {codec_spec.name}: {valid_containers}. "
+                "Please select a compatible container."
+            )
+        
+        # 3. Check codec is mapped in FFmpeg (if using FFmpeg engine)
+        if engine.lower() == "ffmpeg":
+            if video_codec not in FFMPEG_CODEC_MAP:
+                raise IngestionError(
+                    f"Codec '{codec_spec.name}' is not yet supported by FFmpeg engine. "
+                    f"Mapped codecs: {', '.join(sorted(FFMPEG_CODEC_MAP.keys()))}. "
+                    "Please select a different codec or wait for engine support."
+                )
+        
+        logger.debug(
+            f"Codec/container validation passed: {video_codec} → {container} (engine={engine})"
+        )
     
     def _validate_engine(self, engine: str) -> None:
         """
