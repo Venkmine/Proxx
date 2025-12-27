@@ -392,7 +392,11 @@ function App() {
   }
   
   const deliverContext = getDeliverContext()
-  const isDeliverReadOnly = deliverContext.type === 'job-running' || deliverContext.type === 'job-completed'
+  // V1 DOGFOOD FIX: Settings should only be locked while job is RUNNING.
+  // Once job is COMPLETED or FAILED, re-enable settings so user can adjust
+  // for a new job. Completed jobs are read-only in the queue, but the settings
+  // panel shows defaults/presets for the NEXT job, not the completed one.
+  const isDeliverReadOnly = deliverContext.type === 'job-running'
   
   // Phase 8B: Queue diagnostics clarity - is any job currently running?
   const hasAnyJobRunning = jobs.some(job => job.status.toUpperCase() === 'RUNNING')

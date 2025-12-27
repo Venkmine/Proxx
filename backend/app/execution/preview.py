@@ -4,7 +4,7 @@ Preview video generation using FFmpeg.
 Alpha: Generate lightweight preview videos for playback in the UI.
 
 Strategy:
-- Generate H.264 proxy at low resolution (540p or lower)
+- Generate H.264 proxy at moderate resolution (720p)
 - Short GOP for responsive scrubbing
 - Cache by source path + mtime hash
 - Non-blocking, runs async with progress
@@ -25,8 +25,12 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Preview video settings
-PREVIEW_WIDTH = 960  # 540p height with 16:9 aspect
-PREVIEW_HEIGHT = 540
+# V1 DOGFOOD FIX: Increased from 540p to 720p for better preview quality.
+# 540p was too blurry for H.264 delivery format previews.
+# 720p balances quality vs. generation time for preview purposes.
+# Do NOT increase to 1080p — that would defeat the preview speed advantage.
+PREVIEW_WIDTH = 1280  # 720p with 16:9 aspect
+PREVIEW_HEIGHT = 720
 PREVIEW_CODEC = "libx264"
 PREVIEW_CRF = 28  # Good enough for preview
 PREVIEW_PRESET = "ultrafast"  # Speed over quality

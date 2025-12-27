@@ -216,7 +216,8 @@ export function MediaWorkspace({
               hasElectron={hasElectron}
               workspaceMode={workspaceMode}
               showDirectoryNavigator={false}
-              onToggleDirectoryNavigator={() => {}}
+              // V1 DOGFOOD FIX: Browse button now switches to Browse tab
+              onToggleDirectoryNavigator={() => setActiveTab('browse')}
             />
           </div>
         )}

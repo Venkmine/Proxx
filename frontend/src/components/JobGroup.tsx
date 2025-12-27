@@ -601,16 +601,7 @@ export function JobGroup({
                     ✏ Edit Settings
                   </Button>
                 )}
-                {showRebind && !onEditSettings && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={onRebindPreset}
-                    disabled={loading}
-                  >
-                    ⚙ Settings
-                  </Button>
-                )}
+                {/* V1: Non-functional Settings button removed - onRebindPreset only selects job with no action */}
               </div>
 
               {/* Timestamps - labels use sans, values use mono */}

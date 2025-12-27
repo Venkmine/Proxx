@@ -447,24 +447,32 @@ export function DirectoryNavigator({
         expanded: true,
       })
       
-      // INC-001: Fetch with timeout protection
+      // V1 DOGFOOD FIX: Robust error handling for folder listing.
+      // Ensures loading spinner always resolves with either data or error.
+      // Never silently swallows errors.
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
       
       fetch(`${backendUrl}/filesystem/browse?path=${encodeURIComponent(path)}`, {
         signal: controller.signal,
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            // V1 FIX: Handle HTTP errors explicitly
+            throw new Error(`HTTP ${res.status}: ${res.statusText || 'Access denied'}`)
+          }
+          return res.json()
+        })
         .then(data => {
           clearTimeout(timeoutId)
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {
-              path: data.path,
+              path: data.path || path,
               parent: data.parent,
               entries: data.entries || [],
               loading: false,
-              // INC-001: Backend may return error field for timeouts
+              // V1 FIX: Backend may return error field for permission issues
               error: data.error || null,
               expanded: true,
             })
@@ -473,10 +481,17 @@ export function DirectoryNavigator({
         })
         .catch(err => {
           clearTimeout(timeoutId)
-          // INC-001: Handle timeout as retryable error
-          const errorMessage = err.name === 'AbortError' 
-            ? 'Timed out. Click to retry.'
-            : err.message
+          // V1 FIX: Surface all errors clearly, never leave spinner stuck
+          let errorMessage: string
+          if (err.name === 'AbortError') {
+            errorMessage = 'Timed out. Click to retry.'
+          } else if (err.message?.includes('HTTP')) {
+            errorMessage = err.message
+          } else if (err.message?.includes('NetworkError') || err.message?.includes('fetch')) {
+            errorMessage = 'Network error. Backend offline?'
+          } else {
+            errorMessage = err.message || 'Unknown error. Click to retry.'
+          }
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {

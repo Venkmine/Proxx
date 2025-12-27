@@ -191,10 +191,11 @@ export function CreateJobPanel({
   }
 
   // Handler for path prompt confirmation
+  // V1 GOLDEN PATH: Only 1 clip per job, so REPLACE instead of append
   const handlePathPromptConfirm = () => {
     const path = pathPromptValue.trim()
     if (path && isAbsolutePath(path)) {
-      onFilesChange([...selectedFiles, path])
+      onFilesChange([path])  // V1: Replace, not append
       setShowPathPrompt(false)
       setDroppedFileNames([])
       setPathPromptValue('')
@@ -351,37 +352,11 @@ export function CreateJobPanel({
             </button>
           )}
           
-          {/* Chevron toggle to hide panel */}
-          <button
-            onClick={onToggleVisibility}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '1.75rem',
-              height: '1.75rem',
-              background: 'rgba(51, 65, 85, 0.3)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-              color: 'var(--text-muted)',
-              fontSize: '0.75rem',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
-              e.currentTarget.style.borderColor = 'var(--border-hover)'
-              e.currentTarget.style.color = 'var(--text-secondary)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.3)'
-              e.currentTarget.style.borderColor = 'var(--border-primary)'
-              e.currentTarget.style.color = 'var(--text-muted)'
-            }}
-            title="Collapse Panel"
-          >
-            <span style={{ transform: 'rotate(180deg)', display: 'inline-block' }}>▼</span>
-          </button>
+          {/* V1 DOGFOOD FIX: Collapse button removed.
+              The Sources panel is part of the fixed 3-zone layout and cannot collapse.
+              This button was non-functional and misleading.
+              If collapse is needed in future, implement via WorkspaceLayout zone control.
+          */}
         </div>
       </div>
 
@@ -438,7 +413,8 @@ export function CreateJobPanel({
                       const path = input.value.trim()
                       if (path) {
                         console.log('[CreateJobPanel] Adding path:', path)
-                        onFilesChange([...selectedFiles, path])
+                        // V1 GOLDEN PATH: Replace, not append - only 1 clip per job
+                        onFilesChange([path])
                         input.value = ''
                       }
                     }

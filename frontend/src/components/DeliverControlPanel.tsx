@@ -616,22 +616,26 @@ export function DeliverControlPanel({
   }
   
   // Derive panel title and subtext from context
+  // V1 DOGFOOD FIX: Make it clear that presets are OPTIONAL.
+  // Users can run jobs with current settings without saving/selecting a preset.
   const getPanelInfo = (): { title: string; subtext: string } => {
     switch (context.type) {
       case 'none':
         return { 
-          title: 'Default Proxy Settings', 
-          subtext: 'Using defaults — select files or a job to configure' 
+          title: 'Encode Settings', 
+          subtext: 'Configure settings below (preset optional)' 
         }
       case 'pre-job':
         return { 
-          title: 'Default Proxy Settings', 
-          subtext: `Configuring for ${context.files.length} file(s)` 
+          title: 'Encode Settings', 
+          subtext: appliedPresetName 
+            ? `Preset: ${appliedPresetName}` 
+            : `Custom settings for ${context.files.length} file(s)` 
         }
       case 'job-pending':
         return { 
           title: 'Job Deliver Settings', 
-          subtext: appliedPresetName ? `Preset: ${appliedPresetName}` : 'Overrides applied for this job' 
+          subtext: appliedPresetName ? `Preset: ${appliedPresetName}` : 'Custom settings for this job' 
         }
       case 'job-running':
         return { 
@@ -640,8 +644,8 @@ export function DeliverControlPanel({
         }
       case 'job-completed':
         return { 
-          title: 'Job Deliver Settings', 
-          subtext: 'Settings locked — job completed' 
+          title: 'Encode Settings', 
+          subtext: 'Adjust settings for next job (preset optional)' 
         }
       case 'multiple-jobs':
         return { 
@@ -1196,7 +1200,8 @@ export function DeliverControlPanel({
             disabled={isReadOnly}
           />
           
-          {!settings.audio.passthrough && settings.audio.codec !== 'copy' && (
+          {/* V1: Only show bitrate for lossy codecs (AAC). PCM codecs are uncompressed and don't use bitrate. */}
+          {!settings.audio.passthrough && settings.audio.codec === 'aac' && (
             <FieldRow label="Bitrate">
               <Select
                 value={settings.audio.bitrate || '192k'}

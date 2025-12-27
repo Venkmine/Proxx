@@ -457,22 +457,36 @@ export function VisualPreviewWorkspace({
   }, [isPanning])
 
   // Wheel zoom handler
-  // Preview zoom is center-anchored. Zoom must never bias vertically.
-  // TODO(v2): support cursor-anchored zoom (calculate delta from mouse coords)
+  // V1 DOGFOOD FIX: Cursor-anchored zoom instead of center-anchored.
+  // Zoom anchors to mouse position relative to the preview canvas.
+  // TODO: V1-final behavior — cursor-anchored zoom within canvas bounds.
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     
     if (!canvasRef.current) return
     
-    // Center-anchored zoom: simply adjust zoom level
-    // No pan offset adjustment needed for center-anchored transforms
-    setZoom(prevZoom => {
-      const currentZoom = prevZoom === 'fit' ? 1 : prevZoom
-      const delta = e.deltaY > 0 ? 0.9 : 1.1 // Scroll down = zoom out, up = zoom in
-      const newZoom = Math.max(0.25, Math.min(4, currentZoom * delta))
-      return newZoom
-    })
-  }, [])
+    const rect = canvasRef.current.getBoundingClientRect()
+    
+    // Mouse position relative to canvas center (normalized -0.5 to 0.5)
+    const mouseX = (e.clientX - rect.left) / rect.width - 0.5
+    const mouseY = (e.clientY - rect.top) / rect.height - 0.5
+    
+    const currentZoom = zoom === 'fit' ? 1 : zoom
+    const delta = e.deltaY > 0 ? 0.9 : 1.1 // Scroll down = zoom out, up = zoom in
+    const newZoom = Math.max(0.25, Math.min(4, currentZoom * delta))
+    
+    // Calculate pan offset adjustment to keep cursor point stationary
+    // When zooming in, we need to move the pan offset towards the cursor
+    // When zooming out, we move away from the cursor
+    const zoomRatio = newZoom / currentZoom
+    
+    setPanOffset(prev => ({
+      x: prev.x + mouseX * (1 - zoomRatio) * 2,
+      y: prev.y + mouseY * (1 - zoomRatio) * 2,
+    }))
+    
+    setZoom(newZoom)
+  }, [zoom])
   
   // Middle mouse button pan
   const handleMouseDownPan = useCallback((e: React.MouseEvent) => {
