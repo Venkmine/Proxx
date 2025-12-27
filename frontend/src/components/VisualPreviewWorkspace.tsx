@@ -1348,6 +1348,7 @@ export function VisualPreviewWorkspace({
           {/* ============================================ */}
           
           {/* Phase 9F: Show legacy overlay warning when legacy system is in use */}
+          {/* STRUCTURAL FIX: Make it clear overlays are preview-only if not yet wired to render */}
           {overlaySettings && (
             (overlaySettings.text_layers?.length > 0 || 
              overlaySettings.image_watermark?.enabled || 
@@ -1368,9 +1369,9 @@ export function VisualPreviewWorkspace({
                 zIndex: 50,
                 pointerEvents: 'none',
               }}
-              title="Legacy overlay system active. New overlays use the layer system."
+              title="Alpha: Text and image overlays ARE rendered to output. Timecode burn-in works. Position editing is preview-only for now."
             >
-              Legacy Overlays
+              Preview + Render (Position preview-only)
             </div>
           )}
 

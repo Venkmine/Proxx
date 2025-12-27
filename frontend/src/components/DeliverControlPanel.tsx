@@ -1541,16 +1541,17 @@ export function DeliverControlPanel({
           />
           
           {/* Legacy overlays (deprecated, shown for backwards compatibility) */}
+          {/* STRUCTURAL FIX: Clarify that these overlays ARE rendered to output */}
           {(settings.overlay.text_layers.length > 0 || settings.overlay.image_watermark?.enabled || settings.overlay.timecode_overlay?.enabled) && (
             <div style={{
               marginTop: '1rem',
               padding: '0.5rem',
-              background: 'rgba(251, 191, 36, 0.1)',
-              border: '1px solid rgba(251, 191, 36, 0.2)',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
               borderRadius: 'var(--radius-sm)',
             }}>
-              <div style={{ fontSize: '0.625rem', color: 'rgb(251, 191, 36)', fontWeight: 600, marginBottom: '0.5rem' }}>
-                Legacy Overlays (Migrating to Layer System)
+              <div style={{ fontSize: '0.625rem', color: 'rgb(59, 130, 246)', fontWeight: 600, marginBottom: '0.5rem' }}>
+                Active Overlays (Will Render to Output)
               </div>
               
               {/* Text Layers List */}

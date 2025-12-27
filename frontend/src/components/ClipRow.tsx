@@ -229,24 +229,40 @@ export function ClipRow({
           </div>
           
           {/* Phase 16.4 + Phase 20: Progress bar for running clips */}
+          {/* STRUCTURAL FIX: Show honest progress indicator */}
           {isRunning && (
             <div style={{ marginTop: '0.5rem' }}>
-              {/* Phase 20: Status phase indicator */}
-              {phase && (
-                <div
-                  style={{
-                    marginBottom: '0.25rem',
-                    fontSize: '0.625rem',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
-                    color: phase === 'ENCODING' ? 'var(--button-primary-bg)' : 'var(--text-muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  {phase}
-                </div>
-              )}
+              {/* Phase 20: Status phase indicator - show ENCODING when we have progress */}
+              <div
+                style={{
+                  marginBottom: '0.25rem',
+                  fontSize: '0.625rem',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 600,
+                  color: progressPercent > 0 ? 'var(--button-primary-bg)' : 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                {/* Show spinner when no progress yet */}
+                {progressPercent === 0 && (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '0.75rem',
+                      height: '0.75rem',
+                      borderRadius: '50%',
+                      border: '2px solid var(--text-muted)',
+                      borderTopColor: 'var(--button-primary-bg)',
+                      animation: 'spin 1s linear infinite',
+                    }}
+                  />
+                )}
+                {progressPercent > 0 ? (phase || 'ENCODING') : 'Encoding (no live progress yet)'}
+              </div>
               
               <div
                 style={{

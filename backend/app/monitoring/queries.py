@@ -231,6 +231,8 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
             output_path=task.output_path,  # Phase 16.1: Include output path
             progress_percent=task.progress_percent,  # Phase 16.4: Progress
             eta_seconds=task.eta_seconds,  # Phase 16.4: ETA
+            encode_fps=getattr(task, '_encode_fps', None),  # Phase 20: Encoding speed
+            phase='ENCODING' if task.status.value == 'running' and task.progress_percent > 0 else ('PREPARING' if task.status.value == 'running' else None),  # Phase 20: Simple phase
             failure_reason=task.failure_reason,
             warnings=task.warnings,
             resolution=resolution,

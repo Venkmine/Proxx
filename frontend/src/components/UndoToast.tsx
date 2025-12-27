@@ -62,9 +62,10 @@ export function UndoToast({ action, onDismiss, duration = 5000 }: UndoToastProps
     <div
       style={{
         position: 'fixed',
+        // STRUCTURAL FIX: Move toast to bottom-right to avoid overlapping left sidebar and controls
         bottom: '1.5rem',
-        left: '1.5rem',
-        zIndex: 1000,
+        right: '1.5rem',
+        zIndex: 1100,  // Above z-index 1000 controls
         display: 'flex',
         alignItems: 'center',
         gap: '0.75rem',

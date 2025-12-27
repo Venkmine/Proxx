@@ -529,11 +529,28 @@ class JobEngine:
                 
                 # Phase 16.4: Engine receives resolved output_path from task
                 # Output path was resolved in _resolve_clip_outputs() before execution started
+                
+                # STRUCTURAL FIX: Connect progress updates to task model
+                # This ensures the UI can poll for real-time progress
+                def on_progress_callback(progress_info):
+                    """Update task with progress info for UI polling."""
+                    task.progress_percent = progress_info.progress_percent
+                    task.eta_seconds = progress_info.eta_seconds
+                    # Phase 20: Enhanced progress fields
+                    if hasattr(progress_info, 'encoding_fps'):
+                        # Store on task for monitoring queries
+                        task._encode_fps = progress_info.encoding_fps
+                    logger.debug(
+                        f"[PROGRESS] Clip {task.id}: {progress_info.progress_percent:.1f}% "
+                        f"(ETA: {progress_info.eta_seconds or 'N/A'}s)"
+                    )
+                
                 return engine.run_clip(
                     task=task,
                     resolved_params=resolved_params,
                     output_path=task.output_path,  # Already resolved, stored on task
                     watermark_text=watermark_text,
+                    on_progress=on_progress_callback,
                 )
             except Exception as e:
                 # If engine execution fails, return a failed result
