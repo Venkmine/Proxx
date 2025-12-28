@@ -374,6 +374,97 @@ def execute_job_spec(job_spec: JobSpec) -> ExecutionResult:
     )
 
 
+def execute_multi_job_spec(job_spec: JobSpec) -> List[ExecutionResult]:
+    """
+    Execute a multi-source JobSpec sequentially without concurrency.
+    
+    V2 Phase 1 Step 3: Multi-Clip Sequential Execution
+    ==================================================
+    This function processes multiple source clips in order, one at a time.
+    It does NOT introduce concurrency, batching, or parallel execution.
+    
+    Behavior:
+    ---------
+    1. Validates the entire JobSpec (raises on validation failure)
+    2. Iterates through sources in order (preserving deterministic ordering)
+    3. For each source:
+       - Creates a per-source "view" of the JobSpec
+       - Executes using existing execute_job_spec logic (synchronous)
+       - Captures ExecutionResult
+    4. Stops on first failure and returns partial results
+    5. Returns list of all ExecutionResults (successful + failed)
+    
+    Why Sequential?
+    ---------------
+    - Simplicity: No thread safety or resource contention issues
+    - Deterministic: Same input always produces same output order
+    - Debuggable: Clear causality and no race conditions
+    - Foundation: Concurrency can be added in V2 Phase 2+ without breaking contracts
+    
+    Args:
+        job_spec: A complete JobSpec with one or more sources
+        
+    Returns:
+        List of ExecutionResult, one per source (may be partial if stopped early)
+        
+    Raises:
+        JobSpecValidationError: If JobSpec validation fails before execution
+        
+    Note:
+        - Execution failures do NOT raise exceptions
+        - Check each result.success or result.exit_code
+        - Partial results returned if any source fails (fail-fast behavior)
+    """
+    # Step 1: Validate the entire JobSpec once
+    job_spec.validate(check_paths=True)
+    
+    # Step 2: Execute each source sequentially
+    results: List[ExecutionResult] = []
+    
+    for index, source in enumerate(job_spec.sources):
+        # Create a per-source "view" of the JobSpec
+        # This allows existing execute_job_spec to work unchanged
+        source_job_spec = JobSpec(
+            job_id=job_spec.job_id,
+            sources=[source],  # Single source for this execution
+            output_directory=job_spec.output_directory,
+            codec=job_spec.codec,
+            container=job_spec.container,
+            resolution=job_spec.resolution,
+            fps_mode=job_spec.fps_mode,
+            fps_explicit=job_spec.fps_explicit,
+            naming_template=job_spec.naming_template,
+            resolved_tokens=job_spec.resolved_tokens.copy(),
+            created_at=job_spec.created_at,
+        )
+        
+        # Execute this source synchronously using existing logic
+        try:
+            result = execute_job_spec(source_job_spec)
+        except Exception as e:
+            # Should not happen (execute_job_spec doesn't raise on execution failure)
+            # But catch just in case to ensure we return results
+            result = ExecutionResult(
+                job_id=job_spec.job_id,
+                ffmpeg_command=[],
+                exit_code=-1,
+                stdout="",
+                stderr=f"Unexpected error during execution: {e}",
+                output_path="",
+                output_exists=False,
+                started_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc),
+            )
+        
+        results.append(result)
+        
+        # Fail-fast: stop on first failure
+        if not result.success:
+            break
+    
+    return results
+
+
 # -----------------------------------------------------------------------------
 # CLI Entry Point
 # -----------------------------------------------------------------------------
@@ -381,6 +472,9 @@ def execute_job_spec(job_spec: JobSpec) -> ExecutionResult:
 def main():
     """
     CLI entry point for headless execution.
+    
+    Supports both single-source and multi-source JobSpecs.
+    For multi-source, prints a per-clip progress summary.
     
     Usage:
         python -m backend.headless_execute <path_to_jobspec.json>
@@ -408,32 +502,68 @@ def main():
         print(f"Error: Invalid JobSpec structure: {e}", file=sys.stderr)
         sys.exit(1)
     
+    # Detect multi-source JobSpec
+    is_multi_source = len(job_spec.sources) > 1
+    
     # Execute
     try:
-        result = execute_job_spec(job_spec)
+        if is_multi_source:
+            # Multi-source: sequential execution with per-clip summary
+            results = execute_multi_job_spec(job_spec)
+            
+            # Print per-clip summary
+            print(f"\nMulti-Clip Job: {job_spec.job_id}")
+            print(f"Total Clips: {len(job_spec.sources)}")
+            print(f"Processed: {len(results)}/{len(job_spec.sources)}\n")
+            
+            for i, result in enumerate(results):
+                source_name = Path(job_spec.sources[i]).name
+                status = "COMPLETED" if result.success else "FAILED"
+                duration = f" ({result.duration_seconds:.1f}s)" if result.duration_seconds else ""
+                print(f"[{i+1}/{len(job_spec.sources)}] {status} {source_name}{duration}")
+                
+                if result.success:
+                    print(f"     → {result.output_path}")
+                else:
+                    print(f"     Exit Code: {result.exit_code}")
+                    # Print last 3 lines of stderr for quick debugging
+                    stderr_lines = result.stderr.strip().split("\n")
+                    if stderr_lines and stderr_lines[0]:
+                        print("     Last stderr:")
+                        for line in stderr_lines[-3:]:
+                            print(f"       {line}")
+            
+            # Exit non-zero if any clip failed
+            all_success = all(r.success for r in results)
+            print(f"\nResult: {'All clips completed successfully' if all_success else 'One or more clips failed'}")
+            sys.exit(0 if all_success else 1)
+        else:
+            # Single-source: use existing logic
+            result = execute_job_spec(job_spec)
+            
+            # Print summary
+            print(result.summary())
+            
+            # Print key details
+            if result.success:
+                print(f"  Output: {result.output_path}")
+                if result.duration_seconds:
+                    print(f"  Duration: {result.duration_seconds:.1f}s")
+            else:
+                print(f"  Exit Code: {result.exit_code}")
+                # Print last 5 lines of stderr for quick debugging
+                stderr_lines = result.stderr.strip().split("\n")
+                if stderr_lines:
+                    print("  Last stderr lines:")
+                    for line in stderr_lines[-5:]:
+                        print(f"    {line}")
+            
+            # Exit with appropriate code
+            sys.exit(0 if result.success else 1)
+            
     except JobSpecValidationError as e:
         print(f"Validation Error: {e}", file=sys.stderr)
         sys.exit(1)
-    
-    # Print summary
-    print(result.summary())
-    
-    # Print key details
-    if result.success:
-        print(f"  Output: {result.output_path}")
-        if result.duration_seconds:
-            print(f"  Duration: {result.duration_seconds:.1f}s")
-    else:
-        print(f"  Exit Code: {result.exit_code}")
-        # Print last 5 lines of stderr for quick debugging
-        stderr_lines = result.stderr.strip().split("\n")
-        if stderr_lines:
-            print("  Last stderr lines:")
-            for line in stderr_lines[-5:]:
-                print(f"    {line}")
-    
-    # Exit with appropriate code
-    sys.exit(0 if result.success else 1)
 
 
 if __name__ == "__main__":
