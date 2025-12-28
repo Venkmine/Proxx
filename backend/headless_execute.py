@@ -547,27 +547,13 @@ def _build_ffmpeg_command(
     cmd.append(output_path)
     
     return cmd
-        # Explicit resolution like "1920x1080"
-        parts = resolution.split("x")
-        if len(parts) == 2:
-            try:
-                width, height = int(parts[0]), int(parts[1])
-                cmd.extend(["-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease"])
-            except ValueError:
-                pass  # Invalid resolution, skip filter
-    # "same" or unrecognized = no scaling
-    
-    # Frame rate handling
-    if job_spec.fps_mode == FpsMode.EXPLICIT and job_spec.fps_explicit:
-        cmd.extend(["-r", str(job_spec.fps_explicit)])
-    
-    # Audio: copy by default (preserves original)
-    cmd.extend(["-c:a", "copy"])
-    
-    # Output file
-    cmd.append(output_path)
-    
-    return cmd
+
+
+# -----------------------------------------------------------------------------
+# Main Execution Function
+# -----------------------------------------------------------------------------
+
+def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
 
 
 # -----------------------------------------------------------------------------

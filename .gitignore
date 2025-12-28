@@ -89,3 +89,4 @@ system_health/
 motoko_sandbox/
 motoko_dummy_repo/
 reelscan_env/
+*.mxf
