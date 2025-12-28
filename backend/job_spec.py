@@ -163,6 +163,7 @@ class JobSpec:
         "naming_template",
         "resolved_tokens",
         "created_at",
+        "resolve_preset",
     }
     
     sources: List[str]
@@ -174,6 +175,7 @@ class JobSpec:
     job_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     fps_mode: FpsMode = FpsMode.SAME_AS_SOURCE
     fps_explicit: Optional[float] = None
+    resolve_preset: Optional[str] = None
     resolved_tokens: Dict[str, str] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     
@@ -201,6 +203,7 @@ class JobSpec:
             "resolution": self.resolution,
             "fps_mode": self.fps_mode.value if isinstance(self.fps_mode, FpsMode) else self.fps_mode,
             "fps_explicit": self.fps_explicit,
+            "resolve_preset": self.resolve_preset,
             "naming_template": self.naming_template,
             "resolved_tokens": dict(sorted(self.resolved_tokens.items())),  # Stable ordering
             "created_at": self.created_at,
@@ -356,6 +359,7 @@ class JobSpec:
             resolution=data["resolution"],
             fps_mode=fps_mode,
             fps_explicit=data.get("fps_explicit"),
+            resolve_preset=data.get("resolve_preset"),
             naming_template=data["naming_template"],
             resolved_tokens=data.get("resolved_tokens", {}),
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
@@ -501,6 +505,43 @@ class JobSpec:
             raise JobSpecValidationError(
                 f"fps_explicit must be a positive number, got: {self.fps_explicit}"
             )
+    
+    def validate_resolve_preset(self, routes_to_resolve: bool = False) -> None:
+        """
+        Validate resolve_preset field based on job routing.
+        
+        V2 Deterministic Resolve Preset Contract
+        =========================================
+        Resolve must NEVER silently choose a render format. This validation
+        enforces explicit preset declaration:
+        
+        - If job routes to Resolve: resolve_preset MUST be present
+        - If job routes to FFmpeg: resolve_preset MUST be None
+        
+        Args:
+            routes_to_resolve: Whether this job will be processed by Resolve engine.
+                              This is determined by source format capability routing.
+        
+        Raises:
+            JobSpecValidationError: If preset requirement is violated.
+        """
+        if routes_to_resolve:
+            # Resolve jobs MUST specify a preset
+            if self.resolve_preset is None or self.resolve_preset.strip() == "":
+                raise JobSpecValidationError(
+                    "Resolve jobs must specify resolve_preset (e.g., 'ProRes 422 Proxy'). "
+                    "The preset determines the exact output format and quality. "
+                    "Create the preset in Resolve: Preferences → System → Render Presets, "
+                    "or use an existing preset like 'ProRes 422 Proxy', 'H.264 Master', etc."
+                )
+        else:
+            # FFmpeg jobs MUST NOT specify a preset
+            if self.resolve_preset is not None:
+                raise JobSpecValidationError(
+                    f"FFmpeg jobs must not specify resolve_preset (got: '{self.resolve_preset}'). "
+                    "The resolve_preset field is only valid for jobs that route to Resolve engine. "
+                    "Remove the resolve_preset field or change source format to a RAW format."
+                )
     
     def validate_sources(self) -> None:
         """

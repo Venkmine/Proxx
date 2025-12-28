@@ -59,16 +59,28 @@ _RESOLVE_ENGINE_AVAILABLE = False
 _RESOLVE_ENGINE_ERROR: Optional[str] = None
 
 try:
-    from v2.engines.resolve_engine import ResolveEngine, ResolveAPIUnavailableError
+    from v2.engines.resolve_engine import (
+        ResolveEngine,
+        ResolveAPIUnavailableError,
+        ResolvePresetError,
+        validate_resolve_preset,
+    )
     _RESOLVE_ENGINE_AVAILABLE = True
 except ImportError:
     try:
-        from backend.v2.engines.resolve_engine import ResolveEngine, ResolveAPIUnavailableError
+        from backend.v2.engines.resolve_engine import (
+            ResolveEngine,
+            ResolveAPIUnavailableError,
+            ResolvePresetError,
+            validate_resolve_preset,
+        )
         _RESOLVE_ENGINE_AVAILABLE = True
     except ImportError as e:
         _RESOLVE_ENGINE_ERROR = f"Resolve engine not available: {e}"
         ResolveEngine = None  # type: ignore
         ResolveAPIUnavailableError = None  # type: ignore
+        ResolvePresetError = None  # type: ignore
+        validate_resolve_preset = None  # type: ignore
 
 
 # -----------------------------------------------------------------------------
@@ -250,12 +262,44 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
     return ("ffmpeg", None)
 
 
+def _probe_codec_ffprobe(source_path: Path) -> Optional[str]:
+    """
+    Probe a file using ffprobe to get the actual video codec.
+    
+    Returns None if ffprobe fails or codec cannot be determined.
+    """
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v", "quiet",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=codec_name",
+                "-of", "csv=p=0",
+                str(source_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().lower()
+    except (subprocess.TimeoutExpired, Exception):
+        pass
+    return None
+
+
 def _infer_codec_from_path(source_path: Path) -> str:
     """
-    Infer codec from file path (extension-based heuristic for RAW detection).
+    Infer codec from file path, with optional ffprobe for ambiguous containers.
     
-    NOTE: This is NOT a full probe - it's a quick check for known RAW extensions.
-    For standard formats (mp4, mov, etc.), we assume standard codecs that FFmpeg handles.
+    For well-known RAW extensions (.braw, .r3d, etc.), uses extension-based detection.
+    For ambiguous containers like MXF (which can contain DNxHD, ProRes, or ARRIRAW),
+    probes the file to determine the actual codec.
     
     Args:
         source_path: Path to source file
@@ -276,6 +320,20 @@ def _infer_codec_from_path(source_path: Path) -> str:
     
     if ext in raw_extensions:
         return raw_extensions[ext]
+    
+    # Ambiguous containers that need probing (can contain RAW or standard codecs)
+    ambiguous_containers = {"mxf"}
+    
+    if ext in ambiguous_containers:
+        # Probe the actual codec
+        probed_codec = _probe_codec_ffprobe(source_path)
+        if probed_codec:
+            # If ffprobe returns "unknown", this indicates a proprietary RAW codec
+            # that FFmpeg cannot decode - route to Resolve
+            if probed_codec == "unknown":
+                # For MXF with unknown codec, assume ARRI RAW (most common case)
+                return "arriraw"
+            return probed_codec
     
     # For standard containers, assume FFmpeg-compatible codecs
     # The actual codec doesn't matter for routing - these all go to FFmpeg
@@ -657,6 +715,24 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
             completed_at=datetime.now(timezone.utc),
         )
     
+    # Step 2.5: Validate resolve_preset based on engine routing
+    # V2 Deterministic Preset Contract:
+    # - Resolve jobs MUST specify resolve_preset
+    # - FFmpeg jobs MUST NOT specify resolve_preset
+    try:
+        job_spec.validate_resolve_preset(routes_to_resolve=(engine_name == "resolve"))
+    except JobSpecValidationError as e:
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=str(e),
+            jobspec_version=JOBSPEC_VERSION,
+            engine_used=engine_name,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
     # Step 3: Execute with the selected engine
     if engine_name == "resolve":
         result = _execute_with_resolve(job_spec, started_at)
@@ -724,6 +800,7 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             final_status="FAILED",
             validation_error=f"Resolve engine required but not available: {_RESOLVE_ENGINE_ERROR}",
             jobspec_version=JOBSPEC_VERSION,
+            engine_used="resolve",
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )
@@ -741,6 +818,20 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             final_status="FAILED",
             validation_error=f"Resolve scripting API not available: {e}",
             jobspec_version=JOBSPEC_VERSION,
+            engine_used="resolve",
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    except ResolvePresetError as e:
+        # Preset not found in Resolve
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=f"Resolve preset error: {e}",
+            jobspec_version=JOBSPEC_VERSION,
+            engine_used="resolve",
+            resolve_preset_used=e.missing_preset,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )
@@ -751,6 +842,7 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             final_status="FAILED",
             validation_error=f"Resolve engine error: {e}",
             jobspec_version=JOBSPEC_VERSION,
+            engine_used="resolve",
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )

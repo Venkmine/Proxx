@@ -481,7 +481,7 @@ class TestEngineRoutingIntegration:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
         
-        # Create a JobSpec with RAW source
+        # Create a JobSpec with RAW source (requires resolve_preset per V2 contract)
         job_spec = JobSpec(
             sources=[str(raw_source)],
             output_directory=str(output_dir),
@@ -489,6 +489,7 @@ class TestEngineRoutingIntegration:
             container="mov",
             resolution="half",
             naming_template="{source_name}_proxy",
+            resolve_preset="ProRes 422 Proxy",  # V2: Required for Resolve jobs
         )
         
         # Execute - will fail because Resolve is not available, but that's expected
@@ -501,13 +502,17 @@ class TestEngineRoutingIntegration:
         # (since Resolve scripting API is not installed on CI)
         if result.final_status == "FAILED":
             # This is expected - Resolve is not available
-            # Check that the clip has a failure_reason indicating the issue
-            assert len(result.clips) > 0
-            clip = result.clips[0]
-            assert clip.status == "FAILED"
-            assert clip.failure_reason is not None
-            # The failure could be about import, Resolve unavailable, etc.
-            assert len(clip.failure_reason) > 0
+            # The validation_error or clips may contain failure info
+            # Either we have clips with failure, or validation_error about Resolve unavailable
+            if len(result.clips) > 0:
+                clip = result.clips[0]
+                assert clip.status == "FAILED"
+                assert clip.failure_reason is not None
+                assert len(clip.failure_reason) > 0
+            else:
+                # No clips means validation/API failure before execution
+                assert result.validation_error is not None
+                assert "Resolve" in result.validation_error or "resolve" in result.validation_error.lower()
     
     def test_ffmpeg_jobspec_result_contains_engine_metadata(self, tmp_path: Path):
         """

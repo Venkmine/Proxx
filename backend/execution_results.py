@@ -145,6 +145,9 @@ class JobExecutionResult:
     engine_used: Optional[str] = None
     """Execution engine used for this job ('ffmpeg' or 'resolve'). Logged for auditability."""
     
+    resolve_preset_used: Optional[str] = None
+    """Resolve preset name used for rendering. Only set when engine_used='resolve'."""
+    
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When job execution started (UTC)."""
     
@@ -184,6 +187,7 @@ class JobExecutionResult:
             "jobspec_version": self.jobspec_version,
             "validation_error": self.validation_error,
             "engine_used": self.engine_used,
+            "resolve_preset_used": self.resolve_preset_used,
         }
         
         return result

@@ -210,6 +210,146 @@ class ResolveOutputVerificationError(ResolveEngineError):
     pass
 
 
+class ResolvePresetError(ResolveEngineError):
+    """
+    Raised when a required render preset is not available in Resolve.
+    
+    Contains the missing preset name and list of available presets
+    to provide actionable guidance.
+    """
+    
+    def __init__(
+        self,
+        missing_preset: str,
+        available_presets: List[str],
+        message: Optional[str] = None,
+    ):
+        self.missing_preset = missing_preset
+        self.available_presets = available_presets
+        
+        if message is None:
+            available_list = ", ".join(available_presets[:10])
+            if len(available_presets) > 10:
+                available_list += f", ... ({len(available_presets) - 10} more)"
+            message = (
+                f"Resolve preset '{missing_preset}' not found. "
+                f"Available presets: [{available_list}]. "
+                "Create this preset in Resolve: Preferences → System → Render Presets, "
+                "or use an existing preset name exactly as shown above."
+            )
+        
+        super().__init__(message)
+
+
+# =============================================================================
+# Resolve Preset Discovery
+# =============================================================================
+# Functions to enumerate available render presets from Resolve.
+# Presets are cached per-process to avoid repeated API calls.
+# =============================================================================
+
+_CACHED_PRESETS: Optional[List[str]] = None
+
+
+def list_available_resolve_presets() -> List[str]:
+    """
+    Enumerate render presets available in the current Resolve installation.
+    
+    Uses the Resolve scripting API to query available render presets.
+    Results are cached per-process for efficiency.
+    
+    Returns:
+        List of preset names (e.g., ['ProRes 422 Proxy', 'H.264 Master', ...])
+        
+    Raises:
+        ResolveAPIUnavailableError: If Resolve scripting API is not available.
+        ResolveConnectionError: If unable to connect to Resolve.
+    """
+    global _CACHED_PRESETS
+    
+    if _CACHED_PRESETS is not None:
+        return _CACHED_PRESETS
+    
+    if not _RESOLVE_API_AVAILABLE:
+        raise ResolveAPIUnavailableError(
+            _RESOLVE_API_ERROR or "Resolve scripting API not available on this system"
+        )
+    
+    import DaVinciResolveScript as dvr_script
+    
+    resolve = dvr_script.scriptapp("Resolve")
+    if resolve is None:
+        raise ResolveConnectionError(
+            "Unable to connect to DaVinci Resolve. "
+            "Ensure Resolve is running and scripting is enabled in "
+            "Preferences > System > General > External scripting using."
+        )
+    
+    project_manager = resolve.GetProjectManager()
+    if project_manager is None:
+        raise ResolveConnectionError(
+            "Connected to Resolve but unable to access Project Manager."
+        )
+    
+    # Get or create a project to access render presets
+    current_project = project_manager.GetCurrentProject()
+    
+    if current_project is None:
+        # No project open - we need one to query presets
+        # Try to create a temporary project
+        temp_project = project_manager.CreateProject("_proxx_preset_query_temp")
+        if temp_project is None:
+            raise ResolveConnectionError(
+                "Unable to access render presets. Open or create a project in Resolve."
+            )
+        current_project = temp_project
+        cleanup_project = True
+    else:
+        cleanup_project = False
+    
+    try:
+        # Query render presets using GetRenderPresetList()
+        # This returns a list of preset names
+        presets = current_project.GetRenderPresetList()
+        
+        if presets is None:
+            presets = []
+        
+        _CACHED_PRESETS = list(presets)
+        return _CACHED_PRESETS
+        
+    finally:
+        if cleanup_project:
+            project_manager.CloseProject(current_project)
+            project_manager.DeleteProject("_proxx_preset_query_temp")
+
+
+def clear_preset_cache() -> None:
+    """Clear the cached preset list. Used for testing or after preset changes."""
+    global _CACHED_PRESETS
+    _CACHED_PRESETS = None
+
+
+def validate_resolve_preset(preset_name: str) -> None:
+    """
+    Validate that a preset exists in Resolve.
+    
+    Args:
+        preset_name: Name of the preset to validate.
+        
+    Raises:
+        ResolvePresetError: If preset is not found, with list of available presets.
+        ResolveAPIUnavailableError: If Resolve API is not available.
+    """
+    available = list_available_resolve_presets()
+    
+    if preset_name not in available:
+        raise ResolvePresetError(
+            missing_preset=preset_name,
+            available_presets=available,
+        )
+
+
 # =============================================================================
 # Codec/Container Mapping for Resolve
 # =============================================================================
@@ -517,6 +657,27 @@ class ResolveEngine:
         self._connect_to_resolve()
         
         # =====================================================================
+        # Validate Resolve Preset (V2 Deterministic Preset Contract)
+        # =====================================================================
+        # Resolve must NEVER silently choose a render format.
+        # The JobSpec MUST specify resolve_preset explicitly.
+        # If the preset doesn't exist in Resolve, fail immediately.
+        # =====================================================================
+        if job_spec.resolve_preset is None or job_spec.resolve_preset.strip() == "":
+            raise ResolveRenderError(
+                "JobSpec.resolve_preset is required for Resolve engine execution. "
+                "Specify a preset name (e.g., 'ProRes 422 Proxy'). "
+                "This ensures deterministic output format selection."
+            )
+        
+        # Validate preset exists in Resolve
+        try:
+            validate_resolve_preset(job_spec.resolve_preset)
+        except ResolvePresetError:
+            # Re-raise with full context
+            raise
+        
+        # =====================================================================
         # Create Temporary Project
         # =====================================================================
         # We create a new project for each job execution because:
@@ -624,14 +785,19 @@ class ResolveEngine:
         else:
             final_status = "FAILED"
         
-        return JobExecutionResult(
+        # Build result with resolve_preset metadata
+        result = JobExecutionResult(
             job_id=job_spec.job_id,
             clips=clip_results,
             final_status=final_status,
             jobspec_version=job_spec.to_dict().get("jobspec_version"),
+            engine_used="resolve",
+            resolve_preset_used=job_spec.resolve_preset,
             started_at=started_at,
             completed_at=completed_at,
         )
+        
+        return result
     
     # =========================================================================
     # Private Methods - Connection Management
@@ -807,13 +973,18 @@ class ResolveEngine:
         Configure and execute a render job for a timeline.
         
         This enforces the ONE RENDER JOB PER CLIP rule and uses
-        EXPLICIT CODEC/CONTAINER MAPPING.
+        the EXPLICIT resolve_preset from JobSpec.
+        
+        V2 Deterministic Preset Contract:
+        - Preset MUST be specified in job_spec.resolve_preset
+        - Preset MUST exist in Resolve (validated before this method)
+        - No fallback to codec_info defaults
         
         Args:
             project: Resolve project object.
             timeline: Resolve timeline object to render.
             output_path: Target output file path.
-            job_spec: JobSpec with codec/container/resolution settings.
+            job_spec: JobSpec with resolve_preset and resolution settings.
             project_name: Name of the project (for metadata).
             timeline_name: Name of the timeline (for metadata).
             source_path: Original source path (for metadata).
@@ -824,30 +995,46 @@ class ResolveEngine:
         Raises:
             ResolveRenderError: If render job setup or execution fails.
         """
-        # Get codec mapping - fail explicitly if codec not mapped
-        codec_key = job_spec.codec.lower()
-        if codec_key not in RESOLVE_CODEC_MAP:
-            raise ResolveRenderError(
-                f"Unsupported codec '{job_spec.codec}' for Resolve engine. "
-                f"Supported codecs: {list(RESOLVE_CODEC_MAP.keys())}"
-            )
-        
-        codec_info = RESOLVE_CODEC_MAP[codec_key]
+        # V2: Use explicit preset from JobSpec (already validated in execute())
+        preset_name = job_spec.resolve_preset
         
         # Set the current timeline before configuring render
         project.SetCurrentTimeline(timeline)
         
+        # Load the render preset (REQUIRED - no fallback)
+        preset_loaded = project.LoadRenderPreset(preset_name)
+        
+        if not preset_loaded:
+            # This should not happen if validate_resolve_preset passed,
+            # but handle it defensively
+            available = list_available_resolve_presets()
+            raise ResolveRenderError(
+                f"Failed to load preset '{preset_name}' in Resolve. "
+                f"Available presets: {available[:10]}. "
+                "The preset may have been deleted or renamed since validation."
+            )
+        
         # Configure render settings
-        # These settings are applied to the project's render queue
+        # These settings are applied on top of the preset
+        # Resolve API keys: SelectAllFrames, MarkIn, MarkOut, TargetDir, 
+        # CustomName, UniqueFilenameStyle, ExportVideo, ExportAudio,
+        # FormatWidth, FormatHeight, FrameRate, etc.
         render_settings = {
             "TargetDir": str(output_path.parent),
             "CustomName": output_path.stem,
-            "FormatWidth": self._parse_resolution_width(job_spec.resolution),
-            "FormatHeight": self._parse_resolution_height(job_spec.resolution),
+            "ExportVideo": True,
+            "ExportAudio": True,
+            "SelectAllFrames": True,
         }
         
-        # Add codec-specific settings
-        # Note: Resolve's API uses different setting names for different codecs
+        # Handle resolution: 0 means use source/timeline resolution
+        width = self._parse_resolution_width(job_spec.resolution)
+        height = self._parse_resolution_height(job_spec.resolution)
+        if width > 0 and height > 0:
+            render_settings["FormatWidth"] = width
+            render_settings["FormatHeight"] = height
+        
+        # Apply settings
         project.SetRenderSettings(render_settings)
         
         # Add render job to queue
@@ -890,14 +1077,16 @@ class ResolveEngine:
             )
         
         # Build metadata for result
+        # Note: format_name and codec_name are derived from the preset
+        # The preset is the source of truth for V2 deterministic rendering
         return ResolveRenderJobMetadata(
             project_name=project_name,
             timeline_name=timeline_name,
             source_path=str(source_path),
             output_path=str(output_path),
-            format_name=codec_info["format"],
-            codec_name=codec_info["codec"],
-            preset_name=codec_info["preset"],
+            format_name="(from preset)",  # Preset determines format
+            codec_name="(from preset)",   # Preset determines codec
+            preset_name=preset_name,      # This is the source of truth
             resolution=job_spec.resolution,
             render_job_id=str(job_id),
             render_status="Complete",
