@@ -84,17 +84,29 @@ if str(_backend_dir) not in sys.path:
 try:
     from job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
     from execution_results import JobExecutionResult, ClipExecutionResult
-    from headless_execute import execute_multi_job_spec
+    from headless_execute import execute_multi_job_spec, _determine_job_engine
 except ImportError:
     # Try alternative import paths
     try:
         from backend.job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
         from backend.execution_results import JobExecutionResult, ClipExecutionResult
-        from backend.headless_execute import execute_multi_job_spec
+        from backend.headless_execute import execute_multi_job_spec, _determine_job_engine
     except ImportError as e:
         print(f"Failed to import required modules: {e}", file=sys.stderr)
         print("Make sure you're running from the project root or backend directory.", file=sys.stderr)
         sys.exit(1)
+
+# Import source capabilities for mixed job detection
+try:
+    from v2.source_capabilities import ExecutionEngine, get_execution_engine
+    _SOURCE_CAPABILITIES_AVAILABLE = True
+except ImportError:
+    try:
+        from backend.v2.source_capabilities import ExecutionEngine, get_execution_engine
+        _SOURCE_CAPABILITIES_AVAILABLE = True
+    except ImportError:
+        _SOURCE_CAPABILITIES_AVAILABLE = False
+        ExecutionEngine = None  # type: ignore
 
 
 # -----------------------------------------------------------------------------
@@ -521,7 +533,15 @@ def process_single_jobspec(
         if source_error:
             failure_reason = source_error
     
-    # Step 4: Execute the job
+    # Step 3.5: Validate engine routing (no mixed jobs)
+    # Engine selection is automatic via capability routing
+    engine_name: Optional[str] = None
+    if job_spec and not failure_reason:
+        engine_name, engine_error = _determine_job_engine(job_spec)
+        if engine_error:
+            failure_reason = f"Engine routing failed: {engine_error}"
+    
+    # Step 4: Execute the job (engine is automatically selected)
     if job_spec and not failure_reason:
         try:
             job_result = execute_multi_job_spec(job_spec)
@@ -545,9 +565,14 @@ def process_single_jobspec(
             clips=[],
             final_status="FAILED",
             jobspec_version=JOBSPEC_VERSION,  # Include version for postmortem
+            engine_used=engine_name,  # Include engine for auditability
             started_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
         )
+    
+    # Ensure engine_used is set on the result (may already be set by execute_multi_job_spec)
+    if job_result.engine_used is None and engine_name:
+        job_result.engine_used = engine_name
     
     # Determine final status and destination
     if job_result.final_status == "COMPLETED" and not failure_reason:

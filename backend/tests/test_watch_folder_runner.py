@@ -363,3 +363,183 @@ class TestManifestIntegration:
         skip1_after_mod, reason = should_skip_jobspec(job1, manifest)
         assert skip1_after_mod is True  # Still skipped because result file exists
         assert "result file" in reason
+
+
+# -----------------------------------------------------------------------------
+# Engine Routing Integration Tests
+# -----------------------------------------------------------------------------
+
+class TestEngineRoutingIntegration:
+    """Integration tests for automatic engine selection via capability routing."""
+    
+    def test_raw_jobspec_routes_to_resolve_engine(self, tmp_path: Path):
+        """
+        RAW JobSpec should:
+        1. Be routed to Resolve engine
+        2. Have engine_used='resolve' in result metadata
+        3. Fail explicitly if Resolve unavailable (expected on CI)
+        """
+        from v2.source_capabilities import ExecutionEngine
+        from headless_execute import _determine_job_engine
+        from job_spec import JobSpec
+        
+        # Create a RAW source file (just needs to exist for validation)
+        raw_source = tmp_path / "camera_raw.r3d"
+        raw_source.write_bytes(b"fake r3d data")
+        
+        # Create a JobSpec with RAW source
+        job_spec = JobSpec(
+            sources=[str(raw_source)],
+            output_directory=str(tmp_path / "output"),
+            codec="prores_proxy",
+            container="mov",
+            resolution="half",
+            naming_template="{source_name}_proxy",
+        )
+        
+        # Test engine routing
+        engine_name, engine_error = _determine_job_engine(job_spec)
+        
+        # Should route to Resolve (not FFmpeg)
+        assert engine_name == "resolve", f"Expected 'resolve', got '{engine_name}'"
+        assert engine_error is None, f"Unexpected error: {engine_error}"
+    
+    def test_prores_jobspec_routes_to_ffmpeg_engine(self, tmp_path: Path):
+        """
+        ProRes JobSpec should route to FFmpeg engine.
+        """
+        from headless_execute import _determine_job_engine
+        from job_spec import JobSpec
+        
+        # Create a standard ProRes source file
+        prores_source = tmp_path / "footage.mov"
+        prores_source.write_bytes(b"fake mov data")
+        
+        # Create a JobSpec with ProRes source
+        job_spec = JobSpec(
+            sources=[str(prores_source)],
+            output_directory=str(tmp_path / "output"),
+            codec="h264",
+            container="mp4",
+            resolution="half",
+            naming_template="{source_name}_proxy",
+        )
+        
+        # Test engine routing
+        engine_name, engine_error = _determine_job_engine(job_spec)
+        
+        # Should route to FFmpeg
+        assert engine_name == "ffmpeg", f"Expected 'ffmpeg', got '{engine_name}'"
+        assert engine_error is None
+    
+    def test_mixed_job_rejected_with_clear_error(self, tmp_path: Path):
+        """
+        Mixed jobs (RAW + non-RAW sources) should be rejected with clear explanation.
+        """
+        from headless_execute import _determine_job_engine
+        from job_spec import JobSpec
+        
+        # Create both RAW and standard sources
+        raw_source = tmp_path / "camera.r3d"
+        raw_source.write_bytes(b"fake r3d")
+        
+        prores_source = tmp_path / "footage.mov"
+        prores_source.write_bytes(b"fake mov")
+        
+        # Create a JobSpec with mixed sources
+        job_spec = JobSpec(
+            sources=[str(raw_source), str(prores_source)],
+            output_directory=str(tmp_path / "output"),
+            codec="prores_proxy",
+            container="mov",
+            resolution="half",
+            naming_template="{source_name}_proxy",
+        )
+        
+        # Test engine routing - should fail
+        engine_name, engine_error = _determine_job_engine(job_spec)
+        
+        # Should be rejected with clear error
+        assert engine_name is None
+        assert engine_error is not None
+        assert "Mixed" in engine_error or "mixed" in engine_error
+        assert "FFmpeg" in engine_error or "Resolve" in engine_error
+    
+    def test_raw_jobspec_result_contains_engine_metadata(self, tmp_path: Path):
+        """
+        When RAW JobSpec is executed (even if it fails due to Resolve unavailable),
+        the result should contain engine metadata.
+        """
+        from job_spec import JobSpec
+        from headless_execute import execute_multi_job_spec
+        
+        # Create a RAW source file
+        raw_source = tmp_path / "camera_raw.braw"
+        raw_source.write_bytes(b"fake braw data")
+        
+        # Create output directory
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        # Create a JobSpec with RAW source
+        job_spec = JobSpec(
+            sources=[str(raw_source)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="half",
+            naming_template="{source_name}_proxy",
+        )
+        
+        # Execute - will fail because Resolve is not available, but that's expected
+        result = execute_multi_job_spec(job_spec)
+        
+        # The result should have engine_used set
+        assert result.engine_used == "resolve"
+        
+        # The result should indicate failure due to Resolve unavailable
+        # (since Resolve scripting API is not installed on CI)
+        if result.final_status == "FAILED":
+            # This is expected - Resolve is not available
+            # Check that the clip has a failure_reason indicating the issue
+            assert len(result.clips) > 0
+            clip = result.clips[0]
+            assert clip.status == "FAILED"
+            assert clip.failure_reason is not None
+            # The failure could be about import, Resolve unavailable, etc.
+            assert len(clip.failure_reason) > 0
+    
+    def test_ffmpeg_jobspec_result_contains_engine_metadata(self, tmp_path: Path):
+        """
+        FFmpeg JobSpec result should contain engine_used='ffmpeg' in metadata.
+        """
+        from job_spec import JobSpec
+        from headless_execute import execute_multi_job_spec
+        
+        # Create a standard source file
+        source = tmp_path / "footage.mp4"
+        source.write_bytes(b"fake mp4 data")
+        
+        # Create output directory
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        # Create a JobSpec
+        job_spec = JobSpec(
+            sources=[str(source)],
+            output_directory=str(output_dir),
+            codec="h264",
+            container="mp4",
+            resolution="half",
+            naming_template="{source_name}_proxy",
+        )
+        
+        # Execute - may fail due to FFmpeg not recognizing fake data, but engine should be set
+        result = execute_multi_job_spec(job_spec)
+        
+        # The result should have engine_used set to ffmpeg
+        assert result.engine_used == "ffmpeg"
+        
+        # Verify metadata is serialized correctly
+        result_dict = result.to_dict()
+        assert result_dict["_metadata"]["engine_used"] == "ffmpeg"
