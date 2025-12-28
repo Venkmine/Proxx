@@ -41,3 +41,11 @@ Observability is a first-class system principle in Proxx. These five principles 
 **Rule:** Prefer deterministic operations with predictable outputs over convenient shortcuts with variable behavior.
 
 **Rationale:** Non-deterministic systems produce intermittent failures that are difficult to diagnose and impossible to reliably reproduce.
+
+---
+
+## 6. Invalid Input Is a First-Class Signal
+
+**Rule:** Invalid input is a first-class signal, not a recoverable condition.
+
+**Rationale:** Permissive parsing and "helpful" coercion create silent compatibility bugs that surface in production. Contract violations must fail immediately and explicitly with diagnostic information.

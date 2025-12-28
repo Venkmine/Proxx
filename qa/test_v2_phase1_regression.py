@@ -246,6 +246,216 @@ def test_result_serialization():
         print("✓ Test 4 passed: Result serialization verified")
 
 
+# =============================================================================
+# V2.1 Contract Validation Tests
+# =============================================================================
+
+def test_missing_version_fails():
+    """
+    Test 5: Missing jobspec_version fails deserialization.
+    
+    Verifies:
+    - JobSpec.from_dict() requires jobspec_version
+    - Error message is explicit
+    """
+    print("\n=== TEST 5: Missing Version Fails ===")
+    
+    data = {
+        # Note: NO jobspec_version field
+        "job_id": "test123",
+        "sources": ["/tmp/test.mp4"],
+        "output_directory": "/tmp/out",
+        "codec": "h264",
+        "container": "mp4",
+        "resolution": "half",
+        "naming_template": "{source_name}",
+    }
+    
+    try:
+        JobSpec.from_dict(data)
+        raise AssertionError("Should have raised JobSpecValidationError for missing version")
+    except JobSpecValidationError as e:
+        assert "jobspec_version" in str(e).lower(), \
+            f"Error should mention jobspec_version: {e}"
+        print(f"✓ Correctly rejected: {e}")
+    
+    print("✓ Test 5 passed: Missing version is rejected")
+
+
+def test_wrong_version_fails():
+    """
+    Test 6: Wrong jobspec_version fails deserialization.
+    
+    Verifies:
+    - Version mismatch raises JobSpecValidationError
+    - Error message shows expected vs actual
+    """
+    print("\n=== TEST 6: Wrong Version Fails ===")
+    
+    data = {
+        "jobspec_version": "1.0",  # Wrong version
+        "job_id": "test123",
+        "sources": ["/tmp/test.mp4"],
+        "output_directory": "/tmp/out",
+        "codec": "h264",
+        "container": "mp4",
+        "resolution": "half",
+        "naming_template": "{source_name}",
+    }
+    
+    try:
+        JobSpec.from_dict(data)
+        raise AssertionError("Should have raised JobSpecValidationError for version mismatch")
+    except JobSpecValidationError as e:
+        assert "mismatch" in str(e).lower() or "1.0" in str(e), \
+            f"Error should mention mismatch or the wrong version: {e}"
+        print(f"✓ Correctly rejected: {e}")
+    
+    print("✓ Test 6 passed: Wrong version is rejected")
+
+
+def test_unknown_field_fails():
+    """
+    Test 7: Unknown fields fail deserialization.
+    
+    Verifies:
+    - Extra/unknown fields raise JobSpecValidationError
+    - Error message lists the unknown fields
+    """
+    print("\n=== TEST 7: Unknown Fields Fail ===")
+    
+    from job_spec import JOBSPEC_VERSION
+    
+    data = {
+        "jobspec_version": JOBSPEC_VERSION,
+        "job_id": "test123",
+        "sources": ["/tmp/test.mp4"],
+        "output_directory": "/tmp/out",
+        "codec": "h264",
+        "container": "mp4",
+        "resolution": "half",
+        "naming_template": "{source_name}",
+        "extra_field": "should fail",
+        "another_unknown": 42,
+    }
+    
+    try:
+        JobSpec.from_dict(data)
+        raise AssertionError("Should have raised JobSpecValidationError for unknown fields")
+    except JobSpecValidationError as e:
+        assert "unknown" in str(e).lower(), \
+            f"Error should mention unknown fields: {e}"
+        assert "extra_field" in str(e), \
+            f"Error should list extra_field: {e}"
+        print(f"✓ Correctly rejected: {e}")
+    
+    print("✓ Test 7 passed: Unknown fields are rejected")
+
+
+def test_invalid_enum_fails():
+    """
+    Test 8: Invalid enum values fail deserialization.
+    
+    Verifies:
+    - Invalid codec/container/fps_mode values raise JobSpecValidationError
+    - Error message lists allowed values
+    """
+    print("\n=== TEST 8: Invalid Enum Values Fail ===")
+    
+    from job_spec import JOBSPEC_VERSION
+    
+    # Test invalid codec
+    data = {
+        "jobspec_version": JOBSPEC_VERSION,
+        "job_id": "test123",
+        "sources": ["/tmp/test.mp4"],
+        "output_directory": "/tmp/out",
+        "codec": "not_a_real_codec",
+        "container": "mp4",
+        "resolution": "half",
+        "naming_template": "{source_name}",
+    }
+    
+    try:
+        JobSpec.from_dict(data)
+        raise AssertionError("Should have raised JobSpecValidationError for invalid codec")
+    except JobSpecValidationError as e:
+        assert "codec" in str(e).lower(), \
+            f"Error should mention codec: {e}"
+        assert "allowed" in str(e).lower() or "valid" in str(e).lower(), \
+            f"Error should list allowed values: {e}"
+        print(f"✓ Correctly rejected invalid codec: {e}")
+    
+    # Test invalid container
+    data["codec"] = "h264"
+    data["container"] = "not_a_container"
+    
+    try:
+        JobSpec.from_dict(data)
+        raise AssertionError("Should have raised JobSpecValidationError for invalid container")
+    except JobSpecValidationError as e:
+        assert "container" in str(e).lower(), \
+            f"Error should mention container: {e}"
+        print(f"✓ Correctly rejected invalid container: {e}")
+    
+    # Test invalid fps_mode
+    data["container"] = "mp4"
+    data["fps_mode"] = "not_a_mode"
+    
+    try:
+        JobSpec.from_dict(data)
+        raise AssertionError("Should have raised JobSpecValidationError for invalid fps_mode")
+    except JobSpecValidationError as e:
+        assert "fps_mode" in str(e).lower(), \
+            f"Error should mention fps_mode: {e}"
+        print(f"✓ Correctly rejected invalid fps_mode: {e}")
+    
+    print("✓ Test 8 passed: Invalid enum values are rejected")
+
+
+def test_valid_jobspec_passes():
+    """
+    Test 9: Valid JobSpec passes unchanged.
+    
+    Verifies:
+    - Complete, valid JobSpec can be deserialized
+    - Round-trip (to_dict -> from_dict) preserves data
+    - Version is injected in to_dict()
+    """
+    print("\n=== TEST 9: Valid JobSpec Passes ===")
+    
+    from job_spec import JOBSPEC_VERSION
+    
+    data = {
+        "jobspec_version": JOBSPEC_VERSION,
+        "job_id": "test123",
+        "sources": ["/tmp/test.mp4"],
+        "output_directory": "/tmp/out",
+        "codec": "h264",
+        "container": "mp4",
+        "resolution": "1920x1080",
+        "naming_template": "{source_name}_{index}",
+        "fps_mode": "same-as-source",
+    }
+    
+    job_spec = JobSpec.from_dict(data)
+    assert job_spec.job_id == "test123", "Job ID should match"
+    assert job_spec.codec == "h264", "Codec should match"
+    print("✓ Valid JobSpec deserialized successfully")
+    
+    # Verify round-trip
+    exported = job_spec.to_dict()
+    assert exported["jobspec_version"] == JOBSPEC_VERSION, \
+        "Exported dict should include version"
+    
+    reimported = JobSpec.from_dict(exported)
+    assert reimported.job_id == job_spec.job_id, "Round-trip should preserve job_id"
+    assert reimported.codec == job_spec.codec, "Round-trip should preserve codec"
+    print("✓ Round-trip serialization works")
+    
+    print("✓ Test 9 passed: Valid JobSpec is accepted")
+
+
 def run_all_tests():
     """Run all regression tests."""
     print("=" * 60)
@@ -257,6 +467,12 @@ def run_all_tests():
         test_multi_clip_naming_validation,
         test_fail_fast_behavior,
         test_result_serialization,
+        # V2.1 Contract Validation Tests
+        test_missing_version_fails,
+        test_wrong_version_fails,
+        test_unknown_field_fails,
+        test_invalid_enum_fails,
+        test_valid_jobspec_passes,
     ]
     
     passed = 0

@@ -163,6 +163,61 @@ restored = JobSpec.from_json(spec.to_json())
 
 ---
 
+## JobSpec Versioning & Contract Enforcement
+
+**Added:** V2.1 (December 2025)
+
+### Why Versioning Exists
+
+JobSpec is a **locked contract**. Automation systems depend on a stable, predictable schema.
+Version numbers make compatibility explicit and prevent silent failures when specs evolve.
+
+- **`jobspec_version`** is **REQUIRED** in all JobSpec JSON
+- Missing version → **hard failure**
+- Wrong version → **hard failure** (no coercion, no fallback)
+
+### Contract Rules
+
+| Rule | Behavior |
+|------|----------|
+| Missing `jobspec_version` | `JobSpecValidationError` - cannot be deserialized |
+| Version mismatch | `JobSpecValidationError` - upgrade the spec |
+| Unknown fields | `JobSpecValidationError` - lists unexpected fields |
+| Invalid enum values | `JobSpecValidationError` - lists allowed values |
+| Missing required fields | `JobSpecValidationError` - lists missing fields |
+
+### Why Unknown Fields Fail
+
+Permissive parsing creates silent compatibility bugs:
+
+- Typos in field names go unnoticed
+- Removed fields continue to appear "valid"
+- Future additions could conflict with user extensions
+
+**This is not recoverable.** Unknown fields are contract violations.
+
+### How Upgrades Should Be Handled
+
+When the JobSpec schema changes:
+
+1. `JOBSPEC_VERSION` in `job_spec.py` is incremented
+2. All existing JobSpec JSON files become invalid
+3. Automation systems must regenerate specs with the new engine
+
+**There is no migration path.** JobSpecs are ephemeral job definitions, not persistent data.
+If you need to re-run an old job, regenerate the spec with current tools.
+
+### Valid Enums (V2.1)
+
+| Field | Allowed Values |
+|-------|----------------|
+| `codec` | `prores_proxy`, `prores_lt`, `prores_standard`, `prores_hq`, `prores_4444`, `h264`, `h265`, `hevc`, `dnxhd`, `dnxhr`, `vp9`, `av1` |
+| `container` | `mov`, `mp4`, `mkv`, `webm`, `mxf` |
+| `fps_mode` | `same-as-source`, `explicit` |
+| `resolution` | `same`, `half`, `quarter`, or explicit `WIDTHxHEIGHT` (e.g., `1920x1080`) |
+
+---
+
 ## Phase 1 Status
 
 This is **Phase 1** of the V2 Reliable Proxy Engine:
@@ -170,7 +225,8 @@ This is **Phase 1** of the V2 Reliable Proxy Engine:
 - ✅ JobSpec dataclass defined
 - ✅ Serialization (to_dict, from_dict, to_json, from_json)
 - ✅ Validation methods
-- ⏳ **Not yet wired to execution** (parallel structure)
+- ✅ **Contract locking with strict versioning (V2.1)**
+- ✅ Wired to headless execution and watch folders
 
 Future phases will:
 1. Create JobSpec from UI state at job start

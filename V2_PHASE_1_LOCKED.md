@@ -92,6 +92,12 @@ V2 Phase 1 provides the following **INVARIANTS**:
 6. **Ordering**: Source clips processed in order; results list preserves execution order
 7. **Atomicity**: Each clip is independent; no shared state between clips
 8. **No Overwrites**: Multi-clip jobs enforce unique output names at validation time
+9. **Contract Strictness**: JobSpec is a locked, versioned contract
+   - `jobspec_version` is REQUIRED and must match current engine version
+   - Unknown fields are REJECTED (no permissive parsing)
+   - Invalid enum values are REJECTED with allowed values listed
+   - No forward compatibility assumptions
+   - Schema changes require version bump
 
 ---
 

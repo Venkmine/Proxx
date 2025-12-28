@@ -70,13 +70,13 @@ if str(_backend_dir) not in sys.path:
     sys.path.insert(0, str(_backend_dir))
 
 try:
-    from job_spec import JobSpec, JobSpecValidationError
+    from job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
     from execution_results import JobExecutionResult, ClipExecutionResult
     from headless_execute import execute_multi_job_spec
 except ImportError:
     # Try alternative import paths
     try:
-        from backend.job_spec import JobSpec, JobSpecValidationError
+        from backend.job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
         from backend.execution_results import JobExecutionResult, ClipExecutionResult
         from backend.headless_execute import execute_multi_job_spec
     except ImportError as e:
@@ -170,16 +170,17 @@ def recover_interrupted_jobs(watch_folder: Path) -> List[Path]:
         
         print(f"  Recovering interrupted job: {jobspec_path.name}")
         
-        # Create a failure result
+        # Create a failure result with jobspec_version for audit trail
         failure_result = JobExecutionResult(
             job_id="unknown",  # We don't load the JobSpec to avoid validation errors
             clips=[],
             final_status="FAILED",
+            jobspec_version=JOBSPEC_VERSION,  # Include version for postmortem
             started_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
         )
         
-        # Try to extract job_id from file
+        # Try to extract job_id and version from file
         try:
             with open(jobspec_path, "r") as f:
                 data = json.load(f)
@@ -187,6 +188,7 @@ def recover_interrupted_jobs(watch_folder: Path) -> List[Path]:
                     job_id=data.get("job_id", "unknown"),
                     clips=[],
                     final_status="FAILED",
+                    jobspec_version=data.get("jobspec_version", JOBSPEC_VERSION),
                     started_at=datetime.now(timezone.utc),
                     completed_at=datetime.now(timezone.utc),
                 )
@@ -240,14 +242,21 @@ def write_result_json(
     
     The result is written alongside the JobSpec in the destination folder
     (completed/ or failed/).
+    
+    Includes _metadata with:
+    - jobspec_version: For postmortem auditing (from JobExecutionResult)
+    - jobspec_path: Path to the original JobSpec file
+    - result_written_at: Timestamp of result file creation
+    - failure_reason: If provided, the reason for failure
     """
     result_data = job_result.to_dict()
     
-    # Add metadata
-    result_data["_metadata"] = {
-        "jobspec_path": str(jobspec_path),
-        "result_written_at": datetime.now(timezone.utc).isoformat(),
-    }
+    # Merge additional metadata (preserves jobspec_version from to_dict)
+    if "_metadata" not in result_data:
+        result_data["_metadata"] = {}
+    
+    result_data["_metadata"]["jobspec_path"] = str(jobspec_path)
+    result_data["_metadata"]["result_written_at"] = datetime.now(timezone.utc).isoformat()
     
     if failure_reason:
         result_data["_metadata"]["failure_reason"] = failure_reason
@@ -382,13 +391,16 @@ def process_single_jobspec(
     job_result: Optional[JobExecutionResult] = None
     failure_reason: Optional[str] = None
     
-    # Step 2: Load and parse JobSpec
+    # Step 2: Load and parse JobSpec with strict contract validation
     try:
         with open(running_path, "r") as f:
             data = json.load(f)
         job_spec = JobSpec.from_dict(data)
     except json.JSONDecodeError as e:
         failure_reason = f"Invalid JSON: {e}"
+    except JobSpecValidationError as e:
+        # Contract violation (version mismatch, unknown fields, invalid enums)
+        failure_reason = f"JobSpec contract violation: {e}"
     except (KeyError, ValueError) as e:
         failure_reason = f"Invalid JobSpec structure: {e}"
     except OSError as e:
@@ -423,6 +435,7 @@ def process_single_jobspec(
             job_id=job_spec.job_id if job_spec else "unknown",
             clips=[],
             final_status="FAILED",
+            jobspec_version=JOBSPEC_VERSION,  # Include version for postmortem
             started_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
         )

@@ -28,7 +28,7 @@ import shutil
 import subprocess
 import sys
 
-from job_spec import JobSpec, JobSpecValidationError, FpsMode
+from job_spec import JobSpec, JobSpecValidationError, FpsMode, JOBSPEC_VERSION
 from execution_results import ClipExecutionResult, JobExecutionResult
 
 
@@ -476,6 +476,7 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
             job_id=job_spec.job_id,
             clips=[],
             final_status="PARTIAL",
+            jobspec_version=JOBSPEC_VERSION,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )
@@ -512,6 +513,7 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
         job_id=job_spec.job_id,
         clips=clips,
         final_status=final_status,
+        jobspec_version=JOBSPEC_VERSION,
         started_at=started_at,
         completed_at=completed_at,
     )

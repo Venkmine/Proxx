@@ -19,7 +19,7 @@ Guarantees:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 import json
 
 
@@ -136,6 +136,9 @@ class JobExecutionResult:
     - PARTIAL: Execution stopped before all clips (e.g., validation error)
     """
     
+    jobspec_version: Optional[str] = None
+    """JobSpec schema version used for this execution. Enables postmortem auditing."""
+    
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When job execution started (UTC)."""
     
@@ -157,8 +160,8 @@ class JobExecutionResult:
         )
     
     def to_dict(self) -> dict:
-        """Serialize to dictionary for JSON output."""
-        return {
+        """Serialize to dictionary for JSON output with _metadata."""
+        result = {
             "job_id": self.job_id,
             "final_status": self.final_status,
             "clips": [clip.to_dict() for clip in self.clips],
@@ -169,6 +172,13 @@ class JobExecutionResult:
             "completed_clips": sum(1 for c in self.clips if c.status == "COMPLETED"),
             "failed_clips": sum(1 for c in self.clips if c.status == "FAILED"),
         }
+        
+        # Include _metadata for postmortem auditing
+        result["_metadata"] = {
+            "jobspec_version": self.jobspec_version,
+        }
+        
+        return result
     
     def to_json(self, indent: int = 2) -> str:
         """Serialize to JSON string."""

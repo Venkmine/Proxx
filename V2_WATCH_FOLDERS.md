@@ -81,6 +81,22 @@ watch/
 
 ---
 
+## JobSpec Contract Validation
+
+Watch folders accept **only valid JobSpecs** with strict contract enforcement:
+
+| Validation | Failure Behavior |
+|------------|------------------|
+| Missing `jobspec_version` | Moved to `failed/` with reason |
+| Version mismatch | Moved to `failed/` with reason |
+| Unknown fields in JSON | Moved to `failed/` with reason |
+| Invalid enum values | Moved to `failed/` with reason |
+| Missing source files | Moved to `failed/` with reason |
+
+**The runner will never attempt "best guess" execution.** Invalid specs fail fast and explicitly.
+
+---
+
 ## Quick Start
 
 ```bash
