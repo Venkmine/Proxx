@@ -23,10 +23,33 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, ClassVar, Set
+from typing import Any, Dict, List, Optional, ClassVar, Set, Tuple
 import json
 import re
+import subprocess
 import uuid
+
+# Try to import source capabilities (V2 source format validation)
+try:
+    from v2.source_capabilities import (
+        validate_source_capability,
+        SourceCapabilityError,
+        is_source_supported,
+        get_rejection_reason,
+    )
+    _SOURCE_CAPABILITIES_AVAILABLE = True
+except ImportError:
+    try:
+        from backend.v2.source_capabilities import (
+            validate_source_capability,
+            SourceCapabilityError,
+            is_source_supported,
+            get_rejection_reason,
+        )
+        _SOURCE_CAPABILITIES_AVAILABLE = True
+    except ImportError:
+        _SOURCE_CAPABILITIES_AVAILABLE = False
+        SourceCapabilityError = None  # type: ignore
 
 
 # =============================================================================
@@ -531,6 +554,115 @@ class JobSpec:
                 "or {source_name} to use source filenames."
             )
     
+    def validate_source_capabilities(self) -> None:
+        """
+        Validate that all source files use supported container/codec combinations.
+        
+        V2 Source Capability Matrix Enforcement
+        =======================================
+        Proxx explicitly defines which source formats are supported and which are
+        rejected. This validation uses ffprobe to detect the container and codec
+        of each source file, then checks against the capability matrix.
+        
+        Rejected formats (e.g., ARRIRAW, REDCODE, BRAW) will fail with an
+        actionable error message suggesting the appropriate upstream workflow.
+        
+        This validation is called BEFORE execution to prevent wasted processing
+        time on formats that cannot be decoded.
+        
+        Raises:
+            JobSpecValidationError: If any source uses an unsupported format.
+                The error message includes the specific reason and recommended action.
+        """
+        if not _SOURCE_CAPABILITIES_AVAILABLE:
+            # Source capabilities module not available, skip validation
+            return
+        
+        for source in self.sources:
+            source_path = Path(source)
+            if not source_path.exists():
+                # Path validation is handled separately
+                continue
+            
+            # Probe the source file for container and codec
+            probe_result = self._probe_source_format(source_path)
+            if probe_result is None:
+                # Could not probe, skip capability check (let execution handle it)
+                continue
+            
+            container, codec = probe_result
+            
+            try:
+                validate_source_capability(container, codec)
+            except SourceCapabilityError as e:
+                raise JobSpecValidationError(
+                    f"Source format not supported: {source_path.name}\n"
+                    f"  Container: {container}\n"
+                    f"  Codec: {codec}\n"
+                    f"  Reason: {e.reason}\n"
+                    f"  Action: {e.recommended_action}"
+                )
+    
+    def _probe_source_format(self, source_path: Path) -> Optional[Tuple[str, str]]:
+        """
+        Probe a source file to determine its container and codec.
+        
+        Uses ffprobe to extract format (container) and video codec information.
+        This is the ONLY probing logic - just container + codec, nothing more.
+        
+        Args:
+            source_path: Path to the source file.
+            
+        Returns:
+            Tuple of (container, codec) if successful, None if probing fails.
+        """
+        try:
+            # Get container format
+            format_cmd = [
+                "ffprobe",
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_format",
+                "-show_streams",
+                str(source_path),
+            ]
+            
+            result = subprocess.run(
+                format_cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            if result.returncode != 0:
+                return None
+            
+            import json as json_module
+            probe_data = json_module.loads(result.stdout)
+            
+            # Extract container format
+            format_name = probe_data.get("format", {}).get("format_name", "")
+            # Take first format if multiple (e.g., "mov,mp4,m4a,3gp,3g2,mj2" -> "mov")
+            container = format_name.split(",")[0].lower()
+            
+            # Extract video codec from first video stream
+            codec = None
+            for stream in probe_data.get("streams", []):
+                if stream.get("codec_type") == "video":
+                    codec = stream.get("codec_name", "").lower()
+                    break
+            
+            if not codec:
+                return None
+            
+            return (container, codec)
+            
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+            return None
+        except FileNotFoundError:
+            # ffprobe not available
+            return None
+
     def validate(self, check_paths: bool = True) -> None:
         """
         Run all validation checks.
@@ -552,6 +684,8 @@ class JobSpec:
         # Optionally validate paths (checks all sources exist)
         if check_paths:
             self.validate_paths_exist()
+            # V2: Validate source formats AFTER confirming files exist
+            self.validate_source_capabilities()
     
     # -------------------------------------------------------------------------
     # Utility

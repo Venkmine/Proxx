@@ -471,11 +471,12 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     try:
         job_spec.validate(check_paths=True)
     except JobSpecValidationError as e:
-        # Return PARTIAL status with no clips executed
+        # Return FAILED status with validation error captured
         return JobExecutionResult(
             job_id=job_spec.job_id,
             clips=[],
-            final_status="PARTIAL",
+            final_status="FAILED",
+            validation_error=str(e),
             jobspec_version=JOBSPEC_VERSION,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
@@ -559,6 +560,11 @@ def main():
     # Execute multi-source JobSpec
     try:
         result = execute_multi_job_spec(job_spec)
+        
+        # Check for validation error
+        if result.validation_error:
+            print(f"\nValidation Error: {result.validation_error}", file=sys.stderr)
+            sys.exit(1)
         
         # Print summary
         print(f"\n{result.summary()}\n")

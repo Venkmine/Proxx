@@ -139,6 +139,9 @@ class JobExecutionResult:
     jobspec_version: Optional[str] = None
     """JobSpec schema version used for this execution. Enables postmortem auditing."""
     
+    validation_error: Optional[str] = None
+    """Validation error message if job failed before execution. Enables debugging."""
+    
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When job execution started (UTC)."""
     
@@ -176,6 +179,7 @@ class JobExecutionResult:
         # Include _metadata for postmortem auditing
         result["_metadata"] = {
             "jobspec_version": self.jobspec_version,
+            "validation_error": self.validation_error,
         }
         
         return result

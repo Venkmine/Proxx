@@ -218,6 +218,80 @@ If you need to re-run an old job, regenerate the spec with current tools.
 
 ---
 
+## Supported Source Formats
+
+**Added:** V2.1 (December 2025)
+
+JobSpec validates source files against a formal **Source Capability Matrix** before execution.
+This ensures deterministic behavior by rejecting formats that cannot be reliably decoded.
+
+### Supported Formats (Allowlist)
+
+These container/codec combinations are known to work reliably:
+
+| Container | Codec | Notes |
+|-----------|-------|-------|
+| `mp4` | `h264` | Universally supported, deterministic decode |
+| `mp4` | `hevc`/`h265` | Modern compression, well-supported |
+| `mp4` | `av1` | Next-gen open codec |
+| `mov` | `h264` | QuickTime H.264, standard editorial |
+| `mov` | `hevc`/`h265` | Apple ecosystem standard |
+| `mov` | `prores` (all variants) | Intra-frame, proxy-friendly, editorial standard |
+| `mov` | `dnxhd`/`dnxhr` | Avid intra-frame codecs |
+| `mov` | `mjpeg` | Simple intra-frame |
+| `mkv` | `h264`, `hevc`, `vp9`, `av1` | Flexible open container |
+| `mxf` | `dnxhd`/`dnxhr` | Broadcast standard |
+| `mxf` | `mpeg2video` | Broadcast legacy |
+| `mxf` | `h264` | Sony XAVC/XDCAM |
+| `webm` | `vp9`, `av1` | Open web codecs |
+| `ts` | `mpeg2video` | Transport stream broadcast |
+| `avi` | `mjpeg` | Legacy format |
+
+### Rejected Formats (Blocklist)
+
+These formats are explicitly **NOT supported** and will fail validation:
+
+| Container | Codec | Reason | Recommended Action |
+|-----------|-------|--------|-------------------|
+| `mxf`, `ari` | `arriraw` | Proprietary ARRI RAW, requires manufacturer SDK | Export ProRes or DNxHR from DaVinci Resolve |
+| `r3d` | `redcode`/`redraw` | RED RAW, requires RED SDK | Export ProRes or DNxHR from Resolve or REDCINE-X |
+| `braw` | `braw`/`blackmagic_raw` | Blackmagic RAW, requires manufacturer SDK | Export ProRes or DNxHR from DaVinci Resolve |
+| `mxf` | `sony_raw`/`x-ocn` | Sony RAW, requires Sony SDK | Export ProRes or DNxHR from Sony RAW Viewer or Resolve |
+| `crm` | `canon_raw`/`craw` | Canon Cinema RAW, requires Canon SDK | Export ProRes or DNxHR from Canon RAW Development or Resolve |
+| `mov` | `prores_raw`/`prores_raw_hq` | ProRes RAW is sensor RAW, not standard video | Export standard ProRes from Final Cut Pro or Resolve |
+| `dng` | `cinemadng` | Frame sequences require specialized RAW processing | Export ProRes or DNxHR from DaVinci Resolve |
+
+### Why Proxx Does Not Decode RAW
+
+Camera RAW formats (ARRIRAW, REDCODE, BRAW, etc.) are **sensor data**, not video. They require:
+
+1. **Proprietary SDKs** - Each manufacturer provides their own decode library, which may have licensing restrictions, platform limitations, or version compatibility issues.
+2. **Debayering decisions** - RAW data must be debayered (converted from sensor mosaic to RGB), and the result depends on color science parameters, white balance, exposure adjustments, and other creative decisions.
+3. **Non-deterministic output** - Different software versions or settings produce different results from the same RAW file, violating Proxx's determinism guarantee.
+
+**The correct workflow is to decode RAW in your NLE (DaVinci Resolve, Premiere, etc.) and export to an intermediate codec (ProRes, DNxHR) before generating proxies.**
+
+### Validation Behavior
+
+Source format validation happens **before execution**:
+
+```python
+try:
+    job_spec.validate(check_paths=True)
+except JobSpecValidationError as e:
+    # Example error:
+    # "Source format not supported: A001_C001.ari
+    #   Container: ari
+    #   Codec: arriraw
+    #   Reason: Proprietary ARRI RAW codec requires manufacturer SDK.
+    #   Action: Export ProRes or DNxHR from DaVinci Resolve before proxy generation."
+```
+
+The validation uses `ffprobe` to detect container and codec, then checks against the capability matrix.
+No execution is attempted for unsupported formats.
+
+---
+
 ## Phase 1 Status
 
 This is **Phase 1** of the V2 Reliable Proxy Engine:
