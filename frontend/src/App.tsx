@@ -37,6 +37,8 @@ import { logStateTransition } from './utils/logger'
 import * as statusMessages from './utils/statusMessages'
 // Alpha: Copilot imports hidden (dev feature)
 // import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
+// V1 OBSERVABILITY: Debug panel for UI event log (DEV only)
+import { DebugPanel } from './components/DebugPanel'
 import { FEATURE_FLAGS } from './config/featureFlags'
 import { usePresets } from './hooks/usePresets'
 import { useIngestion } from './hooks/useIngestion'
@@ -2247,6 +2249,9 @@ function App() {
       
       {/* Status Log - bottom-left panel with plain English status messages */}
       <StatusLog entries={statusLogEntries} demoMode={FEATURE_FLAGS.DEMO_MODE} />
+      
+      {/* V1 OBSERVABILITY: Debug panel for UI event log (DEV only, toggle with Cmd+Shift+D) */}
+      <DebugPanel />
     </div>
   )
 }

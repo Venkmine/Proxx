@@ -15,6 +15,14 @@ Supported tokens:
 - {codec}        : Output codec name
 - {preset}       : Preset ID used for this job
 - {job_name}     : Job identifier (short form)
+- {fps}          : Frame rate (alias for frame_rate)
+- {tc}           : Source timecode start (alias for timecode)
+- {timecode}     : Source timecode start
+- {date}         : Current date (YYYYMMDD)
+- {datetime}     : Current datetime (YYYYMMDD_HHMMSS)
+
+V1 CONSTRAINT: All tokens MUST resolve fully or fail loudly.
+Unknown tokens are left as-is to surface template errors visibly.
 
 Rules:
 - Tokens resolved once, stored on ClipTask.output_filename
@@ -23,6 +31,7 @@ Rules:
 """
 
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -65,6 +74,21 @@ def resolve_filename(
     source_path = Path(clip.source_path)
     source_name = source_path.stem
     
+    # V1 DOGFOOD FIX: Naming tokens must resolve fully.
+    # Add all common tokens including fps, tc, timecode, date, datetime.
+    now = datetime.now()
+    
+    # Get frame rate as string
+    fps_str = ""
+    if clip.frame_rate is not None:
+        if isinstance(clip.frame_rate, (int, float)):
+            fps_str = f"{float(clip.frame_rate):.2f}".rstrip('0').rstrip('.')
+        else:
+            fps_str = str(clip.frame_rate)
+    
+    # Get timecode, sanitized for filename (colons → underscores)
+    timecode_str = _sanitize_timecode(getattr(clip, 'timecode_start', None) or "")
+    
     # Build token value map
     token_values = {
         "source_name": source_name,
@@ -75,13 +99,19 @@ def resolve_filename(
         "codec": resolved_params.video_codec if resolved_params else "",
         "preset": preset_id or "",
         "job_name": job.id[:8] if job else "",  # Short job ID
+        # Additional tokens for V1
+        "fps": fps_str,
+        "tc": timecode_str,  # Alias for timecode
+        "timecode": timecode_str,
+        "date": now.strftime("%Y%m%d"),
+        "datetime": now.strftime("%Y%m%d_%H%M%S"),
     }
     
     def replace_token(match: re.Match) -> str:
         token_name = match.group(1)
         if token_name in token_values:
             return token_values[token_name]
-        # Unknown token - leave as-is for debugging
+        # V1 DOGFOOD: Unknown token - leave as-is to surface template errors visibly
         return match.group(0)
     
     resolved = TOKEN_PATTERN.sub(replace_token, template)
@@ -98,6 +128,17 @@ def resolve_filename(
         resolved = source_name
     
     return resolved
+
+
+def _sanitize_timecode(tc: Optional[str]) -> str:
+    """
+    Sanitize timecode for use in filename.
+    
+    Converts 01:23:45:06 → 01_23_45_06
+    """
+    if not tc:
+        return ""
+    return tc.replace(":", "_").replace(";", "_")
 
 
 def _get_reel_name(clip: "ClipTask") -> str:
@@ -166,9 +207,11 @@ def validate_template(template: str) -> tuple[bool, Optional[str]]:
     # Check for valid token syntax
     tokens_found = TOKEN_PATTERN.findall(template)
     
+    # V1 DOGFOOD FIX: Full set of supported tokens
     valid_tokens = {
         "source_name", "reel", "frame_count", "width", "height",
-        "codec", "preset", "job_name"
+        "codec", "preset", "job_name",
+        "fps", "tc", "timecode", "date", "datetime",
     }
     
     invalid_tokens = [t for t in tokens_found if t not in valid_tokens]

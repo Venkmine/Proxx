@@ -17,6 +17,23 @@ If you are about to add: retry logic, requeue mechanism, pause/resume,
 multi-clip batching, progress percentage, or overlay coordinate wiring —
 STOP and read docs/DECISIONS.md first. These are intentionally absent.
 ============================================================================
+
+============================================================================
+V1 OBSERVABILITY HARDENING
+============================================================================
+This module now includes execution tracing and invariant enforcement.
+See app/observability/ for the trace model and invariant definitions.
+
+Trace points:
+1. Job creation: trace created with source path and metadata
+2. Naming resolution: resolved tokens and output path recorded
+3. FFmpeg execution: command, stdout, stderr captured
+4. Completion: final status and output verification recorded
+
+Invariants enforced:
+- NAMING: No unresolved {token} in output filename
+- COMPLETION: Output file must exist for COMPLETED status
+============================================================================
 """
 
 from datetime import datetime
@@ -28,6 +45,7 @@ from .errors import JobEngineError
 
 if TYPE_CHECKING:
     from .bindings import JobPresetBindingRegistry
+    from ..observability.trace import JobExecutionTrace, TraceManager
     from ..presets.registry import PresetRegistry
     from ..execution.results import ExecutionResult
     from ..execution.base import EngineType
@@ -764,9 +782,18 @@ class JobEngine:
             Dict mapping task_id to ExecutionResult for reporting
         """
         from ..execution.results import ExecutionStatus
+        from ..observability.trace import get_trace_manager
+        from ..observability.invariants import (
+            assert_naming_resolved,
+            assert_output_file_exists,
+            check_naming_has_unresolved_tokens,
+            NamingInvariantViolation,
+            CompletionInvariantViolation,
+        )
         import logging
         
         logger = logging.getLogger(__name__)
+        trace_mgr = get_trace_manager()
         
         # Track ExecutionResults for reporting (Phase 8)
         execution_results: Dict[str, "ExecutionResult"] = {}
@@ -787,6 +814,66 @@ class JobEngine:
             if job.status == JobStatus.PAUSED:
                 logger.info(f"Job {job.id} paused, stopping at clip {task.id}")
                 break
+            
+            # ======================================================
+            # V1 OBSERVABILITY: Create trace on job execution start
+            # ======================================================
+            source_metadata = {
+                "width": task.width,
+                "height": task.height,
+                "codec": task.codec,
+                "frame_rate": task.frame_rate,
+                "duration": task.duration,
+            }
+            trace = trace_mgr.create_trace(
+                job_id=job.id,
+                source_path=task.source_path,
+                source_metadata=source_metadata,
+            )
+            
+            # ======================================================
+            # V1 OBSERVABILITY: Record naming resolution
+            # ======================================================
+            settings = job.settings
+            if task.output_path:
+                # Check for unresolved tokens (non-failing check for trace)
+                filename = Path(task.output_path).name
+                has_unresolved, unresolved_list = check_naming_has_unresolved_tokens(filename)
+                
+                # Record naming in trace
+                trace_mgr.record_naming(
+                    trace=trace,
+                    output_dir=str(Path(task.output_path).parent),
+                    naming_template=settings.file.naming_template if settings.file else "{source_name}",
+                    resolved_tokens={
+                        "source_name": Path(task.source_path).stem,
+                        "output_filename": task.output_filename or "",
+                    },
+                    resolved_output_path=task.output_path,
+                    unresolved_tokens=unresolved_list if has_unresolved else None,
+                )
+                
+                # ======================================================
+                # V1 NAMING INVARIANT: Fail job if unresolved tokens
+                # WHY: Unresolved tokens in output filename = data corruption
+                # ======================================================
+                try:
+                    assert_naming_resolved(filename, task.output_path)
+                except NamingInvariantViolation as e:
+                    logger.error(f"[INVARIANT] {e}")
+                    # Record failure in trace
+                    trace_mgr.record_completion(
+                        trace=trace,
+                        final_status="FAILED",
+                        failure_reason=str(e),
+                    )
+                    # Mark task as failed
+                    self.update_task_status(
+                        task,
+                        TaskStatus.FAILED,
+                        failure_reason=str(e),
+                    )
+                    continue  # Skip to next task (warn-and-continue)
             
             # Transition task to RUNNING
             self.update_task_status(task, TaskStatus.RUNNING)
@@ -818,12 +905,25 @@ class JobEngine:
             if result.status in success_statuses:
                 # CRITICAL: Verify output file exists on disk before marking COMPLETED
                 output_verified = False
+                output_size = None
                 if result.output_path:
                     output_verified = Path(result.output_path).is_file()
+                    if output_verified:
+                        output_size = Path(result.output_path).stat().st_size
                 
                 if output_verified:
                     # Output exists - task is truly COMPLETED
                     logger.info(f"[COMPLETION] Task {task.id} output verified: {result.output_path}")
+                    
+                    # V1 OBSERVABILITY: Record successful completion
+                    trace_mgr.record_completion(
+                        trace=trace,
+                        final_status="COMPLETED",
+                        warnings=result.warnings,
+                        output_file_exists=True,
+                        output_file_size=output_size,
+                    )
+                    
                     if result.status == ExecutionStatus.SUCCESS_WITH_WARNINGS:
                         self.update_task_status(
                             task,
@@ -833,16 +933,37 @@ class JobEngine:
                     else:
                         self.update_task_status(task, TaskStatus.COMPLETED)
                 else:
-                    # Engine reported success but output file missing - FAIL the task
-                    logger.error(f"[COMPLETION] Task {task.id} FAILED: output file not found at {result.output_path}")
+                    # ======================================================
+                    # V1 COMPLETION INVARIANT: Output file must exist
+                    # WHY: Job claiming COMPLETED without output is lying
+                    # ======================================================
+                    failure_msg = f"Output file not found: {result.output_path}"
+                    logger.error(f"[COMPLETION] Task {task.id} FAILED: {failure_msg}")
+                    
+                    # V1 OBSERVABILITY: Record completion invariant violation
+                    trace_mgr.record_completion(
+                        trace=trace,
+                        final_status="FAILED",
+                        failure_reason=failure_msg,
+                        output_file_exists=False,
+                    )
+                    
                     self.update_task_status(
                         task,
                         TaskStatus.FAILED,
-                        failure_reason=f"Output file not found: {result.output_path}",
+                        failure_reason=failure_msg,
                     )
             elif result.status == ExecutionStatus.CANCELLED:
                 # Cancelled by operator - mark as failed with reason
                 logger.info(f"[COMPLETION] Task {task.id} cancelled")
+                
+                # V1 OBSERVABILITY: Record cancellation
+                trace_mgr.record_completion(
+                    trace=trace,
+                    final_status="CANCELLED",
+                    failure_reason=result.failure_reason or "Cancelled by operator",
+                )
+                
                 self.update_task_status(
                     task,
                     TaskStatus.FAILED,
@@ -851,6 +972,14 @@ class JobEngine:
             else:
                 # ExecutionStatus.FAILED
                 logger.error(f"[COMPLETION] Task {task.id} FAILED: {result.failure_reason}")
+                
+                # V1 OBSERVABILITY: Record execution failure
+                trace_mgr.record_completion(
+                    trace=trace,
+                    final_status="FAILED",
+                    failure_reason=result.failure_reason or "Unknown execution failure",
+                )
+                
                 self.update_task_status(
                     task,
                     TaskStatus.FAILED,

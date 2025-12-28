@@ -8,6 +8,22 @@ Strategy:
 - Short GOP for responsive scrubbing
 - Cache by source path + mtime hash
 - Non-blocking, runs async with progress
+
+============================================================================
+V1 OBSERVABILITY HARDENING
+============================================================================
+Preview generation now records metadata about HOW previews are generated.
+This does NOT change preview quality - only discloses it.
+
+Recorded metadata:
+- source: "thumbnail" | "decode" (how frame was generated)
+- resolution: WxH (preview dimensions)
+- decode_method: e.g., "ffmpeg_seek"
+- decode_position: position in video
+
+This information is attached to job traces for debugging.
+See: app/observability/trace.py
+============================================================================
 """
 
 import asyncio
@@ -28,7 +44,17 @@ logger = logging.getLogger(__name__)
 # V1 DOGFOOD FIX: Increased from 540p to 720p for better preview quality.
 # 540p was too blurry for H.264 delivery format previews.
 # 720p balances quality vs. generation time for preview purposes.
-# Do NOT increase to 1080p — that would defeat the preview speed advantage.
+#
+# PREVIEW RESOLUTION DECISION (V1):
+# - 720p is the SINGLE decode resolution for all previews
+# - Source → decode at 720p → display in canvas (objectFit: contain)
+# - CSS zoom on top for magnification (no re-decode)
+# - Do NOT increase to 1080p — that would defeat the preview speed advantage
+# - If source is ≤720p, preview may match source quality closely
+# - If source is 1080p+, preview is noticeably softer — this is expected
+#
+# Future consideration: For sources ≤1080p, could generate at source resolution.
+# However, this adds complexity and variable generation times. Defer to V2.
 PREVIEW_WIDTH = 1280  # 720p with 16:9 aspect
 PREVIEW_HEIGHT = 720
 PREVIEW_CODEC = "libx264"
@@ -40,6 +66,79 @@ PREVIEW_AUDIO_BITRATE = "128k"
 
 # Cache directory
 CACHE_DIR = Path(tempfile.gettempdir()) / "awaire_proxy_previews"
+
+
+# ============================================================================
+# V1 OBSERVABILITY: Preview Metadata
+# ============================================================================
+
+def get_preview_metadata(source_path: str, preview_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Get metadata about how a preview was generated.
+    
+    V1 OBSERVABILITY: This function records the TRUTH about preview generation.
+    It does NOT change quality - only discloses it.
+    
+    Args:
+        source_path: Path to source file
+        preview_path: Path to generated preview (if available)
+        
+    Returns:
+        Dict with preview metadata:
+        - source: "thumbnail" | "decode"
+        - width: preview width
+        - height: preview height
+        - decode_method: method used
+        - decode_position: position in video
+        - generated_at: timestamp
+    """
+    metadata = {
+        "source": "decode",  # We decode, not just grab embedded thumbnail
+        "width": PREVIEW_WIDTH,
+        "height": PREVIEW_HEIGHT,
+        "decode_method": "ffmpeg_transcode",
+        "decode_position": None,  # Full video, not single frame
+        "generated_at": datetime.now().isoformat(),
+        "codec": PREVIEW_CODEC,
+        "crf": PREVIEW_CRF,
+        "preset": PREVIEW_PRESET,
+    }
+    
+    # If preview exists, get actual dimensions
+    if preview_path and Path(preview_path).exists():
+        try:
+            info = get_video_info(preview_path)
+            if info and "streams" in info and info["streams"]:
+                stream = info["streams"][0]
+                metadata["width"] = stream.get("width", PREVIEW_WIDTH)
+                metadata["height"] = stream.get("height", PREVIEW_HEIGHT)
+        except Exception as e:
+            logger.warning(f"Failed to get preview dimensions: {e}")
+    
+    return metadata
+
+
+def get_thumbnail_metadata(source_path: str, position: float = 0.3) -> Dict[str, Any]:
+    """
+    Get metadata about how a thumbnail was generated.
+    
+    V1 OBSERVABILITY: Records thumbnail generation parameters.
+    
+    Args:
+        source_path: Path to source file
+        position: Position in video (0.0-1.0)
+        
+    Returns:
+        Dict with thumbnail metadata
+    """
+    return {
+        "source": "thumbnail",
+        "width": 480,  # Thumbnail width (from thumbnails.py)
+        "height": None,  # Aspect-ratio dependent
+        "decode_method": "ffmpeg_seek",
+        "decode_position": position,
+        "generated_at": datetime.now().isoformat(),
+    }
 
 
 def get_cache_key(source_path: str) -> str:

@@ -16,6 +16,20 @@ Image Sequence Detection:
 INC-001 Fix: All directory enumeration is async with timeout protection.
 Network volumes (/Volumes) can hang indefinitely - we now enforce a 3-second
 timeout on all iterdir() operations.
+
+============================================================================
+V1 OBSERVABILITY HARDENING
+============================================================================
+All browse operations are now logged to the browse event log.
+Each request is logged with:
+- Path being browsed
+- Success/failure status
+- Error type and message (if failure)
+- Timing information
+
+This surfaces the truth about filesystem access for debugging.
+See: app/observability/browse_log.py
+============================================================================
 """
 
 import os
@@ -28,6 +42,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, HTTPException, Query
+
+from ..observability.browse_log import get_browse_log
 
 logger = logging.getLogger(__name__)
 
@@ -338,8 +354,13 @@ async def get_filesystem_roots():
     INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
     on network volumes that are unreachable.
     
+    V1 OBSERVABILITY: All browse attempts are logged to browse event log.
+    
     Returns mounted volumes on macOS, common directories on other platforms.
     """
+    browse_log = get_browse_log()
+    browse_log.record_roots_start()
+    
     roots: List[DirectoryEntry] = []
     
     # macOS: /Volumes contains mounted drives
@@ -358,9 +379,12 @@ async def get_filesystem_roots():
                     ))
         except asyncio.TimeoutError:
             # INC-001: Volumes enumeration timed out - skip but log
+            # V1 OBSERVABILITY: Record timeout explicitly
             logger.warning(f"Timeout listing /Volumes - skipping (INC-001)")
+            browse_log.record_browse_timeout("/Volumes", DIRECTORY_TIMEOUT_SECONDS)
         except PermissionError:
-            pass
+            # V1 OBSERVABILITY: Record permission error
+            browse_log.record_browse_error("/Volumes", "permission", "Permission denied")
     
     # Add user home directory
     home = Path.home()
@@ -373,6 +397,9 @@ async def get_filesystem_roots():
     
     # Sort by name
     roots.sort(key=lambda r: r.name.lower())
+    
+    # V1 OBSERVABILITY: Record successful roots listing
+    browse_log.record_roots_success(len(roots))
     
     return RootsResponse(roots=roots)
 
@@ -389,12 +416,20 @@ async def browse_directory(
     INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
     on network volumes.
     
+    V1 OBSERVABILITY: All browse attempts are logged to browse event log.
+    V1 FILESYSTEM INVARIANT: Browse MUST resolve to directory list OR visible error.
+    
     Returns directories and optionally filtered media files.
     Path must be absolute and accessible.
     """
+    browse_log = get_browse_log()
+    browse_log.record_browse_start(path)
+    
     resolved = normalize_and_validate_path(path)
     
     if not resolved.is_dir():
+        # V1 OBSERVABILITY: Record error
+        browse_log.record_browse_error(path, "not_directory", f"Path is not a directory: {path}")
         raise HTTPException(
             status_code=400,
             detail=f"Path is not a directory: {path}"
@@ -403,23 +438,37 @@ async def browse_directory(
     # Compute parent path
     parent = str(resolved.parent) if resolved.parent != resolved else None
     
-    # INC-001: Use timeout-protected enumeration
+    # INC-001: Use timeout-protected enumeration with HARD timeout.
+    # Network volumes (/Volumes) can hang indefinitely.
+    # V1 FILESYSTEM INVARIANT: Browse MUST resolve to directory list OR visible error.
     try:
         entries = await get_directory_entries(
             resolved,
             include_hidden=include_hidden,
             media_only=media_only,
         )
+        
+        # V1 OBSERVABILITY: Record successful browse
+        dir_count = sum(1 for e in entries if e.type == "dir")
+        file_count = sum(1 for e in entries if e.type == "file")
+        browse_log.record_browse_success(path, dir_count, file_count)
+        
     except asyncio.TimeoutError:
-        # INC-001: Directory enumeration timed out
-        logger.warning(f"Timeout browsing directory: {path} (INC-001)")
+        # INC-001: Directory enumeration timed out — log ONCE (no spam)
+        # V1 OBSERVABILITY: Record timeout with explicit error payload
+        logger.warning(f"INC-001: Timeout browsing directory after {DIRECTORY_TIMEOUT_SECONDS}s: {path}")
+        browse_log.record_browse_timeout(path, DIRECTORY_TIMEOUT_SECONDS)
+        
         return BrowseResponse(
             path=str(resolved),
             parent=parent,
             entries=[],
-            error=f"Directory enumeration timed out after {DIRECTORY_TIMEOUT_SECONDS}s. Click to retry.",
+            error="Unable to list this folder (permissions or slow volume)",
         )
     except PermissionError:
+        # V1 OBSERVABILITY: Record permission error
+        browse_log.record_browse_error(path, "permission", "Permission denied")
+        
         return BrowseResponse(
             path=str(resolved),
             parent=parent,
@@ -427,6 +476,9 @@ async def browse_directory(
             error="Permission denied",
         )
     except OSError as e:
+        # V1 OBSERVABILITY: Record OS error
+        browse_log.record_browse_error(path, "io_error", str(e))
+        
         return BrowseResponse(
             path=str(resolved),
             parent=parent,
@@ -515,3 +567,43 @@ async def enumerate_folder_media(
         files=final_files,
         count=len(final_files),
     )
+
+
+# ============================================================================
+# V1 OBSERVABILITY: Debug Endpoints
+# ============================================================================
+
+@router.get("/debug/browse-log")
+async def get_browse_log_entries(limit: int = 50):
+    """
+    Get recent browse events for debugging.
+    
+    V1 OBSERVABILITY: Debug-only endpoint for viewing browse event log.
+    Returns last N browse events with full context.
+    
+    This endpoint should NOT be exposed in production.
+    """
+    browse_log = get_browse_log()
+    events = browse_log.get_events_as_dicts(limit)
+    
+    return {
+        "events": events,
+        "count": len(events),
+        "total_logged": browse_log._events.maxlen if hasattr(browse_log._events, 'maxlen') else len(browse_log._events),
+    }
+
+
+@router.post("/debug/browse-log/clear")
+async def clear_browse_log_entries():
+    """
+    Clear browse event log.
+    
+    V1 OBSERVABILITY: Debug-only endpoint for clearing browse event log.
+    """
+    browse_log = get_browse_log()
+    browse_log.clear()
+    
+    return {
+        "success": True,
+        "message": "Browse log cleared",
+    }

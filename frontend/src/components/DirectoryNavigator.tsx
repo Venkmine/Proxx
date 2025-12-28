@@ -481,10 +481,16 @@ export function DirectoryNavigator({
         })
         .catch(err => {
           clearTimeout(timeoutId)
-          // V1 FIX: Surface all errors clearly, never leave spinner stuck
+          // V1 DOGFOOD FIX INC-001: Surface all errors clearly, never leave spinner stuck.
+          // Ensure human-readable errors for common failure modes.
           let errorMessage: string
           if (err.name === 'AbortError') {
-            errorMessage = 'Timed out. Click to retry.'
+            // INC-001: Timeout on network volume or slow directory
+            errorMessage = 'Unable to list this folder (permissions or slow volume)'
+          } else if (err.message?.includes('HTTP 403') || err.message?.includes('403')) {
+            errorMessage = 'Access denied (permissions)'
+          } else if (err.message?.includes('HTTP 404') || err.message?.includes('404')) {
+            errorMessage = 'Folder not found'
           } else if (err.message?.includes('HTTP')) {
             errorMessage = err.message
           } else if (err.message?.includes('NetworkError') || err.message?.includes('fetch')) {

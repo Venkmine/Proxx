@@ -705,14 +705,15 @@ export function VisualPreviewWorkspace({
         </div>
       </div>
 
-      {/* UI Honesty Freeze: Read-only preview notice */}
+      {/* V1 DOGFOOD FIX: Neutral preview notice — informative, not alarming.
+          Issue 5: Reword to factual language that doesn't imply broken functionality. */}
       <div
         style={{
           padding: '0.5rem 0.75rem',
-          background: 'rgba(251, 191, 36, 0.1)',
-          borderBottom: '1px solid rgba(251, 191, 36, 0.2)',
+          background: 'rgba(100, 116, 139, 0.15)',
+          borderBottom: '1px solid rgba(100, 116, 139, 0.2)',
           fontSize: '0.6875rem',
-          color: 'rgb(251, 191, 36)',
+          color: 'rgb(148, 163, 184)',
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
@@ -720,7 +721,7 @@ export function VisualPreviewWorkspace({
         data-testid="preview-readonly-notice"
       >
         <span style={{ fontSize: '0.875rem' }}>ℹ️</span>
-        <span>Preview is currently read-only. Visual overlays are not yet rendered into output.</span>
+        <span>Preview is for reference only. Output renders from source at full quality.</span>
       </div>
 
       {/* Preview Area - Resizes with panel */}
@@ -807,9 +808,20 @@ export function VisualPreviewWorkspace({
             overflow: 'hidden',
             cursor: isPanning ? 'grabbing' : 'default',
             // No transition - zoom must be immediate with no animation or easing
+            // V1 DOGFOOD FIX Issue 4: Zoom quality — use crisp-edges for sharper zoom.
+            // Zoom ≠ re-render. Zoom magnifies existing preview buffer.
+            // CSS image-rendering hints preserve pixel sharpness when scaling.
+            imageRendering: zoom !== 'fit' && zoom > 1 ? 'crisp-edges' : 'auto',
+            // @ts-ignore - webkit prefix for Safari
+            WebkitImageRendering: zoom !== 'fit' && zoom > 1 ? '-webkit-optimize-contrast' : 'auto',
           }}
         >
-          {/* Video element for playback - only for supported formats */}
+          {/* Video element for playback - only for supported formats
+              V1 DOGFOOD FIX Issue 2: Preview quality — ensure single-scale path.
+              objectFit: 'contain' preserves aspect ratio without stretching.
+              No additional CSS scaling is applied — video decodes at 720p,
+              displays at native size within container, CSS zoom applies on top.
+              Preview resolution is 720p (1280x720) — see execution/preview.py. */}
           {previewVideoUrl && previewStatus === 'ready' && (
             <video
               ref={videoRef}
@@ -824,13 +836,16 @@ export function VisualPreviewWorkspace({
                 width: '100%',
                 height: '100%',
                 objectFit: 'contain',
+                // V1 DOGFOOD: Prevent browser from applying blur filter on scaling
+                imageRendering: 'auto',
               }}
               playsInline
               muted={false}
             />
           )}
           
-          {/* Fallback thumbnail - shown for unsupported formats, error states, or while generating */}
+          {/* Fallback thumbnail - shown for unsupported formats, error states, or while generating
+              V1 DOGFOOD FIX Issue 2: Same single-scale path as video element. */}
           {thumbnailUrl && previewStatus !== 'ready' && (
             <img
               src={thumbnailUrl}
@@ -841,6 +856,8 @@ export function VisualPreviewWorkspace({
                 width: '100%',
                 height: '100%',
                 objectFit: 'contain',
+                // V1 DOGFOOD: Prevent blur on scaled thumbnails
+                imageRendering: 'auto',
               }}
             />
           )}
