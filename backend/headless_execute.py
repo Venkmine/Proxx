@@ -21,7 +21,7 @@ This enables future automation scenarios:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 import json
 import os
 import shutil
@@ -30,6 +30,45 @@ import sys
 
 from job_spec import JobSpec, JobSpecValidationError, FpsMode, JOBSPEC_VERSION
 from execution_results import ClipExecutionResult, JobExecutionResult
+
+# Import source capabilities for engine routing
+try:
+    from v2.source_capabilities import (
+        ExecutionEngine,
+        get_execution_engine,
+        validate_source_capability,
+        SourceCapabilityError,
+    )
+    _SOURCE_CAPABILITIES_AVAILABLE = True
+except ImportError:
+    try:
+        from backend.v2.source_capabilities import (
+            ExecutionEngine,
+            get_execution_engine,
+            validate_source_capability,
+            SourceCapabilityError,
+        )
+        _SOURCE_CAPABILITIES_AVAILABLE = True
+    except ImportError:
+        _SOURCE_CAPABILITIES_AVAILABLE = False
+        ExecutionEngine = None  # type: ignore
+        SourceCapabilityError = None  # type: ignore
+
+# Import Resolve engine (optional - may not be available)
+_RESOLVE_ENGINE_AVAILABLE = False
+_RESOLVE_ENGINE_ERROR: Optional[str] = None
+
+try:
+    from v2.engines.resolve_engine import ResolveEngine, ResolveAPIUnavailableError
+    _RESOLVE_ENGINE_AVAILABLE = True
+except ImportError:
+    try:
+        from backend.v2.engines.resolve_engine import ResolveEngine, ResolveAPIUnavailableError
+        _RESOLVE_ENGINE_AVAILABLE = True
+    except ImportError as e:
+        _RESOLVE_ENGINE_ERROR = f"Resolve engine not available: {e}"
+        ResolveEngine = None  # type: ignore
+        ResolveAPIUnavailableError = None  # type: ignore
 
 
 # -----------------------------------------------------------------------------
@@ -127,6 +166,131 @@ FFMPEG_CODEC_MAP = {
     "dnxhr": ["-c:v", "dnxhd", "-profile:v", "dnxhr_hq"],
     "vp9": ["-c:v", "libvpx-vp9"],
 }
+
+
+# -----------------------------------------------------------------------------
+# Engine Routing
+# -----------------------------------------------------------------------------
+# Determines which execution engine (FFmpeg or Resolve) should process a job.
+# This is based purely on source format capability - NO user override.
+# -----------------------------------------------------------------------------
+
+def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Determine which execution engine should process this job.
+    
+    ROUTING RULES (NO USER OVERRIDE, NO HEURISTICS):
+    - All sources must route to the SAME engine
+    - Mixed jobs (RAW + non-RAW) are REJECTED
+    - RAW formats → "resolve"
+    - Standard formats → "ffmpeg"
+    - Unknown/rejected formats → validation error
+    
+    Args:
+        job_spec: JobSpec to analyze
+        
+    Returns:
+        Tuple of (engine_name, error_message)
+        - ("ffmpeg", None) for FFmpeg-routable jobs
+        - ("resolve", None) for Resolve-routable jobs
+        - (None, error_message) for invalid jobs
+    """
+    if not _SOURCE_CAPABILITIES_AVAILABLE:
+        # Fall back to FFmpeg if capability routing not available
+        return ("ffmpeg", None)
+    
+    if not job_spec.sources:
+        return (None, "JobSpec has no sources")
+    
+    engines_required: Dict[str, List[str]] = {
+        "ffmpeg": [],
+        "resolve": [],
+        "unknown": [],
+    }
+    
+    for source_path in job_spec.sources:
+        # Extract container from file extension
+        source = Path(source_path)
+        container = source.suffix.lower().lstrip(".")
+        
+        # For source codec, we need to probe the file or infer from container
+        # For now, use container-based heuristics for common RAW formats
+        codec = _infer_codec_from_path(source)
+        
+        engine = get_execution_engine(container, codec)
+        
+        if engine == ExecutionEngine.FFMPEG:
+            engines_required["ffmpeg"].append(source_path)
+        elif engine == ExecutionEngine.RESOLVE:
+            engines_required["resolve"].append(source_path)
+        else:
+            engines_required["unknown"].append(source_path)
+    
+    # Check for unknown formats
+    if engines_required["unknown"]:
+        unknown_files = ", ".join(Path(p).name for p in engines_required["unknown"][:3])
+        return (None, f"Unknown source format for: {unknown_files}")
+    
+    # Check for mixed engine requirements
+    has_ffmpeg = len(engines_required["ffmpeg"]) > 0
+    has_resolve = len(engines_required["resolve"]) > 0
+    
+    if has_ffmpeg and has_resolve:
+        ffmpeg_files = ", ".join(Path(p).name for p in engines_required["ffmpeg"][:2])
+        resolve_files = ", ".join(Path(p).name for p in engines_required["resolve"][:2])
+        return (
+            None,
+            f"Mixed job not allowed: FFmpeg sources ({ffmpeg_files}) and Resolve sources ({resolve_files}) "
+            f"cannot be processed in the same job. Split into separate jobs by format type."
+        )
+    
+    if has_resolve:
+        return ("resolve", None)
+    
+    return ("ffmpeg", None)
+
+
+def _infer_codec_from_path(source_path: Path) -> str:
+    """
+    Infer codec from file path (extension-based heuristic for RAW detection).
+    
+    NOTE: This is NOT a full probe - it's a quick check for known RAW extensions.
+    For standard formats (mp4, mov, etc.), we assume standard codecs that FFmpeg handles.
+    
+    Args:
+        source_path: Path to source file
+        
+    Returns:
+        Inferred codec string for capability lookup
+    """
+    ext = source_path.suffix.lower().lstrip(".")
+    
+    # RAW format extensions that require Resolve
+    raw_extensions = {
+        "r3d": "redcode",      # RED RAW
+        "ari": "arriraw",      # ARRI RAW
+        "braw": "braw",        # Blackmagic RAW
+        "crm": "canon_raw",    # Canon Cinema RAW
+        "dng": "cinemadng",    # CinemaDNG
+    }
+    
+    if ext in raw_extensions:
+        return raw_extensions[ext]
+    
+    # For standard containers, assume FFmpeg-compatible codecs
+    # The actual codec doesn't matter for routing - these all go to FFmpeg
+    standard_containers = {
+        "mp4": "h264",
+        "mov": "prores",  # Assume ProRes for MOV (most common in editorial)
+        "mxf": "dnxhd",
+        "mkv": "h264",
+        "webm": "vp9",
+        "avi": "mjpeg",
+        "ts": "mpeg2video",
+        "mpg": "mpeg2video",
+    }
+    
+    return standard_containers.get(ext, "h264")  # Default to h264 for unknown
 
 
 # -----------------------------------------------------------------------------
@@ -422,31 +586,27 @@ def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
 
 def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     """
-    Execute a multi-source JobSpec sequentially with fail-fast semantics.
+    Execute a multi-source JobSpec with automatic engine routing.
     
-    V2 Phase 1 Hardening: Deterministic Multi-Clip Execution
-    =========================================================
-    This function processes multiple source clips in order, one at a time.
-    It does NOT introduce concurrency, batching, or parallel execution.
+    V2 Phase 2: Capability-Based Engine Routing
+    ============================================
+    This function automatically selects the appropriate execution engine
+    (FFmpeg or Resolve) based on source format capabilities.
+    
+    Engine Routing Rules (NO USER OVERRIDE, NO HEURISTICS):
+    - RAW formats (ARRIRAW, REDCODE, BRAW, etc.) → Resolve engine
+    - Standard formats (H.264, ProRes, DNxHD, etc.) → FFmpeg engine
+    - Mixed jobs (RAW + non-RAW) → REJECTED with clear error
+    - Unknown formats → REJECTED with validation error
     
     Behavior:
     ---------
-    1. Validates the entire JobSpec (raises on validation failure)
-    2. Iterates through sources in order (preserving deterministic ordering)
-    3. For each source:
-       - Executes using execute_job_spec with clip index
-       - Captures ClipExecutionResult
-       - Verifies output before continuing
-    4. **FAIL-FAST**: Stops on first failure and returns partial results
-    5. Returns JobExecutionResult with all ClipExecutionResults
-    
-    Why Sequential + Fail-Fast?
-    ---------------------------
-    - Simplicity: No thread safety or resource contention issues
-    - Deterministic: Same input always produces same output order
-    - Debuggable: Clear causality and no race conditions
-    - Safe: Don't waste resources processing remaining clips after failure
-    - Foundation: Concurrency can be added in V2 Phase 2+ without breaking contracts
+    1. Validates the entire JobSpec
+    2. Determines required engine based on source formats
+    3. Rejects mixed-engine jobs with explicit error
+    4. Dispatches to appropriate engine (FFmpeg or Resolve)
+    5. Logs engine choice in result metadata
+    6. Returns JobExecutionResult with engine metadata
     
     Args:
         job_spec: A complete JobSpec with one or more sources
@@ -455,7 +615,7 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
         JobExecutionResult containing:
         - All ClipExecutionResults (successful + failed)
         - Final job status (COMPLETED, FAILED, or PARTIAL)
-        - Job timing information
+        - Engine selection in _metadata
         
     Raises:
         JobSpecValidationError: If JobSpec validation fails before execution
@@ -482,11 +642,44 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
             completed_at=datetime.now(timezone.utc),
         )
     
-    # Step 2: Execute each source sequentially with fail-fast
+    # Step 2: Determine which engine to use based on source capabilities
+    engine_name, engine_error = _determine_job_engine(job_spec)
+    
+    if engine_error:
+        # Engine routing failed (mixed job or unsupported format)
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=f"Engine routing failed: {engine_error}",
+            jobspec_version=JOBSPEC_VERSION,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
+    # Step 3: Execute with the selected engine
+    if engine_name == "resolve":
+        result = _execute_with_resolve(job_spec, started_at)
+    else:
+        # Default to FFmpeg
+        result = _execute_with_ffmpeg(job_spec, started_at)
+    
+    # Step 4: Set engine metadata in result
+    result.engine_used = engine_name
+    
+    return result
+
+
+def _execute_with_ffmpeg(job_spec: JobSpec, started_at: datetime) -> JobExecutionResult:
+    """
+    Execute job using FFmpeg engine (standard formats).
+    
+    This is the original execution path for standard video formats.
+    """
     clips: List[ClipExecutionResult] = []
     
     for index in range(len(job_spec.sources)):
-        # Execute this clip
+        # Execute this clip with FFmpeg
         clip_result = execute_job_spec(job_spec, index=index)
         clips.append(clip_result)
         
@@ -498,16 +691,12 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     
     # Determine final job status
     if not clips:
-        # No clips executed (shouldn't happen after validation)
         final_status = "PARTIAL"
     elif len(clips) < len(job_spec.sources):
-        # Some clips not executed (stopped early due to failure)
         final_status = "FAILED"
     elif all(clip.status == "COMPLETED" for clip in clips):
-        # All clips completed successfully
         final_status = "COMPLETED"
     else:
-        # All clips executed but at least one failed
         final_status = "FAILED"
     
     return JobExecutionResult(
@@ -518,6 +707,53 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
         started_at=started_at,
         completed_at=completed_at,
     )
+
+
+def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecutionResult:
+    """
+    Execute job using Resolve engine (RAW formats).
+    
+    Delegates to the ResolveEngine for processing.
+    Fails explicitly if Resolve is not available.
+    """
+    # Check if Resolve engine is available
+    if not _RESOLVE_ENGINE_AVAILABLE:
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=f"Resolve engine required but not available: {_RESOLVE_ENGINE_ERROR}",
+            jobspec_version=JOBSPEC_VERSION,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
+    try:
+        # Initialize and execute with Resolve engine
+        resolve_engine = ResolveEngine()
+        result = resolve_engine.execute(job_spec)
+        return result
+        
+    except ResolveAPIUnavailableError as e:
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=f"Resolve scripting API not available: {e}",
+            jobspec_version=JOBSPEC_VERSION,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    except Exception as e:
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=f"Resolve engine error: {e}",
+            jobspec_version=JOBSPEC_VERSION,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
 
 
 # -----------------------------------------------------------------------------

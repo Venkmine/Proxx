@@ -33,7 +33,29 @@ Part of V2 Phase 1 (Option A: Reliable Proxy Engine)
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from enum import Enum
+from typing import Dict, List, Optional, Set, Tuple
+
+
+# =============================================================================
+# Execution Engine Enum
+# =============================================================================
+# Third routing outcome: which engine should process this source format.
+# This is NOT a user preference - it is deterministic based on format.
+# =============================================================================
+
+class ExecutionEngine(str, Enum):
+    """
+    Execution engine selection for source format processing.
+    
+    This enum determines which execution backend handles a given source format.
+    The routing is DETERMINISTIC - no user override, no heuristics.
+    
+    FFMPEG: Standard video codecs processable by FFmpeg (H.264, ProRes, DNxHD, etc.)
+    RESOLVE: Proprietary RAW formats requiring DaVinci Resolve (ARRIRAW, REDCODE, BRAW, etc.)
+    """
+    FFMPEG = "ffmpeg"
+    RESOLVE = "resolve"
 
 
 # =============================================================================
@@ -80,11 +102,62 @@ class SourceCapability:
         codec: Video codec (e.g., 'h264', 'prores', 'arriraw')
         reason: Human-readable explanation (one sentence)
         recommended_action: Suggested upstream fix if rejected
+        engine: Execution engine for this format (FFMPEG or RESOLVE)
     """
     container: str
     codec: str
     reason: str
     recommended_action: str = ""
+    engine: ExecutionEngine = ExecutionEngine.FFMPEG
+
+
+# =============================================================================
+# RAW FORMATS REQUIRING RESOLVE
+# =============================================================================
+# These codec identifiers MUST be routed to the Resolve engine.
+# They are proprietary camera RAW formats that FFmpeg cannot decode.
+#
+# NOTE: These are now SUPPORTED (via Resolve), not REJECTED.
+# The REJECTED_SOURCES dict is for formats unsupported by BOTH engines.
+# =============================================================================
+
+RAW_CODECS_RESOLVE: Set[str] = {
+    # ARRI RAW
+    "arriraw",
+    "arri_raw",
+    
+    # RED RAW
+    "redcode",
+    "redraw",
+    "red_raw",
+    "r3d",
+    
+    # Blackmagic RAW
+    "braw",
+    "blackmagic_raw",
+    
+    # Sony RAW
+    "sony_raw",
+    "x-ocn",
+    "xocn",
+    
+    # Canon RAW
+    "canon_raw",
+    "craw",
+    "cinema_raw_light",
+    
+    # Panasonic RAW
+    "panasonic_raw",
+    "vraw",
+    
+    # CinemaDNG
+    "cinemadng",
+    "cdng",
+    
+    # ProRes RAW (sensor RAW, not standard ProRes)
+    "prores_raw",
+    "prores_raw_hq",
+}
 
 
 # =============================================================================
@@ -290,128 +363,155 @@ SUPPORTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
 
 
 # =============================================================================
-# REJECTED SOURCES
+# RESOLVE-ROUTED SOURCES (RAW Formats)
 # =============================================================================
-# These container/codec combinations are explicitly NOT supported.
-# Each entry includes the reason and recommended upstream action.
+# These container/codec combinations require DaVinci Resolve for processing.
+# They are SUPPORTED, but only via the Resolve engine, not FFmpeg.
+#
+# Key difference from REJECTED_SOURCES:
+# - RESOLVE_SOURCES: Supported via Resolve engine
+# - REJECTED_SOURCES: Not supported by ANY engine
 # =============================================================================
 
-REJECTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
+RESOLVE_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
     # ---------------------------------------------------------------------
-    # ARRIRAW - Proprietary camera RAW
+    # ARRIRAW - Proprietary camera RAW (Resolve has native support)
     # ---------------------------------------------------------------------
     ("mxf", "arriraw"): SourceCapability(
         container="mxf",
         codec="arriraw",
-        reason="Proprietary ARRI RAW codec requires manufacturer SDK.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve before proxy generation.",
+        reason="ARRI RAW in MXF, decoded natively by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     ("ari", "arriraw"): SourceCapability(
         container="ari",
         codec="arriraw",
-        reason="ARRI RAW native format requires manufacturer SDK.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve before proxy generation.",
+        reason="ARRI RAW native format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # RED RAW - Proprietary camera RAW
+    # RED RAW - Proprietary camera RAW (Resolve has native support)
     # ---------------------------------------------------------------------
     ("r3d", "redcode"): SourceCapability(
         container="r3d",
         codec="redcode",
-        reason="RED REDCODE RAW requires RED SDK for decode.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve or REDCINE-X before proxy generation.",
+        reason="RED REDCODE RAW, decoded natively by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     ("r3d", "redraw"): SourceCapability(
         container="r3d",
         codec="redraw",
-        reason="RED RAW format requires RED SDK for decode.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve or REDCINE-X before proxy generation.",
+        reason="RED RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # Blackmagic RAW - Proprietary camera RAW
+    # Blackmagic RAW - Proprietary camera RAW (Resolve has native support)
     # ---------------------------------------------------------------------
     ("braw", "braw"): SourceCapability(
         container="braw",
         codec="braw",
-        reason="Blackmagic RAW requires Blackmagic SDK for decode.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve before proxy generation.",
+        reason="Blackmagic RAW, decoded natively by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     ("braw", "blackmagic_raw"): SourceCapability(
         container="braw",
         codec="blackmagic_raw",
-        reason="Blackmagic RAW requires manufacturer SDK.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve before proxy generation.",
+        reason="Blackmagic RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # Sony RAW - Camera RAW formats
+    # Sony RAW - Camera RAW formats (Resolve has native support)
     # ---------------------------------------------------------------------
     ("mxf", "sony_raw"): SourceCapability(
         container="mxf",
         codec="sony_raw",
-        reason="Sony RAW format requires Sony SDK for decode.",
-        recommended_action="Export ProRes or DNxHR from Sony RAW Viewer or Resolve before proxy generation.",
+        reason="Sony RAW in MXF, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     ("mxf", "x-ocn"): SourceCapability(
         container="mxf",
         codec="x-ocn",
-        reason="Sony X-OCN RAW requires Sony SDK for decode.",
-        recommended_action="Export ProRes or DNxHR from Sony RAW Viewer or Resolve before proxy generation.",
+        reason="Sony X-OCN RAW, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # Canon RAW - Camera RAW formats
+    # Canon RAW - Camera RAW formats (Resolve has native support)
     # ---------------------------------------------------------------------
     ("crm", "canon_raw"): SourceCapability(
         container="crm",
         codec="canon_raw",
-        reason="Canon Cinema RAW Light requires Canon SDK.",
-        recommended_action="Export ProRes or DNxHR from Canon RAW Development or Resolve before proxy generation.",
+        reason="Canon Cinema RAW Light, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     ("crm", "craw"): SourceCapability(
         container="crm",
         codec="craw",
-        reason="Canon Cinema RAW requires Canon SDK.",
-        recommended_action="Export ProRes or DNxHR from Canon RAW Development or Resolve before proxy generation.",
+        reason="Canon Cinema RAW, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # Panasonic RAW - Camera RAW formats
+    # Panasonic RAW - Camera RAW formats (Resolve has native support)
     # ---------------------------------------------------------------------
     ("vraw", "panasonic_raw"): SourceCapability(
         container="vraw",
         codec="panasonic_raw",
-        reason="Panasonic V-RAW requires manufacturer SDK.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve before proxy generation.",
+        reason="Panasonic V-RAW, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # CinemaDNG - Open RAW format but requires specialized handling
+    # CinemaDNG - Open RAW format (Resolve has native support)
     # ---------------------------------------------------------------------
     ("dng", "cinemadng"): SourceCapability(
         container="dng",
         codec="cinemadng",
-        reason="CinemaDNG frame sequences require specialized RAW processing.",
-        recommended_action="Export ProRes or DNxHR from DaVinci Resolve before proxy generation.",
+        reason="CinemaDNG frame sequences, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     
     # ---------------------------------------------------------------------
-    # Apple ProRes RAW - Hybrid RAW format
+    # Apple ProRes RAW - Hybrid RAW format (Resolve has native support)
     # ---------------------------------------------------------------------
     ("mov", "prores_raw"): SourceCapability(
         container="mov",
         codec="prores_raw",
-        reason="ProRes RAW is a sensor RAW format, not a standard video codec.",
-        recommended_action="Export standard ProRes (not RAW) from Final Cut Pro or Resolve before proxy generation.",
+        reason="ProRes RAW sensor data, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
     ("mov", "prores_raw_hq"): SourceCapability(
         container="mov",
         codec="prores_raw_hq",
-        reason="ProRes RAW HQ is a sensor RAW format, not a standard video codec.",
-        recommended_action="Export standard ProRes (not RAW) from Final Cut Pro or Resolve before proxy generation.",
+        reason="ProRes RAW HQ sensor data, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
     ),
+}
+
+
+# =============================================================================
+# REJECTED SOURCES
+# =============================================================================
+# These container/codec combinations are NOT supported by ANY engine.
+# This is for truly unsupported formats that neither FFmpeg nor Resolve can handle.
+# =============================================================================
+
+REJECTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
+    # ---------------------------------------------------------------------
+    # Obsolete/Unsupported formats - neither FFmpeg nor Resolve can decode
+    # ---------------------------------------------------------------------
+    # Currently empty - all known formats are either FFmpeg or Resolve supported.
+    # Add entries here for formats that cannot be processed by any engine.
+    # Example:
+    # ("xyz", "proprietary_codec"): SourceCapability(
+    #     container="xyz",
+    #     codec="proprietary_codec",
+    #     reason="No known decoder for this format.",
+    #     recommended_action="Convert to ProRes or H.264 using manufacturer software.",
+    # ),
 }
 
 
@@ -434,15 +534,18 @@ def is_source_supported(container: str, codec: str) -> bool:
     """
     Check if a container/codec combination is explicitly supported.
     
+    This includes both FFmpeg-routed (SUPPORTED_SOURCES) and
+    Resolve-routed (RESOLVE_SOURCES) formats.
+    
     Args:
         container: Container format (e.g., 'mp4', 'mov')
         codec: Video codec (e.g., 'h264', 'prores')
         
     Returns:
-        True if explicitly supported, False otherwise.
+        True if explicitly supported by any engine, False otherwise.
     """
     key = (normalize_format(container), normalize_format(codec))
-    return key in SUPPORTED_SOURCES
+    return key in SUPPORTED_SOURCES or key in RESOLVE_SOURCES
 
 
 def is_source_rejected(container: str, codec: str) -> bool:
@@ -479,37 +582,104 @@ def get_support_info(container: str, codec: str) -> Optional[SourceCapability]:
     """
     Get support information for a container/codec combination.
     
+    Checks both FFmpeg-routed and Resolve-routed sources.
+    
     Args:
         container: Container format
         codec: Video codec
         
     Returns:
-        SourceCapability with reason, or None if not in supported list.
+        SourceCapability with reason and engine, or None if not in any supported list.
     """
     key = (normalize_format(container), normalize_format(codec))
-    return SUPPORTED_SOURCES.get(key)
+    if key in SUPPORTED_SOURCES:
+        return SUPPORTED_SOURCES[key]
+    if key in RESOLVE_SOURCES:
+        return RESOLVE_SOURCES[key]
+    return None
 
 
-def validate_source_capability(container: str, codec: str) -> None:
+def get_execution_engine(container: str, codec: str) -> Optional[ExecutionEngine]:
     """
-    Validate that a source format is supported. Raises if rejected or unknown.
+    Determine which execution engine should process this source format.
     
-    This is the primary validation function for source format checking.
-    It should be called during JobSpec validation, before execution.
+    This is the PRIMARY routing function for engine selection.
+    
+    ROUTING RULES (NO USER OVERRIDE, NO HEURISTICS):
+    - RAW formats (RESOLVE_SOURCES) → ExecutionEngine.RESOLVE
+    - Standard formats (SUPPORTED_SOURCES) → ExecutionEngine.FFMPEG
+    - Rejected formats (REJECTED_SOURCES) → None (validation will fail)
+    - Unknown formats → None (validation will fail)
     
     Args:
-        container: Container format (e.g., 'mp4', 'mov')
-        codec: Video codec (e.g., 'h264', 'prores')
+        container: Container format (e.g., 'mp4', 'r3d')
+        codec: Video codec (e.g., 'h264', 'arriraw')
         
-    Raises:
-        SourceCapabilityError: If the format is explicitly rejected.
-        SourceCapabilityError: If the format is unknown (not in either list).
+    Returns:
+        ExecutionEngine.FFMPEG for standard formats
+        ExecutionEngine.RESOLVE for RAW formats
+        None if format is rejected or unknown (caller must handle)
     """
     container_norm = normalize_format(container)
     codec_norm = normalize_format(codec)
     key = (container_norm, codec_norm)
     
-    # Check if explicitly rejected
+    # Check Resolve-routed sources first (RAW formats)
+    if key in RESOLVE_SOURCES:
+        return ExecutionEngine.RESOLVE
+    
+    # Check FFmpeg-routed sources (standard formats)
+    if key in SUPPORTED_SOURCES:
+        return ExecutionEngine.FFMPEG
+    
+    # Rejected or unknown - return None (caller handles validation error)
+    return None
+
+
+def is_resolve_required(container: str, codec: str) -> bool:
+    """
+    Check if a format requires the Resolve engine (RAW format).
+    
+    Convenience function for quick engine checks.
+    
+    Args:
+        container: Container format
+        codec: Video codec
+        
+    Returns:
+        True if format requires Resolve engine, False otherwise.
+    """
+    return get_execution_engine(container, codec) == ExecutionEngine.RESOLVE
+
+
+def validate_source_capability(container: str, codec: str) -> ExecutionEngine:
+    """
+    Validate that a source format is supported and return the required engine.
+    
+    This is the primary validation function for source format checking.
+    It should be called during JobSpec validation, before execution.
+    
+    ROUTING RULES (NO USER OVERRIDE, NO HEURISTICS):
+    - Standard formats → ExecutionEngine.FFMPEG
+    - RAW formats → ExecutionEngine.RESOLVE
+    - Rejected/Unknown → Raises SourceCapabilityError
+    
+    Args:
+        container: Container format (e.g., 'mp4', 'mov')
+        codec: Video codec (e.g., 'h264', 'prores')
+        
+    Returns:
+        ExecutionEngine indicating which engine should process this format.
+        
+    Raises:
+        SourceCapabilityError: If the format is explicitly rejected.
+        SourceCapabilityError: If the format is unknown (not in any list).
+    """
+    container_norm = normalize_format(container)
+    codec_norm = normalize_format(codec)
+    key = (container_norm, codec_norm)
+    
+    # Check if explicitly rejected (not supported by ANY engine)
     if key in REJECTED_SOURCES:
         entry = REJECTED_SOURCES[key]
         raise SourceCapabilityError(
@@ -519,9 +689,13 @@ def validate_source_capability(container: str, codec: str) -> None:
             recommended_action=entry.recommended_action,
         )
     
-    # Check if supported
+    # Check if supported by FFmpeg (standard formats)
     if key in SUPPORTED_SOURCES:
-        return  # Valid
+        return ExecutionEngine.FFMPEG
+    
+    # Check if supported by Resolve (RAW formats)
+    if key in RESOLVE_SOURCES:
+        return ExecutionEngine.RESOLVE
     
     # Unknown format - fail conservatively
     raise SourceCapabilityError(
@@ -538,7 +712,7 @@ def validate_source_capability(container: str, codec: str) -> None:
 
 def list_supported_formats() -> list:
     """
-    Return a list of all supported container/codec pairs.
+    Return a list of all FFmpeg-supported container/codec pairs.
     
     Returns:
         List of (container, codec, reason) tuples.
@@ -546,6 +720,19 @@ def list_supported_formats() -> list:
     return [
         (cap.container, cap.codec, cap.reason)
         for cap in SUPPORTED_SOURCES.values()
+    ]
+
+
+def list_resolve_formats() -> list:
+    """
+    Return a list of all Resolve-supported container/codec pairs (RAW formats).
+    
+    Returns:
+        List of (container, codec, reason) tuples.
+    """
+    return [
+        (cap.container, cap.codec, cap.reason)
+        for cap in RESOLVE_SOURCES.values()
     ]
 
 

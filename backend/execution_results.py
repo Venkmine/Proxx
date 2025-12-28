@@ -142,6 +142,9 @@ class JobExecutionResult:
     validation_error: Optional[str] = None
     """Validation error message if job failed before execution. Enables debugging."""
     
+    engine_used: Optional[str] = None
+    """Execution engine used for this job ('ffmpeg' or 'resolve'). Logged for auditability."""
+    
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When job execution started (UTC)."""
     
@@ -180,6 +183,7 @@ class JobExecutionResult:
         result["_metadata"] = {
             "jobspec_version": self.jobspec_version,
             "validation_error": self.validation_error,
+            "engine_used": self.engine_used,
         }
         
         return result
