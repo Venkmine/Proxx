@@ -126,4 +126,20 @@ See also: `docs/PRODUCT.md` section 7 for product-level non-goals.
 
 ---
 
+## Debug Panel Access (DEV Mode Only)
+
+The UI Event Log debug panel helps diagnose browse, preview, and job issues.
+
+**Access Methods:**
+- **Keyboard shortcut:** `Cmd+Alt+D` (Mac) or `Ctrl+Alt+D` (Windows/Linux)
+  - Note: Changed from `Cmd+Shift+D` due to Electron/VSCode shortcut conflicts
+- **Fallback button:** Small 🔍 icon in bottom-left corner (always visible in DEV mode)
+
+**Features:**
+- Last 100 UI events with timestamps
+- Event type coloring (errors in red, success in green)
+- Clear Log button to reset event history
+
+---
+
 **End of document**

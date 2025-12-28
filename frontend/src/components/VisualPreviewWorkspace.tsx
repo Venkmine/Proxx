@@ -38,6 +38,7 @@ import {
   BURNIN_LINE_HEIGHT,
   BURNIN_TIMECODE_LETTER_SPACING,
 } from '../constants/burnin'
+import { recordPreviewZoom } from '../utils/uiEventLog'
 
 // ============================================================================
 // TYPES
@@ -475,6 +476,9 @@ export function VisualPreviewWorkspace({
     const delta = e.deltaY > 0 ? 0.9 : 1.1 // Scroll down = zoom out, up = zoom in
     const newZoom = Math.max(0.25, Math.min(4, currentZoom * delta))
     
+    // V1 OBSERVABILITY: Log zoom events with mouse position
+    recordPreviewZoom(newZoom, Math.round(mouseX * 100), Math.round(mouseY * 100), sourceFilePath)
+    
     // Calculate pan offset adjustment to keep cursor point stationary
     // When zooming in, we need to move the pan offset towards the cursor
     // When zooming out, we move away from the cursor
@@ -486,7 +490,7 @@ export function VisualPreviewWorkspace({
     }))
     
     setZoom(newZoom)
-  }, [zoom])
+  }, [zoom, sourceFilePath])
   
   // Middle mouse button pan
   const handleMouseDownPan = useCallback((e: React.MouseEvent) => {
@@ -581,6 +585,21 @@ export function VisualPreviewWorkspace({
             }}
           >
             Preview (read-only)
+          </span>
+          {/* V1 OBSERVABILITY: Preview resolution disclosure - zoom never lies about quality */}
+          <span
+            style={{
+              fontSize: '0.5625rem',
+              padding: '0.125rem 0.375rem',
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'rgb(147, 197, 253)',
+              fontWeight: 500,
+            }}
+            title="Preview decoded at 720p. Zoom magnifies CSS-scaled view, not source pixels."
+          >
+            Scaled Preview (720p)
           </span>
           {fileName && (
             <span

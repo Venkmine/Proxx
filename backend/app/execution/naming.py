@@ -89,22 +89,40 @@ def resolve_filename(
     # Get timecode, sanitized for filename (colons → underscores)
     timecode_str = _sanitize_timecode(getattr(clip, 'timecode_start', None) or "")
     
+    # Resolution string
+    resolution_str = ""
+    if clip.width and clip.height:
+        resolution_str = f"{clip.width}x{clip.height}"
+    
     # Build token value map
+    # V1 FIX: Include ALL tokens from frontend constants/tokens.ts
+    # Ensures no token ever remains unresolved in output filename
     token_values = {
+        # Source metadata
         "source_name": source_name,
+        "source": source_name,  # Alias for source_name
         "reel": _get_reel_name(clip),
+        
+        # Technical metadata
         "frame_count": _get_frame_count(clip),
         "width": str(clip.width) if clip.width else "",
         "height": str(clip.height) if clip.height else "",
+        "resolution": resolution_str,  # Frontend token: {resolution}
         "codec": resolved_params.video_codec if resolved_params else "",
         "preset": preset_id or "",
         "job_name": job.id[:8] if job else "",  # Short job ID
-        # Additional tokens for V1
+        
+        # Time-related tokens
         "fps": fps_str,
         "tc": timecode_str,  # Alias for timecode
         "timecode": timecode_str,
+        "frame": "",  # Dynamic token - not available at filename resolution time
         "date": now.strftime("%Y%m%d"),
         "datetime": now.strftime("%Y%m%d_%H%M%S"),
+        
+        # Version/proxy tokens (static for V1)
+        "version": "v01",  # V1: Static version
+        "proxy": "_proxy",  # V1: Always proxy workflow
     }
     
     def replace_token(match: re.Match) -> str:
@@ -207,19 +225,31 @@ def validate_template(template: str) -> tuple[bool, Optional[str]]:
     # Check for valid token syntax
     tokens_found = TOKEN_PATTERN.findall(template)
     
-    # V1 DOGFOOD FIX: Full set of supported tokens
+    # V1 FIX: Full set of supported tokens matching frontend constants/tokens.ts
+    # ALL tokens from frontend must be valid here to prevent unresolved tokens in output
     valid_tokens = {
-        "source_name", "reel", "frame_count", "width", "height",
+        # Source metadata
+        "source_name", "source",  # source is alias for source_name
+        "reel",
+        
+        # Technical metadata
+        "frame_count", "width", "height", "resolution",
         "codec", "preset", "job_name",
-        "fps", "tc", "timecode", "date", "datetime",
+        
+        # Time-related
+        "fps", "tc", "timecode", "frame",
+        "date", "datetime",
+        
+        # Version/proxy
+        "version", "proxy",
     }
     
     invalid_tokens = [t for t in tokens_found if t not in valid_tokens]
     if invalid_tokens:
         return False, f"Unknown tokens: {', '.join(invalid_tokens)}"
     
-    # Must contain at least source_name to ensure unique filenames
-    if "source_name" not in tokens_found:
-        return False, "Template must include {source_name} token"
+    # Must contain at least source_name or source to ensure unique filenames
+    if "source_name" not in tokens_found and "source" not in tokens_found:
+        return False, "Template must include {source_name} or {source} token"
     
     return True, None

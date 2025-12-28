@@ -4,8 +4,10 @@
  * V1 OBSERVABILITY: Hidden debug panel showing UI event log.
  * 
  * Features:
- * - Toggle via keyboard shortcut (Cmd+Shift+D / Ctrl+Shift+D)
- * - Shows last 200 UI events with timestamps
+ * - Toggle via keyboard shortcut (Cmd+Alt+D / Ctrl+Alt+D)
+ *   NOTE: Changed from Cmd+Shift+D due to Electron/VSCode interception
+ * - DEV-only fallback button (fixed, low opacity) in bottom-left corner
+ * - Shows last 100 UI events with timestamps
  * - Plain text, no styling polish
  * - DEV mode only (hidden in production)
  * 
@@ -34,11 +36,14 @@ export function DebugPanel({ isOpen: externalIsOpen, onClose }: DebugPanelProps)
     }
   }, [externalIsOpen])
   
-  // Keyboard shortcut: Cmd+Shift+D (Mac) or Ctrl+Shift+D (Windows/Linux)
+  // Keyboard shortcut: Cmd+Alt+D (Mac) or Ctrl+Alt+D (Windows/Linux)
+  // NOTE: Changed from Cmd+Shift+D due to Electron/VSCode interception
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+      // Use Alt (Option on Mac) instead of Shift to avoid editor conflicts
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault()
+        e.stopPropagation()
         setIsOpen(prev => {
           const newState = !prev
           if (!newState && onClose) {
@@ -49,16 +54,18 @@ export function DebugPanel({ isOpen: externalIsOpen, onClose }: DebugPanelProps)
       }
     }
     
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    // Capture phase to handle before Electron intercepts
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [onClose])
   
   // Refresh events periodically when panel is open
+  // Display last 100 events for readability
   useEffect(() => {
     if (!isOpen) return
     
     const refreshEvents = () => {
-      setEvents(getUIEvents())
+      setEvents(getUIEvents(100))  // Limit to 100 events for display
     }
     
     refreshEvents()
@@ -82,8 +89,19 @@ export function DebugPanel({ isOpen: externalIsOpen, onClose }: DebugPanelProps)
     return null
   }
   
+  // DEV-only fallback button when panel is closed
+  // Small, fixed, low opacity - always accessible without relying on keyboard shortcuts
   if (!isOpen) {
-    return null
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        style={styles.devFallbackButton}
+        title="Open Debug Panel (⌘⌥D)"
+        aria-label="Open Debug Panel"
+      >
+        🔍
+      </button>
+    )
   }
   
   return (
@@ -98,7 +116,7 @@ export function DebugPanel({ isOpen: externalIsOpen, onClose }: DebugPanelProps)
               Clear
             </button>
             <button onClick={handleClose} style={styles.button}>
-              Close (⌘⇧D)
+              Close (⌘⌥D)
             </button>
           </div>
         </div>
@@ -128,7 +146,7 @@ export function DebugPanel({ isOpen: externalIsOpen, onClose }: DebugPanelProps)
         
         <div style={styles.footer}>
           <span style={styles.hint}>
-            V1 Observability • Session-scoped • Last 200 events
+            V1 Observability • Session-scoped • Last 100 events • ⌘⌥D to toggle
           </span>
         </div>
       </div>
@@ -170,6 +188,27 @@ function getEventTypeStyle(type: string): React.CSSProperties {
 // ============================================================================
 
 const styles: Record<string, React.CSSProperties> = {
+  // DEV-only fallback button: small, fixed, low opacity
+  // Always visible in DEV mode so debug panel is accessible without keyboard
+  devFallbackButton: {
+    position: 'fixed',
+    bottom: '12px',
+    left: '12px',
+    width: '28px',
+    height: '28px',
+    padding: 0,
+    backgroundColor: 'rgba(30, 30, 50, 0.6)',
+    border: '1px solid rgba(100, 100, 120, 0.4)',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    opacity: 0.4,
+    zIndex: 9999,
+    transition: 'opacity 0.15s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   overlay: {
     position: 'fixed',
     top: 0,

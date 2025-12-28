@@ -57,10 +57,15 @@ export function Select({
     fontFamily: 'var(--font-sans)',
     fontWeight: 500,
     letterSpacing: '-0.01em',
-    // Gradient background instead of flat
-    background: isHovered 
-      ? 'linear-gradient(180deg, rgba(51, 65, 85, 0.5) 0%, rgba(30, 41, 59, 0.7) 100%)'
-      : 'linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(20, 22, 26, 0.6) 100%)',
+    // V1 FIX: Use explicit background properties to avoid React style mutation warning
+    // (background shorthand + backgroundRepeat/backgroundPosition causes rerender warning)
+    backgroundColor: 'transparent',
+    backgroundImage: isHovered 
+      ? `linear-gradient(180deg, rgba(51, 65, 85, 0.5) 0%, rgba(30, 41, 59, 0.7) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`
+      : `linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(20, 22, 26, 0.6) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat, no-repeat',
+    backgroundPosition: '0 0, right 0.875rem center',
+    backgroundSize: '100% 100%, auto',
     color: value ? 'var(--text-primary)' : 'var(--text-muted)',
     border: isFocused 
       ? '1px solid var(--button-primary-bg)' 
@@ -75,10 +80,6 @@ export function Select({
     appearance: 'none',
     WebkitAppearance: 'none',
     MozAppearance: 'none',
-    // Prominent dropdown arrow
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'right 0.875rem center',
     boxShadow: isFocused 
       ? '0 0 0 3px rgba(59, 130, 246, 0.15), inset 0 1px 0 rgba(255,255,255,0.05)' 
       : 'inset 0 1px 0 rgba(255,255,255,0.05)',

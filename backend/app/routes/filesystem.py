@@ -425,7 +425,17 @@ async def browse_directory(
     browse_log = get_browse_log()
     browse_log.record_browse_start(path)
     
-    resolved = normalize_and_validate_path(path)
+    # V1 DEBUG: Log the requested and resolved paths for diagnosis
+    logger.info(f"[BROWSE] Requested path: {path}")
+    
+    try:
+        resolved = normalize_and_validate_path(path)
+        logger.info(f"[BROWSE] Resolved path: {resolved}")
+    except HTTPException as e:
+        # V1 OBSERVABILITY: Record path validation error
+        logger.warning(f"[BROWSE] Path validation failed: {path} -> {e.detail}")
+        browse_log.record_browse_error(path, "validation", str(e.detail))
+        raise
     
     if not resolved.is_dir():
         # V1 OBSERVABILITY: Record error
@@ -442,16 +452,23 @@ async def browse_directory(
     # Network volumes (/Volumes) can hang indefinitely.
     # V1 FILESYSTEM INVARIANT: Browse MUST resolve to directory list OR visible error.
     try:
+        logger.info(f"[BROWSE] Starting directory enumeration for: {resolved}")
         entries = await get_directory_entries(
             resolved,
             include_hidden=include_hidden,
             media_only=media_only,
         )
+        logger.info(f"[BROWSE] Enumeration complete: {len(entries)} entries for {resolved}")
         
         # V1 OBSERVABILITY: Record successful browse
         dir_count = sum(1 for e in entries if e.type == "dir")
         file_count = sum(1 for e in entries if e.type == "file")
         browse_log.record_browse_success(path, dir_count, file_count)
+        
+        # V1 FIX: If no entries AND this is an empty directory, return empty list (not error)
+        # This prevents "Loading forever" for empty directories
+        if len(entries) == 0:
+            logger.info(f"[BROWSE] Empty directory (or no media files): {resolved}")
         
     except asyncio.TimeoutError:
         # INC-001: Directory enumeration timed out — log ONCE (no spam)
@@ -465,8 +482,9 @@ async def browse_directory(
             entries=[],
             error="Unable to list this folder (permissions or slow volume)",
         )
-    except PermissionError:
+    except PermissionError as e:
         # V1 OBSERVABILITY: Record permission error
+        logger.warning(f"[BROWSE] Permission denied: {path} - {e}")
         browse_log.record_browse_error(path, "permission", "Permission denied")
         
         return BrowseResponse(
@@ -477,6 +495,7 @@ async def browse_directory(
         )
     except OSError as e:
         # V1 OBSERVABILITY: Record OS error
+        logger.warning(f"[BROWSE] OS error: {path} - {e}")
         browse_log.record_browse_error(path, "io_error", str(e))
         
         return BrowseResponse(
@@ -484,6 +503,17 @@ async def browse_directory(
             parent=parent,
             entries=[],
             error=str(e),
+        )
+    except Exception as e:
+        # V1 FIX: Catch-all to ensure we NEVER hang
+        logger.error(f"[BROWSE] Unexpected error: {path} - {type(e).__name__}: {e}")
+        browse_log.record_browse_error(path, "unexpected", str(e))
+        
+        return BrowseResponse(
+            path=str(resolved),
+            parent=parent,
+            entries=[],
+            error=f"Unexpected error: {type(e).__name__}",
         )
     
     return BrowseResponse(

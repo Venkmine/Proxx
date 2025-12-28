@@ -42,6 +42,10 @@ import { DebugPanel } from './components/DebugPanel'
 import { FEATURE_FLAGS } from './config/featureFlags'
 import { usePresets } from './hooks/usePresets'
 import { useIngestion } from './hooks/useIngestion'
+// V2 Step 3: Thin Client JobSpec Compiler
+import { useV2Execute } from './hooks/useV2Execute'
+import { useV2ModeStore } from './stores/v2ModeStore'
+import { V2ResultPanel } from './components/V2ResultPanel'
 // REMOVED: Drag & drop completely removed from UI for honesty
 // import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
@@ -330,6 +334,12 @@ function App() {
   // REMOVED: Drag & drop completely removed from UI for honesty
   // const [droppedPaths, setDroppedPaths] = useState<string[]>([])
   // const [showDropConfirmation, setShowDropConfirmation] = useState<boolean>(false)
+
+  // ============================================
+  // V2 Step 3: Thin Client JobSpec Compiler
+  // ============================================
+  const { isV2ModeEnabled, toggleV2Mode, v2ExecutionStatus } = useV2ModeStore()
+  const { isEncoding: isV2Encoding, executeV2 } = useV2Execute()
 
   // ============================================
   // Phase 17: DeliverSettings State (Authoritative)
@@ -991,6 +1001,44 @@ function App() {
     // Fetch jobs and select the newly created one
     await fetchJobs()
     setSelectedJobId(result.jobId)
+  }
+  
+  // ============================================
+  // V2 Step 3: Execute V2 (Thin Client JobSpec)
+  // ============================================
+  const executeV2Job = async () => {
+    // Determine effective output directory
+    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
+    
+    // Guard: Must have output directory
+    if (!effectiveOutputDir) {
+      setError('Output directory must be set for V2 execution')
+      return
+    }
+    
+    // Guard: Must have source files
+    if (!selectedFiles.length) {
+      setError('No source files selected for V2 execution')
+      return
+    }
+    
+    // Execute V2 job (compiles JobSpec, sends to backend, updates store)
+    const success = await executeV2({
+      sourcePaths: selectedFiles,
+      outputDirectory: effectiveOutputDir,
+      deliverSettings: deliverSettings,
+    })
+    
+    if (success) {
+      // Clear selected files after successful V2 execution
+      setSelectedFiles([])
+      addStatusLogEntry({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        type: 'success',
+        message: 'V2 execution completed successfully',
+      })
+    }
   }
   
   /* REMOVED: Drag & drop completely removed from UI for honesty
@@ -1814,9 +1862,46 @@ function App() {
             }}>
               Alpha
             </span>
+            
+            {/* V2 Mode Toggle (DEV-only) */}
+            {!FEATURE_FLAGS.DEMO_MODE && (
+              <button
+                data-testid="v2-mode-toggle"
+                onClick={toggleV2Mode}
+                style={{
+                  padding: '0.125rem 0.5rem',
+                  fontSize: '0.5625rem',
+                  fontWeight: 600,
+                  color: isV2ModeEnabled ? '#10b981' : 'var(--text-dim)',
+                  background: isV2ModeEnabled ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                  border: `1px solid ${isV2ModeEnabled ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-primary)'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                V2 {isV2ModeEnabled ? 'ON' : 'OFF'}
+              </button>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* V2 Run Button (when V2 mode enabled and files selected) */}
+          {isV2ModeEnabled && selectedFiles.length > 0 && (
+            <Button
+              data-testid="run-v2-button"
+              variant="primary"
+              size="md"
+              onClick={executeV2Job}
+              loading={isV2Encoding}
+              disabled={isV2Encoding || !outputDirectory}
+            >
+              {isV2Encoding ? 'Encoding...' : '▶ Run (V2)'}
+            </Button>
+          )}
+          
           {/* Alpha: Copilot Prompt button hidden (dev feature) */}
           {pendingJobCount > 0 && (
             <Button 
@@ -1850,6 +1935,13 @@ function App() {
           <Button variant="ghost" size="sm" onClick={() => setError('')}>
             Dismiss
           </Button>
+        </div>
+      )}
+
+      {/* V2 Result Panel — Shows encoding status and results when V2 mode is active */}
+      {isV2ModeEnabled && v2ExecutionStatus !== 'idle' && (
+        <div style={{ padding: '0 1rem' }}>
+          <V2ResultPanel />
         </div>
       )}
 
@@ -2250,7 +2342,7 @@ function App() {
       {/* Status Log - bottom-left panel with plain English status messages */}
       <StatusLog entries={statusLogEntries} demoMode={FEATURE_FLAGS.DEMO_MODE} />
       
-      {/* V1 OBSERVABILITY: Debug panel for UI event log (DEV only, toggle with Cmd+Shift+D) */}
+      {/* V1 OBSERVABILITY: Debug panel for UI event log (DEV only, toggle with Cmd+Alt+D) */}
       <DebugPanel />
     </div>
   )

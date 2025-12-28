@@ -17,6 +17,12 @@
 
 import React, { useState, useCallback, useEffect } from 'react'
 import { Button } from './Button'
+import {
+  recordBrowseClicked,
+  recordBrowseRequestStart,
+  recordBrowseSuccess,
+  recordBrowseError,
+} from '../utils/uiEventLog'
 
 // ============================================================================
 // TYPES
@@ -418,6 +424,9 @@ export function DirectoryNavigator({
   
   // Toggle directory expansion
   const handleToggleExpand = useCallback(async (path: string) => {
+    // V1 OBSERVABILITY: Log browse click
+    recordBrowseClicked(path)
+    
     setExpandedDirs(prev => {
       const existing = prev.get(path)
       
@@ -447,6 +456,9 @@ export function DirectoryNavigator({
         expanded: true,
       })
       
+      // V1 OBSERVABILITY: Log browse request start
+      recordBrowseRequestStart(path)
+      
       // V1 DOGFOOD FIX: Robust error handling for folder listing.
       // Ensures loading spinner always resolves with either data or error.
       // Never silently swallows errors.
@@ -465,15 +477,25 @@ export function DirectoryNavigator({
         })
         .then(data => {
           clearTimeout(timeoutId)
+          const entries = data.entries || []
+          const errorFromBackend = data.error || null
+          
+          // V1 OBSERVABILITY: Log browse result
+          if (errorFromBackend) {
+            recordBrowseError(path, errorFromBackend)
+          } else {
+            recordBrowseSuccess(path, entries.length)
+          }
+          
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {
               path: data.path || path,
               parent: data.parent,
-              entries: data.entries || [],
+              entries: entries,
               loading: false,
               // V1 FIX: Backend may return error field for permission issues
-              error: data.error || null,
+              error: errorFromBackend,
               expanded: true,
             })
             return newMap
@@ -498,6 +520,10 @@ export function DirectoryNavigator({
           } else {
             errorMessage = err.message || 'Unknown error. Click to retry.'
           }
+          
+          // V1 OBSERVABILITY: Log browse error
+          recordBrowseError(path, errorMessage)
+          
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {

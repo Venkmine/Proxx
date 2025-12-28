@@ -25,19 +25,34 @@ logger = logging.getLogger(__name__)
 
 # Supported tokens for naming templates
 # Each token maps to a resolver function
+# V1 FIX: ALL tokens from frontend constants/tokens.ts must be supported
 SUPPORTED_TOKENS = {
+    # Source metadata
     "{source_name}",      # Source filename without extension
+    "{source}",           # Alias for source_name
     "{reel}",             # Reel/tape name from metadata
-    "{timecode}",         # Source timecode (TC format)
+    
+    # Technical metadata
     "{frame_count}",      # Total frame count
     "{width}",            # Source video width
     "{height}",           # Source video height
+    "{resolution}",       # WIDTHxHEIGHT format
     "{codec}",            # Output codec name
     "{preset}",           # Preset name
     "{job_name}",         # Job identifier (short form)
     "{camera}",           # Camera metadata
+    
+    # Time-related
+    "{fps}",              # Frame rate
+    "{tc}",               # Alias for timecode
+    "{timecode}",         # Source timecode (TC format)
+    "{frame}",            # Frame number (dynamic, may be empty)
     "{date}",             # Current date (YYYYMMDD)
     "{datetime}",         # Current datetime (YYYYMMDD_HHMMSS)
+    
+    # Version/proxy (static for V1)
+    "{version}",          # Version number (v01)
+    "{proxy}",            # Proxy suffix (_proxy)
 }
 
 
@@ -116,22 +131,42 @@ def resolve_filename(
     source = Path(source_path)
     source_name = source.stem  # Filename without extension
     
+    # Build resolution string
+    resolution_str = ""
+    if width and height:
+        resolution_str = f"{width}x{height}"
+    
     # Build token value map
+    # V1 FIX: Include ALL tokens from frontend constants/tokens.ts
     now = datetime.now()
     
     token_values: Dict[str, str] = {
+        # Source metadata
         "{source_name}": source_name,
+        "{source}": source_name,  # Alias for source_name
         "{reel}": reel_name or "NOREEL",
-        "{timecode}": _sanitize_timecode(timecode) if timecode else "00_00_00_00",
+        "{camera}": camera or "CAM",
+        
+        # Technical metadata
         "{frame_count}": str(frame_count) if frame_count else "0",
         "{width}": str(width) if width else "0",
         "{height}": str(height) if height else "0",
+        "{resolution}": resolution_str,
         "{codec}": output_codec or "unknown",
         "{preset}": preset_name or "default",
         "{job_name}": _short_job_id(job_id) if job_id else "job",
-        "{camera}": camera or "CAM",
+        
+        # Time-related
+        "{fps}": "",  # Requires frame_rate which isn't passed to this function
+        "{tc}": _sanitize_timecode(timecode) if timecode else "00_00_00_00",  # Alias
+        "{timecode}": _sanitize_timecode(timecode) if timecode else "00_00_00_00",
+        "{frame}": "",  # Dynamic token - not available at filename resolution
         "{date}": now.strftime("%Y%m%d"),
         "{datetime}": now.strftime("%Y%m%d_%H%M%S"),
+        
+        # Version/proxy (static for V1)
+        "{version}": "v01",
+        "{proxy}": "_proxy",
     }
     
     # Resolve template

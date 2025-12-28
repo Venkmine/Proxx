@@ -17,14 +17,18 @@
  * - UI_JOB_CREATED: Job created via API
  * - UI_JOB_STARTED: Job execution started
  * 
- * Access via hidden debug panel (Cmd+Shift+D in DEV mode)
+ * Access via hidden debug panel (Cmd+Alt+D in DEV mode)
  */
 
 export type UIEventType =
   | 'UI_BROWSE_CLICKED'
+  | 'UI_BROWSE_REQUEST_START'
   | 'UI_BROWSE_RESPONSE'
+  | 'UI_BROWSE_SUCCESS'
+  | 'UI_BROWSE_ERROR'
   | 'UI_PREVIEW_REQUESTED'
   | 'UI_PREVIEW_LOADED'
+  | 'UI_PREVIEW_ZOOM'
   | 'UI_JOB_CREATED'
   | 'UI_JOB_STARTED'
   | 'UI_JOB_COMPLETED'
@@ -117,7 +121,34 @@ export function recordBrowseClicked(path: string): void {
 }
 
 /**
- * Record browse response event.
+ * Record browse request start event.
+ */
+export function recordBrowseRequestStart(path: string): void {
+  recordUIEvent('UI_BROWSE_REQUEST_START', `Browse request started: ${path}`, { path })
+}
+
+/**
+ * Record browse success event.
+ */
+export function recordBrowseSuccess(path: string, entryCount: number): void {
+  recordUIEvent('UI_BROWSE_SUCCESS', `Browse succeeded: ${path} (${entryCount} entries)`, {
+    path,
+    entryCount,
+  })
+}
+
+/**
+ * Record browse error event.
+ */
+export function recordBrowseError(path: string, error: string): void {
+  recordUIEvent('UI_BROWSE_ERROR', `Browse failed: ${path} - ${error}`, {
+    path,
+    error,
+  })
+}
+
+/**
+ * Record browse response event (legacy, calls success/error internally).
  */
 export function recordBrowseResponse(
   path: string,
@@ -152,6 +183,23 @@ export function recordPreviewRequested(sourcePath: string): void {
  */
 export function recordPreviewLoaded(sourcePath: string, previewUrl: string): void {
   recordUIEvent('UI_PREVIEW_LOADED', `Preview loaded: ${sourcePath}`, { sourcePath, previewUrl })
+}
+
+/**
+ * Record preview zoom event.
+ */
+export function recordPreviewZoom(
+  scale: number,
+  mouseX: number,
+  mouseY: number,
+  sourcePath?: string
+): void {
+  recordUIEvent('UI_PREVIEW_ZOOM', `Preview zoom: ${scale.toFixed(2)}x at (${mouseX}, ${mouseY})`, {
+    scale,
+    mouseX,
+    mouseY,
+    sourcePath,
+  })
 }
 
 /**

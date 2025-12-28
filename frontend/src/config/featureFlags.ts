@@ -51,6 +51,20 @@ export const FEATURE_FLAGS = {
    * Use explicit "Select Files" and "Select Folder" buttons instead.
    */
   EXPLICIT_DROP_ZONE_ENABLED: false,
+  
+  /**
+   * V2 Mode — Thin Client JobSpec Compiler
+   * When true: Enables the V2 execution flow where UI compiles JobSpec,
+   * sends to /v2/execute_jobspec, and displays JobExecutionResult.
+   * 
+   * V2 Step 3: UI is a compiler, not authority.
+   * - No progress percent/ETA shown
+   * - Shows only: "Encoding..." then final result
+   * - No cancel during encode (not supported in sync flow)
+   * 
+   * This is a DEV-only toggle for testing V2 engine.
+   */
+  V2_MODE_ENABLED: false,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS
