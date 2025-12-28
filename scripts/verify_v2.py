@@ -5,8 +5,9 @@ V2 Verification Harness
 CI-friendly verification script for V2 Phase 1 that:
 1. Runs V2 unit tests (including test_v2_phase1_regression.py)
 2. Runs a headless execution smoke test with a fixture JobSpec
-3. Writes deterministic artifacts to ./artifacts/v2/<timestamp>/
-4. Cleans old artifacts (keeps last 5 runs)
+3. Runs a watch folder test with atomic state transitions
+4. Writes deterministic artifacts to ./artifacts/v2/<timestamp>/
+5. Cleans old artifacts (keeps last 5 runs)
 
 Exit codes:
   0 = All tests passed
@@ -214,7 +215,7 @@ def run_smoke_test(artifact_dir: Path) -> Tuple[bool, str, Path]:
         return False, f"Smoke test failed: {e}\n{tb}", Path()
 
 
-def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool) -> None:
+def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool, watch_ok: bool = True) -> None:
     """
     Write a summary file for this verification run.
     """
@@ -222,7 +223,8 @@ def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool) -> None
         "timestamp": datetime.now().isoformat(),
         "unit_tests_passed": unit_ok,
         "smoke_test_passed": smoke_ok,
-        "overall_success": unit_ok and smoke_ok,
+        "watch_folder_test_passed": watch_ok,
+        "overall_success": unit_ok and smoke_ok and watch_ok,
         "artifact_dir": str(artifact_dir),
     }
     
@@ -231,6 +233,174 @@ def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool) -> None
         json.dump(summary, f, indent=2, sort_keys=True)
     
     print(f"\n  Run summary: {summary_path}")
+
+
+def run_watch_folder_test(artifact_dir: Path) -> Tuple[bool, str]:
+    """
+    Run watch folder verification test.
+    
+    This test:
+    1. Creates a temp watch folder structure (pending/, running/, completed/, failed/)
+    2. Drops a valid JobSpec into pending/
+    3. Runs the watch runner in --once mode
+    4. Asserts JobSpec moved to completed/, result json written, output file exists
+    
+    Args:
+        artifact_dir: Directory to write artifacts to.
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    print_subheader("Running Watch Folder Test")
+    
+    # Check fixture media exists
+    if not FIXTURE_MEDIA.exists():
+        return False, f"Fixture media not found: {FIXTURE_MEDIA}"
+    
+    if not FIXTURE_JOBSPEC.exists():
+        return False, f"Fixture JobSpec not found: {FIXTURE_JOBSPEC}"
+    
+    # Create watch folder structure in artifacts
+    watch_dir = artifact_dir / "watch_test"
+    pending_dir = watch_dir / "pending"
+    running_dir = watch_dir / "running"
+    completed_dir = watch_dir / "completed"
+    failed_dir = watch_dir / "failed"
+    
+    for d in [pending_dir, running_dir, completed_dir, failed_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+    
+    print(f"  Watch folder: {watch_dir}")
+    
+    # Load and prepare JobSpec
+    try:
+        with open(FIXTURE_JOBSPEC, "r") as f:
+            jobspec_data = json.load(f)
+    except Exception as e:
+        return False, f"Failed to load JobSpec fixture: {e}"
+    
+    # Resolve paths
+    source_path = PROJECT_ROOT / jobspec_data["sources"][0]
+    if not source_path.exists():
+        return False, f"Source media not found: {source_path}"
+    
+    # Create output directory for the job
+    output_dir = artifact_dir / "watch_output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    jobspec_data["sources"] = [str(source_path)]
+    jobspec_data["output_directory"] = str(output_dir)
+    jobspec_data["job_id"] = "watch_test_001"
+    
+    # Write JobSpec to pending/
+    test_jobspec_path = pending_dir / "watch_test_job.json"
+    with open(test_jobspec_path, "w") as f:
+        json.dump(jobspec_data, f, indent=2)
+    
+    print(f"  Created pending JobSpec: {test_jobspec_path.name}")
+    print(f"  Output directory: {output_dir}")
+    
+    # Run watch folder runner in --once mode
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "backend.v2.watch_folder_runner", str(watch_dir), "--once"],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout
+        )
+        
+        print(f"\n  Runner output:")
+        for line in result.stdout.split('\n'):
+            if line.strip():
+                print(f"    {line}")
+        
+        if result.returncode != 0:
+            print(f"\n  Runner stderr:")
+            for line in result.stderr.split('\n'):
+                if line.strip():
+                    print(f"    {line}")
+        
+    except subprocess.TimeoutExpired:
+        return False, "Watch folder runner timed out after 2 minutes"
+    except Exception as e:
+        return False, f"Failed to run watch folder runner: {e}"
+    
+    # Verify: JobSpec should have moved to completed/
+    completed_jobspec = completed_dir / "watch_test_job.json"
+    if not completed_jobspec.exists():
+        # Check if it's in failed/ instead
+        failed_jobspec = failed_dir / "watch_test_job.json"
+        if failed_jobspec.exists():
+            # Read result to understand why
+            failed_result = failed_dir / "watch_test_job.result.json"
+            if failed_result.exists():
+                with open(failed_result, "r") as f:
+                    result_data = json.load(f)
+                failure_info = result_data.get("_metadata", {}).get("failure_reason", "unknown")
+                return False, f"JobSpec moved to failed/ instead of completed/. Reason: {failure_info}"
+            return False, "JobSpec moved to failed/ instead of completed/"
+        
+        # Check if still in pending (not processed)
+        if test_jobspec_path.exists():
+            return False, "JobSpec was not processed (still in pending/)"
+        
+        return False, f"JobSpec not found in completed/ or failed/"
+    
+    print(f"  ✓ JobSpec moved to completed/")
+    
+    # Verify: Result JSON should exist alongside JobSpec
+    result_json = completed_dir / "watch_test_job.result.json"
+    if not result_json.exists():
+        return False, "Result JSON not found in completed/"
+    
+    print(f"  ✓ Result JSON exists: {result_json.name}")
+    
+    # Read and validate result JSON
+    try:
+        with open(result_json, "r") as f:
+            result_data = json.load(f)
+        
+        if result_data.get("final_status") != "COMPLETED":
+            return False, f"Result status is {result_data.get('final_status')}, expected COMPLETED"
+        
+        print(f"  ✓ Result status: COMPLETED")
+        
+    except Exception as e:
+        return False, f"Failed to read result JSON: {e}"
+    
+    # Verify: Output file should exist with size > 0
+    clips = result_data.get("clips", [])
+    if not clips:
+        return False, "No clips in result"
+    
+    for clip in clips:
+        output_path = Path(clip.get("resolved_output_path", ""))
+        if not output_path.exists():
+            return False, f"Output file missing: {output_path}"
+        
+        size = output_path.stat().st_size
+        if size == 0:
+            return False, f"Output file has zero size: {output_path}"
+        
+        size_kb = size / 1024
+        print(f"  ✓ Output exists: {output_path.name} ({size_kb:.1f} KB)")
+    
+    # Verify: pending/ should be empty
+    pending_files = list(pending_dir.glob("*.json"))
+    if pending_files:
+        return False, f"pending/ should be empty but has {len(pending_files)} file(s)"
+    
+    print(f"  ✓ pending/ is empty")
+    
+    # Verify: running/ should be empty
+    running_files = list(running_dir.glob("*.json"))
+    if running_files:
+        return False, f"running/ should be empty but has {len(running_files)} file(s)"
+    
+    print(f"  ✓ running/ is empty")
+    
+    return True, "Watch folder test passed"
 
 
 def main() -> int:
@@ -276,15 +446,28 @@ def main() -> int:
         print(f"\n✗ Smoke test FAILED: {smoke_output}")
         all_passed = False
     
+    # Step 3: Run watch folder test
+    print_header("PHASE 3: Watch Folder Test")
+    watch_ok, watch_output = run_watch_folder_test(artifact_dir)
+    
+    if watch_ok:
+        print("\n✓ Watch folder test PASSED")
+    else:
+        print(f"\n✗ Watch folder test FAILED: {watch_output}")
+        all_passed = False
+    
     # Write run summary
-    write_run_summary(artifact_dir, unit_ok, smoke_ok)
+    write_run_summary(artifact_dir, unit_ok, smoke_ok, watch_ok)
     
     # Final summary
     print_header("VERIFICATION COMPLETE")
-    print(f"  Unit Tests:  {'PASSED' if unit_ok else 'FAILED'}")
-    print(f"  Smoke Test:  {'PASSED' if smoke_ok else 'FAILED'}")
-    print(f"  Overall:     {'PASSED ✓' if all_passed else 'FAILED ✗'}")
-    print(f"\n  Artifacts:   {artifact_dir}")
+    print(f"  Unit Tests:        {'PASSED' if unit_ok else 'FAILED'}")
+    print(f"  Smoke Test:        {'PASSED' if smoke_ok else 'FAILED'}")
+    print(f"  Watch Folder Test: {'PASSED' if watch_ok else 'FAILED'}")
+    print(f"  Overall:           {'PASSED ✓' if all_passed else 'FAILED ✗'}")
+    print(f"\n  Artifacts:         {artifact_dir}")
+    
+    return 0 if all_passed else 1
     
     return 0 if all_passed else 1
 
