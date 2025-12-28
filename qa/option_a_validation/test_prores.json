@@ -1,0 +1,16 @@
+{
+  "jobspec_version": "2.1",
+  "job_id": "test_prores_01",
+  "sources": [
+    "/Users/leon.grant/Desktop/__TEST_FILES/OUTPUT/Craft reeel jan 21_PRPROXY.mov"
+  ],
+  "output_directory": "/Users/leon.grant/Desktop/watch_output",
+  "codec": "prores_proxy",
+  "container": "mov",
+  "resolution": "same",
+  "fps_mode": "same-as-source",
+  "fps_explicit": null,
+  "naming_template": "{source_name}_proxy_{codec}",
+  "resolved_tokens": {},
+  "created_at": "2025-12-28T19:45:00Z"
+}
