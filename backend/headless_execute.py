@@ -29,6 +29,7 @@ import subprocess
 import sys
 
 from job_spec import JobSpec, JobSpecValidationError, FpsMode
+from execution_results import ClipExecutionResult, JobExecutionResult
 
 
 # -----------------------------------------------------------------------------
@@ -225,6 +226,25 @@ def _resolve_output_path(
     return output_dir / output_filename
 
 
+def _verify_output(output_path: Path) -> tuple[bool, Optional[int]]:
+    """
+    Verify output file exists and has size > 0.
+    
+    Returns:
+        Tuple of (exists, size_bytes)
+        - exists: True if file exists and size > 0
+        - size_bytes: File size in bytes, or None if doesn't exist
+    """
+    if not output_path.is_file():
+        return False, None
+    
+    try:
+        size = output_path.stat().st_size
+        return size > 0, size
+    except OSError:
+        return False, None
+
+
 def _build_ffmpeg_command(
     ffmpeg_path: str,
     source_path: str,
@@ -283,50 +303,69 @@ def _build_ffmpeg_command(
 # Main Execution Function
 # -----------------------------------------------------------------------------
 
-def execute_job_spec(job_spec: JobSpec) -> ExecutionResult:
+def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
     """
-    Execute a validated JobSpec without UI involvement.
+    Execute a single clip from a JobSpec without UI involvement.
     
-    This function:
-    1. Validates the JobSpec
-    2. Resolves output paths deterministically
-    3. Builds FFmpeg command using existing helpers
-    4. Executes synchronously
-    5. Captures full execution context
+    V2 Phase 1 Hardening: Per-Clip Execution with Verification
+    ===========================================================
+    This function executes ONE source clip and returns a ClipExecutionResult
+    with complete verification and audit trail.
+    
+    Execution steps:
+    1. Resolve output path deterministically
+    2. Build FFmpeg command
+    3. Execute synchronously
+    4. Verify output exists and size > 0
+    5. Return ClipExecutionResult with complete information
     
     Args:
-        job_spec: A complete JobSpec instance
+        job_spec: A complete JobSpec instance (may have multiple sources)
+        index: Index of the source to execute (0-based)
         
     Returns:
-        ExecutionResult with all execution details
+        ClipExecutionResult with all execution details
         
     Raises:
-        JobSpecValidationError: If JobSpec validation fails
+        IndexError: If index is out of range for job_spec.sources
+        JobSpecValidationError: If FFmpeg not found (only on first call)
         
     Note:
         - Execution failures do NOT raise exceptions
-        - Check result.success or result.exit_code
+        - All failures are captured in ClipExecutionResult
+        - Check result.status == "COMPLETED" for success
     """
-    # Step 1: Validate JobSpec (raises on failure)
-    job_spec.validate(check_paths=True)
+    started_at = datetime.now(timezone.utc)
     
-    # Step 2: Find FFmpeg
+    # Get source path
+    if index >= len(job_spec.sources):
+        raise IndexError(f"Source index {index} out of range (job has {len(job_spec.sources)} sources)")
+    
+    source_path = Path(job_spec.sources[index])
+    
+    # Find FFmpeg
     ffmpeg_path = _find_ffmpeg()
     if not ffmpeg_path:
-        raise JobSpecValidationError("FFmpeg not found. Install FFmpeg to use headless execution.")
+        return ClipExecutionResult(
+            source_path=str(source_path),
+            resolved_output_path="",
+            ffmpeg_command=[],
+            exit_code=-1,
+            output_exists=False,
+            output_size_bytes=None,
+            status="FAILED",
+            failure_reason="FFmpeg not found. Install FFmpeg to use headless execution.",
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
     
-    # Step 3: Resolve paths (use first source for V2 Phase 1)
-    # Future: Multi-source execution in V2 Phase 2+
-    if not job_spec.sources:
-        raise JobSpecValidationError("JobSpec has no source files")
-    
-    source_path = Path(job_spec.sources[0])
-    output_path = _resolve_output_path(source_path, job_spec, index=0)
+    # Resolve output path
+    output_path = _resolve_output_path(source_path, job_spec, index=index)
     
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Step 4: Build command
+    # Build command
     ffmpeg_command = _build_ffmpeg_command(
         ffmpeg_path=ffmpeg_path,
         source_path=str(source_path),
@@ -334,9 +373,7 @@ def execute_job_spec(job_spec: JobSpec) -> ExecutionResult:
         job_spec=job_spec,
     )
     
-    # Step 5: Execute synchronously
-    started_at = datetime.now(timezone.utc)
-    
+    # Execute synchronously
     try:
         process = subprocess.run(
             ffmpeg_command,
@@ -345,41 +382,50 @@ def execute_job_spec(job_spec: JobSpec) -> ExecutionResult:
             timeout=3600,  # 1 hour timeout for long renders
         )
         exit_code = process.returncode
-        stdout = process.stdout
         stderr = process.stderr
     except subprocess.TimeoutExpired:
         exit_code = -1
-        stdout = ""
         stderr = "Execution timed out after 3600 seconds"
     except Exception as e:
         exit_code = -1
-        stdout = ""
         stderr = f"Execution failed: {e}"
     
     completed_at = datetime.now(timezone.utc)
     
-    # Step 6: Check output exists
-    output_exists = output_path.is_file()
+    # Verify output
+    output_exists, output_size = _verify_output(output_path)
     
-    return ExecutionResult(
-        job_id=job_spec.job_id,
+    # Determine status and failure reason
+    if exit_code != 0:
+        status = "FAILED"
+        failure_reason = f"FFmpeg exited with code {exit_code}"
+    elif not output_exists:
+        status = "FAILED"
+        failure_reason = "Output file does not exist or has zero size"
+    else:
+        status = "COMPLETED"
+        failure_reason = None
+    
+    return ClipExecutionResult(
+        source_path=str(source_path),
+        resolved_output_path=str(output_path),
         ffmpeg_command=ffmpeg_command,
         exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
-        output_path=str(output_path),
         output_exists=output_exists,
+        output_size_bytes=output_size,
+        status=status,
+        failure_reason=failure_reason,
         started_at=started_at,
         completed_at=completed_at,
     )
 
 
-def execute_multi_job_spec(job_spec: JobSpec) -> List[ExecutionResult]:
+def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     """
-    Execute a multi-source JobSpec sequentially without concurrency.
+    Execute a multi-source JobSpec sequentially with fail-fast semantics.
     
-    V2 Phase 1 Step 3: Multi-Clip Sequential Execution
-    ==================================================
+    V2 Phase 1 Hardening: Deterministic Multi-Clip Execution
+    =========================================================
     This function processes multiple source clips in order, one at a time.
     It does NOT introduce concurrency, batching, or parallel execution.
     
@@ -388,81 +434,87 @@ def execute_multi_job_spec(job_spec: JobSpec) -> List[ExecutionResult]:
     1. Validates the entire JobSpec (raises on validation failure)
     2. Iterates through sources in order (preserving deterministic ordering)
     3. For each source:
-       - Creates a per-source "view" of the JobSpec
-       - Executes using existing execute_job_spec logic (synchronous)
-       - Captures ExecutionResult
-    4. Stops on first failure and returns partial results
-    5. Returns list of all ExecutionResults (successful + failed)
+       - Executes using execute_job_spec with clip index
+       - Captures ClipExecutionResult
+       - Verifies output before continuing
+    4. **FAIL-FAST**: Stops on first failure and returns partial results
+    5. Returns JobExecutionResult with all ClipExecutionResults
     
-    Why Sequential?
-    ---------------
+    Why Sequential + Fail-Fast?
+    ---------------------------
     - Simplicity: No thread safety or resource contention issues
     - Deterministic: Same input always produces same output order
     - Debuggable: Clear causality and no race conditions
+    - Safe: Don't waste resources processing remaining clips after failure
     - Foundation: Concurrency can be added in V2 Phase 2+ without breaking contracts
     
     Args:
         job_spec: A complete JobSpec with one or more sources
         
     Returns:
-        List of ExecutionResult, one per source (may be partial if stopped early)
+        JobExecutionResult containing:
+        - All ClipExecutionResults (successful + failed)
+        - Final job status (COMPLETED, FAILED, or PARTIAL)
+        - Job timing information
         
     Raises:
         JobSpecValidationError: If JobSpec validation fails before execution
         
     Note:
         - Execution failures do NOT raise exceptions
-        - Check each result.success or result.exit_code
+        - Check result.success or result.final_status
         - Partial results returned if any source fails (fail-fast behavior)
     """
+    started_at = datetime.now(timezone.utc)
+    
     # Step 1: Validate the entire JobSpec once
-    job_spec.validate(check_paths=True)
-    
-    # Step 2: Execute each source sequentially
-    results: List[ExecutionResult] = []
-    
-    for index, source in enumerate(job_spec.sources):
-        # Create a per-source "view" of the JobSpec
-        # This allows existing execute_job_spec to work unchanged
-        source_job_spec = JobSpec(
+    try:
+        job_spec.validate(check_paths=True)
+    except JobSpecValidationError as e:
+        # Return PARTIAL status with no clips executed
+        return JobExecutionResult(
             job_id=job_spec.job_id,
-            sources=[source],  # Single source for this execution
-            output_directory=job_spec.output_directory,
-            codec=job_spec.codec,
-            container=job_spec.container,
-            resolution=job_spec.resolution,
-            fps_mode=job_spec.fps_mode,
-            fps_explicit=job_spec.fps_explicit,
-            naming_template=job_spec.naming_template,
-            resolved_tokens=job_spec.resolved_tokens.copy(),
-            created_at=job_spec.created_at,
+            clips=[],
+            final_status="PARTIAL",
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
         )
+    
+    # Step 2: Execute each source sequentially with fail-fast
+    clips: List[ClipExecutionResult] = []
+    
+    for index in range(len(job_spec.sources)):
+        # Execute this clip
+        clip_result = execute_job_spec(job_spec, index=index)
+        clips.append(clip_result)
         
-        # Execute this source synchronously using existing logic
-        try:
-            result = execute_job_spec(source_job_spec)
-        except Exception as e:
-            # Should not happen (execute_job_spec doesn't raise on execution failure)
-            # But catch just in case to ensure we return results
-            result = ExecutionResult(
-                job_id=job_spec.job_id,
-                ffmpeg_command=[],
-                exit_code=-1,
-                stdout="",
-                stderr=f"Unexpected error during execution: {e}",
-                output_path="",
-                output_exists=False,
-                started_at=datetime.now(timezone.utc),
-                completed_at=datetime.now(timezone.utc),
-            )
-        
-        results.append(result)
-        
-        # Fail-fast: stop on first failure
-        if not result.success:
+        # FAIL-FAST: Stop on first failure
+        if clip_result.status == "FAILED":
             break
     
-    return results
+    completed_at = datetime.now(timezone.utc)
+    
+    # Determine final job status
+    if not clips:
+        # No clips executed (shouldn't happen after validation)
+        final_status = "PARTIAL"
+    elif len(clips) < len(job_spec.sources):
+        # Some clips not executed (stopped early due to failure)
+        final_status = "FAILED"
+    elif all(clip.status == "COMPLETED" for clip in clips):
+        # All clips completed successfully
+        final_status = "COMPLETED"
+    else:
+        # All clips executed but at least one failed
+        final_status = "FAILED"
+    
+    return JobExecutionResult(
+        job_id=job_spec.job_id,
+        clips=clips,
+        final_status=final_status,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -502,65 +554,33 @@ def main():
         print(f"Error: Invalid JobSpec structure: {e}", file=sys.stderr)
         sys.exit(1)
     
-    # Detect multi-source JobSpec
-    is_multi_source = len(job_spec.sources) > 1
-    
-    # Execute
+    # Execute multi-source JobSpec
     try:
-        if is_multi_source:
-            # Multi-source: sequential execution with per-clip summary
-            results = execute_multi_job_spec(job_spec)
+        result = execute_multi_job_spec(job_spec)
+        
+        # Print summary
+        print(f"\n{result.summary()}\n")
+        
+        # Print per-clip details
+        for i, clip in enumerate(result.clips):
+            source_name = Path(clip.source_path).name
+            print(f"[{i+1}/{len(job_spec.sources)}] {clip.summary()}")
             
-            # Print per-clip summary
-            print(f"\nMulti-Clip Job: {job_spec.job_id}")
-            print(f"Total Clips: {len(job_spec.sources)}")
-            print(f"Processed: {len(results)}/{len(job_spec.sources)}\n")
-            
-            for i, result in enumerate(results):
-                source_name = Path(job_spec.sources[i]).name
-                status = "COMPLETED" if result.success else "FAILED"
-                duration = f" ({result.duration_seconds:.1f}s)" if result.duration_seconds else ""
-                print(f"[{i+1}/{len(job_spec.sources)}] {status} {source_name}{duration}")
-                
-                if result.success:
-                    print(f"     → {result.output_path}")
-                else:
-                    print(f"     Exit Code: {result.exit_code}")
-                    # Print last 3 lines of stderr for quick debugging
-                    stderr_lines = result.stderr.strip().split("\n")
-                    if stderr_lines and stderr_lines[0]:
-                        print("     Last stderr:")
-                        for line in stderr_lines[-3:]:
-                            print(f"       {line}")
-            
-            # Exit non-zero if any clip failed
-            all_success = all(r.success for r in results)
-            print(f"\nResult: {'All clips completed successfully' if all_success else 'One or more clips failed'}")
-            sys.exit(0 if all_success else 1)
-        else:
-            # Single-source: use existing logic
-            result = execute_job_spec(job_spec)
-            
-            # Print summary
-            print(result.summary())
-            
-            # Print key details
-            if result.success:
-                print(f"  Output: {result.output_path}")
-                if result.duration_seconds:
-                    print(f"  Duration: {result.duration_seconds:.1f}s")
-            else:
-                print(f"  Exit Code: {result.exit_code}")
-                # Print last 5 lines of stderr for quick debugging
-                stderr_lines = result.stderr.strip().split("\n")
-                if stderr_lines:
-                    print("  Last stderr lines:")
-                    for line in stderr_lines[-5:]:
-                        print(f"    {line}")
-            
-            # Exit with appropriate code
-            sys.exit(0 if result.success else 1)
-            
+            if clip.status == "COMPLETED":
+                if clip.output_size_bytes:
+                    size_mb = clip.output_size_bytes / (1024 * 1024)
+                    print(f"     Size: {size_mb:.1f} MB")
+        
+        # Save full result to JSON
+        result_filename = f"proxx_job_{job_spec.job_id}_{datetime.now().strftime('%Y%m%dT%H%M%S')}.json"
+        result_path = Path(job_spec.output_directory) / result_filename
+        with open(result_path, "w") as f:
+            f.write(result.to_json())
+        print(f"\nFull results saved to: {result_path}")
+        
+        # Exit with appropriate code
+        sys.exit(0 if result.success else 1)
+        
     except JobSpecValidationError as e:
         print(f"Validation Error: {e}", file=sys.stderr)
         sys.exit(1)

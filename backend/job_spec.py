@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 import json
 import uuid
 
@@ -154,7 +154,7 @@ class JobSpec:
     # -------------------------------------------------------------------------
     
     # Known valid codec/container combinations
-    VALID_CODEC_CONTAINERS: Dict[str, List[str]] = {
+    VALID_CODEC_CONTAINERS: ClassVar[Dict[str, List[str]]] = {
         "prores_proxy": ["mov"],
         "prores_lt": ["mov"],
         "prores_standard": ["mov"],
@@ -170,7 +170,7 @@ class JobSpec:
     }
     
     # Known naming template tokens
-    KNOWN_TOKENS: List[str] = [
+    KNOWN_TOKENS: ClassVar[List[str]] = [
         "{source_name}",
         "{source_ext}",
         "{job_id}",
@@ -259,6 +259,58 @@ class JobSpec:
                 f"Known tokens: {known_list}"
             )
     
+    def validate_sources(self) -> None:
+        """
+        Validate that sources list is non-empty.
+        
+        A JobSpec must have at least one source file to be valid.
+        This validation is separate from path existence checks.
+        
+        Raises:
+            JobSpecValidationError: If sources list is empty.
+        """
+        if not self.sources:
+            raise JobSpecValidationError(
+                "JobSpec must have at least one source file. "
+                "The sources list cannot be empty."
+            )
+    
+    def validate_multi_clip_naming(self) -> None:
+        """
+        Validate that multi-clip jobs have deterministic, unique output names.
+        
+        V2 Phase 1 Hardening: Output Name Uniqueness
+        ============================================
+        For jobs with multiple source clips, we MUST ensure that each clip
+        produces a unique output filename. Otherwise, later clips would
+        overwrite earlier ones, causing silent data loss.
+        
+        This validation enforces that multi-clip jobs use either:
+        1. {index} token in the naming template (preferred)
+        2. {source_name} token to differentiate by source filename
+        
+        Single-clip jobs are exempt from this requirement.
+        
+        Raises:
+            JobSpecValidationError: If multi-clip job has ambiguous naming.
+        """
+        # Skip validation for single-clip jobs
+        if len(self.sources) <= 1:
+            return
+        
+        # Multi-clip job: require {index} or {source_name} token
+        required_tokens = ["{index}", "{source_name}"]
+        has_required_token = any(token in self.naming_template for token in required_tokens)
+        
+        if not has_required_token:
+            raise JobSpecValidationError(
+                "Multi-clip jobs must include either {index} or {source_name} in naming_template "
+                "to ensure unique output filenames. Without these tokens, clips would overwrite "
+                f"each other. Job has {len(self.sources)} sources but naming template is: "
+                f"'{self.naming_template}'. Add {{index}} for sequential numbering (001, 002...) "
+                "or {source_name} to use source filenames."
+            )
+    
     def validate_fps_mode(self) -> None:
         """
         Validate FPS mode configuration.
@@ -288,10 +340,12 @@ class JobSpec:
         Raises:
             JobSpecValidationError: If any validation fails.
         """
-        # Always validate these
+        # Always validate these - sources must not be empty
+        self.validate_sources()
         self.validate_codec_container()
         self.validate_naming_tokens_resolvable()
         self.validate_fps_mode()
+        self.validate_multi_clip_naming()  # V2 Phase 1: Enforce unique output names
         
         # Optionally validate paths
         if check_paths:
