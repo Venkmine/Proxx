@@ -7,6 +7,8 @@ These tests verify:
 3. Unknown formats fail conservatively
 4. Mixed jobs (RAW + non-RAW) are rejected
 5. Engine routing is deterministic
+6. All camera RAW formats route to Resolve
+7. ffprobe 'unknown' codec routes to Resolve
 
 Part of V2 Phase 1 (Option A: Reliable Proxy Engine)
 """
@@ -22,18 +24,25 @@ from v2.source_capabilities import (
     SUPPORTED_SOURCES,
     REJECTED_SOURCES,
     RESOLVE_SOURCES,
+    RAW_CODECS_RESOLVE,
+    RAW_FORMAT_RESOLVE_REASON,
+    RAW_FORMAT_RESOLVE_ACTION,
     ExecutionEngine,
     SourceCapabilityError,
+    MixedEngineError,
     is_source_supported,
     is_source_rejected,
+    is_raw_codec,
     get_rejection_reason,
     get_execution_engine,
     is_resolve_required,
     validate_source_capability,
+    validate_job_engine_consistency,
     normalize_format,
     list_supported_formats,
     list_resolve_formats,
     list_rejected_formats,
+    list_raw_codecs,
 )
 
 
@@ -306,3 +315,310 @@ class TestEngineRouting:
         
         error = exc_info.value
         assert "unknown" in str(error).lower() or "Unknown" in str(error)
+
+
+# -----------------------------------------------------------------------------
+# Comprehensive Camera RAW Tests
+# -----------------------------------------------------------------------------
+
+class TestAllCameraRAWFormats:
+    """Tests that ALL camera RAW formats route to Resolve."""
+    
+    # ARRI RAW
+    def test_arriraw_mxf_routes_to_resolve(self):
+        """ARRIRAW in MXF routes to Resolve."""
+        assert get_execution_engine("mxf", "arriraw") == ExecutionEngine.RESOLVE
+    
+    def test_arriraw_ari_routes_to_resolve(self):
+        """ARRIRAW in ARI container routes to Resolve."""
+        assert get_execution_engine("ari", "arriraw") == ExecutionEngine.RESOLVE
+    
+    def test_arri_raw_alternate_routes_to_resolve(self):
+        """arri_raw codec routes to Resolve."""
+        assert get_execution_engine("mxf", "arri_raw") == ExecutionEngine.RESOLVE
+    
+    # RED RAW
+    def test_redcode_r3d_routes_to_resolve(self):
+        """REDCODE in R3D routes to Resolve."""
+        assert get_execution_engine("r3d", "redcode") == ExecutionEngine.RESOLVE
+    
+    def test_redraw_routes_to_resolve(self):
+        """redraw codec routes to Resolve."""
+        assert get_execution_engine("r3d", "redraw") == ExecutionEngine.RESOLVE
+    
+    def test_red_raw_routes_to_resolve(self):
+        """red_raw codec routes to Resolve."""
+        assert get_execution_engine("r3d", "red_raw") == ExecutionEngine.RESOLVE
+    
+    # Blackmagic RAW
+    def test_braw_routes_to_resolve(self):
+        """BRAW routes to Resolve."""
+        assert get_execution_engine("braw", "braw") == ExecutionEngine.RESOLVE
+    
+    def test_blackmagic_raw_routes_to_resolve(self):
+        """blackmagic_raw codec routes to Resolve."""
+        assert get_execution_engine("braw", "blackmagic_raw") == ExecutionEngine.RESOLVE
+    
+    # Sony RAW
+    def test_sony_raw_routes_to_resolve(self):
+        """Sony RAW routes to Resolve."""
+        assert get_execution_engine("mxf", "sony_raw") == ExecutionEngine.RESOLVE
+    
+    def test_xocn_routes_to_resolve(self):
+        """Sony X-OCN routes to Resolve."""
+        assert get_execution_engine("mxf", "x-ocn") == ExecutionEngine.RESOLVE
+    
+    def test_xocn_alternate_routes_to_resolve(self):
+        """xocn codec routes to Resolve."""
+        assert get_execution_engine("mxf", "xocn") == ExecutionEngine.RESOLVE
+    
+    # Canon RAW
+    def test_canon_raw_routes_to_resolve(self):
+        """Canon RAW routes to Resolve."""
+        assert get_execution_engine("crm", "canon_raw") == ExecutionEngine.RESOLVE
+    
+    def test_craw_routes_to_resolve(self):
+        """craw codec routes to Resolve."""
+        assert get_execution_engine("crm", "craw") == ExecutionEngine.RESOLVE
+    
+    def test_cinema_raw_light_routes_to_resolve(self):
+        """Cinema RAW Light routes to Resolve."""
+        assert get_execution_engine("crm", "cinema_raw_light") == ExecutionEngine.RESOLVE
+    
+    # Panasonic RAW
+    def test_panasonic_raw_routes_to_resolve(self):
+        """Panasonic RAW routes to Resolve."""
+        assert get_execution_engine("vraw", "panasonic_raw") == ExecutionEngine.RESOLVE
+    
+    def test_vraw_routes_to_resolve(self):
+        """V-RAW codec routes to Resolve."""
+        assert get_execution_engine("vraw", "vraw") == ExecutionEngine.RESOLVE
+    
+    # Nikon N-RAW
+    def test_nikon_raw_nev_routes_to_resolve(self):
+        """Nikon N-RAW in NEV container routes to Resolve."""
+        assert get_execution_engine("nev", "nikon_raw") == ExecutionEngine.RESOLVE
+    
+    def test_nraw_routes_to_resolve(self):
+        """nraw codec routes to Resolve."""
+        assert get_execution_engine("nev", "nraw") == ExecutionEngine.RESOLVE
+    
+    def test_nikon_raw_mov_routes_to_resolve(self):
+        """Nikon N-RAW in MOV container routes to Resolve."""
+        assert get_execution_engine("mov", "nikon_raw") == ExecutionEngine.RESOLVE
+    
+    # DJI RAW
+    def test_dji_raw_mov_routes_to_resolve(self):
+        """DJI RAW in MOV container routes to Resolve."""
+        assert get_execution_engine("mov", "dji_raw") == ExecutionEngine.RESOLVE
+    
+    def test_dji_raw_dng_routes_to_resolve(self):
+        """DJI RAW in DNG container routes to Resolve."""
+        assert get_execution_engine("dng", "dji_raw") == ExecutionEngine.RESOLVE
+    
+    def test_djiraw_routes_to_resolve(self):
+        """djiraw codec routes to Resolve."""
+        assert get_execution_engine("mov", "djiraw") == ExecutionEngine.RESOLVE
+    
+    # ProRes RAW
+    def test_prores_raw_routes_to_resolve(self):
+        """ProRes RAW routes to Resolve."""
+        assert get_execution_engine("mov", "prores_raw") == ExecutionEngine.RESOLVE
+    
+    def test_prores_raw_hq_routes_to_resolve(self):
+        """ProRes RAW HQ routes to Resolve."""
+        assert get_execution_engine("mov", "prores_raw_hq") == ExecutionEngine.RESOLVE
+    
+    # CinemaDNG
+    def test_cinemadng_routes_to_resolve(self):
+        """CinemaDNG routes to Resolve."""
+        assert get_execution_engine("dng", "cinemadng") == ExecutionEngine.RESOLVE
+    
+    def test_cdng_routes_to_resolve(self):
+        """cdng codec routes to Resolve."""
+        assert get_execution_engine("dng", "cdng") == ExecutionEngine.RESOLVE
+
+
+class TestUnknownCodecRouting:
+    """Tests that ffprobe 'unknown' codec routes to Resolve."""
+    
+    def test_unknown_codec_routes_to_resolve(self):
+        """codec_name='unknown' from ffprobe should route to Resolve."""
+        engine = get_execution_engine("mxf", "unknown")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_unknown_codec_any_container_routes_to_resolve(self):
+        """Unknown codec in any container routes to Resolve."""
+        assert get_execution_engine("mp4", "unknown") == ExecutionEngine.RESOLVE
+        assert get_execution_engine("mov", "unknown") == ExecutionEngine.RESOLVE
+        assert get_execution_engine("xyz", "unknown") == ExecutionEngine.RESOLVE
+    
+    def test_unknown_is_supported(self):
+        """Unknown codec should be marked as supported (via Resolve)."""
+        assert is_source_supported("mxf", "unknown") is True
+    
+    def test_unknown_requires_resolve(self):
+        """Unknown codec should require Resolve."""
+        assert is_resolve_required("mxf", "unknown") is True
+    
+    def test_unknown_validates_to_resolve(self):
+        """Unknown codec should validate successfully to Resolve."""
+        engine = validate_source_capability("mxf", "unknown")
+        assert engine == ExecutionEngine.RESOLVE
+
+
+class TestIsRawCodecFunction:
+    """Tests for the is_raw_codec() helper function."""
+    
+    def test_arriraw_is_raw(self):
+        """arriraw is a RAW codec."""
+        assert is_raw_codec("arriraw") is True
+    
+    def test_redcode_is_raw(self):
+        """redcode is a RAW codec."""
+        assert is_raw_codec("redcode") is True
+    
+    def test_braw_is_raw(self):
+        """braw is a RAW codec."""
+        assert is_raw_codec("braw") is True
+    
+    def test_unknown_is_raw(self):
+        """unknown is treated as RAW."""
+        assert is_raw_codec("unknown") is True
+    
+    def test_h264_is_not_raw(self):
+        """h264 is not a RAW codec."""
+        assert is_raw_codec("h264") is False
+    
+    def test_prores_is_not_raw(self):
+        """prores (standard) is not a RAW codec."""
+        assert is_raw_codec("prores") is False
+    
+    def test_prores_raw_is_raw(self):
+        """prores_raw IS a RAW codec."""
+        assert is_raw_codec("prores_raw") is True
+    
+    def test_case_insensitive(self):
+        """is_raw_codec should be case-insensitive."""
+        assert is_raw_codec("ARRIRAW") is True
+        assert is_raw_codec("Redcode") is True
+        assert is_raw_codec("BRAW") is True
+
+
+class TestMixedEngineValidation:
+    """Tests for mixed RAW + non-RAW job rejection."""
+    
+    def test_all_ffmpeg_sources_valid(self):
+        """All FFmpeg sources should validate successfully."""
+        sources = [
+            ("/path/clip1.mov", "mov", "prores"),
+            ("/path/clip2.mp4", "mp4", "h264"),
+            ("/path/clip3.mxf", "mxf", "dnxhd"),
+        ]
+        engine = validate_job_engine_consistency(sources)
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_all_resolve_sources_valid(self):
+        """All Resolve sources should validate successfully."""
+        sources = [
+            ("/path/clip1.r3d", "r3d", "redcode"),
+            ("/path/clip2.braw", "braw", "braw"),
+            ("/path/clip3.ari", "ari", "arriraw"),
+        ]
+        engine = validate_job_engine_consistency(sources)
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_mixed_sources_rejected(self):
+        """Mixed RAW + non-RAW sources should raise MixedEngineError."""
+        sources = [
+            ("/path/clip1.r3d", "r3d", "redcode"),  # Resolve
+            ("/path/clip2.mov", "mov", "prores"),   # FFmpeg
+        ]
+        with pytest.raises(MixedEngineError) as exc_info:
+            validate_job_engine_consistency(sources)
+        
+        error = exc_info.value
+        assert len(error.ffmpeg_sources) == 1
+        assert len(error.resolve_sources) == 1
+        assert "different engines" in str(error)
+    
+    def test_mixed_sources_counts_correct(self):
+        """MixedEngineError should have correct source counts."""
+        sources = [
+            ("/path/clip1.r3d", "r3d", "redcode"),
+            ("/path/clip2.braw", "braw", "braw"),
+            ("/path/clip3.mov", "mov", "prores"),
+            ("/path/clip4.mp4", "mp4", "h264"),
+            ("/path/clip5.mxf", "mxf", "dnxhd"),
+        ]
+        with pytest.raises(MixedEngineError) as exc_info:
+            validate_job_engine_consistency(sources)
+        
+        error = exc_info.value
+        assert len(error.resolve_sources) == 2  # redcode, braw
+        assert len(error.ffmpeg_sources) == 3   # prores, h264, dnxhd
+    
+    def test_empty_sources_raises_error(self):
+        """Empty source list should raise ValueError."""
+        with pytest.raises(ValueError):
+            validate_job_engine_consistency([])
+    
+    def test_single_ffmpeg_source_valid(self):
+        """Single FFmpeg source should validate."""
+        sources = [("/path/clip.mov", "mov", "prores")]
+        engine = validate_job_engine_consistency(sources)
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_single_resolve_source_valid(self):
+        """Single Resolve source should validate."""
+        sources = [("/path/clip.r3d", "r3d", "redcode")]
+        engine = validate_job_engine_consistency(sources)
+        assert engine == ExecutionEngine.RESOLVE
+
+
+class TestListRawCodecs:
+    """Tests for list_raw_codecs() utility."""
+    
+    def test_returns_sorted_list(self):
+        """list_raw_codecs should return a sorted list."""
+        codecs = list_raw_codecs()
+        assert codecs == sorted(codecs)
+    
+    def test_contains_all_major_raw_formats(self):
+        """list_raw_codecs should contain all major RAW formats."""
+        codecs = list_raw_codecs()
+        assert "arriraw" in codecs
+        assert "redcode" in codecs
+        assert "braw" in codecs
+        assert "prores_raw" in codecs
+        assert "unknown" in codecs
+    
+    def test_does_not_contain_standard_codecs(self):
+        """list_raw_codecs should not contain standard codecs."""
+        codecs = list_raw_codecs()
+        assert "h264" not in codecs
+        assert "prores" not in codecs
+        assert "dnxhd" not in codecs
+
+
+class TestDynamicRawRouting:
+    """Tests for dynamic RAW codec routing (not in explicit RESOLVE_SOURCES)."""
+    
+    def test_raw_codec_unknown_container_routes_to_resolve(self):
+        """RAW codec in unknown container should still route to Resolve."""
+        # arriraw in a container not explicitly listed
+        engine = get_execution_engine("foo", "arriraw")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_raw_codec_routes_even_without_explicit_entry(self):
+        """RAW codecs route to Resolve even without explicit container/codec entry."""
+        # These codecs are in RAW_CODECS_RESOLVE but might not have explicit entries
+        assert get_execution_engine("mov", "varicam_raw") == ExecutionEngine.RESOLVE
+        assert get_execution_engine("any", "nikon_nraw") == ExecutionEngine.RESOLVE
+        assert get_execution_engine("any", "zenmuse_raw") == ExecutionEngine.RESOLVE
+    
+    def test_is_supported_for_dynamic_raw(self):
+        """is_source_supported should return True for any RAW codec."""
+        assert is_source_supported("foo", "arriraw") is True
+        assert is_source_supported("bar", "redcode") is True
+        assert is_source_supported("baz", "braw") is True

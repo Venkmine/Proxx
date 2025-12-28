@@ -88,6 +88,16 @@ class SourceCapabilityError(Exception):
         super().__init__(message)
 
 
+# Standard message for RAW formats that require Resolve
+RAW_FORMAT_RESOLVE_REASON = (
+    "This format requires DaVinci Resolve. FFmpeg cannot decode proprietary RAW formats."
+)
+
+RAW_FORMAT_RESOLVE_ACTION = (
+    "Route this job to the Resolve engine, or export to ProRes/DNxHR from Resolve before processing with FFmpeg."
+)
+
+
 # =============================================================================
 # Source Capability Entry
 # =============================================================================
@@ -125,6 +135,7 @@ RAW_CODECS_RESOLVE: Set[str] = {
     # ARRI RAW
     "arriraw",
     "arri_raw",
+    "ari",
     
     # RED RAW
     "redcode",
@@ -136,27 +147,53 @@ RAW_CODECS_RESOLVE: Set[str] = {
     "braw",
     "blackmagic_raw",
     
-    # Sony RAW
+    # Sony RAW (X-OCN and Venice)
     "sony_raw",
     "x-ocn",
     "xocn",
+    "x_ocn",
+    "sonyraw",
+    "venice_raw",
     
-    # Canon RAW
+    # Canon RAW (Cinema RAW Light and C-RAW)
     "canon_raw",
     "craw",
     "cinema_raw_light",
+    "crm",
+    "canon_cinema_raw",
     
-    # Panasonic RAW
+    # Panasonic RAW (V-RAW and Varicam)
     "panasonic_raw",
     "vraw",
+    "v_raw",
+    "varicam_raw",
+    
+    # Nikon N-RAW (Z8, Z9)
+    "nikon_raw",
+    "n_raw",
+    "nraw",
+    "nikon_nraw",
+    
+    # DJI RAW (Zenmuse X7, Inspire 3)
+    "dji_raw",
+    "djiraw",
+    "d_log_raw",
+    "zenmuse_raw",
     
     # CinemaDNG
     "cinemadng",
     "cdng",
+    "cinema_dng",
     
     # ProRes RAW (sensor RAW, not standard ProRes)
     "prores_raw",
     "prores_raw_hq",
+    "proresraw",
+    "proresrawhq",
+    
+    # Unknown codec reported by ffprobe (proprietary formats)
+    # FFprobe returns "unknown" for codecs it cannot identify
+    "unknown",
 }
 
 
@@ -489,6 +526,44 @@ RESOLVE_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
         reason="ProRes RAW HQ sensor data, decoded by DaVinci Resolve.",
         engine=ExecutionEngine.RESOLVE,
     ),
+    
+    # ---------------------------------------------------------------------
+    # Nikon N-RAW - Nikon Z8/Z9 internal RAW (Resolve has native support)
+    # ---------------------------------------------------------------------
+    ("nev", "nikon_raw"): SourceCapability(
+        container="nev",
+        codec="nikon_raw",
+        reason="Nikon N-RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
+    ("nev", "nraw"): SourceCapability(
+        container="nev",
+        codec="nraw",
+        reason="Nikon N-RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
+    ("mov", "nikon_raw"): SourceCapability(
+        container="mov",
+        codec="nikon_raw",
+        reason="Nikon N-RAW in MOV container, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
+    
+    # ---------------------------------------------------------------------
+    # DJI RAW - Zenmuse X7, Inspire 3, etc. (Resolve has native support)
+    # ---------------------------------------------------------------------
+    ("mov", "dji_raw"): SourceCapability(
+        container="mov",
+        codec="dji_raw",
+        reason="DJI RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
+    ("dng", "dji_raw"): SourceCapability(
+        container="dng",
+        codec="dji_raw",
+        reason="DJI CinemaDNG RAW, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
 }
 
 
@@ -535,7 +610,8 @@ def is_source_supported(container: str, codec: str) -> bool:
     Check if a container/codec combination is explicitly supported.
     
     This includes both FFmpeg-routed (SUPPORTED_SOURCES) and
-    Resolve-routed (RESOLVE_SOURCES) formats.
+    Resolve-routed (RESOLVE_SOURCES) formats, as well as any codec
+    in the RAW_CODECS_RESOLVE set (dynamic RAW detection).
     
     Args:
         container: Container format (e.g., 'mp4', 'mov')
@@ -545,6 +621,12 @@ def is_source_supported(container: str, codec: str) -> bool:
         True if explicitly supported by any engine, False otherwise.
     """
     key = (normalize_format(container), normalize_format(codec))
+    codec_norm = normalize_format(codec)
+    
+    # RAW codecs are always supported (via Resolve)
+    if codec_norm in RAW_CODECS_RESOLVE:
+        return True
+    
     return key in SUPPORTED_SOURCES or key in RESOLVE_SOURCES
 
 
@@ -599,6 +681,27 @@ def get_support_info(container: str, codec: str) -> Optional[SourceCapability]:
     return None
 
 
+def is_raw_codec(codec: str) -> bool:
+    """
+    Check if a codec is a RAW format that requires Resolve.
+    
+    This function checks against the RAW_CODECS_RESOLVE set, which contains
+    all known RAW codec identifiers. This allows dynamic routing of RAW
+    formats even if the specific container/codec pair is not in RESOLVE_SOURCES.
+    
+    IMPORTANT: 'unknown' is included in RAW_CODECS_RESOLVE because ffprobe
+    returns codec_name="unknown" for proprietary formats it cannot identify.
+    These are routed to Resolve since they likely require manufacturer SDKs.
+    
+    Args:
+        codec: Video codec name
+        
+    Returns:
+        True if the codec is a known RAW format, False otherwise.
+    """
+    return normalize_format(codec) in RAW_CODECS_RESOLVE
+
+
 def get_execution_engine(container: str, codec: str) -> Optional[ExecutionEngine]:
     """
     Determine which execution engine should process this source format.
@@ -606,10 +709,16 @@ def get_execution_engine(container: str, codec: str) -> Optional[ExecutionEngine
     This is the PRIMARY routing function for engine selection.
     
     ROUTING RULES (NO USER OVERRIDE, NO HEURISTICS):
-    - RAW formats (RESOLVE_SOURCES) → ExecutionEngine.RESOLVE
-    - Standard formats (SUPPORTED_SOURCES) → ExecutionEngine.FFMPEG
-    - Rejected formats (REJECTED_SOURCES) → None (validation will fail)
-    - Unknown formats → None (validation will fail)
+    1. If codec is in RAW_CODECS_RESOLVE → ExecutionEngine.RESOLVE (always)
+    2. If container/codec in RESOLVE_SOURCES → ExecutionEngine.RESOLVE
+    3. If container/codec in SUPPORTED_SOURCES → ExecutionEngine.FFMPEG
+    4. If codec is 'unknown' (ffprobe cannot identify) → ExecutionEngine.RESOLVE
+    5. Rejected formats (REJECTED_SOURCES) → None (validation will fail)
+    6. Unknown formats → None (validation will fail)
+    
+    The codec-based check (step 1) ensures that ALL RAW formats route to
+    Resolve, even if the specific container/codec pair is not explicitly
+    listed in RESOLVE_SOURCES.
     
     Args:
         container: Container format (e.g., 'mp4', 'r3d')
@@ -624,15 +733,20 @@ def get_execution_engine(container: str, codec: str) -> Optional[ExecutionEngine
     codec_norm = normalize_format(codec)
     key = (container_norm, codec_norm)
     
-    # Check Resolve-routed sources first (RAW formats)
+    # PRIORITY 1: Check if codec is a known RAW format (routes to Resolve)
+    # This catches ALL RAW variants even if not explicitly in RESOLVE_SOURCES
+    if codec_norm in RAW_CODECS_RESOLVE:
+        return ExecutionEngine.RESOLVE
+    
+    # PRIORITY 2: Check explicit Resolve-routed sources
     if key in RESOLVE_SOURCES:
         return ExecutionEngine.RESOLVE
     
-    # Check FFmpeg-routed sources (standard formats)
+    # PRIORITY 3: Check FFmpeg-routed sources (standard formats)
     if key in SUPPORTED_SOURCES:
         return ExecutionEngine.FFMPEG
     
-    # Rejected or unknown - return None (caller handles validation error)
+    # Rejected or truly unknown - return None (caller handles validation error)
     return None
 
 
@@ -641,6 +755,9 @@ def is_resolve_required(container: str, codec: str) -> bool:
     Check if a format requires the Resolve engine (RAW format).
     
     Convenience function for quick engine checks.
+    This returns True for:
+    - Any codec in RAW_CODECS_RESOLVE (including 'unknown')
+    - Any container/codec pair in RESOLVE_SOURCES
     
     Args:
         container: Container format
@@ -649,6 +766,12 @@ def is_resolve_required(container: str, codec: str) -> bool:
     Returns:
         True if format requires Resolve engine, False otherwise.
     """
+    codec_norm = normalize_format(codec)
+    
+    # RAW codecs always require Resolve
+    if codec_norm in RAW_CODECS_RESOLVE:
+        return True
+    
     return get_execution_engine(container, codec) == ExecutionEngine.RESOLVE
 
 
@@ -660,9 +783,11 @@ def validate_source_capability(container: str, codec: str) -> ExecutionEngine:
     It should be called during JobSpec validation, before execution.
     
     ROUTING RULES (NO USER OVERRIDE, NO HEURISTICS):
-    - Standard formats → ExecutionEngine.FFMPEG
-    - RAW formats → ExecutionEngine.RESOLVE
-    - Rejected/Unknown → Raises SourceCapabilityError
+    1. RAW codecs (in RAW_CODECS_RESOLVE) → ExecutionEngine.RESOLVE (always)
+    2. Explicit RESOLVE_SOURCES entries → ExecutionEngine.RESOLVE
+    3. Standard formats (SUPPORTED_SOURCES) → ExecutionEngine.FFMPEG
+    4. codec='unknown' (ffprobe cannot identify) → ExecutionEngine.RESOLVE
+    5. Rejected/Unknown → Raises SourceCapabilityError
     
     Args:
         container: Container format (e.g., 'mp4', 'mov')
@@ -689,15 +814,20 @@ def validate_source_capability(container: str, codec: str) -> ExecutionEngine:
             recommended_action=entry.recommended_action,
         )
     
-    # Check if supported by FFmpeg (standard formats)
-    if key in SUPPORTED_SOURCES:
-        return ExecutionEngine.FFMPEG
+    # PRIORITY 1: Check if codec is a known RAW format (routes to Resolve)
+    # This catches ALL RAW variants including 'unknown' codecs from ffprobe
+    if codec_norm in RAW_CODECS_RESOLVE:
+        return ExecutionEngine.RESOLVE
     
-    # Check if supported by Resolve (RAW formats)
+    # PRIORITY 2: Check explicit Resolve-routed sources
     if key in RESOLVE_SOURCES:
         return ExecutionEngine.RESOLVE
     
-    # Unknown format - fail conservatively
+    # PRIORITY 3: Check FFmpeg-routed sources (standard formats)
+    if key in SUPPORTED_SOURCES:
+        return ExecutionEngine.FFMPEG
+    
+    # Unknown format - fail conservatively with clear RAW guidance
     raise SourceCapabilityError(
         container=container_norm,
         codec=codec_norm,
@@ -747,3 +877,88 @@ def list_rejected_formats() -> list:
         (cap.container, cap.codec, cap.reason, cap.recommended_action)
         for cap in REJECTED_SOURCES.values()
     ]
+
+
+def list_raw_codecs() -> List[str]:
+    """
+    Return a sorted list of all RAW codec identifiers that route to Resolve.
+    
+    Returns:
+        Sorted list of codec names.
+    """
+    return sorted(RAW_CODECS_RESOLVE)
+
+
+# =============================================================================
+# Mixed Job Validation
+# =============================================================================
+
+class MixedEngineError(Exception):
+    """
+    Raised when a job contains sources requiring different engines.
+    
+    Proxx requires deterministic engine selection: ALL sources in a job
+    must route to the SAME engine. Mixed RAW + non-RAW jobs are rejected.
+    """
+    
+    def __init__(
+        self,
+        ffmpeg_sources: List[str],
+        resolve_sources: List[str],
+    ):
+        self.ffmpeg_sources = ffmpeg_sources
+        self.resolve_sources = resolve_sources
+        
+        message = (
+            f"Job contains sources requiring different engines. "
+            f"FFmpeg sources: {len(ffmpeg_sources)}, Resolve sources: {len(resolve_sources)}. "
+            f"Split into separate jobs or transcode RAW files to an intermediate codec."
+        )
+        super().__init__(message)
+
+
+def validate_job_engine_consistency(
+    sources: List[Tuple[str, str, str]],
+) -> ExecutionEngine:
+    """
+    Validate that all sources in a job require the same execution engine.
+    
+    Proxx requires deterministic engine selection. A job cannot contain
+    a mix of RAW sources (Resolve) and standard sources (FFmpeg).
+    
+    Args:
+        sources: List of (source_path, container, codec) tuples
+        
+    Returns:
+        ExecutionEngine that should process all sources in this job.
+        
+    Raises:
+        MixedEngineError: If sources require different engines.
+        SourceCapabilityError: If any source format is unsupported.
+    """
+    if not sources:
+        raise ValueError("Cannot validate empty source list")
+    
+    ffmpeg_sources: List[str] = []
+    resolve_sources: List[str] = []
+    
+    for source_path, container, codec in sources:
+        engine = get_execution_engine(container, codec)
+        
+        if engine is None:
+            # Unknown format - validate to get proper error
+            validate_source_capability(container, codec)
+        
+        if engine == ExecutionEngine.FFMPEG:
+            ffmpeg_sources.append(source_path)
+        elif engine == ExecutionEngine.RESOLVE:
+            resolve_sources.append(source_path)
+    
+    # Check for mixed engines
+    if ffmpeg_sources and resolve_sources:
+        raise MixedEngineError(ffmpeg_sources, resolve_sources)
+    
+    # Return the consistent engine
+    if resolve_sources:
+        return ExecutionEngine.RESOLVE
+    return ExecutionEngine.FFMPEG

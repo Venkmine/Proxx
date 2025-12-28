@@ -249,17 +249,40 @@ These container/codec combinations are known to work reliably:
 
 ### Rejected Formats (Blocklist)
 
-These formats are explicitly **NOT supported** and will fail validation:
+**Note:** Camera RAW formats are now **SUPPORTED via DaVinci Resolve**, not rejected.
+The previous blocklist has been replaced with deterministic engine routing.
 
-| Container | Codec | Reason | Recommended Action |
-|-----------|-------|--------|-------------------|
-| `mxf`, `ari` | `arriraw` | Proprietary ARRI RAW, requires manufacturer SDK | Export ProRes or DNxHR from DaVinci Resolve |
-| `r3d` | `redcode`/`redraw` | RED RAW, requires RED SDK | Export ProRes or DNxHR from Resolve or REDCINE-X |
-| `braw` | `braw`/`blackmagic_raw` | Blackmagic RAW, requires manufacturer SDK | Export ProRes or DNxHR from DaVinci Resolve |
-| `mxf` | `sony_raw`/`x-ocn` | Sony RAW, requires Sony SDK | Export ProRes or DNxHR from Sony RAW Viewer or Resolve |
-| `crm` | `canon_raw`/`craw` | Canon Cinema RAW, requires Canon SDK | Export ProRes or DNxHR from Canon RAW Development or Resolve |
-| `mov` | `prores_raw`/`prores_raw_hq` | ProRes RAW is sensor RAW, not standard video | Export standard ProRes from Final Cut Pro or Resolve |
-| `dng` | `cinemadng` | Frame sequences require specialized RAW processing | Export ProRes or DNxHR from DaVinci Resolve |
+See [ENGINE_CAPABILITIES.md](ENGINE_CAPABILITIES.md) for the complete camera RAW matrix.
+
+### Engine Routing for RAW Formats
+
+Camera RAW formats (ARRIRAW, REDCODE, BRAW, Sony X-OCN, Canon Cinema RAW Light, Nikon N-RAW, DJI RAW, ProRes RAW, CinemaDNG) are **automatically routed to DaVinci Resolve**.
+
+**Why RAW always routes to Resolve:**
+
+1. **Proprietary SDKs** - Each camera manufacturer provides their own decode library. FFmpeg does not have access to these SDKs and cannot decode proprietary RAW formats.
+
+2. **Debayering is creative** - RAW data is sensor mosaic data, not RGB video. Converting it requires debayering decisions (color science, white balance, exposure) that vary by software and settings.
+
+3. **FFmpeg returns errors** - Attempting to decode RAW with FFmpeg produces decode failures, not proxies.
+
+4. **Determinism** - Proxx requires predictable output. The only way to guarantee this for RAW is to route to Resolve, which has native manufacturer SDK integration.
+
+**Routing is not configurable.** There is no user override. If your source is ARRIRAW, it routes to Resolve. Period.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              DETERMINISTIC ENGINE ROUTING                       │
+│                                                                 │
+│   Standard codecs (H.264, ProRes, DNxHD, etc.)  ───► FFmpeg    │
+│                                                                 │
+│   Camera RAW (ARRIRAW, REDCODE, BRAW, etc.)  ──────► Resolve   │
+│                                                                 │
+│   Unknown codec (ffprobe returns "unknown")  ──────► Resolve   │
+│                                                                 │
+│   Mixed RAW + non-RAW in same job  ────────────────► REJECTED  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### Why Proxx Does Not Decode RAW
 

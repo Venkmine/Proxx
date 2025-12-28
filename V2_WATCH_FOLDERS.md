@@ -95,8 +95,98 @@ Watch folders accept **only valid JobSpecs** with strict contract enforcement:
 | Unknown fields in JSON | Moved to `failed/` with reason |
 | Invalid enum values | Moved to `failed/` with reason |
 | Missing source files | Moved to `failed/` with reason |
+| Mixed RAW + non-RAW sources | Moved to `failed/` with reason |
+| Unsupported format | Moved to `failed/` with reason |
 
 **The runner will never attempt "best guess" execution.** Invalid specs fail fast and explicitly.
+
+---
+
+## Camera RAW Handling
+
+The watch folder runner automatically routes camera RAW formats to DaVinci Resolve.
+
+### Automatic Engine Routing
+
+When a JobSpec is processed, the runner inspects each source file:
+
+1. **Standard formats** (H.264, ProRes, DNxHD, etc.) → FFmpeg engine
+2. **Camera RAW formats** (ARRIRAW, REDCODE, BRAW, etc.) → Resolve engine
+3. **Unknown codecs** (ffprobe returns `codec_name="unknown"`) → Resolve engine
+
+This routing is **automatic and deterministic**. There is no user override.
+
+### Supported Camera RAW Formats
+
+| Format | Extensions/Containers | Camera Examples |
+|--------|----------------------|-----------------|
+| ARRIRAW | `.ari`, `.mxf` | Alexa, Alexa Mini, Alexa 35 |
+| REDCODE | `.r3d` | RED DSMC, V-RAPTOR, Komodo |
+| Blackmagic RAW | `.braw` | BMPCC, URSA Mini Pro |
+| Sony X-OCN | `.mxf` | Venice, FX6, FX9 |
+| Canon Cinema RAW Light | `.crm` | C70, C300 III, C500 II |
+| Panasonic V-RAW | `.vraw` | VariCam |
+| Nikon N-RAW | `.nev`, `.mov` | Z8, Z9 |
+| DJI RAW | `.mov`, `.dng` | Zenmuse X7, Inspire 3 |
+| ProRes RAW | `.mov` | Various (sensor RAW, not standard ProRes) |
+| CinemaDNG | `.dng` | Various (frame sequences) |
+
+### Mixed Job Rejection
+
+A job **cannot contain both RAW and non-RAW sources**:
+
+```
+❌ REJECTED (different engines required):
+  job_mixed.json:
+    sources:
+      - /media/clip_001.r3d    (REDCODE → Resolve)
+      - /media/clip_002.mov    (ProRes → FFmpeg)
+    
+  Result: Moved to failed/ with MixedEngineError
+```
+
+**Solution:** Split into separate jobs by engine:
+
+```
+✅ Job A (Resolve engine):
+  - clip_001.r3d
+  
+✅ Job B (FFmpeg engine):
+  - clip_002.mov
+```
+
+Or transcode RAW to intermediate codec first:
+
+```
+✅ Single Job (FFmpeg engine):
+  - clip_001_transcode.mov  (ProRes exported from Resolve)
+  - clip_002.mov
+```
+
+### Result Metadata for RAW Jobs
+
+When a job is routed to Resolve, the result JSON includes engine information:
+
+```json
+{
+  "job_id": "raw_job_123",
+  "final_status": "COMPLETED",
+  "execution_engine": "resolve",
+  "clips": [
+    {
+      "source_path": "/media/A001_C001.r3d",
+      "resolved_output_path": "/media/proxies/A001_C001_proxy.mov",
+      "status": "COMPLETED",
+      "engine": "resolve"
+    }
+  ],
+  "_metadata": {
+    "engine_routing_reason": "Source codec 'redcode' requires DaVinci Resolve"
+  }
+}
+```
+
+See [docs/ENGINE_CAPABILITIES.md](docs/ENGINE_CAPABILITIES.md) for the complete camera/RAW format matrix.
 
 ---
 
