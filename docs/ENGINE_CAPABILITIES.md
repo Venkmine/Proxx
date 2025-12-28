@@ -349,6 +349,18 @@ engine = validate_job_engine_consistency(sources)
 3. **No heuristics** - Routing is based on explicit container/codec pairs or known RAW codecs
 4. **Determinism** - Same input always produces same routing decision
 5. **Fail-fast** - Unknown formats fail at validation, not during execution
+6. **Profile matching (V2 Step 5)** - Proxy profiles must match engine routing (see [V2_PROXY_PROFILES.md](V2_PROXY_PROFILES.md))
+
+---
+
+## Proxy Profile Integration (V2 Step 5)
+
+Engine routing determines which proxy profiles are valid for a job:
+
+- **FFmpeg jobs** → Must use FFmpeg profiles (e.g., `proxy_h264_low`, `proxy_prores_proxy`)
+- **Resolve jobs** → Must use Resolve profiles (e.g., `proxy_prores_proxy_resolve`, `proxy_dnxhr_lb_resolve`)
+
+Profile validation occurs after engine routing and before execution. See [V2_PROXY_PROFILES.md](V2_PROXY_PROFILES.md) for complete details.
 
 ---
 

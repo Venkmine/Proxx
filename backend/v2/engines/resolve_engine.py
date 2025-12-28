@@ -1134,7 +1134,12 @@ class ResolveEngine:
         index: int,
     ) -> Path:
         """
-        Resolve the output file path for a given source.
+        Resolve the output file path for a given source using proxy profile.
+        
+        V2 Step 5: Profile-Driven Output Naming
+        ========================================
+        Output container extension is now derived from the proxy profile,
+        not from ad-hoc JobSpec fields.
         
         Uses the same token resolution logic as the FFmpeg engine
         to ensure consistent output naming.
@@ -1147,6 +1152,12 @@ class ResolveEngine:
         Returns:
             Absolute path for the output file.
         """
+        # Import proxy profile utilities
+        try:
+            from v2.proxy_profiles import get_profile
+        except ImportError:
+            from backend.v2.proxy_profiles import get_profile
+        
         now = datetime.now()
         
         # Token resolution - same tokens as FFmpeg engine for consistency
@@ -1170,8 +1181,9 @@ class ResolveEngine:
             filename = filename.replace("__", "_")
         filename = filename.strip("_") or source_path.stem
         
-        # Add container extension
-        extension = f".{job_spec.container.lower().lstrip('.')}"
+        # Get container from proxy profile
+        profile = get_profile(job_spec.proxy_profile)
+        extension = f".{profile.container.lower().lstrip('.')}"
         
         return Path(job_spec.output_directory) / f"{filename}{extension}"
     

@@ -424,13 +424,24 @@ def _resolve_output_path(
     index: int = 0,
 ) -> Path:
     """
-    Resolve output path for a source file.
+    Resolve output path for a source file using proxy profile.
+    
+    V2 Step 5: Profile-Driven Output Naming
+    ========================================
+    Output container extension is now derived from the proxy profile,
+    not from ad-hoc JobSpec fields.
     
     Uses:
     - job_spec.output_directory as base
     - job_spec.naming_template for filename
-    - job_spec.container for extension
+    - profile.container for extension (derived from proxy_profile)
     """
+    # Import proxy profile utilities
+    try:
+        from v2.proxy_profiles import get_profile
+    except ImportError:
+        from backend.v2.proxy_profiles import get_profile
+    
     output_dir = Path(job_spec.output_directory)
     
     # Resolve filename from template
@@ -441,8 +452,9 @@ def _resolve_output_path(
         index=index,
     )
     
-    # Add container extension
-    extension = job_spec.container.lstrip(".")
+    # Get container from proxy profile
+    profile = get_profile(job_spec.proxy_profile)
+    extension = profile.container.lstrip(".")
     output_filename = f"{filename}.{extension}"
     
     return output_dir / output_filename
@@ -474,30 +486,67 @@ def _build_ffmpeg_command(
     job_spec: JobSpec,
 ) -> List[str]:
     """
-    Build FFmpeg command from JobSpec.
+    Build FFmpeg command from JobSpec using canonical proxy profile.
     
-    Uses existing codec mappings. Does NOT modify engine internals.
+    V2 Step 5: Profile-Based Command Building
+    ==========================================
+    Commands are now built ONLY from proxy profiles. No ad-hoc settings,
+    no user overrides, no passthrough flags.
+    
+    The profile determines:
+    - Codec arguments (including quality settings)
+    - Resolution scaling policy
+    - Audio handling policy
+    
+    Args:
+        ffmpeg_path: Path to FFmpeg executable
+        source_path: Input file path
+        output_path: Output file path
+        job_spec: JobSpec with proxy_profile specified
+        
+    Returns:
+        Complete FFmpeg command as list of strings
     """
+    # Import proxy profile utilities
+    try:
+        from v2.proxy_profiles import (
+            get_profile,
+            resolve_ffmpeg_codec_args,
+            resolve_ffmpeg_resolution_args,
+            resolve_ffmpeg_audio_args,
+        )
+    except ImportError:
+        from backend.v2.proxy_profiles import (
+            get_profile,
+            resolve_ffmpeg_codec_args,
+            resolve_ffmpeg_resolution_args,
+            resolve_ffmpeg_audio_args,
+        )
+    
+    # Get profile (validation already done, this should not fail)
+    profile = get_profile(job_spec.proxy_profile)
+    
+    # Start building command
     cmd = [ffmpeg_path, "-y"]  # -y to overwrite output
     
     # Input file
     cmd.extend(["-i", source_path])
     
-    # Video codec
-    codec_lower = job_spec.codec.lower()
-    if codec_lower in FFMPEG_CODEC_MAP:
-        cmd.extend(FFMPEG_CODEC_MAP[codec_lower])
-    else:
-        # Fallback to H.264
-        cmd.extend(["-c:v", "libx264", "-crf", "23", "-preset", "medium"])
+    # Codec arguments from profile
+    cmd.extend(resolve_ffmpeg_codec_args(profile))
     
-    # Resolution handling
-    resolution = job_spec.resolution.lower()
-    if resolution == "half":
-        cmd.extend(["-vf", "scale=iw/2:ih/2"])
-    elif resolution == "quarter":
-        cmd.extend(["-vf", "scale=iw/4:ih/4"])
-    elif "x" in resolution:
+    # Resolution arguments from profile
+    resolution_args = resolve_ffmpeg_resolution_args(profile)
+    if resolution_args:
+        cmd.extend(resolution_args)
+    
+    # Audio arguments from profile
+    cmd.extend(resolve_ffmpeg_audio_args(profile))
+    
+    # Output file
+    cmd.append(output_path)
+    
+    return cmd
         # Explicit resolution like "1920x1080"
         parts = resolution.split("x")
         if len(parts) == 2:
@@ -715,7 +764,25 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
             completed_at=datetime.now(timezone.utc),
         )
     
-    # Step 2.5: Validate resolve_preset based on engine routing
+    # Step 2.5: Validate proxy_profile based on engine routing
+    # V2 Step 5: Canonical Proxy Profiles
+    # - FFmpeg jobs MUST use FFmpeg profiles
+    # - Resolve jobs MUST use Resolve profiles
+    try:
+        job_spec.validate_proxy_profile(routes_to_resolve=(engine_name == "resolve"))
+    except JobSpecValidationError as e:
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=str(e),
+            jobspec_version=JOBSPEC_VERSION,
+            engine_used=engine_name,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
+    # Step 2.6: Validate resolve_preset based on engine routing
     # V2 Deterministic Preset Contract:
     # - Resolve jobs MUST specify resolve_preset
     # - FFmpeg jobs MUST NOT specify resolve_preset
@@ -742,6 +809,7 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     
     # Step 4: Set engine metadata in result
     result.engine_used = engine_name
+    result.proxy_profile_used = job_spec.proxy_profile
     
     return result
 

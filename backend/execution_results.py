@@ -148,6 +148,9 @@ class JobExecutionResult:
     resolve_preset_used: Optional[str] = None
     """Resolve preset name used for rendering. Only set when engine_used='resolve'."""
     
+    proxy_profile_used: Optional[str] = None
+    """Proxy profile name used for this job. V2 Step 5: Canonical proxy profiles."""
+    
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When job execution started (UTC)."""
     
@@ -188,6 +191,7 @@ class JobExecutionResult:
             "validation_error": self.validation_error,
             "engine_used": self.engine_used,
             "resolve_preset_used": self.resolve_preset_used,
+            "proxy_profile_used": self.proxy_profile_used,
         }
         
         return result

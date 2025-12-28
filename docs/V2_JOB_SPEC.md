@@ -243,6 +243,86 @@ JobSpecValidationError:
 
 ---
 
+## Proxy Profiles (V2 Step 5)
+
+**Added:** V2 Step 5 (December 2025)
+
+### The `proxy_profile` Field
+
+Starting in V2 Step 5, all JobSpecs **MUST** include a `proxy_profile` field. This field specifies the **canonical proxy profile** that determines all output characteristics.
+
+**No ad-hoc codec/container settings are permitted.** All proxy outputs must be produced via named, deterministic proxy profiles.
+
+### Required Field
+
+```json
+{
+  "jobspec_version": "2.1",
+  "sources": ["/path/to/source.mp4"],
+  "output_directory": "/output",
+  "codec": "h264",
+  "container": "mp4",
+  "resolution": "half",
+  "naming_template": "{source_name}_proxy",
+  "proxy_profile": "proxy_h264_low"  // REQUIRED
+}
+```
+
+### Validation Rules
+
+| Condition | Result |
+|-----------|--------|
+| Missing `proxy_profile` | ❌ `JobSpecValidationError` |
+| Empty `proxy_profile` (`""`) | ❌ `JobSpecValidationError` |
+| Unknown `proxy_profile` | ❌ `JobSpecValidationError` |
+| Profile engine mismatch | ❌ `JobSpecValidationError` |
+
+### Engine Matching
+
+Profiles must match the job's engine routing:
+
+- **FFmpeg jobs** → Must use FFmpeg profiles (e.g., `proxy_h264_low`, `proxy_prores_proxy`)
+- **Resolve jobs** → Must use Resolve profiles (e.g., `proxy_prores_proxy_resolve`, `proxy_dnxhr_lb_resolve`)
+
+**Mismatches fail validation:**
+
+```python
+# FAIL: FFmpeg profile for RAW source
+job_spec = JobSpec(
+    sources=["clip.ari"],  # ARRIRAW → routes to Resolve
+    proxy_profile="proxy_h264_low",  # FFmpeg profile
+    ...
+)
+# Raises: JobSpecValidationError: "Profile 'proxy_h264_low' requires ffmpeg engine, but job routes to resolve"
+
+# FAIL: Resolve profile for standard source
+job_spec = JobSpec(
+    sources=["clip.mp4"],  # H.264 → routes to FFmpeg
+    proxy_profile="proxy_prores_proxy_resolve",  # Resolve profile
+    ...
+)
+# Raises: JobSpecValidationError: "Profile 'proxy_prores_proxy_resolve' requires resolve engine, but job routes to ffmpeg"
+```
+
+### Available Profiles
+
+See [V2_PROXY_PROFILES.md](V2_PROXY_PROFILES.md) for:
+- Complete profile table
+- Profile selection guidance
+- FFmpeg vs Resolve profiles
+- RAW vs non-RAW rules
+- Usage examples
+
+### Why Proxy Profiles Exist
+
+1. **Determinism** - Same profile → same output characteristics
+2. **Validation** - Invalid codec/container combinations prevented at profile level
+3. **Engine Awareness** - Profiles explicitly declare which engine they require
+4. **Discoverability** - Named profiles make valid configurations obvious
+5. **No Silent Fallback** - Missing profile is hard error, not guesswork
+
+---
+
 ## Supported Source Formats
 
 **Added:** V2.1 (December 2025)

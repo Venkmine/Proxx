@@ -164,6 +164,7 @@ class JobSpec:
         "resolved_tokens",
         "created_at",
         "resolve_preset",
+        "proxy_profile",
     }
     
     sources: List[str]
@@ -172,6 +173,7 @@ class JobSpec:
     container: str
     resolution: str
     naming_template: str
+    proxy_profile: Optional[str] = None  # V2 Step 5: Canonical proxy profiles
     job_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     fps_mode: FpsMode = FpsMode.SAME_AS_SOURCE
     fps_explicit: Optional[float] = None
@@ -204,6 +206,7 @@ class JobSpec:
             "fps_mode": self.fps_mode.value if isinstance(self.fps_mode, FpsMode) else self.fps_mode,
             "fps_explicit": self.fps_explicit,
             "resolve_preset": self.resolve_preset,
+            "proxy_profile": self.proxy_profile,
             "naming_template": self.naming_template,
             "resolved_tokens": dict(sorted(self.resolved_tokens.items())),  # Stable ordering
             "created_at": self.created_at,
@@ -360,6 +363,7 @@ class JobSpec:
             fps_mode=fps_mode,
             fps_explicit=data.get("fps_explicit"),
             resolve_preset=data.get("resolve_preset"),
+            proxy_profile=data.get("proxy_profile"),
             naming_template=data["naming_template"],
             resolved_tokens=data.get("resolved_tokens", {}),
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
@@ -556,6 +560,64 @@ class JobSpec:
                     "Remove the resolve_preset field or change source format to a RAW format."
                 )
     
+    def validate_proxy_profile(self, routes_to_resolve: bool = False) -> None:
+        """
+        Validate proxy_profile field and ensure it matches engine routing.
+        
+        V2 Step 5: Canonical Proxy Profiles
+        ====================================
+        All V2 jobs MUST specify a proxy profile. The profile determines:
+        - Which execution engine to use (FFmpeg vs Resolve)
+        - Codec, container, resolution, and audio settings
+        
+        This validation ensures:
+        - proxy_profile is present and valid
+        - Profile's engine matches the job's engine routing
+        - RAW jobs use Resolve profiles
+        - Non-RAW jobs use FFmpeg profiles
+        
+        Args:
+            routes_to_resolve: Whether this job will be processed by Resolve engine
+        
+        Raises:
+            JobSpecValidationError: If proxy profile validation fails
+        """
+        # Import here to avoid circular dependency
+        try:
+            from v2.proxy_profiles import get_profile, validate_profile_for_engine, ProxyProfileError
+        except ImportError:
+            try:
+                from backend.v2.proxy_profiles import get_profile, validate_profile_for_engine, ProxyProfileError
+            except ImportError:
+                # Proxy profiles module not available, skip validation
+                return
+        
+        # V2 requirement: proxy_profile MUST be present
+        if self.proxy_profile is None or self.proxy_profile.strip() == "":
+            raise JobSpecValidationError(
+                "V2 jobs must specify proxy_profile. "
+                "Proxy profiles are the ONLY way to define proxy output settings. "
+                "Choose a profile like 'proxy_h264_low' (FFmpeg) or 'proxy_prores_proxy_resolve' (Resolve). "
+                "Run 'python -m backend.v2.proxy_profiles' to list all available profiles."
+            )
+        
+        # Validate profile exists
+        try:
+            profile = get_profile(self.proxy_profile)
+        except ProxyProfileError as e:
+            raise JobSpecValidationError(
+                f"Invalid proxy_profile: {e}"
+            )
+        
+        # Validate profile matches engine routing
+        engine_name = "resolve" if routes_to_resolve else "ffmpeg"
+        try:
+            validate_profile_for_engine(self.proxy_profile, engine_name)
+        except ProxyProfileError as e:
+            raise JobSpecValidationError(
+                f"Proxy profile mismatch: {e}"
+            )
+    
     def validate_sources(self) -> None:
         """
         Validate that sources list is non-empty.
@@ -734,6 +796,9 @@ class JobSpec:
         self.validate_naming_tokens_resolvable()
         self.validate_fps_mode()
         self.validate_multi_clip_naming()  # V2 Phase 1: Enforce unique output names
+        
+        # Note: proxy_profile validation is deferred to execution time when
+        # engine routing is determined. See execute_multi_job_spec() in headless_execute.py
         
         # Optionally validate paths (checks all sources exist)
         if check_paths:
