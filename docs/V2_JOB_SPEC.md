@@ -216,6 +216,31 @@ If you need to re-run an old job, regenerate the spec with current tools.
 | `fps_mode` | `same-as-source`, `explicit` |
 | `resolution` | `same`, `half`, `quarter`, or explicit `WIDTHxHEIGHT` (e.g., `1920x1080`) |
 
+### Codec/Container Pairing Rules (V2.1)
+
+**DNxHD and DNxHR have specific container requirements:**
+
+| Codec | Allowed Containers | Notes |
+|-------|-------------------|-------|
+| `dnxhd` | `mxf` only | DNxHD must be wrapped in MXF (industry standard) |
+| `dnxhr` | `mov`, `mxf` | DNxHR supports both MOV and MXF |
+
+**Why DNxHD is MXF-only:**
+
+1. **Interoperability** - DNxHD in MOV causes relinking issues in Avid Media Composer
+2. **Broadcast QC** - Many broadcast QC systems do not recognize DNxHD-in-MOV
+3. **Industry standard** - DNxHD was designed for MXF container in broadcast workflows
+
+**If you need MOV container with Avid codec, use DNxHR instead.** DNxHR was designed for cross-platform flexibility and works in both MXF and MOV containers.
+
+**Requesting DNxHD + MOV will fail validation:**
+
+```
+JobSpecValidationError:
+  DNxHD must be wrapped in MXF. DNxHD-in-MOV is non-standard and unsupported.
+  Use MXF container for DNxHD output, or switch to DNxHR which supports MOV.
+```
+
 ---
 
 ## Supported Source Formats
@@ -237,15 +262,19 @@ These container/codec combinations are known to work reliably:
 | `mov` | `h264` | QuickTime H.264, standard editorial |
 | `mov` | `hevc`/`h265` | Apple ecosystem standard |
 | `mov` | `prores` (all variants) | Intra-frame, proxy-friendly, editorial standard |
-| `mov` | `dnxhd`/`dnxhr` | Avid intra-frame codecs |
+| `mov` | `dnxhr` | DNxHR supports MOV (modern Avid codec) |
 | `mov` | `mjpeg` | Simple intra-frame |
 | `mkv` | `h264`, `hevc`, `vp9`, `av1` | Flexible open container |
-| `mxf` | `dnxhd`/`dnxhr` | Broadcast standard |
+| `mxf` | `dnxhd` | DNxHD MXF-only (broadcast standard) |
+| `mxf` | `dnxhr` | DNxHR supports MXF (modern broadcast) |
 | `mxf` | `mpeg2video` | Broadcast legacy |
 | `mxf` | `h264` | Sony XAVC/XDCAM |
 | `webm` | `vp9`, `av1` | Open web codecs |
 | `ts` | `mpeg2video` | Transport stream broadcast |
 | `avi` | `mjpeg` | Legacy format |
+
+**Note:** DNxHD in MOV is explicitly rejected as a source format.
+See "Codec/Container Pairing Rules" above for details.
 
 ### Rejected Formats (Blocklist)
 

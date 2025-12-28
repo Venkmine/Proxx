@@ -622,3 +622,118 @@ class TestDynamicRawRouting:
         assert is_source_supported("foo", "arriraw") is True
         assert is_source_supported("bar", "redcode") is True
         assert is_source_supported("baz", "braw") is True
+
+
+# -----------------------------------------------------------------------------
+# DNxHD/DNxHR Container Restriction Tests
+# -----------------------------------------------------------------------------
+
+class TestDNxContainerRestrictions:
+    """
+    Tests for DNxHD and DNxHR container restrictions.
+    
+    Rules:
+    - DNxHD: MXF only (industry standard)
+    - DNxHR: MXF or MOV (modern codec with cross-platform support)
+    """
+    
+    # -------------------------------------------------------------------------
+    # DNxHD Source Format Tests
+    # -------------------------------------------------------------------------
+    
+    def test_dnxhd_mxf_is_supported(self):
+        """DNxHD in MXF is supported (industry standard)."""
+        assert is_source_supported("mxf", "dnxhd") is True
+    
+    def test_dnxhd_mxf_routes_to_ffmpeg(self):
+        """DNxHD in MXF routes to FFmpeg."""
+        engine = get_execution_engine("mxf", "dnxhd")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_dnxhd_mov_is_rejected(self):
+        """DNxHD in MOV is NOT supported (non-standard)."""
+        assert is_source_supported("mov", "dnxhd") is False
+    
+    def test_dnxhd_mov_is_explicitly_rejected(self):
+        """DNxHD in MOV is in REJECTED_SOURCES."""
+        assert is_source_rejected("mov", "dnxhd") is True
+    
+    def test_dnxhd_mov_has_rejection_reason(self):
+        """DNxHD in MOV has a clear rejection reason."""
+        reason = get_rejection_reason("mov", "dnxhd")
+        assert reason is not None
+        assert "MXF" in reason.reason or "non-standard" in reason.reason.lower()
+    
+    def test_dnxhd_mov_validation_fails(self):
+        """DNxHD in MOV fails validation with clear error."""
+        with pytest.raises(SourceCapabilityError) as exc_info:
+            validate_source_capability("mov", "dnxhd")
+        
+        error = exc_info.value
+        assert "MXF" in str(error)
+        assert "non-standard" in str(error).lower() or "unsupported" in str(error).lower()
+    
+    def test_dnxhd_mov_error_has_recommended_action(self):
+        """DNxHD in MOV error includes recommended action."""
+        with pytest.raises(SourceCapabilityError) as exc_info:
+            validate_source_capability("mov", "dnxhd")
+        
+        error = exc_info.value
+        assert error.recommended_action is not None
+        assert len(error.recommended_action) > 0
+        # Should suggest using MXF or DNxHR
+        assert "MXF" in error.recommended_action or "DNxHR" in error.recommended_action
+    
+    # -------------------------------------------------------------------------
+    # DNxHR Source Format Tests
+    # -------------------------------------------------------------------------
+    
+    def test_dnxhr_mxf_is_supported(self):
+        """DNxHR in MXF is supported (modern broadcast)."""
+        assert is_source_supported("mxf", "dnxhr") is True
+    
+    def test_dnxhr_mxf_routes_to_ffmpeg(self):
+        """DNxHR in MXF routes to FFmpeg."""
+        engine = get_execution_engine("mxf", "dnxhr")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_dnxhr_mov_is_supported(self):
+        """DNxHR in MOV is supported (cross-platform flexibility)."""
+        assert is_source_supported("mov", "dnxhr") is True
+    
+    def test_dnxhr_mov_routes_to_ffmpeg(self):
+        """DNxHR in MOV routes to FFmpeg."""
+        engine = get_execution_engine("mov", "dnxhr")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_dnxhr_mov_validation_passes(self):
+        """DNxHR in MOV passes validation."""
+        engine = validate_source_capability("mov", "dnxhr")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    # -------------------------------------------------------------------------
+    # Error Message Quality Tests
+    # -------------------------------------------------------------------------
+    
+    def test_dnxhd_mov_error_is_deterministic(self):
+        """DNxHD in MOV error message is deterministic."""
+        errors = []
+        for _ in range(5):
+            try:
+                validate_source_capability("mov", "dnxhd")
+            except SourceCapabilityError as e:
+                errors.append(str(e))
+        
+        # All error messages should be identical
+        assert all(e == errors[0] for e in errors)
+    
+    def test_dnxhd_mov_error_is_actionable(self):
+        """DNxHD in MOV error message is actionable."""
+        with pytest.raises(SourceCapabilityError) as exc_info:
+            validate_source_capability("mov", "dnxhd")
+        
+        error = exc_info.value
+        # Error should contain clear guidance
+        error_str = str(error)
+        assert "DNxHD" in error_str
+        assert "MXF" in error_str or "DNxHR" in error_str

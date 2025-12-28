@@ -172,10 +172,33 @@ These formats are decoded by FFmpeg without issue:
 
 ### Avid DNxHD/DNxHR
 
-| Container | Codec | Notes |
-|-----------|-------|-------|
-| `mov`, `mxf` | `dnxhd` | DNxHD (HD resolutions) |
-| `mov`, `mxf` | `dnxhr` | DNxHR (any resolution) |
+**DNxHD and DNxHR have different container requirements:**
+
+| Codec | Container | Status | Notes |
+|-------|-----------|--------|-------|
+| `dnxhd` | `mxf` | ✅ Supported | Industry-standard broadcast container |
+| `dnxhd` | `mov` | ❌ Rejected | Non-standard, causes Avid relinking issues |
+| `dnxhr` | `mxf` | ✅ Supported | Modern broadcast standard |
+| `dnxhr` | `mov` | ✅ Supported | Cross-platform flexibility |
+
+**DNxHR profiles:** LB, SQ, HQ, HQX, 444
+
+**Why DNxHD is MXF-only:**
+
+1. **Interoperability** - DNxHD in MOV causes relinking issues in Avid Media Composer
+2. **Broadcast QC** - Many broadcast QC systems do not recognize DNxHD-in-MOV
+3. **Industry standard** - DNxHD was designed for MXF container in broadcast workflows
+4. **Determinism** - Proxx enforces correct container pairings to avoid downstream issues
+
+**Requesting DNxHD + MOV will fail:**
+
+```
+JobSpecValidationError:
+  DNxHD must be wrapped in MXF. DNxHD-in-MOV is non-standard and unsupported.
+  Use MXF container for DNxHD output, or switch to DNxHR which supports MOV.
+```
+
+**Recommendation:** If you need MOV container with an Avid-compatible codec, use DNxHR instead.
 
 ### Web Codecs
 

@@ -383,6 +383,7 @@ class JobSpec:
     # -------------------------------------------------------------------------
     
     # Known valid codec/container combinations
+    # NOTE: DNxHD is MXF-only (industry standard). DNxHR supports MOV and MXF.
     VALID_CODEC_CONTAINERS: ClassVar[Dict[str, List[str]]] = {
         "prores_proxy": ["mov"],
         "prores_lt": ["mov"],
@@ -392,8 +393,8 @@ class JobSpec:
         "h264": ["mp4", "mov", "mkv"],
         "h265": ["mp4", "mov", "mkv"],
         "hevc": ["mp4", "mov", "mkv"],
-        "dnxhd": ["mov", "mxf"],
-        "dnxhr": ["mov", "mxf"],
+        "dnxhd": ["mxf"],  # DNxHD = MXF only (broadcast standard)
+        "dnxhr": ["mov", "mxf"],  # DNxHR supports MOV and MXF
         "vp9": ["webm", "mkv"],
         "av1": ["mp4", "mkv", "webm"],
     }
@@ -444,6 +445,10 @@ class JobSpec:
         """
         Validate that the codec/container combination is valid.
         
+        DNxHD/DNxHR Container Rules:
+        - DNxHD: MXF only (industry standard for broadcast/editorial)
+        - DNxHR: MXF or MOV (modern codec with cross-platform support)
+        
         Raises:
             JobSpecValidationError: If the combination is invalid.
         """
@@ -458,6 +463,14 @@ class JobSpec:
         
         valid_containers = self.VALID_CODEC_CONTAINERS[codec_lower]
         if container_lower not in valid_containers:
+            # Special error message for DNxHD+MOV (common mistake)
+            if codec_lower == "dnxhd" and container_lower == "mov":
+                raise JobSpecValidationError(
+                    "DNxHD must be wrapped in MXF. DNxHD-in-MOV is non-standard and unsupported. "
+                    "Use MXF container for DNxHD output, or switch to DNxHR which supports MOV. "
+                    "Reason: DNxHD in MOV causes relinking issues in Avid Media Composer and "
+                    "may not be recognized by broadcast QC systems."
+                )
             raise JobSpecValidationError(
                 f"Invalid container '{self.container}' for codec '{self.codec}'. "
                 f"Valid containers for {self.codec}: {', '.join(valid_containers)}"
@@ -745,6 +758,7 @@ class JobSpec:
     # Validation
     # -------------------------------------------------------------------------
     
+    # NOTE: DNxHD is MXF-only (industry standard). DNxHR supports MOV and MXF.
     VALID_CODEC_CONTAINERS: ClassVar[Dict[str, List[str]]] = {
         "prores_proxy": ["mov"],
         "prores_lt": ["mov"],
@@ -754,8 +768,8 @@ class JobSpec:
         "h264": ["mp4", "mov", "mkv"],
         "h265": ["mp4", "mov", "mkv"],
         "hevc": ["mp4", "mov", "mkv"],
-        "dnxhd": ["mov", "mxf"],
-        "dnxhr": ["mov", "mxf"],
+        "dnxhd": ["mxf"],  # DNxHD = MXF only (broadcast standard)
+        "dnxhr": ["mov", "mxf"],  # DNxHR supports MOV and MXF
         "vp9": ["webm", "mkv"],
         "av1": ["mp4", "mkv", "webm"],
     }
@@ -802,6 +816,12 @@ class JobSpec:
             )
         valid_containers = self.VALID_CODEC_CONTAINERS[codec_lower]
         if container_lower not in valid_containers:
+            # Special error message for DNxHD+MOV (common mistake)
+            if codec_lower == "dnxhd" and container_lower == "mov":
+                raise JobSpecValidationError(
+                    "DNxHD must be wrapped in MXF. DNxHD-in-MOV is non-standard and unsupported. "
+                    "Use MXF container for DNxHD output, or switch to DNxHR which supports MOV."
+                )
             raise JobSpecValidationError(
                 f"Invalid container '{self.container}' for codec '{self.codec}'. "
                 f"Valid containers for {self.codec}: {', '.join(valid_containers)}"

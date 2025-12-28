@@ -298,27 +298,30 @@ SUPPORTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
     ),
     
     # ---------------------------------------------------------------------
-    # DNxHD/DNxHR - Avid intra-frame codecs
+    # DNxHD - Avid HD intra-frame codec (MXF ONLY)
+    # DNxHD in MOV is non-standard and unsupported. See REJECTED_SOURCES.
+    # Industry standard: DNxHD must be wrapped in MXF for broadcast/editorial.
     # ---------------------------------------------------------------------
-    ("mov", "dnxhd"): SourceCapability(
-        container="mov",
-        codec="dnxhd",
-        reason="Avid DNxHD, broadcast intra-frame.",
-    ),
-    ("mov", "dnxhr"): SourceCapability(
-        container="mov",
-        codec="dnxhr",
-        reason="Avid DNxHR, modern intra-frame.",
-    ),
     ("mxf", "dnxhd"): SourceCapability(
         container="mxf",
         codec="dnxhd",
-        reason="MXF DNxHD, broadcast standard.",
+        reason="MXF DNxHD, industry-standard broadcast container.",
+    ),
+    
+    # ---------------------------------------------------------------------
+    # DNxHR - Avid resolution-independent intra-frame codec (MXF or MOV)
+    # DNxHR is the modern successor to DNxHD, supports any resolution.
+    # Profiles: LB, SQ, HQ, HQX, 444
+    # ---------------------------------------------------------------------
+    ("mov", "dnxhr"): SourceCapability(
+        container="mov",
+        codec="dnxhr",
+        reason="Avid DNxHR in MOV, modern intra-frame codec.",
     ),
     ("mxf", "dnxhr"): SourceCapability(
         container="mxf",
         codec="dnxhr",
-        reason="MXF DNxHR, modern broadcast.",
+        reason="MXF DNxHR, modern broadcast standard.",
     ),
     
     # ---------------------------------------------------------------------
@@ -576,17 +579,26 @@ RESOLVE_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
 
 REJECTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
     # ---------------------------------------------------------------------
+    # DNxHD in MOV - Non-standard container pairing
+    # ---------------------------------------------------------------------
+    # DNxHD was designed for MXF container (broadcast/editorial standard).
+    # While FFmpeg can technically mux DNxHD into MOV, this combination:
+    # - Causes relinking issues in Avid Media Composer
+    # - Is not recognized by many broadcast QC systems
+    # - May fail in some NLE interchange workflows
+    # DNxHR in MOV is fine - it was designed for cross-platform flexibility.
+    # ---------------------------------------------------------------------
+    ("mov", "dnxhd"): SourceCapability(
+        container="mov",
+        codec="dnxhd",
+        reason="DNxHD must be wrapped in MXF. DNxHD-in-MOV is non-standard and unsupported.",
+        recommended_action="Use MXF container for DNxHD output, or switch to DNxHR which supports MOV.",
+    ),
+    
+    # ---------------------------------------------------------------------
     # Obsolete/Unsupported formats - neither FFmpeg nor Resolve can decode
     # ---------------------------------------------------------------------
-    # Currently empty - all known formats are either FFmpeg or Resolve supported.
     # Add entries here for formats that cannot be processed by any engine.
-    # Example:
-    # ("xyz", "proprietary_codec"): SourceCapability(
-    #     container="xyz",
-    #     codec="proprietary_codec",
-    #     reason="No known decoder for this format.",
-    #     recommended_action="Convert to ProRes or H.264 using manufacturer software.",
-    # ),
 }
 
 
