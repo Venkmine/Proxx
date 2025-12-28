@@ -52,6 +52,10 @@ export interface V2ModeState {
   // Execution state
   v2ExecutionStatus: V2ExecutionStatus
   
+  // INVARIANT: Once true, inputs that contributed to JobSpec are frozen
+  // UI must not allow edits until result is dismissed
+  v2JobSpecSubmitted: boolean
+  
   // Latest result (null if no execution yet)
   v2LastResult: V2JobResult | null
   
@@ -78,6 +82,7 @@ export const useV2ModeStore = create<V2ModeState>((set) => ({
   isV2ModeEnabled: FEATURE_FLAGS.V2_MODE_ENABLED,
   
   v2ExecutionStatus: 'idle',
+  v2JobSpecSubmitted: false,
   v2LastResult: null,
   v2Error: null,
   
@@ -88,6 +93,7 @@ export const useV2ModeStore = create<V2ModeState>((set) => ({
     v2LastResult: null,
     v2Error: null,
     v2ExecutionStatus: 'idle',
+    v2JobSpecSubmitted: false,
   })),
   
   setV2ModeEnabled: (enabled: boolean) => set({
@@ -95,11 +101,14 @@ export const useV2ModeStore = create<V2ModeState>((set) => ({
     v2LastResult: null,
     v2Error: null,
     v2ExecutionStatus: 'idle',
+    v2JobSpecSubmitted: false,
   }),
   
   // Execution lifecycle
+  // INVARIANT: Once submitted, inputs are frozen until clearV2Result
   startV2Execution: () => set({
     v2ExecutionStatus: 'encoding',
+    v2JobSpecSubmitted: true,  // Lock inputs
     v2LastResult: null,
     v2Error: null,
   }),
@@ -108,15 +117,19 @@ export const useV2ModeStore = create<V2ModeState>((set) => ({
     v2ExecutionStatus: result.final_status === 'COMPLETED' ? 'completed' : 'failed',
     v2LastResult: result,
     v2Error: null,
+    // v2JobSpecSubmitted remains true - still read-only until dismissed
   }),
   
   setV2Error: (error: string) => set({
     v2ExecutionStatus: 'failed',
     v2Error: error,
+    // v2JobSpecSubmitted remains true - still read-only until dismissed
   }),
   
+  // INVARIANT: Only clearV2Result unlocks inputs for new JobSpec
   clearV2Result: () => set({
     v2ExecutionStatus: 'idle',
+    v2JobSpecSubmitted: false,  // Unlock inputs
     v2LastResult: null,
     v2Error: null,
   }),

@@ -6,6 +6,17 @@
 // STOP and read docs/DECISIONS.md first. These are intentionally absent.
 // ============================================================================
 
+// ============================================================================
+// V2 THIN CLIENT INVARIANT
+// ============================================================================
+// INVARIANT: UI compiles JobSpec, backend executes. UI never mutates execution state.
+// - UI may compile JobSpecs from user settings
+// - UI may submit JobSpecs to backend
+// - UI may observe JobExecutionResult (read-only)
+// - UI must NEVER control, mutate, or influence execution after submission
+// - All execution state shown in UI comes ONLY from JobExecutionResult
+// ============================================================================
+
 // Alpha scope defined in docs/ALPHA_REALITY.md.
 // Do not add features that contradict it without updating that file first.
 
@@ -337,8 +348,9 @@ function App() {
 
   // ============================================
   // V2 Step 3: Thin Client JobSpec Compiler
+  // INVARIANT: UI compiles JobSpec, backend executes. UI never mutates execution state.
   // ============================================
-  const { isV2ModeEnabled, toggleV2Mode, v2ExecutionStatus } = useV2ModeStore()
+  const { isV2ModeEnabled, toggleV2Mode, v2ExecutionStatus, v2JobSpecSubmitted } = useV2ModeStore()
   const { isEncoding: isV2Encoding, executeV2 } = useV2Execute()
 
   // ============================================
@@ -2024,6 +2036,7 @@ function App() {
               backendUrl={BACKEND_URL}
               workspaceMode={workspaceMode}
               previewSourcePath={previewSourcePath}
+              v2JobSpecSubmitted={v2JobSpecSubmitted}
             />
           }
           centerZone={

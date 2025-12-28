@@ -3,6 +3,8 @@
  * 
  * V2 Step 3: UI as JobSpec Compiler (Thin Client)
  * 
+ * INVARIANT: UI compiles JobSpec, backend executes. UI never mutates execution state.
+ * 
  * This panel displays the result of a V2 execution:
  * - During execution: "Encoding..." (no progress/ETA)
  * - After completion: Clip status + output path + failure reason
@@ -10,7 +12,8 @@
  * Honesty invariants:
  * - No fake progress percentages
  * - No ETAs
- * - Just honest status
+ * - Just honest status from JobExecutionResult
+ * - All displayed state comes ONLY from backend result
  */
 
 import React from 'react'
@@ -59,7 +62,7 @@ export function V2ResultPanel({ onClose }: V2ResultPanelProps) {
         
         <div style={footerNoteStyles}>
           <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-            V2 execution is synchronous. Please wait for completion.
+            V2 execution is headless. Results are authoritative.
           </span>
         </div>
       </div>

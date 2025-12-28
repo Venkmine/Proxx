@@ -115,6 +115,9 @@ interface CreateJobPanelProps {
   // Phase 4A: Directory navigator toggle
   showDirectoryNavigator?: boolean
   onToggleDirectoryNavigator?: () => void
+  
+  // V2 Thin Client: Lock inputs when JobSpec is submitted
+  v2JobSpecSubmitted?: boolean
 }
 
 export function CreateJobPanel({
@@ -144,6 +147,7 @@ export function CreateJobPanel({
   workspaceMode = 'configure',
   showDirectoryNavigator = false,
   onToggleDirectoryNavigator,
+  v2JobSpecSubmitted = false,
 }: CreateJobPanelProps) {
   // Web mode: show prompt when files dropped without absolute paths
   const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
@@ -161,7 +165,11 @@ export function CreateJobPanel({
   const selectedPreset = settingsPresets.find(p => p.id === selectedSettingsPresetId)
 
   // Phase 9F: Explicit validation with human-readable reasons
+  // V2 Thin Client: Lock inputs when JobSpec is submitted
   const getCreateJobValidation = (): { canCreate: boolean; reason: string } => {
+    if (v2JobSpecSubmitted) {
+      return { canCreate: false, reason: 'V2 execution in progress — inputs locked' }
+    }
     if (loading) {
       return { canCreate: false, reason: 'Processing...' }
     }

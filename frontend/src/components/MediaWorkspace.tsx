@@ -85,6 +85,9 @@ interface MediaWorkspaceProps {
   
   // Preview source
   previewSourcePath?: string
+  
+  // V2 Thin Client: Lock inputs when JobSpec is submitted
+  v2JobSpecSubmitted?: boolean
 }
 
 export function MediaWorkspace({
@@ -115,6 +118,7 @@ export function MediaWorkspace({
   backendUrl,
   workspaceMode,
   previewSourcePath,
+  v2JobSpecSubmitted = false,
 }: MediaWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<MediaTab>('loaded')
 
@@ -218,6 +222,8 @@ export function MediaWorkspace({
               showDirectoryNavigator={false}
               // V1 DOGFOOD FIX: Browse button now switches to Browse tab
               onToggleDirectoryNavigator={() => setActiveTab('browse')}
+              // V2 Thin Client: Lock inputs when JobSpec is submitted
+              v2JobSpecSubmitted={v2JobSpecSubmitted}
             />
           </div>
         )}

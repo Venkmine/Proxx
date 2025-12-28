@@ -3,13 +3,20 @@
  * 
  * V2 Step 3: UI as JobSpec Compiler (Thin Client)
  * 
+ * INVARIANT: UI compiles JobSpec, backend executes. UI never mutates execution state.
+ * 
  * This hook:
  * 1. Compiles current UI settings into a JobSpec
  * 2. Sends to POST /v2/execute_jobspec
- * 3. Updates the V2 mode store with results
+ * 3. Updates the V2 mode store with results (READ-ONLY observation)
  * 
  * The UI is a compiler, not authority.
  * Truth comes from JobExecutionResult.
+ * 
+ * After submission:
+ * - All inputs that contributed to JobSpec are frozen
+ * - UI cannot edit, toggle, or recompile
+ * - Execution state is read-only from backend result
  */
 
 import { useCallback } from 'react'

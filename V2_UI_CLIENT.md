@@ -122,6 +122,54 @@ The V2 UI flow enforces strict honesty:
 3. **No cancel during encode** — Sync execution doesn't support cancellation
 4. **Shows only**: "Encoding..." then final result
 
+## Thin-Client Invariants (Hardened)
+
+The UI is hardened to enforce thin-client semantics:
+
+### Rule 1: JobSpec Immutability After Submission
+
+Once a JobSpec is submitted via `startV2Execution()`, the UI **must NOT** allow any modification of inputs:
+- File selection is disabled
+- Output directory is locked
+- Settings presets are frozen
+- All source controls are read-only
+
+**Implementation:**
+- `v2ModeStore.v2JobSpecSubmitted` — boolean flag set on submission, cleared on clear
+- All input components check this flag and disable themselves
+- Validation functions return early with "JobSpec submitted" message
+
+### Rule 2: Result-Only Rendering
+
+V2ResultPanel **MUST** render only from the authoritative `JobExecutionResult`:
+- No local state interpolation
+- No optimistic updates
+- No UI-side status computation
+
+**Implementation:**
+```typescript
+// V2ResultPanel: THIN CLIENT INVARIANT
+// This component is a READ-ONLY observer of JobExecutionResult.
+// It MUST NOT compute, interpolate, or derive any execution state.
+// All displayed values come directly from the backend result object.
+```
+
+### Rule 3: No Post-Submission Control
+
+After JobSpec submission, UI provides **observation only**:
+- Spinner during execution
+- Result display after completion
+- Clear action to reset
+
+**Implementation:**
+```typescript
+// V2 THIN CLIENT INVARIANT:
+// The UI MUST NOT control execution after JobSpec submission.
+// - May display progress indicators (observation only)
+// - May NOT cancel, pause, retry, or modify execution
+// - All state changes come from backend results only
+```
+
 ### UI States
 
 ```
