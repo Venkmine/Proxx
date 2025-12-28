@@ -1,6 +1,6 @@
 # Awaire Proxy Makefile
 
-.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full verify-dogfood dev clean help
+.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full verify-dogfood verify-v2 dev clean help
 
 # Default target
 help:
@@ -12,6 +12,7 @@ help:
 	@echo "  make verify-ui-debug - Run UI tests in headed mode (visible browser)"
 	@echo "  make verify-full     - Run full verification (+ E2E + UI tests)"
 	@echo "  make verify-dogfood  - Run exhaustive dogfood verification suite"
+	@echo "  make verify-v2       - Run V2 verification (unit tests + headless smoke test)"
 	@echo ""
 	@echo "  make dev             - Start development environment"
 	@echo "  make clean           - Clean build artifacts"
@@ -62,6 +63,14 @@ verify-dogfood:
 	@echo "==================================================="
 	@echo "Dogfood Verification Complete"
 	@echo "==================================================="
+
+# V2 Verification — Unit tests + headless smoke test with deterministic artifacts
+# CI-friendly, runs without UI, produces artifacts in ./artifacts/v2/
+verify-v2:
+	@echo "==================================================="
+	@echo "V2 Verification Harness"
+	@echo "==================================================="
+	python scripts/verify_v2.py
 
 # Development
 dev:

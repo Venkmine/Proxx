@@ -73,6 +73,9 @@ ffmpeg2pass*
 test_output/
 test_media/output/
 
+# V2 verification artifacts
+artifacts/
+
 # Electron build outputs
 frontend/dist/
 frontend/dist-electron/

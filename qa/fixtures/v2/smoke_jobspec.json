@@ -1,0 +1,13 @@
+{
+  "job_id": "v2_smoke_test",
+  "sources": ["qa/fixtures/media/short_h264_audio.mp4"],
+  "output_directory": "__ARTIFACTS_DIR__",
+  "codec": "h264",
+  "container": "mp4",
+  "resolution": "quarter",
+  "fps_mode": "same-as-source",
+  "fps_explicit": null,
+  "naming_template": "v2_smoke_{job_id}_{index}",
+  "resolved_tokens": {},
+  "created_at": "2025-12-28T00:00:00+00:00"
+}
