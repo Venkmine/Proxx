@@ -215,7 +215,7 @@ def run_smoke_test(artifact_dir: Path) -> Tuple[bool, str, Path]:
         return False, f"Smoke test failed: {e}\n{tb}", Path()
 
 
-def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool, watch_ok: bool = True) -> None:
+def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool, watch_ok: bool = True, concurrency_ok: bool = True) -> None:
     """
     Write a summary file for this verification run.
     """
@@ -224,7 +224,8 @@ def write_run_summary(artifact_dir: Path, unit_ok: bool, smoke_ok: bool, watch_o
         "unit_tests_passed": unit_ok,
         "smoke_test_passed": smoke_ok,
         "watch_folder_test_passed": watch_ok,
-        "overall_success": unit_ok and smoke_ok and watch_ok,
+        "concurrency_test_passed": concurrency_ok,
+        "overall_success": unit_ok and smoke_ok and watch_ok and concurrency_ok,
         "artifact_dir": str(artifact_dir),
     }
     
@@ -403,6 +404,206 @@ def run_watch_folder_test(artifact_dir: Path) -> Tuple[bool, str]:
     return True, "Watch folder test passed"
 
 
+def run_concurrency_test(artifact_dir: Path) -> Tuple[bool, str]:
+    """
+    Run concurrency verification test (Phase 2).
+    
+    This test:
+    1. Creates 3 valid JobSpecs in pending/
+    2. Runs watch folder with --max-workers 2
+    3. Asserts:
+       - All 3 jobs complete (some concurrently)
+       - All outputs exist
+       - All result JSONs written with worker metadata
+       - No duplicate execution
+       - Deterministic naming preserved
+    
+    Args:
+        artifact_dir: Directory to write artifacts to.
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    print_subheader("Running Concurrency Test (max-workers=2)")
+    
+    # Check fixture media exists
+    if not FIXTURE_MEDIA.exists():
+        return False, f"Fixture media not found: {FIXTURE_MEDIA}"
+    
+    if not FIXTURE_JOBSPEC.exists():
+        return False, f"Fixture JobSpec not found: {FIXTURE_JOBSPEC}"
+    
+    # Create watch folder structure
+    watch_dir = artifact_dir / "concurrency_test"
+    pending_dir = watch_dir / "pending"
+    running_dir = watch_dir / "running"
+    completed_dir = watch_dir / "completed"
+    failed_dir = watch_dir / "failed"
+    
+    for d in [pending_dir, running_dir, completed_dir, failed_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+    
+    print(f"  Watch folder: {watch_dir}")
+    
+    # Load base JobSpec
+    try:
+        with open(FIXTURE_JOBSPEC, "r") as f:
+            base_jobspec = json.load(f)
+    except Exception as e:
+        return False, f"Failed to load JobSpec fixture: {e}"
+    
+    # Resolve source path
+    source_path = PROJECT_ROOT / base_jobspec["sources"][0]
+    if not source_path.exists():
+        return False, f"Source media not found: {source_path}"
+    
+    # Create output directory
+    output_dir = artifact_dir / "concurrency_output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create 3 JobSpecs with unique job_ids and output names
+    # DETERMINISM: Sorted alphabetically as aaa, bbb, ccc
+    job_names = ["aaa_job", "bbb_job", "ccc_job"]
+    
+    for job_name in job_names:
+        jobspec = base_jobspec.copy()
+        jobspec["sources"] = [str(source_path)]
+        jobspec["output_directory"] = str(output_dir)
+        jobspec["job_id"] = f"concurrent_{job_name}"
+        # Use unique naming_template to prevent collision
+        jobspec["naming_template"] = f"{job_name}_proxy"
+        
+        jobspec_path = pending_dir / f"{job_name}.json"
+        with open(jobspec_path, "w") as f:
+            json.dump(jobspec, f, indent=2)
+        
+        print(f"  Created: {jobspec_path.name}")
+    
+    print(f"  Output directory: {output_dir}")
+    
+    # Run watch folder runner with --max-workers 2
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "backend.v2.watch_folder_runner",
+                str(watch_dir), "--once", "--max-workers", "2"
+            ],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=180,  # 3 minute timeout for concurrent jobs
+        )
+        
+        print(f"\n  Runner output:")
+        for line in result.stdout.split('\n'):
+            if line.strip():
+                print(f"    {line}")
+        
+        if result.returncode != 0:
+            print(f"\n  Runner stderr:")
+            for line in result.stderr.split('\n'):
+                if line.strip():
+                    print(f"    {line}")
+        
+    except subprocess.TimeoutExpired:
+        return False, "Watch folder runner timed out after 3 minutes"
+    except Exception as e:
+        return False, f"Failed to run watch folder runner: {e}"
+    
+    # Verify: All 3 JobSpecs should be in completed/
+    for job_name in job_names:
+        completed_jobspec = completed_dir / f"{job_name}.json"
+        if not completed_jobspec.exists():
+            # Check if failed
+            failed_jobspec = failed_dir / f"{job_name}.json"
+            if failed_jobspec.exists():
+                failed_result = failed_dir / f"{job_name}.result.json"
+                if failed_result.exists():
+                    with open(failed_result, "r") as f:
+                        result_data = json.load(f)
+                    reason = result_data.get("_metadata", {}).get("failure_reason", "unknown")
+                    return False, f"Job {job_name} failed: {reason}"
+                return False, f"Job {job_name} moved to failed/"
+            return False, f"Job {job_name} not found in completed/ or failed/"
+    
+    print(f"  ✓ All 3 JobSpecs moved to completed/")
+    
+    # Verify: All result JSONs exist with worker metadata
+    worker_ids_seen: set = set()
+    
+    for job_name in job_names:
+        result_json = completed_dir / f"{job_name}.result.json"
+        if not result_json.exists():
+            return False, f"Result JSON missing for {job_name}"
+        
+        with open(result_json, "r") as f:
+            result_data = json.load(f)
+        
+        # Check status
+        if result_data.get("final_status") != "COMPLETED":
+            return False, f"Job {job_name} has status {result_data.get('final_status')}"
+        
+        # Check worker metadata
+        metadata = result_data.get("_metadata", {})
+        worker_id = metadata.get("worker_id")
+        worker_started_at = metadata.get("worker_started_at")
+        
+        if worker_id is None:
+            return False, f"Job {job_name} missing worker_id in metadata"
+        if worker_started_at is None:
+            return False, f"Job {job_name} missing worker_started_at in metadata"
+        
+        worker_ids_seen.add(worker_id)
+        print(f"  ✓ {job_name}: worker_id={worker_id}")
+    
+    print(f"  ✓ All result JSONs have worker metadata")
+    
+    # Verify: With max-workers=2 and 3 jobs, we should see at least 2 different worker IDs
+    # (proves concurrency was used)
+    if len(worker_ids_seen) < 2:
+        return False, f"Expected at least 2 worker IDs for concurrency, got {len(worker_ids_seen)}: {worker_ids_seen}"
+    
+    print(f"  ✓ Concurrent execution verified: {len(worker_ids_seen)} unique workers used")
+    
+    # Verify: All output files exist
+    for job_name in job_names:
+        result_json = completed_dir / f"{job_name}.result.json"
+        with open(result_json, "r") as f:
+            result_data = json.load(f)
+        
+        for clip in result_data.get("clips", []):
+            output_path = Path(clip.get("resolved_output_path", ""))
+            if not output_path.exists():
+                return False, f"Output file missing: {output_path}"
+            
+            size = output_path.stat().st_size
+            if size == 0:
+                return False, f"Output file has zero size: {output_path}"
+    
+    print(f"  ✓ All output files exist with size > 0")
+    
+    # Verify: No duplicate execution (each job processed exactly once)
+    # Check that there are exactly 3 result files in completed/
+    completed_results = list(completed_dir.glob("*.result.json"))
+    if len(completed_results) != 3:
+        return False, f"Expected exactly 3 result files, found {len(completed_results)}"
+    
+    print(f"  ✓ No duplicate execution (exactly 3 results)")
+    
+    # Verify: pending/ and running/ are empty
+    pending_files = list(pending_dir.glob("*.json"))
+    if pending_files:
+        return False, f"pending/ should be empty but has {len(pending_files)} file(s)"
+    
+    running_files = list(running_dir.glob("*.json"))
+    if running_files:
+        return False, f"running/ should be empty but has {len(running_files)} file(s)"
+    
+    print(f"  ✓ pending/ and running/ are empty")
+    
+    return True, "Concurrency test passed"
+
+
 def main() -> int:
     """
     Main entry point for V2 verification.
@@ -456,18 +657,27 @@ def main() -> int:
         print(f"\n✗ Watch folder test FAILED: {watch_output}")
         all_passed = False
     
+    # Step 4: Run concurrency test (Phase 2 feature)
+    print_header("PHASE 4: Concurrency Test")
+    concurrency_ok, concurrency_output = run_concurrency_test(artifact_dir)
+    
+    if concurrency_ok:
+        print("\n✓ Concurrency test PASSED")
+    else:
+        print(f"\n✗ Concurrency test FAILED: {concurrency_output}")
+        all_passed = False
+    
     # Write run summary
-    write_run_summary(artifact_dir, unit_ok, smoke_ok, watch_ok)
+    write_run_summary(artifact_dir, unit_ok, smoke_ok, watch_ok, concurrency_ok)
     
     # Final summary
     print_header("VERIFICATION COMPLETE")
     print(f"  Unit Tests:        {'PASSED' if unit_ok else 'FAILED'}")
     print(f"  Smoke Test:        {'PASSED' if smoke_ok else 'FAILED'}")
     print(f"  Watch Folder Test: {'PASSED' if watch_ok else 'FAILED'}")
+    print(f"  Concurrency Test:  {'PASSED' if concurrency_ok else 'FAILED'}")
     print(f"  Overall:           {'PASSED ✓' if all_passed else 'FAILED ✗'}")
     print(f"\n  Artifacts:         {artifact_dir}")
-    
-    return 0 if all_passed else 1
     
     return 0 if all_passed else 1
 

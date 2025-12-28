@@ -17,7 +17,7 @@ Folder Structure:
 watch/
 ├── pending/              # JobSpecs awaiting processing
 │   └── job1.json
-├── running/              # JobSpec currently being processed (max 1)
+├── running/              # JobSpec(s) being processed (max N workers)
 │   └── job2.json         # Only during active execution
 ├── completed/            # Successfully completed JobSpecs
 │   ├── job0.json
@@ -33,19 +33,29 @@ On startup, any files left in running/ are moved to failed/ with reason
 
 Execution Rules:
 ================
-- Synchronous execution only
-- Sequential only (Phase 1)
-- Fail-fast on first error
+- Synchronous execution within each job (clips still sequential)
+- Bounded concurrency: up to N jobs may run in parallel (default: 1)
+- Deterministic ordering: jobs dequeued in sorted filename order
+- Fail-fast within each job on first clip error
 - No retries
 - Preserve partial artifacts
+
+Concurrency Model (V2 Phase 2):
+===============================
+- Worker slots: N workers (default 1), each processes one job at a time
+- Jobs are dequeued in deterministic (sorted) order
+- Each job executes synchronously internally (sequential clips)
+- If one job fails, other running jobs complete normally
+- No dynamic scaling, no auto-recovery, no retries
 
 Usage:
 ======
     python -m backend.v2.watch_folder_runner <folder>
     python -m backend.v2.watch_folder_runner <folder> --once
     python -m backend.v2.watch_folder_runner <folder> --poll-seconds 5
+    python -m backend.v2.watch_folder_runner <folder> --max-workers 4
 
-Part of V2 Phase 1 (Option A: Reliable Proxy Engine)
+Part of V2 Phase 2 (Bounded Deterministic Concurrency)
 """
 
 import argparse
@@ -53,11 +63,13 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Set
 
 # Import from sibling modules (adjust imports for module context)
 # Try different import paths to support various invocation methods
@@ -96,6 +108,79 @@ FAILED_FOLDER = "failed"
 RESULT_SUFFIX = ".result.json"
 
 DEFAULT_POLL_SECONDS = 2
+DEFAULT_MAX_WORKERS = 1  # Sequential by default (Phase 1 behavior)
+
+
+# -----------------------------------------------------------------------------
+# Worker State Tracking (Thread-Safe)
+# -----------------------------------------------------------------------------
+
+@dataclass
+class WorkerState:
+    """
+    Thread-safe tracking of worker assignments.
+    
+    Invariants:
+    - active_jobs is protected by _lock
+    - Each job_id can only be assigned to one worker
+    - Jobs are never skipped, never processed twice
+    """
+    max_workers: int
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _active_jobs: Dict[str, dict] = field(default_factory=dict)  # job_filename -> worker_info
+    _completed_jobs: Set[str] = field(default_factory=set)  # job_filenames that finished
+    _worker_counter: int = field(default=0)
+    
+    def acquire_job(self, job_filename: str) -> Optional[int]:
+        """
+        Try to acquire a job for processing. Returns worker_id if acquired, None if already taken.
+        
+        DETERMINISM ASSERTION: This method is called in sorted order by the main thread.
+        Jobs are NEVER skipped - the main thread iterates all pending jobs in order.
+        """
+        with self._lock:
+            if job_filename in self._active_jobs or job_filename in self._completed_jobs:
+                # Already being processed or already completed - cannot happen in correct usage
+                return None
+            
+            if len(self._active_jobs) >= self.max_workers:
+                # All workers busy
+                return None
+            
+            self._worker_counter += 1
+            worker_id = self._worker_counter
+            self._active_jobs[job_filename] = {
+                "worker_id": worker_id,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return worker_id
+    
+    def release_job(self, job_filename: str) -> None:
+        """Mark a job as complete and release the worker slot."""
+        with self._lock:
+            if job_filename in self._active_jobs:
+                del self._active_jobs[job_filename]
+            self._completed_jobs.add(job_filename)
+    
+    def get_worker_info(self, job_filename: str) -> Optional[dict]:
+        """Get worker info for a job (if currently active)."""
+        with self._lock:
+            return self._active_jobs.get(job_filename)
+    
+    def active_count(self) -> int:
+        """Number of currently active workers."""
+        with self._lock:
+            return len(self._active_jobs)
+    
+    def is_job_known(self, job_filename: str) -> bool:
+        """Check if a job is currently active or already completed."""
+        with self._lock:
+            return job_filename in self._active_jobs or job_filename in self._completed_jobs
+    
+    def reset_for_new_scan(self) -> None:
+        """Reset completed jobs set for a new scan iteration."""
+        with self._lock:
+            self._completed_jobs.clear()
 
 
 # -----------------------------------------------------------------------------
@@ -236,6 +321,8 @@ def write_result_json(
     job_result: JobExecutionResult,
     jobspec_path: Path,
     failure_reason: Optional[str] = None,
+    worker_id: Optional[int] = None,
+    worker_started_at: Optional[str] = None,
 ) -> None:
     """
     Write execution result to a .result.json file.
@@ -248,6 +335,8 @@ def write_result_json(
     - jobspec_path: Path to the original JobSpec file
     - result_written_at: Timestamp of result file creation
     - failure_reason: If provided, the reason for failure
+    - worker_id: If provided, the worker that processed this job
+    - worker_started_at: If provided, when the worker started
     """
     result_data = job_result.to_dict()
     
@@ -260,6 +349,12 @@ def write_result_json(
     
     if failure_reason:
         result_data["_metadata"]["failure_reason"] = failure_reason
+    
+    # Include worker metadata for concurrency tracking
+    if worker_id is not None:
+        result_data["_metadata"]["worker_id"] = worker_id
+    if worker_started_at is not None:
+        result_data["_metadata"]["worker_started_at"] = worker_started_at
     
     with open(result_path, "w") as f:
         json.dump(result_data, f, indent=2)
@@ -316,6 +411,12 @@ class ProcessingResult:
     
     job_result: Optional[JobExecutionResult] = None
     """Full job execution result (if executed)."""
+    
+    worker_id: Optional[int] = None
+    """Worker ID that processed this job (for concurrency tracking)."""
+    
+    worker_started_at: Optional[str] = None
+    """ISO timestamp when worker started processing this job."""
 
 
 # -----------------------------------------------------------------------------
@@ -349,6 +450,8 @@ def scan_for_pending_jobspecs(watch_folder: Path) -> List[Path]:
 def process_single_jobspec(
     jobspec_path: Path,
     watch_folder: Path,
+    worker_id: Optional[int] = None,
+    worker_started_at: Optional[str] = None,
 ) -> ProcessingResult:
     """
     Process a single JobSpec file with atomic state transitions.
@@ -360,6 +463,12 @@ def process_single_jobspec(
     4. Execute using headless executor
     5. Write result JSON to destination folder
     6. Move running/job.json → completed/job.json OR failed/job.json (atomic)
+    
+    Args:
+        jobspec_path: Path to the JobSpec file in pending/
+        watch_folder: Root watch folder
+        worker_id: Optional worker ID for concurrency tracking
+        worker_started_at: Optional ISO timestamp when worker started
     
     Returns:
         ProcessingResult with all details
@@ -459,7 +568,10 @@ def process_single_jobspec(
         dest_result = dest_folder / f"{running_path.stem}_{timestamp}{RESULT_SUFFIX}"
     
     # Write result JSON first (to destination folder)
-    write_result_json(dest_result, job_result, running_path, failure_reason)
+    write_result_json(
+        dest_result, job_result, running_path, failure_reason,
+        worker_id=worker_id, worker_started_at=worker_started_at
+    )
     
     # Move JobSpec to destination
     try:
@@ -472,6 +584,8 @@ def process_single_jobspec(
             result_path=dest_result,
             error_message=f"CRITICAL: Cannot move from running to {dest_folder.name}: {e}",
             job_result=job_result,
+            worker_id=worker_id,
+            worker_started_at=worker_started_at,
         )
     
     return ProcessingResult(
@@ -481,56 +595,176 @@ def process_single_jobspec(
         destination_path=dest_jobspec,
         job_result=job_result,
         error_message=failure_reason if final_status == "FAILED" else None,
+        worker_id=worker_id,
+        worker_started_at=worker_started_at,
     )
 
 
-def run_scan(watch_folder: Path) -> List[ProcessingResult]:
+def run_scan(watch_folder: Path, max_workers: int = DEFAULT_MAX_WORKERS) -> List[ProcessingResult]:
     """
-    Perform a single scan of pending/ and process all JobSpecs sequentially.
+    Perform a single scan of pending/ and process JobSpecs with bounded concurrency.
+    
+    DETERMINISM GUARANTEES:
+    - Jobs are discovered in sorted filename order (deterministic)
+    - Jobs are submitted to workers in that same order
+    - Each job is processed exactly once (no duplicates, no skips)
+    - Results are collected and returned in submission order
+    
+    CONCURRENCY MODEL:
+    - max_workers=1: Sequential execution (Phase 1 behavior)
+    - max_workers>1: Up to N jobs run concurrently
+    - Each job still executes clips sequentially internally
+    
+    FAILURE SEMANTICS:
+    - If one job fails, other running jobs complete normally
+    - Failed jobs go to failed/, successful jobs to completed/
+    - Runner does NOT crash on job failure
+    
+    Args:
+        watch_folder: Root watch directory
+        max_workers: Maximum concurrent workers (default: 1 = sequential)
     
     Returns:
-        List of ProcessingResult for each JobSpec processed
+        List of ProcessingResult for each JobSpec processed (in submission order)
     """
     results: List[ProcessingResult] = []
     
-    # Scan for pending JobSpecs
+    # Scan for pending JobSpecs - DETERMINISM: sorted() ensures consistent order
     jobspecs = scan_for_pending_jobspecs(watch_folder)
+    # ASSERTION: jobspecs is already sorted by scan_for_pending_jobspecs()
+    # This ensures deterministic job ordering regardless of filesystem enumeration order
     
     if not jobspecs:
         return results
     
     print(f"Found {len(jobspecs)} JobSpec(s) in pending/")
+    print(f"Max workers: {max_workers}")
     
-    # Process each sequentially
-    for i, jobspec_path in enumerate(jobspecs, 1):
-        print(f"\n[{i}/{len(jobspecs)}] Processing: {jobspec_path.name}")
+    # Initialize worker state tracking
+    worker_state = WorkerState(max_workers=max_workers)
+    
+    if max_workers == 1:
+        # SEQUENTIAL EXECUTION (Phase 1 behavior preserved)
+        # No ThreadPoolExecutor overhead for the common case
+        for i, jobspec_path in enumerate(jobspecs, 1):
+            # DETERMINISM: Jobs processed in sorted order, one at a time
+            worker_id = worker_state.acquire_job(jobspec_path.name)
+            # ASSERTION: worker_id is never None in sequential mode (only 1 job, 1 worker)
+            assert worker_id is not None, "Worker slot must be available in sequential mode"
+            
+            worker_info = worker_state.get_worker_info(jobspec_path.name)
+            worker_started_at = worker_info["started_at"] if worker_info else None
+            
+            print(f"\n[{i}/{len(jobspecs)}] Processing: {jobspec_path.name}")
+            
+            result = process_single_jobspec(
+                jobspec_path, watch_folder,
+                worker_id=worker_id, worker_started_at=worker_started_at
+            )
+            results.append(result)
+            
+            worker_state.release_job(jobspec_path.name)
+            _print_result(result)
+    else:
+        # CONCURRENT EXECUTION (Phase 2)
+        # Use ThreadPoolExecutor with bounded workers
         
-        result = process_single_jobspec(jobspec_path, watch_folder)
-        results.append(result)
+        # Track futures to results mapping for ordered collection
+        future_to_index: Dict[Future, int] = {}
+        results = [None] * len(jobspecs)  # Pre-allocate for ordered results
         
-        # Print result
-        if result.status == "SKIPPED":
-            print(f"  → SKIPPED: {result.error_message}")
-        elif result.status == "INVALID":
-            print(f"  → INVALID: {result.error_message}")
-        elif result.status == "COMPLETED":
-            print(f"  → COMPLETED → {result.destination_path}")
-            if result.result_path:
-                print(f"     Result: {result.result_path.name}")
-        else:
-            print(f"  → FAILED → {result.destination_path}")
-            if result.error_message:
-                print(f"     Reason: {result.error_message}")
-            if result.result_path:
-                print(f"     Result: {result.result_path.name}")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # DETERMINISM: Submit jobs in sorted order
+            # Jobs may complete out of order, but we track submission order
+            for i, jobspec_path in enumerate(jobspecs):
+                worker_id = worker_state.acquire_job(jobspec_path.name)
+                # ASSERTION: We always have a worker slot because we limit submission
+                # by waiting for futures when pool is full
+                
+                if worker_id is None:
+                    # Should not happen with proper ThreadPoolExecutor sizing,
+                    # but handle gracefully by waiting for a slot
+                    # This is defensive code that should never execute
+                    print(f"  Warning: All workers busy, waiting...")
+                    # Wait for any future to complete
+                    for future in as_completed(future_to_index.keys()):
+                        idx = future_to_index[future]
+                        try:
+                            results[idx] = future.result()
+                        except Exception as e:
+                            # Should not happen - exceptions are caught in process_single_jobspec
+                            results[idx] = ProcessingResult(
+                                jobspec_path=jobspecs[idx],
+                                status="FAILED",
+                                error_message=f"Worker exception: {e}",
+                            )
+                        worker_state.release_job(jobspecs[idx].name)
+                        break
+                    # Retry acquiring
+                    worker_id = worker_state.acquire_job(jobspec_path.name)
+                
+                worker_info = worker_state.get_worker_info(jobspec_path.name)
+                worker_started_at = worker_info["started_at"] if worker_info else None
+                
+                print(f"[{i+1}/{len(jobspecs)}] Submitting: {jobspec_path.name} (worker {worker_id})")
+                
+                future = executor.submit(
+                    process_single_jobspec,
+                    jobspec_path, watch_folder,
+                    worker_id, worker_started_at
+                )
+                future_to_index[future] = i
+            
+            # Collect all results
+            # DETERMINISM: Results are stored by submission index, not completion order
+            for future in as_completed(future_to_index.keys()):
+                idx = future_to_index[future]
+                try:
+                    result = future.result()
+                    results[idx] = result
+                    _print_result(result, prefix=f"  [{idx+1}/{len(jobspecs)}]")
+                except Exception as e:
+                    # Should not happen - exceptions are caught in process_single_jobspec
+                    results[idx] = ProcessingResult(
+                        jobspec_path=jobspecs[idx],
+                        status="FAILED",
+                        error_message=f"Worker exception: {e}",
+                    )
+                    print(f"  [{idx+1}/{len(jobspecs)}] → FAILED: Worker exception: {e}")
+                
+                worker_state.release_job(jobspecs[idx].name)
+        
+        # ASSERTION: All results should be populated
+        assert all(r is not None for r in results), "All jobs must produce results"
     
     return results
+
+
+def _print_result(result: ProcessingResult, prefix: str = "  ") -> None:
+    """Print a single processing result."""
+    worker_info = f" (worker {result.worker_id})" if result.worker_id else ""
+    
+    if result.status == "SKIPPED":
+        print(f"{prefix}→ SKIPPED{worker_info}: {result.error_message}")
+    elif result.status == "INVALID":
+        print(f"{prefix}→ INVALID{worker_info}: {result.error_message}")
+    elif result.status == "COMPLETED":
+        print(f"{prefix}→ COMPLETED{worker_info} → {result.destination_path}")
+        if result.result_path:
+            print(f"{prefix}   Result: {result.result_path.name}")
+    else:
+        print(f"{prefix}→ FAILED{worker_info} → {result.destination_path}")
+        if result.error_message:
+            print(f"{prefix}   Reason: {result.error_message}")
+        if result.result_path:
+            print(f"{prefix}   Result: {result.result_path.name}")
 
 
 def run_watch_loop(
     watch_folder: Path,
     poll_seconds: float = DEFAULT_POLL_SECONDS,
     run_once: bool = False,
+    max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> int:
     """
     Main watch loop - scan pending/ folder and process JobSpecs.
@@ -539,6 +773,7 @@ def run_watch_loop(
         watch_folder: Root watch directory
         poll_seconds: Seconds between scans (default: 2)
         run_once: If True, do single scan and exit
+        max_workers: Maximum concurrent workers (default: 1)
         
     Returns:
         Exit code (0 = success/no failures, 1 = had failures)
@@ -547,6 +782,7 @@ def run_watch_loop(
     print("=" * 50)
     print(f"Watch folder: {watch_folder}")
     print(f"Poll interval: {poll_seconds}s")
+    print(f"Max workers: {max_workers}")
     print(f"Mode: {'single scan (--once)' if run_once else 'continuous polling'}")
     print()
     
@@ -577,7 +813,7 @@ def run_watch_loop(
             if not run_once:
                 print(f"\n--- Scan #{iteration} at {datetime.now().strftime('%H:%M:%S')} ---")
             
-            results = run_scan(watch_folder)
+            results = run_scan(watch_folder, max_workers=max_workers)
             
             # Summary
             completed = sum(1 for r in results if r.status == "COMPLETED")
@@ -629,17 +865,24 @@ def main() -> int:
 Folder Structure:
   watch/
   ├── pending/         # Drop JobSpec files here
-  ├── running/         # Currently processing (max 1)
+  ├── running/         # Currently processing (max N workers)
   ├── completed/       # Successfully completed (with .result.json)
   └── failed/          # Failed jobs (with .result.json)
 
 Examples:
-  %(prog)s ./watch                    # Continuous polling (every 2s)
+  %(prog)s ./watch                    # Continuous polling (every 2s), 1 worker
   %(prog)s ./watch --once             # Single scan, then exit
   %(prog)s ./watch --poll-seconds 10  # Poll every 10 seconds
+  %(prog)s ./watch --max-workers 4    # Up to 4 concurrent jobs
+
+Concurrency (V2 Phase 2):
+  --max-workers N   Process up to N jobs concurrently (default: 1)
+                    Each job still processes clips sequentially
+                    Jobs are dequeued in deterministic (filename) order
+                    If one job fails, other running jobs complete normally
 
 On startup, any jobs left in running/ are moved to failed/ with reason
-"runner interrupted" - no silent recovery.
+"runner interrupted" - no silent recovery, no retries.
         """,
     )
     
@@ -663,7 +906,22 @@ On startup, any jobs left in running/ are moved to failed/ with reason
         help=f"Seconds between folder scans (default: {DEFAULT_POLL_SECONDS})",
     )
     
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=DEFAULT_MAX_WORKERS,
+        metavar="N",
+        help=f"Maximum concurrent workers (default: {DEFAULT_MAX_WORKERS}). "
+             f"Each worker processes one job at a time. "
+             f"Jobs are dequeued in deterministic order.",
+    )
+    
     args = parser.parse_args()
+    
+    # Validate max-workers
+    if args.max_workers < 1:
+        print("Error: --max-workers must be at least 1", file=sys.stderr)
+        return 1
     
     # Resolve to absolute path
     watch_folder = args.folder.resolve()
@@ -672,6 +930,7 @@ On startup, any jobs left in running/ are moved to failed/ with reason
         watch_folder=watch_folder,
         poll_seconds=args.poll_seconds,
         run_once=args.once,
+        max_workers=args.max_workers,
     )
 
 

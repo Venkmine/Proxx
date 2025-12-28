@@ -1,10 +1,12 @@
 # V2 Watch Folder Runner
 
-Deterministic watch-folder automation for JobSpec JSON files with atomic filesystem semantics.
+Deterministic watch-folder automation for JobSpec JSON files with atomic filesystem semantics and bounded concurrency.
 
 ## Overview
 
-The watch folder runner is a deterministic, sequential processor for V2 JobSpec files. It uses standard OS filesystem primitives (atomic `rename()`) and explicit state transitions for reliable, auditable automation.
+The watch folder runner is a deterministic processor for V2 JobSpec files. It uses standard OS filesystem primitives (atomic `rename()`) and explicit state transitions for reliable, auditable automation.
+
+**V2 Phase 2** adds optional bounded concurrency while preserving all Phase 1 guarantees.
 
 ### Core Principles
 
@@ -13,6 +15,7 @@ The watch folder runner is a deterministic, sequential processor for V2 JobSpec 
 3. **JobSpec is the only source of truth**
 4. **UI must never control execution**
 5. **Output correctness beats convenience**
+6. **Concurrency is opt-in and bounded** (Phase 2)
 
 ---
 
@@ -22,7 +25,7 @@ The watch folder runner is a deterministic, sequential processor for V2 JobSpec 
 watch/
 ├── pending/              # JobSpecs awaiting processing
 │   └── job1.json         # Drop JobSpec files here
-├── running/              # Currently processing (max 1 at a time)
+├── running/              # Currently processing (max N workers)
 │   └── job2.json         # Only present during active execution
 ├── completed/            # Successfully completed JobSpecs
 │   ├── job0.json         # The original JobSpec
@@ -37,7 +40,7 @@ watch/
 | Folder | Purpose |
 |--------|---------|
 | `pending/` | Drop new JobSpec JSON files here for processing |
-| `running/` | Single JobSpec being processed (atomic transition from pending/) |
+| `running/` | JobSpecs being processed (up to N workers active at once) |
 | `completed/` | JobSpecs that executed successfully (with result files) |
 | `failed/` | JobSpecs that failed for any reason (with result files) |
 
@@ -108,7 +111,111 @@ python -m backend.v2.watch_folder_runner ./watch
 
 # Custom poll interval
 python -m backend.v2.watch_folder_runner ./watch --poll-seconds 10
+
+# Concurrent processing (up to 4 jobs at once)
+python -m backend.v2.watch_folder_runner ./watch --max-workers 4
 ```
+
+---
+
+## Concurrency Model (V2 Phase 2)
+
+Phase 2 introduces **bounded, deterministic concurrency** as an opt-in feature.
+
+### Worker Slots
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Watch Folder Runner                          │
+│                                                                 │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│   │ Worker 1 │  │ Worker 2 │  │ Worker 3 │  │ Worker 4 │       │
+│   │  (busy)  │  │  (busy)  │  │  (idle)  │  │  (idle)  │       │
+│   └────┬─────┘  └────┬─────┘  └──────────┘  └──────────┘       │
+│        │              │                                         │
+│        ▼              ▼                                         │
+│   ┌─────────┐   ┌─────────┐                                    │
+│   │ job_a   │   │ job_b   │   pending: [job_c, job_d, ...]     │
+│   │ running │   │ running │                                    │
+│   └─────────┘   └─────────┘                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+| Aspect | Behavior |
+|--------|----------|
+| **Worker count** | Fixed at startup via `--max-workers N` (default: 1) |
+| **Job ordering** | Jobs dequeued in sorted filename order (deterministic) |
+| **Clip execution** | Each job still processes clips sequentially |
+| **Failure isolation** | One job failing does NOT stop other running jobs |
+| **No dynamic scaling** | Worker count never changes during execution |
+
+### Determinism Guarantees
+
+The concurrency model preserves all Phase 1 determinism guarantees:
+
+1. **Ordered dequeuing**: Jobs are picked from `pending/` in sorted filename order
+2. **No skips**: Every pending job is eventually processed (if runner continues)
+3. **No duplicates**: Each job is processed exactly once
+4. **Preserved semantics**: Clips within a job are still sequential and fail-fast
+5. **Auditable metadata**: Result JSON includes `worker_id` and `worker_started_at`
+
+### Failure Semantics
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Scenario: job_a fails while job_b is running                  │
+│                                                                 │
+│  job_a → FAILS → moved to failed/ with result                  │
+│  job_b → CONTINUES → completes normally → moved to completed/  │
+│  job_c → WAITS → processed when worker slot becomes available  │
+│                                                                 │
+│  Runner does NOT crash. Summary shows accurate counts.         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### CLI Usage
+
+```bash
+# Sequential (Phase 1 behavior, default)
+python -m backend.v2.watch_folder_runner ./watch --max-workers 1
+
+# 2 concurrent workers
+python -m backend.v2.watch_folder_runner ./watch --max-workers 2
+
+# 4 concurrent workers with slower polling
+python -m backend.v2.watch_folder_runner ./watch --max-workers 4 --poll-seconds 10
+```
+
+### Result Metadata
+
+With concurrency enabled, result JSONs include worker tracking:
+
+```json
+{
+  "job_id": "abc12345",
+  "final_status": "COMPLETED",
+  "clips": [...],
+  "_metadata": {
+    "jobspec_path": "/path/to/watch/running/job.json",
+    "result_written_at": "2025-12-28T12:00:05+00:00",
+    "worker_id": 2,
+    "worker_started_at": "2025-12-28T12:00:00+00:00"
+  }
+}
+```
+
+### Concurrency Non-Goals
+
+These are **explicitly NOT implemented** in Phase 2:
+
+- ❌ No dynamic scaling (worker count is fixed)
+- ❌ No priority queuing (sorted filename order only)
+- ❌ No work stealing between workers
+- ❌ No retry on failure
+- ❌ No concurrent clip processing within a job
+- ❌ No cluster distribution
 
 ---
 
@@ -146,9 +253,11 @@ This handles the case where the runner was killed mid-execution. **There is no a
 
 | Rule | Description |
 |------|-------------|
-| **Synchronous only** | One job at a time, no background processing |
-| **Sequential only** | Jobs processed in sorted filename order |
-| **Fail-fast** | Stop on first clip error within a job |
+| **Bounded concurrency** | Up to N jobs run at once (default: 1) |
+| **Deterministic ordering** | Jobs processed in sorted filename order |
+| **Sequential clips** | Clips within a job are still sequential |
+| **Fail-fast (per job)** | Stop on first clip error within a job |
+| **Failure isolation** | Other running jobs continue on failure |
 | **No retries** | Failed jobs stay in failed/ |
 | **Preserve artifacts** | Partial outputs are kept on failure |
 
@@ -233,7 +342,7 @@ Each processed JobSpec produces a `.result.json` alongside it:
 ## CLI Reference
 
 ```
-usage: watch_folder_runner.py [-h] [--once] [--poll-seconds N] folder
+usage: watch_folder_runner.py [-h] [--once] [--poll-seconds N] [--max-workers N] folder
 
 V2 Watch Folder Runner - Deterministic JobSpec automation
 
@@ -244,12 +353,13 @@ options:
   -h, --help         show this help message and exit
   --once             Perform a single scan and exit (don't poll)
   --poll-seconds N   Seconds between folder scans (default: 2)
+  --max-workers N    Maximum concurrent workers (default: 1)
 ```
 
 ### Examples
 
 ```bash
-# Continuous watch with default 2s polling
+# Continuous watch with default 2s polling (sequential)
 python -m backend.v2.watch_folder_runner ./watch
 
 # Single scan for cron jobs or CI
@@ -257,6 +367,12 @@ python -m backend.v2.watch_folder_runner ./watch --once
 
 # Slower polling for production
 python -m backend.v2.watch_folder_runner ./watch --poll-seconds 30
+
+# Concurrent processing with 4 workers
+python -m backend.v2.watch_folder_runner ./watch --max-workers 4
+
+# Single concurrent scan
+python -m backend.v2.watch_folder_runner ./watch --once --max-workers 4
 ```
 
 ---
@@ -332,7 +448,7 @@ exec python -m backend.v2.watch_folder_runner /data/watch --poll-seconds 5
 
 ## Explicit Non-Goals
 
-These are **intentionally not implemented** in V2 Phase 1:
+These are **intentionally not implemented** in V2 Phase 2:
 
 - ❌ No UI controls
 - ❌ No progress bars
@@ -340,9 +456,10 @@ These are **intentionally not implemented** in V2 Phase 1:
 - ❌ No AI readiness detection
 - ❌ No cloud services
 - ❌ No proprietary SDKs
-- ❌ No FSEvents/inotify (polling only for Phase 1)
-- ❌ No concurrent execution
+- ❌ No FSEvents/inotify (polling only for now)
 - ❌ No retry logic
+- ❌ No dynamic worker scaling
+- ❌ No concurrent clips within a job
 
 ---
 
@@ -376,9 +493,9 @@ python -m backend.v2.watch_folder_runner ./watch --once
 
 ---
 
-## V2 Phase 1 Context
+## V2 Phase 2 Context
 
-This runner is part of V2 Phase 1 (Reliable Proxy Engine). It provides:
+This runner is part of V2 Phase 2 (Bounded Deterministic Concurrency). It provides:
 
 - ✅ Deterministic watch folder automation
 - ✅ Atomic filesystem state transitions
@@ -386,10 +503,12 @@ This runner is part of V2 Phase 1 (Reliable Proxy Engine). It provides:
 - ✅ Complete audit trail via result files
 - ✅ Foundation for future service architecture
 - ✅ CI/CD integration capability
+- ✅ Bounded concurrent execution (opt-in)
+- ✅ Worker metadata tracking
 
 Future phases may add:
 
 - Real-time filesystem watching (FSEvents/inotify)
-- Concurrent execution
 - Priority queuing
 - Remote job submission
+- Concurrent clip processing within jobs
