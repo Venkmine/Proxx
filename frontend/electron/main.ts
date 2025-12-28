@@ -7,35 +7,71 @@ import os from 'node:os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// CRITICAL: Logger must never log its own failures.
+// Recursive logging can exhaust disk in minutes.
+
 // Logging to ~/Library/Logs/Awaire Proxy/
 const LOG_DIR = path.join(os.homedir(), 'Library', 'Logs', 'Awaire Proxy');
+const MAX_LOG_SIZE = 50 * 1024 * 1024; // 50MB
+
+// Circuit breaker flags
+let fileLoggingDisabled = false;
+const loggedErrors = new Set<string>();
 
 function ensureLogDir() {
+  if (fileLoggingDisabled) return;
   try {
     if (!fs.existsSync(LOG_DIR)) {
       fs.mkdirSync(LOG_DIR, { recursive: true });
     }
   } catch (err) {
-    console.error('Failed to create log directory:', err);
+    // NEVER log in failure handler - disables file logging permanently
+    fileLoggingDisabled = true;
+    process.stderr.write(`[FATAL] Cannot create log dir, file logging disabled: ${err}\n`);
   }
 }
 
 function writeLog(level: 'INFO' | 'ERROR' | 'WARN', message: string) {
+  // Console output (safe - no recursion)
+  if (level === 'ERROR') {
+    console.error(message);
+  } else {
+    console.log(message);
+  }
+
+  // File logging with circuit breaker
+  if (fileLoggingDisabled) return;
+
   ensureLogDir();
+  if (fileLoggingDisabled) return; // Check again after ensureLogDir
+
   const timestamp = new Date().toISOString();
   const logLine = `[${timestamp}] [${level}] ${message}\n`;
   const logFile = path.join(LOG_DIR, `awaire-proxy-${new Date().toISOString().slice(0, 10)}.log`);
   
   try {
+    // Check file size before writing
+    if (fs.existsSync(logFile)) {
+      const stats = fs.statSync(logFile);
+      if (stats.size > MAX_LOG_SIZE) {
+        fileLoggingDisabled = true;
+        process.stderr.write(`[FATAL] Log file exceeded ${MAX_LOG_SIZE} bytes, file logging disabled\n`);
+        return;
+      }
+    }
+
     fs.appendFileSync(logFile, logLine);
-  } catch (err) {
-    console.error('Failed to write log:', err);
-  }
-  
-  if (level === 'ERROR') {
-    console.error(message);
-  } else {
-    console.log(message);
+  } catch (err: any) {
+    // Circuit breaker: disable file logging on ANY write error
+    fileLoggingDisabled = true;
+    
+    // Rate limiting: only log unique errors ONCE to stderr
+    const errorKey = `${err.code}:${err.message}`;
+    if (!loggedErrors.has(errorKey)) {
+      loggedErrors.add(errorKey);
+      process.stderr.write(`[FATAL] File logging disabled due to error: ${err.code} ${err.message}\n`);
+    }
+    // NEVER call console.error or writeLog here - prevents recursion
   }
 }
 
@@ -137,11 +173,37 @@ function getErrorHtml(errorTitle: string, errorDetails: string): string {
 
 // BOOT DIAGNOSTICS: Catch uncaught errors in main process
 process.on('uncaughtException', (error) => {
-  writeLog('ERROR', `UNCAUGHT EXCEPTION IN MAIN PROCESS: ${error.stack || error.message}`);
+  const errorKey = `uncaught:${error.message}`;
+  if (!loggedErrors.has(errorKey)) {
+    loggedErrors.add(errorKey);
+    // Try to log ONCE, but prevent recursion if logging itself fails
+    const safeWrite = () => {
+      try {
+        writeLog('ERROR', `UNCAUGHT EXCEPTION IN MAIN PROCESS: ${error.stack || error.message}`);
+      } catch {
+        // Logging failed - write to stderr only, do NOT recurse
+        process.stderr.write(`[UNCAUGHT] ${error.stack || error.message}\n`);
+      }
+    };
+    safeWrite();
+  }
 });
 
 process.on('unhandledRejection', (reason) => {
-  writeLog('ERROR', `UNHANDLED REJECTION IN MAIN PROCESS: ${reason}`);
+  const errorKey = `rejection:${reason}`;
+  if (!loggedErrors.has(errorKey)) {
+    loggedErrors.add(errorKey);
+    // Try to log ONCE, but prevent recursion if logging itself fails
+    const safeWrite = () => {
+      try {
+        writeLog('ERROR', `UNHANDLED REJECTION IN MAIN PROCESS: ${reason}`);
+      } catch {
+        // Logging failed - write to stderr only, do NOT recurse
+        process.stderr.write(`[REJECTION] ${reason}\n`);
+      }
+    };
+    safeWrite();
+  }
 });
 
 async function loadDevWithRetries(win: BrowserWindow, url: string, retries = 12, delayMs = 800) {
