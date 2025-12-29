@@ -739,6 +739,10 @@ class ResolveEngine:
                         output_size_bytes=output_path.stat().st_size,
                         status="COMPLETED",
                         failure_reason=None,
+                        validation_stage=None,
+                        engine_used="resolve",
+                        proxy_profile_used=job_spec.proxy_profile,
+                        resolve_preset_used=job_spec.resolve_preset,
                         started_at=clip_started_at,
                         completed_at=datetime.now(timezone.utc),
                     ))
@@ -754,6 +758,10 @@ class ResolveEngine:
                         output_size_bytes=None,
                         status="FAILED",
                         failure_reason=str(e),
+                        validation_stage="execution",
+                        engine_used="resolve",
+                        proxy_profile_used=job_spec.proxy_profile,
+                        resolve_preset_used=job_spec.resolve_preset,
                         started_at=clip_started_at,
                         completed_at=datetime.now(timezone.utc),
                     ))

@@ -566,6 +566,8 @@ def process_single_jobspec(
             job_id=job_spec.job_id if job_spec else "unknown",
             clips=[],
             final_status="FAILED",
+            validation_error=failure_reason,
+            validation_stage="pre-job",
             jobspec_version=JOBSPEC_VERSION,
             engine_used=None,  # Engine never determined
             started_at=datetime.now(timezone.utc),

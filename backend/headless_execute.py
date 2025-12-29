@@ -557,7 +557,13 @@ def _build_ffmpeg_command(
 # Main Execution Function
 # -----------------------------------------------------------------------------
 
-def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
+def execute_job_spec(
+    job_spec: JobSpec, 
+    index: int = 0,
+    engine_used: Optional[str] = None,
+    proxy_profile_used: Optional[str] = None,
+    resolve_preset_used: Optional[str] = None,
+) -> ClipExecutionResult:
     """
     Execute a single clip from a JobSpec without UI involvement.
     
@@ -609,6 +615,10 @@ def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
             output_size_bytes=None,
             status="FAILED",
             failure_reason="FFmpeg not found. Install FFmpeg to use headless execution.",
+            validation_stage="validation",
+            engine_used=engine_used or "ffmpeg",
+            proxy_profile_used=proxy_profile_used or job_spec.proxy_profile,
+            resolve_preset_used=resolve_preset_used,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )
@@ -669,6 +679,10 @@ def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
         output_size_bytes=output_size,
         status=status,
         failure_reason=failure_reason,
+        validation_stage="execution" if status == "FAILED" else None,
+        engine_used=engine_used or "ffmpeg",
+        proxy_profile_used=proxy_profile_used or job_spec.proxy_profile,
+        resolve_preset_used=resolve_preset_used,
         started_at=started_at,
         completed_at=completed_at,
     )
@@ -807,7 +821,13 @@ def _execute_with_ffmpeg(job_spec: JobSpec, started_at: datetime) -> JobExecutio
     
     for index in range(len(job_spec.sources)):
         # Execute this clip with FFmpeg
-        clip_result = execute_job_spec(job_spec, index=index)
+        clip_result = execute_job_spec(
+            job_spec, 
+            index=index,
+            engine_used="ffmpeg",
+            proxy_profile_used=job_spec.proxy_profile,
+            resolve_preset_used=None,  # FFmpeg jobs don't use Resolve presets
+        )
         clips.append(clip_result)
         
         # FAIL-FAST: Stop on first failure
@@ -850,6 +870,7 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             clips=[],
             final_status="FAILED",
             validation_error=f"Resolve engine required but not available: {_RESOLVE_ENGINE_ERROR}",
+            validation_stage="validation",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
             started_at=started_at,
@@ -868,6 +889,7 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             clips=[],
             final_status="FAILED",
             validation_error=f"Resolve scripting API not available: {e}",
+            validation_stage="validation",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
             started_at=started_at,
@@ -880,6 +902,7 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             clips=[],
             final_status="FAILED",
             validation_error=f"Resolve preset error: {e}",
+            validation_stage="validation",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
             resolve_preset_used=e.missing_preset,
@@ -892,6 +915,7 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             clips=[],
             final_status="FAILED",
             validation_error=f"Resolve engine error: {e}",
+            validation_stage="execution",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
             started_at=started_at,

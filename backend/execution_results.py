@@ -61,6 +61,18 @@ class ClipExecutionResult:
     failure_reason: Optional[str] = None
     """Human-readable failure reason (required if status is FAILED)."""
     
+    validation_stage: Optional[str] = None
+    """Validation stage where failure occurred: 'pre-job' | 'validation' | 'execution' | None if no failure."""
+    
+    engine_used: Optional[str] = None
+    """Execution engine used for this clip: 'ffmpeg' or 'resolve'. None if execution never started."""
+    
+    proxy_profile_used: Optional[str] = None
+    """Proxy profile ID that was used for this clip. None if execution never started."""
+    
+    resolve_preset_used: Optional[str] = None
+    """Resolve preset name used for rendering. Only set when engine_used='resolve', None otherwise."""
+    
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When clip execution started (UTC)."""
     
@@ -85,6 +97,10 @@ class ClipExecutionResult:
             "output_size_bytes": self.output_size_bytes,
             "status": self.status,
             "failure_reason": self.failure_reason,
+            "validation_stage": self.validation_stage,
+            "engine_used": self.engine_used,
+            "proxy_profile_used": self.proxy_profile_used,
+            "resolve_preset_used": self.resolve_preset_used,
             "started_at": self.started_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
@@ -142,6 +158,9 @@ class JobExecutionResult:
     validation_error: Optional[str] = None
     """Validation error message if job failed before execution. Enables debugging."""
     
+    validation_stage: Optional[str] = None
+    """Stage where validation failed: \'pre-job\' | \'validation\' | \'execution\' | None if no validation failure."""
+    
     engine_used: Optional[str] = None
     """Execution engine used for this job ('ffmpeg' or 'resolve'). Logged for auditability."""
     
@@ -189,6 +208,7 @@ class JobExecutionResult:
         result["_metadata"] = {
             "jobspec_version": self.jobspec_version,
             "validation_error": self.validation_error,
+            "validation_stage": self.validation_stage,
             "engine_used": self.engine_used,
             "resolve_preset_used": self.resolve_preset_used,
             "proxy_profile_used": self.proxy_profile_used,

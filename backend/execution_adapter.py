@@ -35,6 +35,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
 from execution_results import ClipExecutionResult, JobExecutionResult
 
@@ -138,6 +142,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
         >>>     print(f"Job failed: {result.validation_error}")
     """
     started_at = datetime.now(timezone.utc)
+    logger.info(f"Starting job execution: job_id={jobspec.job_id}, sources={len(jobspec.sources)}")
     
     # STEP 1: Validate JobSpec
     # -------------------------
@@ -152,6 +157,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
             clips=[],
             final_status="FAILED",
             validation_error=f"JobSpec validation failed: {e}",
+            validation_stage="pre-job",
             jobspec_version=JOBSPEC_VERSION,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
@@ -163,6 +169,9 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # NO user override, NO heuristics, NO fallback.
     engine_name, engine_error = _determine_job_engine(jobspec)
     
+    if engine_name:
+        logger.info(f"Engine selected: job_id={jobspec.job_id}, engine={engine_name}")
+    
     if engine_error:
         # Engine routing failed (mixed job or unsupported format)
         # This is a validation-level failure: don't execute
@@ -171,6 +180,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
             clips=[],
             final_status="FAILED",
             validation_error=f"Engine routing failed: {engine_error}",
+            validation_stage="pre-job",
             jobspec_version=JOBSPEC_VERSION,
             engine_used=None,  # No engine selected
             started_at=started_at,
@@ -191,6 +201,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
             clips=[],
             final_status="FAILED",
             validation_error=f"Proxy profile validation failed: {e}",
+            validation_stage="validation",
             jobspec_version=JOBSPEC_VERSION,
             engine_used=engine_name,
             started_at=started_at,
@@ -210,6 +221,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
             clips=[],
             final_status="FAILED",
             validation_error=f"Resolve preset validation failed: {e}",
+            validation_stage="validation",
             jobspec_version=JOBSPEC_VERSION,
             engine_used=engine_name,
             started_at=started_at,
@@ -219,6 +231,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # STEP 5: Execute with Selected Engine
     # -------------------------------------
     # Dispatch to FFmpeg or Resolve engine based on routing decision.
+    logger.info(f"Starting execution: job_id={jobspec.job_id}, engine={engine_name}, proxy_profile={jobspec.proxy_profile}")
     # All execution failures are captured in JobExecutionResult.
     # NO exceptions escape this layer.
     if engine_name == "resolve":
@@ -230,6 +243,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # STEP 6: Populate Metadata
     # -------------------------
     # Record engine selection and proxy profile for auditability.
+    logger.info(f"Execution completed: job_id={jobspec.job_id}, status={result.final_status}, clips={len(result.clips)}")
     result.engine_used = engine_name
     result.proxy_profile_used = jobspec.proxy_profile
     
