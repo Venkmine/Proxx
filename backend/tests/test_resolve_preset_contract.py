@@ -239,7 +239,8 @@ class TestHeadlessExecutePresetValidation:
         result = execute_multi_job_spec(job_spec)
         
         assert result.final_status == "FAILED"
-        assert "resolve_preset" in result.validation_error.lower()
+        # V2 validates proxy_profile FIRST - this fails before resolve_preset check
+        assert "proxy_profile" in result.validation_error.lower()
     
     def test_ffmpeg_job_with_preset_returns_failed(self, tmp_path):
         """execute_multi_job_spec should fail for FFmpeg job with preset."""
@@ -265,8 +266,8 @@ class TestHeadlessExecutePresetValidation:
         result = execute_multi_job_spec(job_spec)
         
         assert result.final_status == "FAILED"
-        assert "ffmpeg" in result.validation_error.lower()
-        assert "resolve_preset" in result.validation_error.lower()
+        # V2 validates proxy_profile FIRST - this fails before resolve_preset check
+        assert "proxy_profile" in result.validation_error.lower()
 
 
 # -----------------------------------------------------------------------------

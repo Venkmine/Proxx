@@ -359,27 +359,24 @@ class IngestionService:
         """
         Validate output directory is suitable for job creation.
         
-        Note: We don't require the directory to exist at job creation time.
-        The directory will be created when the job executes. This allows
-        users to queue jobs with output directories that don't exist yet.
-        
-        At creation time, we only validate:
-        - Path is absolute
-        - Path is syntactically valid
-        
-        Actual directory creation and writability checks happen at execution time.
+        Strict validation: output directory MUST exist at job creation time.
+        This prevents jobs from being created with invalid output paths.
         
         Raises:
-            IngestionError: If output directory path is invalid
+            IngestionError: If output directory is invalid or does not exist
         """
         output_path = Path(output_dir)
         
-        # Only validate path syntax - don't create or check existence
+        # Validate path syntax
         if not output_path.is_absolute():
             raise IngestionError(f"Output directory must be absolute path: {output_dir}")
         
-        # If the directory exists, verify it's actually a directory
-        if output_path.exists() and not output_path.is_dir():
+        # Directory must exist
+        if not output_path.exists():
+            raise IngestionError(f"Output directory does not exist: {output_dir}")
+        
+        # Must be a directory, not a file
+        if not output_path.is_dir():
             raise IngestionError(f"Output path is not a directory: {output_dir}")
     
     def _validate_codec_container(self, deliver_settings: "DeliverSettings", engine: str) -> None:
