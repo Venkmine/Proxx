@@ -84,29 +84,24 @@ if str(_backend_dir) not in sys.path:
 try:
     from job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
     from execution_results import JobExecutionResult, ClipExecutionResult
-    from headless_execute import execute_multi_job_spec, _determine_job_engine
+    from execution_adapter import execute_jobspec
 except ImportError:
     # Try alternative import paths
     try:
         from backend.job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
         from backend.execution_results import JobExecutionResult, ClipExecutionResult
-        from backend.headless_execute import execute_multi_job_spec, _determine_job_engine
+        from backend.execution_adapter import execute_jobspec
     except ImportError as e:
         print(f"Failed to import required modules: {e}", file=sys.stderr)
         print("Make sure you're running from the project root or backend directory.", file=sys.stderr)
         sys.exit(1)
 
-# Import source capabilities for mixed job detection
-try:
-    from v2.source_capabilities import ExecutionEngine, get_execution_engine
-    _SOURCE_CAPABILITIES_AVAILABLE = True
-except ImportError:
-    try:
-        from backend.v2.source_capabilities import ExecutionEngine, get_execution_engine
-        _SOURCE_CAPABILITIES_AVAILABLE = True
-    except ImportError:
-        _SOURCE_CAPABILITIES_AVAILABLE = False
-        ExecutionEngine = None  # type: ignore
+# SLICE 3 ASSERTION: NO engine imports
+# All engine routing and execution logic lives in execution_adapter.py
+# This module is ONLY responsible for:
+# - Filesystem state transitions
+# - Loading JobSpec JSON
+# - Persisting ExecutionResult JSON
 
 
 # -----------------------------------------------------------------------------
@@ -533,46 +528,52 @@ def process_single_jobspec(
         if source_error:
             failure_reason = source_error
     
-    # Step 3.5: Validate engine routing (no mixed jobs)
-    # Engine selection is automatic via capability routing
-    engine_name: Optional[str] = None
-    if job_spec and not failure_reason:
-        engine_name, engine_error = _determine_job_engine(job_spec)
-        if engine_error:
-            failure_reason = f"Engine routing failed: {engine_error}"
-    
-    # Step 4: Execute the job (engine is automatically selected)
+    # Step 3.5: Execute via execution_adapter (SLICE 3 integration)
+    # - NO direct engine imports
+    # - NO engine routing logic here
+    # - ONLY dispatch and result persistence
     if job_spec and not failure_reason:
         try:
-            job_result = execute_multi_job_spec(job_spec)
+            # SLICE 3: ALL execution flows through execute_jobspec()
+            # The adapter handles:
+            # - Validation
+            # - Engine routing
+            # - Execution
+            # - Result construction
+            job_result = execute_jobspec(job_spec)
+            
+            # Extract failure information if execution failed
             if job_result.final_status != "COMPLETED":
-                # Find failure reason from clips
-                for clip in job_result.clips:
-                    if clip.status == "FAILED" and clip.failure_reason:
-                        failure_reason = clip.failure_reason
-                        break
-                if not failure_reason:
-                    failure_reason = "Execution failed"
-        except JobSpecValidationError as e:
-            failure_reason = f"Validation failed: {e}"
+                # Check validation_error first (pre-execution failures)
+                if job_result.validation_error:
+                    failure_reason = job_result.validation_error
+                else:
+                    # Find failure reason from clips (execution failures)
+                    for clip in job_result.clips:
+                        if clip.status == "FAILED" and clip.failure_reason:
+                            failure_reason = clip.failure_reason
+                            break
+                    if not failure_reason:
+                        failure_reason = "Execution failed"
         except Exception as e:
+            # Unexpected error: execution_adapter should never raise
+            # but handle defensively
             failure_reason = f"Execution error: {e}"
     
-    # Create result if we don't have one
+    # Create result if we don't have one (pre-execution failures)
     if job_result is None:
         job_result = JobExecutionResult(
             job_id=job_spec.job_id if job_spec else "unknown",
             clips=[],
             final_status="FAILED",
-            jobspec_version=JOBSPEC_VERSION,  # Include version for postmortem
-            engine_used=engine_name,  # Include engine for auditability
+            jobspec_version=JOBSPEC_VERSION,
+            engine_used=None,  # Engine never determined
             started_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
         )
     
-    # Ensure engine_used is set on the result (may already be set by execute_multi_job_spec)
-    if job_result.engine_used is None and engine_name:
-        job_result.engine_used = engine_name
+    # engine_used is now always set by execute_jobspec()
+    # No need to override here
     
     # Determine final status and destination
     if job_result.final_status == "COMPLETED" and not failure_reason:
