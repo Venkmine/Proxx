@@ -210,7 +210,9 @@ _PROFILES: Dict[str, ProxyProfile] = {
 
 
 # Make profiles dictionary immutable via read-only interface
-PROXY_PROFILES = _PROFILES
+# MappingProxyType provides a read-only view that raises TypeError on mutation
+from types import MappingProxyType
+PROXY_PROFILES: MappingProxyType[str, ProxyProfile] = MappingProxyType(_PROFILES)
 
 
 # =============================================================================
