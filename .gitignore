@@ -89,4 +89,66 @@ system_health/
 motoko_sandbox/
 motoko_dummy_repo/
 reelscan_env/
+
+# =============================================================================
+# REAL MEDIA FILES (NEVER COMMIT)
+# =============================================================================
+# Block ALL production media formats to prevent accidental large file commits.
+# Only synthetic test fixtures (generated at runtime) are allowed in the repo.
+#
+# WHY: Real media files are:
+#   - Too large for Git (multi-GB files destroy clone/fetch performance)
+#   - Contain proprietary content (legal/licensing risk)
+#   - Unnecessary (tests use synthetic fixtures)
+#
+# ENFORCEMENT:
+#   - This .gitignore blocks common media extensions
+#   - Pre-commit hook validates file sizes
+#   - QA documentation defines fixture policy
+#
+# If you need test media:
+#   - Use synthetic fixtures in qa/fixtures/ (generated at runtime, also ignored)
+#   - Reference external media via symlinks or environment variables
+#   - Document external media requirements in test docstrings
+
+# Video container formats (uncompressed/mezzanine)
 *.mxf
+*.ari
+*.arri
+*.r3d
+*.braw
+*.dng
+*.dpx
+*.exr
+
+# Video container formats (delivery/edit)
+*.mov
+*.mp4
+*.avi
+*.mkv
+*.webm
+*.m4v
+*.mpg
+*.mpeg
+*.ts
+*.m2ts
+*.mts
+
+# Audio formats
+*.wav
+*.aif
+*.aiff
+*.flac
+*.m4a
+*.aac
+*.mp3
+*.ogg
+
+# RAW camera formats
+*.R3D
+*.BRAW
+*.ARI
+*.ARRI
+
+# Exceptions (synthetic fixtures in specific locations - currently ALL ignored)
+# None - all fixtures are generated at runtime and excluded via qa/fixtures/*

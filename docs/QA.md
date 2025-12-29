@@ -161,6 +161,86 @@ This is not pessimism. It is professional paranoia.
 
 ---
 
+## 10. Test Media Policy (Repo Safety)
+
+### Rule
+
+**Real media files MUST NEVER be committed to the repository.**
+
+### Why
+
+Real production media files:
+- Are too large for Git (multi-GB files destroy clone/fetch performance)
+- Contain proprietary content (legal/licensing risk)
+- Are unnecessary (tests use synthetic fixtures)
+
+### Enforcement
+
+The repository enforces this rule at three layers:
+
+1. **`.gitignore` blocks all common media extensions**
+   - Video: `.mxf`, `.mov`, `.mp4`, `.r3d`, `.braw`, `.ari`, etc.
+   - Audio: `.wav`, `.aif`, `.flac`, `.mp3`, etc.
+   - RAW: `.dng`, `.dpx`, `.exr`, etc.
+
+2. **Pre-commit hook validates file sizes**
+   - Blocks any file >10MB from being staged
+   - Forces explicit review of large files
+
+3. **QA fixtures are generated at runtime**
+   - `qa/fixtures/` contains ONLY generated synthetic media
+   - Fixtures are excluded via `.gitignore`
+   - Tests generate fixtures on-demand using FFmpeg
+
+### If You Need Test Media
+
+**Option 1: Synthetic Fixtures (Preferred)**
+- Use `qa/fixtures/generate_fixture.py` to create test media
+- Fixtures are generated at test runtime
+- No manual media management required
+
+**Option 2: External Media**
+- Store real media outside the repo
+- Reference via symlinks (symlinks ARE committed, targets are not)
+- Document external media requirements in test docstrings
+- Use environment variables for media paths
+
+**Option 3: Small Samples**
+- If absolutely necessary, commit tiny samples (<1MB)
+- MUST be explicitly reviewed and approved
+- MUST be synthetic or cleared for licensing
+
+### What to Do If a Large File Was Committed
+
+If a large media file was accidentally committed:
+
+1. **Remove from Git history immediately:**
+   ```bash
+   git rm --cached path/to/large_file.mxf
+   git commit --amend
+   git push --force-with-lease
+   ```
+
+2. **Verify `.gitignore` blocks the extension**
+
+3. **If already pushed to remote:**
+   - Notify team before force-pushing
+   - Consider `git filter-repo` for deep history cleanup
+
+### What Counts as "Media"
+
+Blocked formats:
+- **Video:** MXF, MOV, MP4, AVI, MKV, R3D, BRAW, ARI, ARRI, DNG, DPX, EXR
+- **Audio:** WAV, AIF, AIFF, FLAC, M4A, AAC, MP3, OGG
+- **Image sequences:** DPX, EXR, DNG (bulk image sequences)
+
+Allowed formats:
+- **Tiny samples:** <1MB, synthetic, approved
+- **Metadata:** JSON, CSV, TXT, XML (media descriptors, not media itself)
+- **Code:** Python, JS, Markdown, YAML, etc.
+
+---
+
 **End of document**
 
 ---
