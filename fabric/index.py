@@ -2,17 +2,19 @@
 Fabric Indexing - Simple in-memory indexes for ingested jobs.
 
 Provides fast lookups by common query patterns:
-- By fingerprint (future)
+- By fingerprint
 - By canonical proxy profile
 - By status
 - By engine used
 
 Rules:
 ------
-- No caching
-- No optimization beyond basic indexing
+- Indexes rebuilt from persistent storage on startup
+- No parallel sources of truth
 - Correctness over performance
-- Indexes rebuilt on every query (Phase 1 simplicity)
+- Deterministic rebuild
+
+Phase 2: Indexes are memory-only views of persisted data.
 
 FORBIDDEN:
 - Derived indexes (e.g., "jobs that might fail again")
@@ -22,23 +24,32 @@ FORBIDDEN:
 """
 
 from collections import defaultdict
-from typing import Dict, List, Set
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 from fabric.models import IngestedJob
+from fabric.persistence import FabricPersistence
 
 
 class FabricIndex:
     """
     Simple in-memory index of ingested jobs.
     
-    Phase 1: Stores all jobs in memory.
-    Future phases may add persistent storage.
+    Phase 2: Indexes are rebuilt from persistent storage on startup.
+    Memory-only: Fast queries, deterministic rebuilds.
     
     This is NOT optimized. It is CORRECT.
     """
     
-    def __init__(self):
-        """Initialize empty index."""
+    def __init__(self, persistence: Optional[FabricPersistence] = None):
+        """
+        Initialize index.
+        
+        Args:
+            persistence: Optional persistence layer for storage-backed index.
+                         If None, index operates in memory-only mode (Phase 1).
+        """
+        self._persistence = persistence
         self._jobs: Dict[str, IngestedJob] = {}
         
         # Simple indexes for common queries
@@ -46,6 +57,28 @@ class FabricIndex:
         self._by_profile: Dict[str, Set[str]] = defaultdict(set)
         self._by_status: Dict[str, Set[str]] = defaultdict(set)
         self._by_engine: Dict[str, Set[str]] = defaultdict(set)
+        
+        # Rebuild from persistence if available
+        if self._persistence and self._persistence.is_open():
+            self._rebuild_from_storage()
+    
+    def _rebuild_from_storage(self) -> None:
+        """
+        Rebuild in-memory indexes from persistent storage.
+        
+        Deterministic: Same persisted data = same indexes.
+        Called on startup to restore state.
+        """
+        if not self._persistence:
+            return
+        
+        # Clear existing indexes
+        self.clear()
+        
+        # Load all jobs and rebuild indexes
+        jobs = self._persistence.load_all_jobs()
+        for job in jobs:
+            self._add_to_indexes(job)
     
     def add_job(self, job: IngestedJob) -> None:
         """
@@ -56,12 +89,25 @@ class FabricIndex:
         
         Idempotent: adding same job_id twice replaces the first entry.
         This supports re-ingestion without duplication.
+        
+        Phase 2: Also persists job to storage.
         """
         job_id = job.job_id
         
         # Remove old indexes if re-ingesting
         if job_id in self._jobs:
             self._remove_from_indexes(job_id)
+        
+        # Persist to storage first (if available)
+        if self._persistence:
+            self._persistence.persist_ingested_job(job)
+        
+        # Then update in-memory indexes
+        self._add_to_indexes(job)
+    
+    def _add_to_indexes(self, job: IngestedJob) -> None:
+        """Add job to in-memory indexes."""
+        job_id = job.job_id
         
         # Store job
         self._jobs[job_id] = job

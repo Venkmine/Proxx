@@ -17,6 +17,9 @@ Example queries Fabric CANNOT answer:
 - "What should we do next?"
 
 Fabric provides facts. Humans decide.
+
+Phase 2: Queries work identically with persistent storage.
+Query semantics unchanged from Phase 1.
 """
 
 from typing import List, Optional
@@ -31,6 +34,9 @@ class FabricQueries:
     
     All methods return facts as they were observed.
     No interpretation, recommendation, or prediction.
+    
+    Phase 2: Queries backed by persistent storage.
+    Semantics identical to Phase 1.
     """
     
     def __init__(self, index: FabricIndex):
