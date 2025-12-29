@@ -54,6 +54,7 @@ def test_single_clip_execution():
             container="mp4",
             resolution="quarter",
             naming_template="{source_name}_v2test_{index}",
+            proxy_profile="proxy_h264_quarter",  # Required for V2 Phase 1
         )
         
         result = execute_multi_job_spec(job_spec)
