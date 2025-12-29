@@ -108,14 +108,19 @@ def run_unit_tests() -> Tuple[bool, str]:
     """
     print_subheader("Running V2 Unit Tests")
     
-    test_file = QA_DIR / "test_v2_phase1_regression.py"
+    # V2 IMPLEMENTATION SLICE 7: Include Phase-1 lock enforcement tests
+    test_files = [
+        QA_DIR / "test_v2_phase1_regression.py",
+        QA_DIR / "test_v2_phase1_lock_enforcement.py",  # Phase-1 lock enforcement
+    ]
     
-    if not test_file.exists():
-        return False, f"Test file not found: {test_file}"
+    missing_files = [f for f in test_files if not f.exists()]
+    if missing_files:
+        return False, f"Test files not found: {missing_files}"
     
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"],
+            [sys.executable, "-m", "pytest"] + [str(f) for f in test_files] + ["-v", "--tb=short"],
             cwd=str(PROJECT_ROOT),
             capture_output=True,
             text=True,

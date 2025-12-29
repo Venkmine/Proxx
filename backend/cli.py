@@ -50,6 +50,8 @@ try:
     from execution_adapter import execute_jobspec
     from execution_results import JobExecutionResult
     from v2.watch_folder_runner import run_watch_loop
+    # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+    from v2.phase1_lock import assert_phase1_compliance, assert_synchronous_execution
 except ImportError as e:
     print(f"FATAL: Failed to import Proxx V2 modules: {e}", file=sys.stderr)
     print("Ensure you are running from the project root with dependencies installed.", file=sys.stderr)
@@ -131,6 +133,11 @@ def cmd_run(args: argparse.Namespace) -> NoReturn:
         3: Partial completion
         4: File not found or JSON parse error
     """
+    # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+    # ----------------------------------------------------
+    assert_phase1_compliance("cli.cmd_run")
+    assert_synchronous_execution()
+    
     jobspec_path = Path(args.jobspec).resolve()
     
     # Load JobSpec
@@ -164,6 +171,11 @@ def cmd_watch(args: argparse.Namespace) -> NoReturn:
         0: Shutdown via signal (normal)
         1: Fatal error (watch folder invalid, permissions, etc.)
     """
+    # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+    # ----------------------------------------------------
+    assert_phase1_compliance("cli.cmd_watch")
+    assert_synchronous_execution()
+    
     watch_folder = Path(args.folder).resolve()
     
     # Validate watch folder exists

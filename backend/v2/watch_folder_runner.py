@@ -85,12 +85,16 @@ try:
     from job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
     from execution_results import JobExecutionResult, ClipExecutionResult
     from execution_adapter import execute_jobspec
+    # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+    from v2.phase1_lock import assert_phase1_compliance, assert_synchronous_execution
 except ImportError:
     # Try alternative import paths
     try:
         from backend.job_spec import JobSpec, JobSpecValidationError, JOBSPEC_VERSION
         from backend.execution_results import JobExecutionResult, ClipExecutionResult
         from backend.execution_adapter import execute_jobspec
+        # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+        from backend.v2.phase1_lock import assert_phase1_compliance, assert_synchronous_execution
     except ImportError as e:
         print(f"Failed to import required modules: {e}", file=sys.stderr)
         print("Make sure you're running from the project root or backend directory.", file=sys.stderr)
@@ -806,6 +810,18 @@ def run_watch_loop(
     Returns:
         Exit code (0 = success/no failures, 1 = had failures)
     """
+    # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+    # ----------------------------------------------------
+    # Assert that we're in Phase-1 compliant context
+    assert_phase1_compliance(
+        "watch_folder_runner.run_watch_loop",
+        watch_folder=str(watch_folder),
+        max_workers=max_workers,
+    )
+    
+    # Assert synchronous execution (no async/await)
+    assert_synchronous_execution()
+    
     print("V2 Watch Folder Runner (Deterministic)")
     print("=" * 50)
     print(f"Watch folder: {watch_folder}")

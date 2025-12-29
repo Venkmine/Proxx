@@ -49,6 +49,9 @@ from headless_execute import (
     _execute_with_resolve,
 )
 
+# V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+from v2.phase1_lock import assert_phase1_compliance, assert_synchronous_execution
+
 
 # =============================================================================
 # Core Execution Adapter
@@ -143,6 +146,18 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     """
     started_at = datetime.now(timezone.utc)
     logger.info(f"Starting job execution: job_id={jobspec.job_id}, sources={len(jobspec.sources)}")
+    
+    # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
+    # ----------------------------------------------------
+    # Assert that we're in Phase-1 compliant context
+    assert_phase1_compliance(
+        "execution_adapter.execute_jobspec",
+        jobspec_id=jobspec.job_id,
+        engine_selection="deterministic",
+    )
+    
+    # Assert synchronous execution (no async/await)
+    assert_synchronous_execution()
     
     # STEP 1: Validate JobSpec
     # -------------------------
