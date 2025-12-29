@@ -553,9 +553,6 @@ def _build_ffmpeg_command(
 # Main Execution Function
 # -----------------------------------------------------------------------------
 
-def execute_job_spec(job_spec: JobSpec, index: int = 0) -> ClipExecutionResult:
-
-
 # -----------------------------------------------------------------------------
 # Main Execution Function
 # -----------------------------------------------------------------------------
