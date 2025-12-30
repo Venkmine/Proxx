@@ -216,14 +216,9 @@ def test_routing_xavc_to_ffmpeg():
     assert determine_routing("xavc") == "ffmpeg"
 
 
-def test_routing_prores_raw_blocked():
-    """TEST: ProRes RAW is BLOCKED (not supported by Resolve)."""
-    assert determine_routing("prores_raw") == "blocked"
-    reason = get_block_reason("prores_raw")
-    assert reason is not None
-    assert "ProRes RAW" in reason
-    assert "DaVinci Resolve" in reason
-    assert "Final Cut Pro" in reason
+def test_routing_prores_raw_to_resolve():
+    """TEST: ProRes RAW routes to Resolve (proxy workflow only)."""
+    assert determine_routing("prores_raw") == "resolve"
 
 
 def test_routing_unknown_blocked():
@@ -259,8 +254,8 @@ def test_edition_requirement_xocn():
 
 
 def test_edition_requirement_prores_raw():
-    """TEST: ProRes RAW requires "neither" (not supported)."""
-    assert get_edition_requirement("prores_raw") == "neither"
+    """TEST: ProRes RAW works with either Free or Studio (proxy workflow)."""
+    assert get_edition_requirement("prores_raw") == "either"
 
 
 # =============================================================================
@@ -426,14 +421,14 @@ def test_create_discovery_entry_r3d_free_skipped():
         assert "Free" in entry.gating_reason
 
 
-def test_create_discovery_entry_prores_raw_blocked():
+def test_create_discovery_entry_prores_raw_resolve():
     """
-    TEST: ProRes RAW file is BLOCKED with clear reason.
+    TEST: ProRes RAW file routes to Resolve (proxy workflow only).
     
     GIVEN: File classified as ProRes RAW
     WHEN: create_discovery_entry() is called
-    THEN: intended_engine is "blocked"
-    AND: block_reason explains Resolve doesn't support it
+    THEN: intended_engine is "resolve"
+    AND: no block_reason (it's supported for proxy generation)
     """
     # Note: In real implementation, .mov would be "unknown" without codec probe
     # For this test, we'll manually test the prores_raw classification path
@@ -457,14 +452,13 @@ def test_create_discovery_entry_prores_raw_blocked():
             block_reason=get_block_reason("prores_raw"),
             requires_resolve_edition=get_edition_requirement("prores_raw"),
             detected_resolve_edition="studio",
-            gating_result="skipped",
-            gating_reason="Format does not use Resolve engine.",
+            gating_result="allowed",
+            gating_reason=None,
         )
         
-        assert entry.intended_engine == "blocked"
-        assert entry.block_reason is not None
-        assert "ProRes RAW" in entry.block_reason
-        assert "DaVinci Resolve" in entry.block_reason
+        # ProRes RAW now routes to Resolve (proxy workflow only)
+        assert entry.intended_engine == "resolve"
+        assert entry.block_reason is None
 
 
 # =============================================================================

@@ -51,7 +51,7 @@ FORMAT_FAMILIES: Dict[str, str] = {
     # XAVC is typically in MXF or MP4, detected via codec probe
     
     # ProRes RAW
-    ".mov": "prores_raw",  # ProRes RAW in MOV - ambiguous, needs codec probe
+    ".mov": "prores_raw",  # ProRes RAW in MOV - proxy generation supported (Resolve-based)
     
     # Common video extensions that need codec probing
     ".mp4": "unknown",
@@ -68,7 +68,7 @@ EDITION_REQUIREMENTS: Dict[str, str] = {
     "arri": "studio",  # ARRIRAW requires Studio
     "xocn": "studio",  # X-OCN requires Studio
     "xavc": "either",  # XAVC works in both (if Resolve-routed)
-    "prores_raw": "neither",  # ProRes RAW not supported by Resolve at all
+    "prores_raw": "either",  # ProRes RAW proxy generation (Resolve-based, both editions)
     "unknown": "either",  # Unknown formats - conservative default
 }
 
@@ -82,13 +82,12 @@ ROUTING_DECISIONS: Dict[str, str] = {
     "arri": "resolve",
     "xocn": "resolve",
     "xavc": "ffmpeg",  # XAVC is standard codec, FFmpeg can handle it
-    "prores_raw": "blocked",  # Explicitly blocked - Resolve doesn't support it
+    "prores_raw": "resolve",  # ProRes RAW routes to Resolve (proxy workflow only)
     "unknown": "blocked",  # Unknown formats blocked by default (conservative)
 }
 
 # Block reasons for rejected formats
 BLOCK_REASONS: Dict[str, str] = {
-    "prores_raw": "ProRes RAW not supported by DaVinci Resolve (Free or Studio). Transcode in Final Cut Pro first.",
     "unknown": "Unknown or ambiguous format. Unable to determine routing without codec-level inspection.",
 }
 

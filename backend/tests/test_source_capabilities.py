@@ -130,7 +130,7 @@ class TestResolveRoutedFormats:
         assert engine == ExecutionEngine.RESOLVE
     
     def test_prores_raw_routes_to_resolve(self):
-        """ProRes RAW should route to Resolve engine (it's sensor RAW)."""
+        """ProRes RAW should route to Resolve engine (proxy workflow only)."""
         engine = get_execution_engine("mov", "prores_raw")
         assert engine == ExecutionEngine.RESOLVE
     
@@ -737,3 +737,162 @@ class TestDNxContainerRestrictions:
         error_str = str(error)
         assert "DNxHD" in error_str
         assert "MXF" in error_str or "DNxHR" in error_str
+
+# -----------------------------------------------------------------------------
+# ProRes Routing Guard Tests (MANDATORY)
+# -----------------------------------------------------------------------------
+# These tests lock the following engine routing behaviors:
+# - .mov + codec=prores_raw     → Resolve (proxy generation only)
+# - .mov + codec=prores_422/4444 → FFmpeg (standard ProRes)
+# - .mov + unrecognized codec    → BLOCK (validation fails)
+#
+# These tests are DETERMINISTIC and do NOT invoke Resolve or FFmpeg.
+# They assert ENGINE SELECTION ONLY.
+# -----------------------------------------------------------------------------
+
+class TestProResRoutingGuards:
+    """
+    Mandatory routing guard tests for ProRes codec variants.
+    
+    These tests lock the critical distinction between:
+    - ProRes RAW (sensor RAW) → Resolve engine (proxy generation supported)
+    - ProRes 422/4444 (standard) → FFmpeg engine (full support)
+    - Unrecognized codecs → validation failure (blocked)
+    
+    NOTE: ProRes RAW support is LIMITED to Resolve-based proxy generation.
+    It is NOT supported as a creative or grading format in Resolve.
+    """
+    
+    # -------------------------------------------------------------------------
+    # ProRes RAW → Resolve (Proxy Generation Only)
+    # -------------------------------------------------------------------------
+    
+    def test_prores_raw_mov_routes_to_resolve(self):
+        """mov + prores_raw → Resolve engine."""
+        engine = get_execution_engine("mov", "prores_raw")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_prores_raw_hq_mov_routes_to_resolve(self):
+        """mov + prores_raw_hq → Resolve engine."""
+        engine = get_execution_engine("mov", "prores_raw_hq")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_prores_raw_aprn_routes_to_resolve(self):
+        """mov + aprn (ProRes RAW fourcc) → Resolve engine."""
+        engine = get_execution_engine("mov", "aprn")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_prores_raw_aprh_routes_to_resolve(self):
+        """mov + aprh (ProRes RAW HQ fourcc) → Resolve engine."""
+        engine = get_execution_engine("mov", "aprh")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_proresraw_no_underscore_routes_to_resolve(self):
+        """mov + proresraw (no underscore) → Resolve engine."""
+        engine = get_execution_engine("mov", "proresraw")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_proresrawhq_no_underscore_routes_to_resolve(self):
+        """mov + proresrawhq (no underscore) → Resolve engine."""
+        engine = get_execution_engine("mov", "proresrawhq")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    # -------------------------------------------------------------------------
+    # Standard ProRes (422/4444 variants) → FFmpeg
+    # -------------------------------------------------------------------------
+    
+    def test_prores_mov_routes_to_ffmpeg(self):
+        """mov + prores (generic) → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_prores_422_mov_routes_to_ffmpeg(self):
+        """mov + prores_422 → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores_422")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_prores_4444_mov_routes_to_ffmpeg(self):
+        """mov + prores_4444 → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores_4444")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_prores_4444xq_mov_routes_to_ffmpeg(self):
+        """mov + prores_4444xq → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores_4444xq")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_prores_hq_mov_routes_to_ffmpeg(self):
+        """mov + prores_hq → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores_hq")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_prores_lt_mov_routes_to_ffmpeg(self):
+        """mov + prores_lt → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores_lt")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    def test_prores_proxy_mov_routes_to_ffmpeg(self):
+        """mov + prores_proxy → FFmpeg engine."""
+        engine = get_execution_engine("mov", "prores_proxy")
+        assert engine == ExecutionEngine.FFMPEG
+    
+    # -------------------------------------------------------------------------
+    # Unrecognized Codec in MOV → BLOCK
+    # -------------------------------------------------------------------------
+    
+    def test_mov_unrecognized_codec_returns_none(self):
+        """mov + unrecognized_codec → None (no engine)."""
+        engine = get_execution_engine("mov", "totally_fake_codec_xyz")
+        assert engine is None
+    
+    def test_mov_unrecognized_codec_validation_fails(self):
+        """mov + unrecognized_codec → validation failure."""
+        with pytest.raises(SourceCapabilityError):
+            validate_source_capability("mov", "totally_fake_codec_xyz")
+    
+    def test_mov_unrecognized_codec_not_supported(self):
+        """mov + unrecognized_codec → is_source_supported returns False."""
+        assert is_source_supported("mov", "totally_fake_codec_xyz") is False
+    
+    # -------------------------------------------------------------------------
+    # Routing Determinism (Critical for reliability)
+    # -------------------------------------------------------------------------
+    
+    def test_prores_raw_routing_is_deterministic(self):
+        """ProRes RAW routing must be deterministic across repeated calls."""
+        engines = [get_execution_engine("mov", "prores_raw") for _ in range(10)]
+        assert all(e == ExecutionEngine.RESOLVE for e in engines)
+    
+    def test_prores_422_routing_is_deterministic(self):
+        """ProRes 422 routing must be deterministic across repeated calls."""
+        engines = [get_execution_engine("mov", "prores_422") for _ in range(10)]
+        assert all(e == ExecutionEngine.FFMPEG for e in engines)
+    
+    def test_prores_4444_routing_is_deterministic(self):
+        """ProRes 4444 routing must be deterministic across repeated calls."""
+        engines = [get_execution_engine("mov", "prores_4444") for _ in range(10)]
+        assert all(e == ExecutionEngine.FFMPEG for e in engines)
+    
+    # -------------------------------------------------------------------------
+    # ProRes RAW Classification Assertions
+    # -------------------------------------------------------------------------
+    
+    def test_prores_raw_is_classified_as_raw(self):
+        """prores_raw must be classified as a RAW codec."""
+        assert is_raw_codec("prores_raw") is True
+    
+    def test_prores_raw_hq_is_classified_as_raw(self):
+        """prores_raw_hq must be classified as a RAW codec."""
+        assert is_raw_codec("prores_raw_hq") is True
+    
+    def test_prores_422_is_not_raw(self):
+        """prores_422 must NOT be classified as a RAW codec."""
+        assert is_raw_codec("prores_422") is False
+    
+    def test_prores_4444_is_not_raw(self):
+        """prores_4444 must NOT be classified as a RAW codec."""
+        assert is_raw_codec("prores_4444") is False
+    
+    def test_prores_generic_is_not_raw(self):
+        """prores (generic) must NOT be classified as a RAW codec."""
+        assert is_raw_codec("prores") is False

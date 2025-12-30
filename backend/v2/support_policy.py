@@ -78,15 +78,10 @@ class PolicyResult:
 # Hardcoded Blocks (Non-Negotiable)
 # =============================================================================
 # These are formats that must ALWAYS be blocked, regardless of test results.
-# ProRes RAW is the only current entry (Resolve cannot decode it).
+# Currently empty - ProRes RAW proxy generation supported via Resolve-based workflow.
 # =============================================================================
 
-HARDCODED_BLOCKS: Dict[str, str] = {
-    "prores_raw": "ProRes RAW is not supported because DaVinci Resolve does not support it (Free or Studio).",
-    "prores_raw_hq": "ProRes RAW HQ is not supported because DaVinci Resolve does not support it (Free or Studio).",
-    "proresraw": "ProRes RAW is not supported because DaVinci Resolve does not support it (Free or Studio).",
-    "proresrawhq": "ProRes RAW HQ is not supported because DaVinci Resolve does not support it (Free or Studio).",
-}
+HARDCODED_BLOCKS: Dict[str, str] = {}
 
 
 # =============================================================================
