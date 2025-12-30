@@ -7,32 +7,40 @@
       "format": "BRAW",
       "extension": ".braw",
       "policy": "allowed",
-      "requires_resolve_edition": "free",
-      "notes": "Blackmagic RAW - native Resolve support"
+      "requires_resolve_edition": "either",
+      "notes": "Blackmagic RAW - native Resolve support in both editions"
     },
     {
       "sample_id": "r3d_sample",
       "format": "R3D",
       "extension": ".r3d",
       "policy": "allowed",
-      "requires_resolve_edition": "free",
+      "requires_resolve_edition": "either",
       "notes": "RED RAW - Resolve support (Free has limited debayer options)"
     },
     {
       "sample_id": "arriraw_sample",
       "format": "ARRIRAW",
-      "extension": ".ari",
+      "extension": ".mxf",
       "policy": "allowed",
-      "requires_resolve_edition": "free",
-      "notes": "ARRI RAW - Resolve support"
+      "requires_resolve_edition": "either",
+      "notes": "ARRI RAW in MXF container - testing Free edition support"
     },
     {
       "sample_id": "xocn_sample",
       "format": "X-OCN",
       "extension": ".mxf",
-      "policy": "warn",
-      "requires_resolve_edition": "free",
-      "notes": "Sony X-OCN - Check Resolve Free support limitations"
+      "policy": "allowed",
+      "requires_resolve_edition": "either",
+      "notes": "Sony X-OCN - Check Resolve Free support"
+    },
+    {
+      "sample_id": "xavc_sample",
+      "format": "XAVC",
+      "extension": ".mxf",
+      "policy": "allowed",
+      "requires_resolve_edition": "either",
+      "notes": "Sony XAVC (Burano) - Check Resolve Free support"
     },
     {
       "sample_id": "prores_raw_sample",
@@ -41,14 +49,6 @@
       "policy": "block",
       "requires_resolve_edition": "either",
       "notes": "ProRes RAW - NOT supported by Resolve (Free or Studio)"
-    },
-    {
-      "sample_id": "h264_sample",
-      "format": "H.264",
-      "extension": ".mp4",
-      "policy": "allowed",
-      "requires_resolve_edition": "either",
-      "notes": "H.264 - Standard format (FFmpeg engine)"
     }
   ],
   "timeout_seconds": 300,

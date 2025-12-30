@@ -21,10 +21,10 @@
     {
       "sample_id": "arriraw_sample",
       "format": "ARRIRAW",
-      "extension": ".ari",
+      "extension": ".mxf",
       "policy": "allowed",
       "requires_resolve_edition": "studio",
-      "notes": "ARRI RAW - full Resolve Studio support"
+      "notes": "ARRI RAW - full Resolve Studio support (MXF container)"
     },
     {
       "sample_id": "xocn_sample",
