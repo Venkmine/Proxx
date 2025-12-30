@@ -1,0 +1,94 @@
+/**
+ * Add Annotation Component Styles
+ */
+
+.add-annotation {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.add-annotation__title {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.add-annotation__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.add-annotation__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.add-annotation__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+}
+
+.add-annotation__select,
+.add-annotation__textarea {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.add-annotation__select:focus,
+.add-annotation__textarea:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+}
+
+.add-annotation__select:disabled,
+.add-annotation__textarea:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.add-annotation__textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.add-annotation__error {
+  padding: 12px;
+  background-color: #fee;
+  border: 1px solid #fcc;
+  border-radius: 4px;
+  color: #c33;
+  font-size: 14px;
+}
+
+.add-annotation__submit {
+  padding: 10px 16px;
+  background-color: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.add-annotation__submit:hover:not(:disabled) {
+  background-color: #0052a3;
+}
+
+.add-annotation__submit:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}

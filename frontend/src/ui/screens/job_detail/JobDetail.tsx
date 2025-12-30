@@ -19,6 +19,7 @@ import {
 } from "../../data_adapter";
 import type { JobView, SnapshotView, Annotation } from "../../data_adapter/types";
 import type { JobDetailProps, AnnotationsListProps } from "./JobDetail.types";
+import { AddAnnotation } from "../../components/annotations/AddAnnotation";
 import "./JobDetail.css";
 
 /**
@@ -139,6 +140,25 @@ export function JobDetail({ jobId, onNavigateBack, className = "" }: JobDetailPr
       cancelled = true;
     };
   }, [jobId]);
+
+  /**
+   * Refresh annotations list after successful annotation creation.
+   * Re-fetches the job to get updated annotations.
+   */
+  const handleAnnotationCreated = async () => {
+    try {
+      // Re-fetch jobs to get updated annotations
+      const jobs = await fetchJobsView();
+      const foundJob = jobs.find((j) => j.job_id === jobId);
+      
+      if (foundJob) {
+        setJob(foundJob);
+      }
+    } catch (err) {
+      // Log error but don't fail the whole view
+      console.error("Failed to refresh annotations:", err);
+    }
+  };
 
   // Loading state
   if (loadingJob) {
@@ -267,6 +287,11 @@ export function JobDetail({ jobId, onNavigateBack, className = "" }: JobDetailPr
             Operator Annotations ({job.annotations.length})
           </h2>
           <AnnotationsList job={job} />
+          <AddAnnotation
+            target_type="job"
+            target_id={job.job_id}
+            onAnnotationCreated={handleAnnotationCreated}
+          />
         </section>
 
         {snapshots !== null && (
