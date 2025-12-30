@@ -48,28 +48,37 @@ class TestResult:
         format_name: str,
         source_path: str,
         expected_policy: str,
+        requires_resolve_edition: str = "either",
     ):
         self.sample_id = sample_id
         self.format_name = format_name
         self.source_path = source_path
         self.expected_policy = expected_policy
+        self.requires_resolve_edition = requires_resolve_edition
         
         # Results (populated after execution)
         self.job_id: Optional[str] = None
-        self.status: Optional[str] = None  # "completed" | "failed" | "blocked" | "timeout"
+        self.status: Optional[str] = None  # "completed" | "failed" | "blocked" | "timeout" | "skipped"
         self.engine_used: Optional[str] = None
         self.failure_reason: Optional[str] = None
         self.output_paths: List[str] = []
         self.duration_ms: Optional[int] = None
         self.validation_error: Optional[str] = None
+        
+        # Skip metadata (populated if status="skipped")
+        self.skip_reason: Optional[str] = None
+        self.detected_resolve_edition: Optional[str] = None
+        self.resolve_version: Optional[str] = None
+        self.timestamp: Optional[str] = None
     
     def to_dict(self) -> dict:
         """Serialize to dictionary for JSON report."""
-        return {
+        result = {
             "sample_id": self.sample_id,
             "format": self.format_name,
             "source_path": self.source_path,
             "expected_policy": self.expected_policy,
+            "requires_resolve_edition": self.requires_resolve_edition,
             "job_id": self.job_id,
             "status": self.status,
             "engine_used": self.engine_used,
@@ -78,6 +87,18 @@ class TestResult:
             "duration_ms": self.duration_ms,
             "validation_error": self.validation_error,
         }
+        
+        # Add skip metadata if test was skipped
+        if self.status == "skipped":
+            result["skip_metadata"] = {
+                "reason": self.skip_reason,
+                "detected_resolve_edition": self.detected_resolve_edition,
+                "required_resolve_edition": self.requires_resolve_edition,
+                "resolve_version": self.resolve_version,
+                "timestamp": self.timestamp,
+            }
+        
+        return result
 
 
 # =============================================================================
@@ -152,6 +173,7 @@ class ForgeTestRunner:
         sample_id = sample_config['sample_id']
         format_name = sample_config['format']
         expected_policy = sample_config['policy']
+        requires_edition = sample_config.get('requires_resolve_edition', 'either')
         
         print(f"Testing {sample_id} ({format_name})... ", end='', flush=True)
         
@@ -161,12 +183,44 @@ class ForgeTestRunner:
             format_name=format_name,
             source_path=f"forge-tests/samples/{sample_id}{sample_config['extension']}",
             expected_policy=expected_policy,
+            requires_resolve_edition=requires_edition,
         )
         
         # Dry run - just validate structure
         if self.dry_run:
             result.status = "dry_run"
             print("DRY RUN")
+            return result
+        
+        # =====================================================================
+        # EDITION GATING: Check if test should be skipped
+        # =====================================================================
+        resolve_info = detect_resolve_installation()
+        
+        if requires_edition == "free" and resolve_info and resolve_info.edition == "studio":
+            # Free required but Studio detected - SKIP
+            result.status = "skipped"
+            result.skip_reason = "resolve_free_not_installed"
+            result.detected_resolve_edition = resolve_info.edition
+            result.resolve_version = resolve_info.version
+            result.timestamp = datetime.now(timezone.utc).isoformat()
+            
+            print(f"SKIPPED (Studio installed, Free required)")
+            print(f"  → This test requires DaVinci Resolve Free. Resolve Studio is currently installed.")
+            print(f"  → Uninstall Studio, install Resolve Free, then re-run this test to validate Free support.")
+            return result
+        
+        if requires_edition == "studio" and resolve_info and resolve_info.edition == "free":
+            # Studio required but Free detected - SKIP
+            result.status = "skipped"
+            result.skip_reason = "resolve_studio_not_installed"
+            result.detected_resolve_edition = resolve_info.edition
+            result.resolve_version = resolve_info.version
+            result.timestamp = datetime.now(timezone.utc).isoformat()
+            
+            print(f"SKIPPED (Free installed, Studio required)")
+            print(f"  → This test requires DaVinci Resolve Studio. Resolve Free is currently installed.")
+            print(f"  → Upgrade to Studio, then re-run this test to validate Studio support.")
             return result
         
         # Check if sample exists

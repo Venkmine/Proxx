@@ -165,6 +165,7 @@ class JobSpec:
         "created_at",
         "resolve_preset",
         "proxy_profile",
+        "requires_resolve_edition",
     }
     
     sources: List[str]
@@ -174,6 +175,7 @@ class JobSpec:
     resolution: str
     naming_template: str
     proxy_profile: Optional[str] = None  # V2 Step 5: Canonical proxy profiles
+    requires_resolve_edition: str = "either"  # "free" | "studio" | "either" - Edition gating
     job_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     fps_mode: FpsMode = FpsMode.SAME_AS_SOURCE
     fps_explicit: Optional[float] = None
@@ -207,6 +209,7 @@ class JobSpec:
             "fps_explicit": self.fps_explicit,
             "resolve_preset": self.resolve_preset,
             "proxy_profile": self.proxy_profile,
+            "requires_resolve_edition": self.requires_resolve_edition,
             "naming_template": self.naming_template,
             "resolved_tokens": dict(sorted(self.resolved_tokens.items())),  # Stable ordering
             "created_at": self.created_at,
@@ -364,6 +367,7 @@ class JobSpec:
             fps_explicit=data.get("fps_explicit"),
             resolve_preset=data.get("resolve_preset"),
             proxy_profile=data.get("proxy_profile"),
+            requires_resolve_edition=data.get("requires_resolve_edition", "either"),
             naming_template=data["naming_template"],
             resolved_tokens=data.get("resolved_tokens", {}),
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),

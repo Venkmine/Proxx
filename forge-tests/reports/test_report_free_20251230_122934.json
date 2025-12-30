@@ -1,0 +1,107 @@
+{
+  "test_suite": "resolve_free_edition",
+  "description": "Test matrix for DaVinci Resolve Free edition support validation",
+  "timestamp": "2025-12-30T12:29:34.860751+00:00",
+  "forge_version": "v2-dev5",
+  "resolve_metadata": {
+    "resolve_version": "20.0.1",
+    "resolve_edition": "free",
+    "install_path": "/Applications/DaVinci Resolve/DaVinci Resolve.app",
+    "detection_method": "macos_install_path",
+    "detection_confidence": "high"
+  },
+  "results": [
+    {
+      "sample_id": "arriraw_sample",
+      "format": "ARRIRAW",
+      "source_path": "forge-tests/samples/arriraw_sample.ari",
+      "expected_policy": "allowed",
+      "requires_resolve_edition": "free",
+      "job_id": null,
+      "status": "dry_run",
+      "engine_used": null,
+      "failure_reason": null,
+      "output_paths": [],
+      "duration_ms": null,
+      "validation_error": null
+    },
+    {
+      "sample_id": "braw_sample",
+      "format": "BRAW",
+      "source_path": "forge-tests/samples/braw_sample.braw",
+      "expected_policy": "allowed",
+      "requires_resolve_edition": "free",
+      "job_id": null,
+      "status": "dry_run",
+      "engine_used": null,
+      "failure_reason": null,
+      "output_paths": [],
+      "duration_ms": null,
+      "validation_error": null
+    },
+    {
+      "sample_id": "h264_sample",
+      "format": "H.264",
+      "source_path": "forge-tests/samples/h264_sample.mp4",
+      "expected_policy": "allowed",
+      "requires_resolve_edition": "either",
+      "job_id": null,
+      "status": "dry_run",
+      "engine_used": null,
+      "failure_reason": null,
+      "output_paths": [],
+      "duration_ms": null,
+      "validation_error": null
+    },
+    {
+      "sample_id": "prores_raw_sample",
+      "format": "ProRes RAW",
+      "source_path": "forge-tests/samples/prores_raw_sample.mov",
+      "expected_policy": "block",
+      "requires_resolve_edition": "either",
+      "job_id": null,
+      "status": "dry_run",
+      "engine_used": null,
+      "failure_reason": null,
+      "output_paths": [],
+      "duration_ms": null,
+      "validation_error": null
+    },
+    {
+      "sample_id": "r3d_sample",
+      "format": "R3D",
+      "source_path": "forge-tests/samples/r3d_sample.r3d",
+      "expected_policy": "allowed",
+      "requires_resolve_edition": "free",
+      "job_id": null,
+      "status": "dry_run",
+      "engine_used": null,
+      "failure_reason": null,
+      "output_paths": [],
+      "duration_ms": null,
+      "validation_error": null
+    },
+    {
+      "sample_id": "xocn_sample",
+      "format": "X-OCN",
+      "source_path": "forge-tests/samples/xocn_sample.mxf",
+      "expected_policy": "warn",
+      "requires_resolve_edition": "free",
+      "job_id": null,
+      "status": "dry_run",
+      "engine_used": null,
+      "failure_reason": null,
+      "output_paths": [],
+      "duration_ms": null,
+      "validation_error": null
+    }
+  ],
+  "summary": {
+    "total_tests": 6,
+    "completed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "errors": 0
+  }
+}

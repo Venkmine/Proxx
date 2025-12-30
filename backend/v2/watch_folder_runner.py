@@ -434,12 +434,22 @@ class ProcessingResult:
 # Watch Folder Processing
 # -----------------------------------------------------------------------------
 
-def scan_for_pending_jobspecs(watch_folder: Path) -> List[Path]:
+def scan_for_pending_jobspecs(watch_folder: Path, recursive: bool = False) -> List[Path]:
     """
     Scan pending/ folder for JobSpec JSON files.
     
-    Only scans the pending/ subdirectory.
-    Returns files in sorted order for deterministic processing.
+    Args:
+        watch_folder: Root watch directory
+        recursive: If True, recursively scan subdirectories in deterministic order.
+                   If False, only scan the top-level pending/ directory.
+    
+    Returns:
+        List of JobSpec paths in deterministic sorted order.
+        
+    Determinism Rules (when recursive=True):
+    - Directories are traversed in alphabetical order
+    - Files within each directory are sorted alphabetically
+    - Same folder structure always produces same order
     """
     pending_folder = watch_folder / PENDING_FOLDER
     
@@ -448,12 +458,29 @@ def scan_for_pending_jobspecs(watch_folder: Path) -> List[Path]:
     
     jobspecs: List[Path] = []
     
-    for path in sorted(pending_folder.glob("*.json")):
-        # Skip result files (shouldn't be in pending, but just in case)
-        if path.name.endswith(RESULT_SUFFIX):
-            continue
+    if recursive:
+        # Recursive mode: traverse all subdirectories deterministically
+        # Use rglob to find all .json files, then sort for determinism
+        all_json_files = list(pending_folder.rglob("*.json"))
         
-        jobspecs.append(path)
+        # Sort by relative path (from pending/) for deterministic ordering
+        # This ensures: same tree structure → same discovery order
+        all_json_files.sort(key=lambda p: p.relative_to(pending_folder))
+        
+        for path in all_json_files:
+            # Skip result files
+            if path.name.endswith(RESULT_SUFFIX):
+                continue
+            
+            jobspecs.append(path)
+    else:
+        # Non-recursive mode: only top-level files (original behavior)
+        for path in sorted(pending_folder.glob("*.json")):
+            # Skip result files (shouldn't be in pending, but just in case)
+            if path.name.endswith(RESULT_SUFFIX):
+                continue
+            
+            jobspecs.append(path)
     
     return jobspecs
 
@@ -632,7 +659,7 @@ def process_single_jobspec(
     )
 
 
-def run_scan(watch_folder: Path, max_workers: int = DEFAULT_MAX_WORKERS) -> List[ProcessingResult]:
+def run_scan(watch_folder: Path, max_workers: int = DEFAULT_MAX_WORKERS, recursive: bool = False) -> List[ProcessingResult]:
     """
     Perform a single scan of pending/ and process JobSpecs with bounded concurrency.
     
@@ -655,6 +682,7 @@ def run_scan(watch_folder: Path, max_workers: int = DEFAULT_MAX_WORKERS) -> List
     Args:
         watch_folder: Root watch directory
         max_workers: Maximum concurrent workers (default: 1 = sequential)
+        recursive: If True, scan subdirectories recursively
     
     Returns:
         List of ProcessingResult for each JobSpec processed (in submission order)
@@ -662,7 +690,7 @@ def run_scan(watch_folder: Path, max_workers: int = DEFAULT_MAX_WORKERS) -> List
     results: List[ProcessingResult] = []
     
     # Scan for pending JobSpecs - DETERMINISM: sorted() ensures consistent order
-    jobspecs = scan_for_pending_jobspecs(watch_folder)
+    jobspecs = scan_for_pending_jobspecs(watch_folder, recursive=recursive)
     # ASSERTION: jobspecs is already sorted by scan_for_pending_jobspecs()
     # This ensures deterministic job ordering regardless of filesystem enumeration order
     
@@ -797,18 +825,33 @@ def run_watch_loop(
     poll_seconds: float = DEFAULT_POLL_SECONDS,
     run_once: bool = False,
     max_workers: int = DEFAULT_MAX_WORKERS,
+    recursive: bool = False,
 ) -> int:
     """
     Main watch loop - scan pending/ folder and process JobSpecs.
     
+    Startup Behavior:
+    - Recovers any interrupted jobs from running/ to failed/
+    - Creates required folder structure if missing
+    
+    Continuous Mode (run_once=False):
+    - Polls pending/ every poll_seconds
+    - Processes jobs with up to max_workers concurrency
+    - Runs until KeyboardInterrupt (Ctrl+C)
+    
+    Single-Scan Mode (run_once=True):
+    - Performs one scan
+    - Exits after processing all pending jobs
+    
     Args:
         watch_folder: Root watch directory
-        poll_seconds: Seconds between scans (default: 2)
-        run_once: If True, do single scan and exit
-        max_workers: Maximum concurrent workers (default: 1)
-        
+        poll_seconds: Seconds between scans (continuous mode)
+        run_once: If True, exit after single scan
+        max_workers: Maximum concurrent jobs
+        recursive: If True, recursively scan subdirectories in pending/
+    
     Returns:
-        Exit code (0 = success/no failures, 1 = had failures)
+        Exit code (0 = success, 1 = any failures occurred)
     """
     # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
     # ----------------------------------------------------
@@ -827,6 +870,7 @@ def run_watch_loop(
     print(f"Watch folder: {watch_folder}")
     print(f"Poll interval: {poll_seconds}s")
     print(f"Max workers: {max_workers}")
+    print(f"Recursive: {recursive}")
     print(f"Mode: {'single scan (--once)' if run_once else 'continuous polling'}")
     print()
     
@@ -857,7 +901,7 @@ def run_watch_loop(
             if not run_once:
                 print(f"\n--- Scan #{iteration} at {datetime.now().strftime('%H:%M:%S')} ---")
             
-            results = run_scan(watch_folder, max_workers=max_workers)
+            results = run_scan(watch_folder, max_workers=max_workers, recursive=recursive)
             
             # Summary
             completed = sum(1 for r in results if r.status == "COMPLETED")
@@ -908,22 +952,28 @@ def main() -> int:
         epilog="""
 Folder Structure:
   watch/
-  ├── pending/         # Drop JobSpec files here
-  ├── running/         # Currently processing (max N workers)
-  ├── completed/       # Successfully completed (with .result.json)
-  └── failed/          # Failed jobs (with .result.json)
+    pending/         # Drop JobSpec files here
+    running/         # Currently processing (max N workers)
+    completed/       # Successfully completed (with .result.json)
+    failed/          # Failed jobs (with .result.json)
 
 Examples:
   %(prog)s ./watch                    # Continuous polling (every 2s), 1 worker
   %(prog)s ./watch --once             # Single scan, then exit
   %(prog)s ./watch --poll-seconds 10  # Poll every 10 seconds
   %(prog)s ./watch --max-workers 4    # Up to 4 concurrent jobs
+  %(prog)s ./watch --recursive        # Scan subdirectories in pending/
 
 Concurrency (V2 Phase 2):
   --max-workers N   Process up to N jobs concurrently (default: 1)
                     Each job still processes clips sequentially
                     Jobs are dequeued in deterministic (filename) order
                     If one job fails, other running jobs complete normally
+
+Recursive Mode:
+  --recursive       Scan subdirectories within pending/ for JobSpec files
+                    Traversal order is deterministic (alphabetically sorted)
+                    Default: False (only scan top-level pending/)
 
 On startup, any jobs left in running/ are moved to failed/ with reason
 "runner interrupted" - no silent recovery, no retries.
@@ -960,6 +1010,14 @@ On startup, any jobs left in running/ are moved to failed/ with reason
              f"Jobs are dequeued in deterministic order.",
     )
     
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Recursively scan subdirectories within pending/ for JobSpec files. "
+             "Traversal order is deterministic (alphabetically sorted). "
+             "Default: False (only scan top-level pending/ directory).",
+    )
+    
     args = parser.parse_args()
     
     # Validate max-workers
@@ -975,6 +1033,7 @@ On startup, any jobs left in running/ are moved to failed/ with reason
         poll_seconds=args.poll_seconds,
         run_once=args.once,
         max_workers=args.max_workers,
+        recursive=args.recursive,
     )
 
 

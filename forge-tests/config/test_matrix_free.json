@@ -7,6 +7,7 @@
       "format": "BRAW",
       "extension": ".braw",
       "policy": "allowed",
+      "requires_resolve_edition": "free",
       "notes": "Blackmagic RAW - native Resolve support"
     },
     {
@@ -14,6 +15,7 @@
       "format": "R3D",
       "extension": ".r3d",
       "policy": "allowed",
+      "requires_resolve_edition": "free",
       "notes": "RED RAW - Resolve support (Free has limited debayer options)"
     },
     {
@@ -21,6 +23,7 @@
       "format": "ARRIRAW",
       "extension": ".ari",
       "policy": "allowed",
+      "requires_resolve_edition": "free",
       "notes": "ARRI RAW - Resolve support"
     },
     {
@@ -28,6 +31,7 @@
       "format": "X-OCN",
       "extension": ".mxf",
       "policy": "warn",
+      "requires_resolve_edition": "free",
       "notes": "Sony X-OCN - Check Resolve Free support limitations"
     },
     {
@@ -35,6 +39,7 @@
       "format": "ProRes RAW",
       "extension": ".mov",
       "policy": "block",
+      "requires_resolve_edition": "either",
       "notes": "ProRes RAW - NOT supported by Resolve (Free or Studio)"
     },
     {
@@ -42,6 +47,7 @@
       "format": "H.264",
       "extension": ".mp4",
       "policy": "allowed",
+      "requires_resolve_edition": "either",
       "notes": "H.264 - Standard format (FFmpeg engine)"
     }
   ],

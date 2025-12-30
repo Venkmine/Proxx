@@ -144,12 +144,13 @@ class JobExecutionResult:
     clips: List[ClipExecutionResult]
     """Per-clip results in execution order."""
     
-    final_status: Literal["COMPLETED", "FAILED", "PARTIAL"]
+    final_status: Literal["COMPLETED", "FAILED", "PARTIAL", "SKIPPED"]
     """
     Job-level status:
     - COMPLETED: All clips completed successfully
     - FAILED: At least one clip failed (fail-fast stopped execution)
     - PARTIAL: Execution stopped before all clips (e.g., validation error)
+    - SKIPPED: Job was skipped due to environment constraints (e.g., edition mismatch)
     """
     
     jobspec_version: Optional[str] = None
@@ -169,6 +170,9 @@ class JobExecutionResult:
     
     proxy_profile_used: Optional[str] = None
     """Proxy profile name used for this job. V2 Step 5: Canonical proxy profiles."""
+    
+    skip_metadata: Optional[Dict[str, str]] = None
+    """Skip metadata if job was skipped (status=SKIPPED). Contains reason, editions, version."""
     
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """When job execution started (UTC)."""
@@ -217,6 +221,10 @@ class JobExecutionResult:
         # Include Resolve edition/version if available
         if hasattr(self, '_resolve_metadata'):
             result["_metadata"].update(self._resolve_metadata)
+        
+        # Include skip_metadata if job was skipped
+        if self.skip_metadata:
+            result["skip_metadata"] = self.skip_metadata
         
         return result
     

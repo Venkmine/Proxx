@@ -204,7 +204,104 @@ python -m backend.v2.watch_folder_runner ./watch --poll-seconds 10
 
 # Concurrent processing (up to 4 jobs at once)
 python -m backend.v2.watch_folder_runner ./watch --max-workers 4
+
+# Recursive subdirectory scanning
+python -m backend.v2.watch_folder_runner ./watch --recursive
 ```
+
+---
+
+## Recursive Job Discovery
+
+By default, the watch folder runner only scans the top-level `pending/` directory for JobSpec files. To scan subdirectories recursively, use the `--recursive` flag.
+
+### Usage
+
+```bash
+# Scan only top-level pending/ (default)
+python -m backend.v2.watch_folder_runner ./watch
+
+# Recursively scan all subdirectories in pending/
+python -m backend.v2.watch_folder_runner ./watch --recursive
+```
+
+### Behavior
+
+| Mode | Scans | Example |
+|------|-------|---------|
+| **Non-recursive** (default) | Only `pending/*.json` | `pending/job1.json`, `pending/job2.json` |
+| **Recursive** (`--recursive`) | All `pending/**/*.json` | `pending/job1.json`, `pending/batch1/job2.json`, `pending/batch1/nested/job3.json` |
+
+### Deterministic Ordering
+
+When recursive mode is enabled:
+
+1. **All subdirectories are scanned** in alphabetical order
+2. **All files within each directory** are sorted alphabetically
+3. **Same folder tree always produces the same job order**
+4. **No filesystem-dependent ordering** (no timestamps, no randomness)
+
+Example directory structure:
+
+```
+pending/
+├── 1_top.json          # Processed 1st
+├── a/
+│   ├── 2_a.json        # Processed 2nd
+│   └── x/
+│       └── 3_ax.json   # Processed 3rd
+├── b/
+│   ├── 4_b.json        # Processed 4th
+│   └── y/
+│       └── 5_by.json   # Processed 5th
+└── c/
+    └── 6_c.json        # Processed 6th
+```
+
+Discovery order is **alphabetical by relative path from `pending/`**:
+
+```
+1. pending/1_top.json
+2. pending/a/2_a.json
+3. pending/a/x/3_ax.json
+4. pending/b/4_b.json
+5. pending/b/y/5_by.json
+6. pending/c/6_c.json
+```
+
+### Rules
+
+- **Result files are always skipped**: `.result.json` files in any subdirectory are ignored
+- **Invalid JobSpecs do not block discovery**: If one JobSpec is invalid, others are still discovered
+- **Empty subdirectories are ignored**: No errors are raised
+- **Skip logic applies identically**: Manifest tracking and result file checks work the same in both modes
+- **No execution changes**: This is **job discovery only** — no execution logic is affected
+
+### Use Cases
+
+Recursive mode is designed for real-world post-production workflows where JobSpecs may be organized into subdirectories:
+
+```
+pending/
+├── project_a/
+│   ├── scene_001.json
+│   └── scene_002.json
+├── project_b/
+│   ├── episode_01/
+│   │   ├── reel_01.json
+│   │   └── reel_02.json
+│   └── episode_02/
+│       ├── reel_01.json
+│       └── reel_02.json
+```
+
+### Non-Goals
+
+- ❌ **No automatic grouping**: Jobs are not grouped by directory
+- ❌ **No batching heuristics**: Each JobSpec is processed independently
+- ❌ **No folder-based configuration**: No special behavior based on directory names
+- ❌ **No concurrency changes**: Worker behavior is unchanged
+- ❌ **No UI beyond a toggle**: This is a single boolean flag
 
 ---
 

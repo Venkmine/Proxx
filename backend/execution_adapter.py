@@ -52,6 +52,15 @@ from headless_execute import (
 # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
 from v2.phase1_lock import assert_phase1_compliance, assert_synchronous_execution
 
+# V2 Resolve Edition Detection
+try:
+    from v2.resolve_installation import detect_resolve_installation
+except ImportError:
+    try:
+        from backend.v2.resolve_installation import detect_resolve_installation
+    except ImportError:
+        detect_resolve_installation = None  # type: ignore
+
 
 # =============================================================================
 # Core Execution Adapter
@@ -177,6 +186,71 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )
+    
+    # STEP 1.5: Edition Gating (Resolve Edition Requirement)
+    # -------------------------------------------------------
+    # Check if this job requires a specific Resolve edition.
+    # If requirement doesn't match detected edition, SKIP the job.
+    # This is NOT a failure - it's an environment constraint.
+    if detect_resolve_installation is not None:
+        resolve_info = detect_resolve_installation()
+        required_edition = jobspec.requires_resolve_edition
+        
+        if required_edition == "free" and resolve_info and resolve_info.edition == "studio":
+            # Free required but Studio detected - SKIP
+            skip_metadata = {
+                "reason": "resolve_free_not_installed",
+                "detected_resolve_edition": resolve_info.edition,
+                "required_resolve_edition": "free",
+                "resolve_version": resolve_info.version,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            
+            logger.info(
+                f"Job skipped: job_id={jobspec.job_id}, "
+                f"reason=resolve_free_not_installed, "
+                f"detected={resolve_info.edition}, required=free"
+            )
+            
+            return JobExecutionResult(
+                job_id=jobspec.job_id,
+                clips=[],
+                final_status="SKIPPED",
+                validation_error=None,
+                validation_stage=None,
+                jobspec_version=JOBSPEC_VERSION,
+                skip_metadata=skip_metadata,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+        
+        if required_edition == "studio" and resolve_info and resolve_info.edition == "free":
+            # Studio required but Free detected - SKIP
+            skip_metadata = {
+                "reason": "resolve_studio_not_installed",
+                "detected_resolve_edition": resolve_info.edition,
+                "required_resolve_edition": "studio",
+                "resolve_version": resolve_info.version,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            
+            logger.info(
+                f"Job skipped: job_id={jobspec.job_id}, "
+                f"reason=resolve_studio_not_installed, "
+                f"detected={resolve_info.edition}, required=studio"
+            )
+            
+            return JobExecutionResult(
+                job_id=jobspec.job_id,
+                clips=[],
+                final_status="SKIPPED",
+                validation_error=None,
+                validation_stage=None,
+                jobspec_version=JOBSPEC_VERSION,
+                skip_metadata=skip_metadata,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
     
     # STEP 2: Determine Execution Engine
     # -----------------------------------
