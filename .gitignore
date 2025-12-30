@@ -47,6 +47,14 @@ verification_reports/
 tmp/
 temp/
 
+# Forge Tests - DO NOT COMMIT MEDIA
+forge-tests/samples/*
+!forge-tests/samples/README.md
+forge-tests/ingest/*
+!forge-tests/ingest/.gitkeep
+forge-tests/output/*
+!forge-tests/output/.gitkeep
+
 # Awaire Proxy specific
 awaire_proxy_job_*.csv
 awaire_proxy_job_*.json

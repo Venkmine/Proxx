@@ -214,6 +214,10 @@ class JobExecutionResult:
             "proxy_profile_used": self.proxy_profile_used,
         }
         
+        # Include Resolve edition/version if available
+        if hasattr(self, '_resolve_metadata'):
+            result["_metadata"].update(self._resolve_metadata)
+        
         return result
     
     def to_json(self, indent: int = 2) -> str:

@@ -138,9 +138,11 @@ except Exception as e:
 try:
     from job_spec import JobSpec, JobSpecValidationError
     from execution_results import ClipExecutionResult, JobExecutionResult
+    from v2.resolve_installation import detect_resolve_installation, ResolveInstallation
 except ImportError:
     from backend.job_spec import JobSpec, JobSpecValidationError
     from backend.execution_results import ClipExecutionResult, JobExecutionResult
+    from backend.v2.resolve_installation import detect_resolve_installation, ResolveInstallation
 
 
 # =============================================================================
@@ -614,6 +616,9 @@ class ResolveEngine:
         # This is because Resolve might be restarted between jobs.
         self._resolve: Any = None
         self._project_manager: Any = None
+        
+        # Detect Resolve installation info (edition + version)
+        self._installation_info: Optional[ResolveInstallation] = detect_resolve_installation()
     
     def execute(self, job_spec: JobSpec) -> JobExecutionResult:
         """
@@ -793,7 +798,7 @@ class ResolveEngine:
         else:
             final_status = "FAILED"
         
-        # Build result with resolve_preset metadata
+        # Build result with resolve_preset metadata and installation info
         result = JobExecutionResult(
             job_id=job_spec.job_id,
             clips=clip_results,
@@ -804,6 +809,17 @@ class ResolveEngine:
             started_at=started_at,
             completed_at=completed_at,
         )
+        
+        # Attach Resolve installation metadata if detected
+        if self._installation_info:
+            # Store in private metadata dict (execution_results.py supports this)
+            if not hasattr(result, '_resolve_metadata'):
+                result._resolve_metadata = {}
+            result._resolve_metadata.update({
+                'resolve_version': self._installation_info.version,
+                'resolve_edition': self._installation_info.edition,
+                'resolve_install_path': self._installation_info.install_path,
+            })
         
         return result
     
@@ -1248,3 +1264,44 @@ class ResolveEngine:
                 return 0
         else:
             return 0
+
+
+# =============================================================================
+# Convenience Wrapper for External Callers
+# =============================================================================
+
+def run_job(jobspec: JobSpec) -> JobExecutionResult:
+    """
+    Run a JobSpec using DaVinci Resolve (convenience wrapper).
+    
+    This is a simple wrapper around ResolveEngine.execute() for
+    external callers who want a clean function interface without
+    instantiating the engine directly.
+    
+    Args:
+        jobspec: Validated JobSpec to execute
+        
+    Returns:
+        JobExecutionResult with execution details and Resolve metadata
+        
+    Raises:
+        ResolveAPIUnavailableError: If Resolve API is not available
+        ResolveConnectionError: If unable to connect to Resolve
+        ResolveProjectError: If project/timeline creation fails
+        ResolveRenderError: If render execution fails
+        ResolveOutputVerificationError: If output verification fails
+        
+    Example:
+        >>> from backend.job_spec import JobSpec
+        >>> from backend.v2.engines.resolve_engine import run_job
+        >>> 
+        >>> spec = JobSpec.from_json_file("my_raw_job.json")
+        >>> result = run_job(spec)
+        >>> 
+        >>> if result.success:
+        ...     print(f"Completed {len(result.clips)} clips")
+        >>> else:
+        ...     print(f"Failed: {result.clips[0].failure_reason}")
+    """
+    engine = ResolveEngine()
+    return engine.execute(jobspec)

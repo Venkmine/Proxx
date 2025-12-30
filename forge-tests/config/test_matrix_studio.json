@@ -1,0 +1,50 @@
+{
+  "test_suite": "resolve_studio_edition",
+  "description": "Test matrix for DaVinci Resolve Studio edition support validation",
+  "samples": [
+    {
+      "sample_id": "braw_sample",
+      "format": "BRAW",
+      "extension": ".braw",
+      "policy": "allowed",
+      "notes": "Blackmagic RAW - native Resolve support"
+    },
+    {
+      "sample_id": "r3d_sample",
+      "format": "R3D",
+      "extension": ".r3d",
+      "policy": "allowed",
+      "notes": "RED RAW - full Resolve Studio support"
+    },
+    {
+      "sample_id": "arriraw_sample",
+      "format": "ARRIRAW",
+      "extension": ".ari",
+      "policy": "allowed",
+      "notes": "ARRI RAW - full Resolve Studio support"
+    },
+    {
+      "sample_id": "xocn_sample",
+      "format": "X-OCN",
+      "extension": ".mxf",
+      "policy": "allowed",
+      "notes": "Sony X-OCN - full Resolve Studio support"
+    },
+    {
+      "sample_id": "prores_raw_sample",
+      "format": "ProRes RAW",
+      "extension": ".mov",
+      "policy": "block",
+      "notes": "ProRes RAW - NOT supported by Resolve (Free or Studio)"
+    },
+    {
+      "sample_id": "xavc_sample",
+      "format": "XAVC",
+      "extension": ".mxf",
+      "policy": "allowed",
+      "notes": "Sony XAVC - Resolve Studio support"
+    }
+  ],
+  "timeout_seconds": 300,
+  "output_directory": "forge-tests/output"
+}

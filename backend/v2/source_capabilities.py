@@ -185,11 +185,7 @@ RAW_CODECS_RESOLVE: Set[str] = {
     "cdng",
     "cinema_dng",
     
-    # ProRes RAW (sensor RAW, not standard ProRes)
-    "prores_raw",
-    "prores_raw_hq",
-    "proresraw",
-    "proresrawhq",
+    # NOTE: ProRes RAW explicitly excluded from RAW_CODECS_RESOLVE - see REJECTED_SOURCES for block reason
     
     # Unknown codec reported by ffprobe (proprietary formats)
     # FFprobe returns "unknown" for codecs it cannot identify
@@ -514,21 +510,7 @@ RESOLVE_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
         engine=ExecutionEngine.RESOLVE,
     ),
     
-    # ---------------------------------------------------------------------
-    # Apple ProRes RAW - Hybrid RAW format (Resolve has native support)
-    # ---------------------------------------------------------------------
-    ("mov", "prores_raw"): SourceCapability(
-        container="mov",
-        codec="prores_raw",
-        reason="ProRes RAW sensor data, decoded by DaVinci Resolve.",
-        engine=ExecutionEngine.RESOLVE,
-    ),
-    ("mov", "prores_raw_hq"): SourceCapability(
-        container="mov",
-        codec="prores_raw_hq",
-        reason="ProRes RAW HQ sensor data, decoded by DaVinci Resolve.",
-        engine=ExecutionEngine.RESOLVE,
-    ),
+    # NOTE: ProRes RAW is NOT supported - see REJECTED_SOURCES
     
     # ---------------------------------------------------------------------
     # Nikon N-RAW - Nikon Z8/Z9 internal RAW (Resolve has native support)
@@ -585,6 +567,13 @@ REJECTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
     # While FFmpeg can technically mux DNxHD into MOV, this combination:
     # - Causes relinking issues in Avid Media Composer
     # - Is not recognized by many broadcast QC systems
+    # ---------------------------------------------------------------------
+    # DNxHD in MOV - Non-standard container pairing
+    # ---------------------------------------------------------------------
+    # DNxHD was designed for MXF container (broadcast/editorial standard).
+    # While FFmpeg can technically mux DNxHD into MOV, this combination:
+    # - Causes relinking issues in Avid Media Composer
+    # - Is not recognized by many broadcast QC systems
     # - May fail in some NLE interchange workflows
     # DNxHR in MOV is fine - it was designed for cross-platform flexibility.
     # ---------------------------------------------------------------------
@@ -596,9 +585,43 @@ REJECTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
     ),
     
     # ---------------------------------------------------------------------
-    # Obsolete/Unsupported formats - neither FFmpeg nor Resolve can decode
+    # ProRes RAW - EXPLICITLY NOT SUPPORTED
     # ---------------------------------------------------------------------
-    # Add entries here for formats that cannot be processed by any engine.
+    # ProRes RAW is Apple's sensor RAW format (NOT standard ProRes codec).
+    # CRITICAL: DaVinci Resolve (Free OR Studio) does NOT support ProRes RAW.
+    # Apple Final Cut Pro is the ONLY application that can decode ProRes RAW.
+    #
+    # Common confusion: ProRes RAW is NOT the same as standard ProRes.
+    # - Standard ProRes (422, HQ, etc.): Widely supported, including Resolve
+    # - ProRes RAW: Sensor data format, Final Cut Pro exclusive
+    #
+    # ProRes RAW must be transcoded in Final Cut Pro to standard ProRes
+    # before it can be used in any other application including Resolve.
+    # ---------------------------------------------------------------------
+    ("mov", "prores_raw"): SourceCapability(
+        container="mov",
+        codec="prores_raw",
+        reason="ProRes RAW is not supported because DaVinci Resolve does not support it (Free or Studio).",
+        recommended_action="Transcode to standard ProRes (422/HQ/4444) in Final Cut Pro before processing.",
+    ),
+    ("mov", "prores_raw_hq"): SourceCapability(
+        container="mov",
+        codec="prores_raw_hq",
+        reason="ProRes RAW HQ is not supported because DaVinci Resolve does not support it (Free or Studio).",
+        recommended_action="Transcode to standard ProRes (422/HQ/4444) in Final Cut Pro before processing.",
+    ),
+    ("mov", "proresraw"): SourceCapability(
+        container="mov",
+        codec="proresraw",
+        reason="ProRes RAW is not supported because DaVinci Resolve does not support it (Free or Studio).",
+        recommended_action="Transcode to standard ProRes (422/HQ/4444) in Final Cut Pro before processing.",
+    ),
+    ("mov", "proresrawhq"): SourceCapability(
+        container="mov",
+        codec="proresrawhq",
+        reason="ProRes RAW HQ is not supported because DaVinci Resolve does not support it (Free or Studio).",
+        recommended_action="Transcode to standard ProRes (422/HQ/4444) in Final Cut Pro before processing.",
+    ),
 }
 
 

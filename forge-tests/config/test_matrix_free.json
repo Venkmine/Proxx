@@ -1,0 +1,50 @@
+{
+  "test_suite": "resolve_free_edition",
+  "description": "Test matrix for DaVinci Resolve Free edition support validation",
+  "samples": [
+    {
+      "sample_id": "braw_sample",
+      "format": "BRAW",
+      "extension": ".braw",
+      "policy": "allowed",
+      "notes": "Blackmagic RAW - native Resolve support"
+    },
+    {
+      "sample_id": "r3d_sample",
+      "format": "R3D",
+      "extension": ".r3d",
+      "policy": "allowed",
+      "notes": "RED RAW - Resolve support (Free has limited debayer options)"
+    },
+    {
+      "sample_id": "arriraw_sample",
+      "format": "ARRIRAW",
+      "extension": ".ari",
+      "policy": "allowed",
+      "notes": "ARRI RAW - Resolve support"
+    },
+    {
+      "sample_id": "xocn_sample",
+      "format": "X-OCN",
+      "extension": ".mxf",
+      "policy": "warn",
+      "notes": "Sony X-OCN - Check Resolve Free support limitations"
+    },
+    {
+      "sample_id": "prores_raw_sample",
+      "format": "ProRes RAW",
+      "extension": ".mov",
+      "policy": "block",
+      "notes": "ProRes RAW - NOT supported by Resolve (Free or Studio)"
+    },
+    {
+      "sample_id": "h264_sample",
+      "format": "H.264",
+      "extension": ".mp4",
+      "policy": "allowed",
+      "notes": "H.264 - Standard format (FFmpeg engine)"
+    }
+  ],
+  "timeout_seconds": 300,
+  "output_directory": "forge-tests/output"
+}
