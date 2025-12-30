@@ -862,6 +862,9 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
     
     Delegates to the ResolveEngine for processing.
     Fails explicitly if Resolve is not available.
+    
+    CRITICAL: Will skip execution if Resolve is already running to avoid
+    interfering with an existing UI session.
     """
     # Check if Resolve engine is available
     if not _RESOLVE_ENGINE_AVAILABLE:
@@ -871,6 +874,26 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
             final_status="FAILED",
             validation_error=f"Resolve engine required but not available: {_RESOLVE_ENGINE_ERROR}",
             validation_stage="validation",
+            jobspec_version=JOBSPEC_VERSION,
+            engine_used="resolve",
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
+    # GUARD: Check if Resolve is already running
+    # Headless execution requires launching Resolve ourselves, not attaching to existing session
+    try:
+        from v2.resolve_installation import is_resolve_running
+    except ImportError:
+        from backend.v2.resolve_installation import is_resolve_running
+    
+    if is_resolve_running():
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="SKIPPED",
+            validation_error="Resolve is already open. Headless execution requires Resolve to be closed.",
+            validation_stage="pre_execution",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
             started_at=started_at,

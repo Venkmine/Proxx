@@ -166,10 +166,43 @@ Headless execution follows explicit error handling:
 | FFmpeg not found | Raises `JobSpecValidationError` |
 | FFmpeg execution failure | Returns `ExecutionResult` with `exit_code != 0` |
 | Output not created | Returns `ExecutionResult` with `output_exists = False` |
+| Resolve already running | Returns `ExecutionResult` with `final_status = SKIPPED` |
 
 **No retries** — Automation wrappers can implement their own retry logic.
 
 **No error swallowing** — All failures are visible in the result.
+
+## Resolve Process Requirements (CRITICAL)
+
+**DaVinci Resolve must NOT be open for headless execution.**
+
+When executing jobs that require the Resolve engine (RAW formats):
+
+1. **Pre-flight check**: The system detects if Resolve is already running
+2. **Job skipped**: If running, the job returns `SKIPPED` status with clear reason
+3. **Process ownership**: If not running, Forge launches Resolve and tracks ownership
+4. **Automatic cleanup**: After job completion, Forge shuts down Resolve (if it launched it)
+
+### Why This Matters
+
+- **No UI interference**: Headless execution requires programmatic Resolve control
+- **Deterministic behavior**: Attaching to a user's Resolve session creates non-determinism
+- **Safe automation**: Watch folders and batch processing must not disrupt interactive work
+- **Clean state**: Each job execution gets a fresh Resolve instance
+
+### Operator Requirements
+
+Before running headless jobs with RAW sources:
+
+```bash
+# Check if Resolve is running (macOS)
+pgrep -f "DaVinci Resolve"
+
+# If running, quit Resolve before execution
+osascript -e 'quit app "DaVinci Resolve"'
+```
+
+The test runner automatically checks for running Resolve and aborts with a clear message.
 
 ## Constraints (V2 Phase 1)
 

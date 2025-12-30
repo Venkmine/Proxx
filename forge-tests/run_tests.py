@@ -154,6 +154,16 @@ class ForgeTestRunner:
         print("FORGE RESOLVE SUPPORT TEST RUNNER")
         print(f"{'='*60}\n")
         
+        # PRE-FLIGHT CHECK: Ensure Resolve is not running
+        from backend.v2.resolve_installation import is_resolve_running
+        if is_resolve_running():
+            print("ERROR: DaVinci Resolve is currently running.")
+            print()
+            print("Headless execution requires Resolve to be closed.")
+            print("Please quit Resolve and re-run this test suite.")
+            print()
+            sys.exit(1)
+        
         # Detect Resolve installation
         resolve_info = detect_resolve_installation()
         if resolve_info:
@@ -269,10 +279,11 @@ class ForgeTestRunner:
                 container="mov",
                 resolution="same",
                 fps_mode="same-as-source",
-                fps_value=None,
+                fps_explicit=None,
                 output_directory=str(output_dir),
                 naming_template=f"{sample_id}_{{source_name}}",
-                proxy_profile="resolve_prores_proxy",  # Use Resolve profile for RAW
+                proxy_profile="proxy_prores_proxy_resolve",  # Use Resolve profile for RAW
+                resolve_preset="ProRes 422 HQ",  # Use existing Resolve preset
             )
             
             result.job_id = job_id

@@ -619,6 +619,10 @@ class ResolveEngine:
         
         # Detect Resolve installation info (edition + version)
         self._installation_info: Optional[ResolveInstallation] = detect_resolve_installation()
+        
+        # Process ownership tracking
+        self._launched_by_forge: bool = False
+        self._resolve_process: Any = None
     
     def execute(self, job_spec: JobSpec) -> JobExecutionResult:
         """
@@ -781,6 +785,14 @@ class ResolveEngine:
             # We don't want to leave orphan projects in Resolve.
             # =================================================================
             self._cleanup_project(project_name)
+            
+            # =================================================================
+            # Cleanup: Shutdown Resolve if we launched it
+            # =================================================================
+            # Only shutdown if _launched_by_forge is True
+            # This ensures we never terminate a user's Resolve session
+            # =================================================================
+            self._shutdown_resolve()
         
         # =====================================================================
         # Build Final Result
@@ -819,6 +831,7 @@ class ResolveEngine:
                 'resolve_version': self._installation_info.version,
                 'resolve_edition': self._installation_info.edition,
                 'resolve_install_path': self._installation_info.install_path,
+                'launched_by_forge': self._launched_by_forge,
             })
         
         return result
@@ -831,19 +844,30 @@ class ResolveEngine:
         """
         Establish connection to running DaVinci Resolve instance.
         
+        If Resolve is not running, attempt to launch it (macOS only for now).
+        Track if we launched it so we can clean up afterward.
+        
         Raises:
             ResolveConnectionError: If unable to connect to Resolve.
         """
-        # GetResolve() returns a Resolve object if Resolve is running
-        # and the scripting server is enabled. Returns None otherwise.
+        # Try connecting to existing Resolve instance first
         self._resolve = self._dvr_script.scriptapp("Resolve")
         
         if self._resolve is None:
-            raise ResolveConnectionError(
-                "Unable to connect to DaVinci Resolve. "
-                "Ensure Resolve is running and scripting is enabled in "
-                "Preferences > System > General > External scripting using."
-            )
+            # Resolve not running - attempt to launch it
+            if not self._launch_resolve():
+                raise ResolveConnectionError(
+                    "Unable to connect to DaVinci Resolve. "
+                    "Attempted to launch Resolve but connection failed. "
+                    "Ensure Resolve is installed and scripting is enabled in "
+                    "Preferences > System > General > External scripting using."
+                )
+            
+            # Mark that we launched it
+            self._launched_by_forge = True
+        else:
+            # Connected to existing instance - we did not launch it
+            self._launched_by_forge = False
         
         # Get the project manager for project operations
         self._project_manager = self._resolve.GetProjectManager()
@@ -853,6 +877,114 @@ class ResolveEngine:
                 "Connected to Resolve but unable to access Project Manager. "
                 "This may indicate a Resolve version incompatibility or licensing issue."
             )
+    
+    def _launch_resolve(self) -> bool:
+        """
+        Launch DaVinci Resolve application.
+        
+        Platform support:
+            - macOS: Launch via 'open' command
+            - Windows: Not implemented
+            - Linux: Not implemented
+        
+        Returns:
+            True if Resolve launched and connected, False otherwise
+        """
+        import sys
+        import time
+        
+        if sys.platform != "darwin":
+            # Only macOS supported for now
+            return False
+        
+        if not self._installation_info:
+            return False
+        
+        try:
+            # Launch Resolve.app
+            import subprocess
+            self._resolve_process = subprocess.Popen(
+                ["open", "-a", self._installation_info.install_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            
+            # Wait for Resolve to start and become connectable
+            # Try for up to 30 seconds
+            for _ in range(30):
+                time.sleep(1)
+                self._resolve = self._dvr_script.scriptapp("Resolve")
+                if self._resolve is not None:
+                    return True
+            
+            return False
+            
+        except Exception:
+            return False
+    
+    def _shutdown_resolve(self) -> None:
+        """
+        Shutdown DaVinci Resolve if we launched it.
+        
+        Only attempts shutdown if _launched_by_forge is True.
+        Gives Resolve 10 seconds to exit gracefully, then force terminates.
+        """
+        if not self._launched_by_forge:
+            return
+        
+        import sys
+        import time
+        
+        try:
+            # Try graceful quit via API first
+            if self._resolve is not None:
+                try:
+                    # Resolve's scripting API doesn't have a standard Quit method
+                    # We'll need to use OS-level process termination
+                    pass
+                except Exception:
+                    pass
+            
+            # macOS: Find and terminate Resolve process
+            if sys.platform == "darwin":
+                import subprocess
+                
+                # Give Resolve a moment to save state
+                time.sleep(2)
+                
+                # Try graceful termination first
+                try:
+                    subprocess.run(
+                        ["osascript", "-e", 'quit app "DaVinci Resolve"'],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                    
+                    # Wait for process to exit (up to 10 seconds)
+                    for _ in range(10):
+                        result = subprocess.run(
+                            ["pgrep", "-f", "DaVinci Resolve"],
+                            capture_output=True,
+                        )
+                        if result.returncode != 0:
+                            # Process exited
+                            return
+                        time.sleep(1)
+                    
+                    # Still running - force terminate
+                    subprocess.run(
+                        ["pkill", "-9", "-f", "DaVinci Resolve"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    
+                except Exception:
+                    # Best effort - don't fail the job if cleanup fails
+                    pass
+        
+        except Exception:
+            # Best effort cleanup
+            pass
     
     # =========================================================================
     # Private Methods - Project Management

@@ -96,7 +96,7 @@ def _detect_resolve_macos() -> Optional[ResolveInstallation]:
             except Exception:
                 pass
     
-    # Check Free installation
+    # Check Free installation path (but could be Studio with license)
     if free_path.exists():
         info_plist = free_path / "Contents" / "Info.plist"
         if info_plist.exists():
@@ -105,11 +105,22 @@ def _detect_resolve_macos() -> Optional[ResolveInstallation]:
                     plist_data = plistlib.load(f)
                     version = plist_data.get("CFBundleShortVersionString", "unknown")
                     
+                    # Check for Studio license files
+                    license_dir = Path("/Library/Application Support/Blackmagic Design/DaVinci Resolve/.license")
+                    has_studio_license = False
+                    if license_dir.exists():
+                        # Look for .davinciresolvestudio_*.lic files
+                        studio_license_files = list(license_dir.glob(".davinciresolvestudio_*.lic"))
+                        has_studio_license = len(studio_license_files) > 0
+                    
+                    edition = "studio" if has_studio_license else "free"
+                    detection_method = "macos_license_check" if has_studio_license else "macos_install_path"
+                    
                     return ResolveInstallation(
                         version=version,
-                        edition="free",
+                        edition=edition,
                         install_path=str(free_path),
-                        detection_method="macos_install_path",
+                        detection_method=detection_method,
                         detection_confidence="high",
                     )
             except Exception:
@@ -270,6 +281,46 @@ def is_resolve_free() -> bool:
     """
     info = detect_resolve_installation()
     return info.edition == "free" if info else False
+
+
+# =============================================================================
+# Process Detection
+# =============================================================================
+
+def is_resolve_running() -> bool:
+    """
+    Check if DaVinci Resolve process is currently running.
+    
+    This is critical for headless execution to ensure we don't accidentally
+    attach to or interfere with an existing UI session.
+    
+    Platform support:
+        - macOS: Uses pgrep to detect "DaVinci Resolve" process
+        - Windows: Not implemented (returns False)
+        - Linux: Not implemented (returns False)
+    
+    Returns:
+        True if Resolve process is running, False otherwise
+    """
+    import sys
+    
+    if sys.platform == "darwin":
+        # macOS: Use pgrep to search for Resolve process
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "DaVinci Resolve"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            # pgrep returns 0 if process found, 1 if not found
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # If pgrep is not available or times out, assume not running
+            return False
+    
+    # Other platforms not implemented - return False (allow execution)
+    return False
 
 
 # =============================================================================
