@@ -65,27 +65,47 @@ class TestResult:
         self.duration_ms: Optional[int] = None
         self.validation_error: Optional[str] = None
         
+        # Evidence fields (ALWAYS captured, even when null)
+        self.resolve_edition_detected: Optional[str] = None  # "free" | "studio" | null
+        self.resolve_version_detected: Optional[str] = None
+        self.proxy_profile_used: Optional[str] = None
+        self.output_verified: bool = False
+        self.output_file_size_bytes: Optional[int] = None
+        
         # Skip metadata (populated if status="skipped")
         self.skip_reason: Optional[str] = None
-        self.detected_resolve_edition: Optional[str] = None
-        self.resolve_version: Optional[str] = None
+        self.detected_resolve_edition: Optional[str] = None  # Legacy field for skip metadata
+        self.resolve_version: Optional[str] = None  # Legacy field for skip metadata
         self.timestamp: Optional[str] = None
     
     def to_dict(self) -> dict:
         """Serialize to dictionary for JSON report."""
+        # Normalize status to standard values
+        normalized_status = self.status
+        if self.status == "completed":
+            normalized_status = "PASSED"
+        elif self.status == "failed":
+            normalized_status = "FAILED"
+        elif self.status == "skipped":
+            normalized_status = "SKIPPED"
+        elif self.status == "error":
+            normalized_status = "FAILED"  # Errors are failures
+        
+        # Extract source basename
+        source_basename = Path(self.source_path).name
+        
         result = {
-            "sample_id": self.sample_id,
-            "format": self.format_name,
-            "source_path": self.source_path,
-            "expected_policy": self.expected_policy,
-            "requires_resolve_edition": self.requires_resolve_edition,
-            "job_id": self.job_id,
-            "status": self.status,
+            "test_id": self.sample_id,
+            "resolve_edition_required": self.requires_resolve_edition,
+            "resolve_edition_detected": self.resolve_edition_detected,
+            "resolve_version_detected": self.resolve_version_detected,
+            "sources": [source_basename],
             "engine_used": self.engine_used,
-            "failure_reason": self.failure_reason,
-            "output_paths": self.output_paths,
-            "duration_ms": self.duration_ms,
-            "validation_error": self.validation_error,
+            "proxy_profile": self.proxy_profile_used,
+            "status": normalized_status,
+            "error_message": self.failure_reason or self.validation_error,
+            "output_verified": self.output_verified,
+            "output_file_size_bytes": self.output_file_size_bytes,
         }
         
         # Add skip metadata if test was skipped
@@ -197,6 +217,11 @@ class ForgeTestRunner:
         # =====================================================================
         resolve_info = detect_resolve_installation()
         
+        # ALWAYS capture Resolve evidence (even for skipped tests)
+        if resolve_info:
+            result.resolve_edition_detected = resolve_info.edition
+            result.resolve_version_detected = resolve_info.version
+        
         if requires_edition == "free" and resolve_info and resolve_info.edition == "studio":
             # Free required but Studio detected - SKIP
             result.status = "skipped"
@@ -261,11 +286,14 @@ class ForgeTestRunner:
             result.status = execution_result.final_status.lower()
             result.engine_used = execution_result.engine_used
             result.validation_error = execution_result.validation_error
+            result.proxy_profile_used = execution_result.proxy_profile_used
             
-            # Collect outputs
+            # Collect outputs and verify
             for clip in execution_result.clips:
                 if clip.output_exists:
                     result.output_paths.append(clip.resolved_output_path)
+                    result.output_verified = True
+                    result.output_file_size_bytes = clip.output_size_bytes
                 if clip.failure_reason:
                     result.failure_reason = clip.failure_reason
             
@@ -325,7 +353,52 @@ class ForgeTestRunner:
             "errors": sum(1 for r in self.results if r.status == "error"),
         }
         
+        # Aggregate evidence summary (facts only, no interpretation)
+        report["aggregate_summary"] = self._build_aggregate_summary()
+        
         return report
+    
+    def _build_aggregate_summary(self) -> dict:
+        """
+        Build aggregate summary with pure fact counts (no interpretation).
+        
+        Returns counts by:
+        - status (PASSED/FAILED/SKIPPED)
+        - engine_used
+        - source_extension
+        """
+        from collections import Counter
+        
+        # Count by status (normalized)
+        status_counts = Counter()
+        for r in self.results:
+            if r.status == "completed":
+                status_counts["PASSED"] += 1
+            elif r.status == "failed" or r.status == "error":
+                status_counts["FAILED"] += 1
+            elif r.status == "skipped":
+                status_counts["SKIPPED"] += 1
+        
+        # Count by engine
+        engine_counts = Counter()
+        for r in self.results:
+            engine = r.engine_used or "null"
+            engine_counts[engine] += 1
+        
+        # Count by source extension
+        extension_counts = Counter()
+        for r in self.results:
+            ext = Path(r.source_path).suffix.lower()
+            if ext:
+                extension_counts[ext] += 1
+            else:
+                extension_counts["no_extension"] += 1
+        
+        return {
+            "by_status": dict(sorted(status_counts.items())),
+            "by_engine": dict(sorted(engine_counts.items())),
+            "by_source_extension": dict(sorted(extension_counts.items())),
+        }
     
     def _save_report(self, report: dict) -> Path:
         """Save report to JSON file."""

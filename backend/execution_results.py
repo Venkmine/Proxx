@@ -196,6 +196,19 @@ class JobExecutionResult:
     
     def to_dict(self) -> dict:
         """Serialize to dictionary for JSON output with _metadata."""
+        # Extract source evidence (basenames and extensions)
+        source_files = []
+        source_extensions = []
+        for clip in self.clips:
+            basename = Path(clip.source_path).name
+            source_files.append(basename)
+            ext = Path(clip.source_path).suffix.lower()
+            if ext and ext not in source_extensions:
+                source_extensions.append(ext)
+        
+        # Sort for determinism
+        source_extensions.sort()
+        
         result = {
             "job_id": self.job_id,
             "final_status": self.final_status,
@@ -206,6 +219,8 @@ class JobExecutionResult:
             "total_clips": len(self.clips),
             "completed_clips": sum(1 for c in self.clips if c.status == "COMPLETED"),
             "failed_clips": sum(1 for c in self.clips if c.status == "FAILED"),
+            "source_files": source_files,
+            "source_extensions": source_extensions,
         }
         
         # Include _metadata for postmortem auditing
@@ -216,11 +231,17 @@ class JobExecutionResult:
             "engine_used": self.engine_used,
             "resolve_preset_used": self.resolve_preset_used,
             "proxy_profile_used": self.proxy_profile_used,
+            "resolve_edition_detected": None,  # Populated by execution engines
+            "resolve_version_detected": None,  # Populated by execution engines
         }
         
         # Include Resolve edition/version if available
         if hasattr(self, '_resolve_metadata'):
-            result["_metadata"].update(self._resolve_metadata)
+            # Map internal keys to standard evidence field names
+            if 'resolve_edition' in self._resolve_metadata:
+                result["_metadata"]["resolve_edition_detected"] = self._resolve_metadata['resolve_edition']
+            if 'resolve_version' in self._resolve_metadata:
+                result["_metadata"]["resolve_version_detected"] = self._resolve_metadata['resolve_version']
         
         # Include skip_metadata if job was skipped
         if self.skip_metadata:
