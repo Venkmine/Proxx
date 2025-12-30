@@ -15,6 +15,7 @@ import React, { useEffect, useState } from "react";
 import { fetchJobsView, DataAdapterError } from "../../data_adapter";
 import type { JobView } from "../../data_adapter/types";
 import type { JobsListProps, JobRowProps } from "./JobsList.types";
+import { formatJobStatus, getStatusIcon } from "../../../ui_utils/statusMessages";
 import "./JobsList.css";
 
 /**
@@ -22,11 +23,24 @@ import "./JobsList.css";
  * No transformation - just safe access with fallbacks.
  */
 function getJobDisplayFields(job: JobView) {
+  const finalStatus = job.fabric_data?.final_status ?? "(unknown)";
+  const engineUsed = job.fabric_data?._metadata?.engine_used ?? job.fabric_data?.engine_used ?? null;
+  const resolveEdition = job.fabric_data?._metadata?.resolve_edition_detected ?? null;
+  const resolveVersion = job.fabric_data?._metadata?.resolve_version_detected ?? null;
+  const validationError = job.fabric_data?._metadata?.validation_error ?? null;
+
   return {
     job_id: job.job_id,
-    final_status: job.fabric_data?.final_status ?? "(unknown)",
+    final_status: finalStatus,
+    final_status_formatted: formatJobStatus(finalStatus, {
+      engineUsed,
+      resolveEdition,
+      resolveVersion,
+      validationError,
+    }),
+    status_icon: getStatusIcon(finalStatus),
     proxy_profile: job.fabric_data?.proxy_profile ?? "(none)",
-    engine_used: job.fabric_data?.engine_used ?? "(none)",
+    engine_used: engineUsed ?? "(none)",
     created_at: job.fabric_data?.created_at ?? "(unknown)",
     annotation_count: job.annotations.length,
   };
@@ -61,8 +75,8 @@ function JobRow({ job, onClick }: JobRowProps) {
     >
       <td className="job-cell job-cell--id">{fields.job_id}</td>
       <td className="job-cell job-cell--status">
-        {hasError && <span className="error-indicator" aria-label="Failed">⚠️</span>}
-        {fields.final_status}
+        <span className="status-icon">{fields.status_icon}</span>
+        {fields.final_status_formatted}
       </td>
       <td className="job-cell job-cell--profile">{fields.proxy_profile}</td>
       <td className="job-cell job-cell--engine">{fields.engine_used}</td>

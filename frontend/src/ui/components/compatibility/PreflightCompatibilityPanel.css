@@ -1,0 +1,173 @@
+/**
+ * Pre-flight Compatibility Panel Styles
+ */
+
+.preflight-compatibility-panel {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.preflight-compatibility-panel__title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  color: #212529;
+}
+
+.preflight-compatibility-panel__section {
+  margin: 1.5rem 0;
+}
+
+.preflight-compatibility-panel__section:first-of-type {
+  margin-top: 0;
+}
+
+.preflight-compatibility-panel__subtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: #495057;
+}
+
+.preflight-compatibility-panel__info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.preflight-compatibility-panel__info dt {
+  font-weight: 500;
+  color: #6c757d;
+}
+
+.preflight-compatibility-panel__info dd {
+  margin: 0;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  color: #212529;
+}
+
+.preflight-compatibility-panel__missing {
+  color: #dc3545 !important;
+  font-style: italic;
+}
+
+.preflight-compatibility-panel__formats {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.preflight-compatibility-panel__format {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-left-width: 4px;
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.preflight-compatibility-panel__format--run {
+  border-left-color: #28a745;
+}
+
+.preflight-compatibility-panel__format--skip {
+  border-left-color: #ffc107;
+}
+
+.preflight-compatibility-panel__format--block {
+  border-left-color: #dc3545;
+}
+
+.preflight-compatibility-panel__format-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.preflight-compatibility-panel__format-name {
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  color: #212529;
+}
+
+.preflight-compatibility-panel__format-count {
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.preflight-compatibility-panel__status-badge {
+  margin-left: auto;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.preflight-compatibility-panel__status-badge--run {
+  background: #d4edda;
+  color: #155724;
+}
+
+.preflight-compatibility-panel__status-badge--skip {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.preflight-compatibility-panel__status-badge--block {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.preflight-compatibility-panel__format-reason {
+  margin: 0;
+  color: #495057;
+  line-height: 1.5;
+}
+
+.preflight-compatibility-panel__legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.preflight-compatibility-panel__legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: #495057;
+}
+
+.preflight-compatibility-panel__legend-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  min-width: 60px;
+  text-align: center;
+}
+
+.preflight-compatibility-panel__legend-badge--run {
+  background: #d4edda;
+  color: #155724;
+}
+
+.preflight-compatibility-panel__legend-badge--skip {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.preflight-compatibility-panel__legend-badge--block {
+  background: #f8d7da;
+  color: #721c24;
+}

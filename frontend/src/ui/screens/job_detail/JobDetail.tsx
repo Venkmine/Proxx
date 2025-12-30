@@ -11,7 +11,7 @@
  * - Errors displayed exactly as received
  */
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   fetchJobsView,
   fetchSnapshotsView,
@@ -20,6 +20,9 @@ import {
 import type { JobView, SnapshotView, Annotation } from "../../data_adapter/types";
 import type { JobDetailProps, AnnotationsListProps } from "./JobDetail.types";
 import { AddAnnotation } from "../../components/annotations/AddAnnotation";
+import { PreflightCompatibilityPanel } from "../../components/compatibility/PreflightCompatibilityPanel";
+import { WhyThisHappened } from "../../components/explanation/WhyThisHappened";
+import { formatJobStatus, getStatusIcon } from "../../../ui_utils/statusMessages";
 import "./JobDetail.css";
 
 /**
@@ -210,14 +213,31 @@ export function JobDetail({ jobId, onNavigateBack, className = "" }: JobDetailPr
 
   // Extract display fields
   const finalStatus = job.fabric_data?.final_status ?? "(unknown)";
-  const engineUsed = job.fabric_data?.engine_used ?? "(none)";
+  const engineUsed = job.fabric_data?._metadata?.engine_used ?? job.fabric_data?.engine_used ?? null;
   const proxyProfileUsed = job.fabric_data?.proxy_profile ?? "(none)";
   const createdAt = job.fabric_data?.created_at;
   const completedAt = job.fabric_data?.completed_at;
   const validationStage = job.fabric_data?.validation_stage;
   const errorMessage = job.fabric_data?.error_message;
+  const validationError = job.fabric_data?._metadata?.validation_error ?? job.fabric_data?.validation_error ?? null;
+  
+  // Resolve metadata
+  const resolveEdition = job.fabric_data?._metadata?.resolve_edition_detected ?? null;
+  const resolveVersion = job.fabric_data?._metadata?.resolve_version_detected ?? null;
+  
+  // Source file extensions
+  const sourceExtensions = job.fabric_data?.source_extensions ?? [];
 
   const isFailed = finalStatus === "failed" || finalStatus === "error";
+
+  // Format status with context
+  const statusIcon = getStatusIcon(finalStatus);
+  const formattedStatus = formatJobStatus(finalStatus, {
+    resolveEdition,
+    resolveVersion,
+    engineUsed,
+    validationError,
+  });
 
   return (
     <div className={`job-detail ${className}`}>
@@ -236,6 +256,14 @@ export function JobDetail({ jobId, onNavigateBack, className = "" }: JobDetailPr
       </div>
 
       <div className="job-detail__content">
+        {/* Pre-flight Compatibility Panel - shows BEFORE execution context */}
+        <PreflightCompatibilityPanel
+          resolveEdition={resolveEdition}
+          resolveVersion={resolveVersion}
+          sourceExtensions={sourceExtensions}
+          engineUsed={engineUsed}
+        />
+
         <section className="job-detail__section">
           <h2 className="job-detail__section-title">Job Information</h2>
           <dl className="job-detail__info-list">
@@ -243,13 +271,27 @@ export function JobDetail({ jobId, onNavigateBack, className = "" }: JobDetailPr
             <dd className="job-detail__job-id">{job.job_id}</dd>
 
             <dt>Status</dt>
-            <dd>{finalStatus}</dd>
+            <dd>{formattedStatus}</dd>
 
             <dt>Engine Used</dt>
-            <dd>{engineUsed}</dd>
+            <dd>{engineUsed || "(none)"}</dd>
 
             <dt>Proxy Profile</dt>
             <dd>{proxyProfileUsed}</dd>
+
+            {resolveEdition && (
+              <>
+                <dt>Resolve Edition</dt>
+                <dd>{resolveEdition}</dd>
+              </>
+            )}
+
+            {resolveVersion && (
+              <>
+                <dt>Resolve Version</dt>
+                <dd>{resolveVersion}</dd>
+              </>
+            )}
 
             <dt>Created At</dt>
             <dd>{formatDate(createdAt)}</dd>
@@ -258,6 +300,16 @@ export function JobDetail({ jobId, onNavigateBack, className = "" }: JobDetailPr
             <dd>{formatDate(completedAt)}</dd>
           </dl>
         </section>
+
+        {/* Why This Happened - explains decisions */}
+        <WhyThisHappened
+          finalStatus={finalStatus}
+          engineUsed={engineUsed}
+          resolveEdition={resolveEdition}
+          resolveVersion={resolveVersion}
+          sourceExtensions={sourceExtensions}
+          validationError={validationError}
+        />
 
         {isFailed && (
           <section className="job-detail__section job-detail__section--error">
