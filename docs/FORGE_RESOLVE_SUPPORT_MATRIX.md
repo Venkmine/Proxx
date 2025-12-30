@@ -18,12 +18,14 @@ This document is generated from test evidence, not speculation. All support clai
 
 | Format | Resolve Free | Resolve Studio | Test Evidence | Notes |
 |--------|--------------|----------------|---------------|-------|
-| **BRAW** (Blackmagic RAW) | ✅ | ✅ | `test_report_studio_20251230_212542.json` | Native support, verified 405MB output |
-| **R3D** (RED RAW) | ⚠️ | ✅ | `test_report_studio_20251230_212542.json` | Studio verified (500MB output); Free has limited debayer |
-| **ARRIRAW** (ARRI RAW) | ⚠️ | ✅ | `test_report_studio_20251230_212542.json` | **Requires Resolve 20.3.1+** for ARRICORE; verified 1.4GB output |
-| **X-OCN** (Sony RAW) | ⚠️ | ✅ | `test_report_studio_20251230_212542.json` | Venice 2 verified (3.9GB output); Free untested |
-| **Canon RAW** | ⚠️ | ⚠️ | *No test evidence* | Cinema RAW Light - untested |
+| **BRAW** (Blackmagic RAW) | ✅* | ✅ | `test_report_studio_20251230_212542.json` | Studio verified (405MB); Free assumed compatible |
+| **R3D** (RED RAW) | ⚠️* | ✅ | `test_report_studio_20251230_212542.json` | Studio verified (500MB); Free has limited debayer |
+| **ARRIRAW** (ARRI RAW) | ⚠️* | ✅ | `test_report_studio_20251230_212542.json` | **Requires Resolve 20.3.1+** for ARRICORE; Studio verified (1.4GB) |
+| **X-OCN** (Sony RAW) | ⚠️* | ✅ | `test_report_studio_20251230_212542.json` | Studio verified (3.9GB); Free edition untested |
+| **Canon RAW** | ⚠️ | ⚠️ | *No test evidence* | Cinema RAW Light - untested in both editions |
 | **ProRes RAW** | ❌ | ❌ | *Policy block* | **NOT SUPPORTED** - Neither edition can decode ProRes RAW |
+
+**\* Free Edition Note:** Resolve Free does not support external scripting API, which prevents automated testing. Free edition support is inferred from Studio results but not directly verified.
 
 ---
 
@@ -33,7 +35,7 @@ This document is generated from test evidence, not speculation. All support clai
 |--------|--------------|----------------|--------|---------------|-------|
 | **H.264** | ✅ | ✅ | FFmpeg | *FFmpeg tested* | Standard format |
 | **H.265/HEVC** | ✅ | ✅ | FFmpeg | *FFmpeg tested* | Standard format |
-| **ProRes** (422/HQ/4444) | ✅ | ✅ | FFmpeg | *FFmpeg tested* | Standard ProRes, NOT ProRes RAW |
+| **ProRes** (422/HQ/4* | ✅ | Resolve | `test_report_studio_20251230_212542.json` | Studio verified (1.5GB); Free edition
 | **DNxHD/DNxHR** | ✅ | ✅ | FFmpeg | *FFmpeg tested* | Avid codecs |
 | **XAVC** (Sony) | ⚠️ | ✅ | Resolve | `test_report_studio_20251230_212542.json` | Burano verified (1.5GB output); Free untested |
 
@@ -58,17 +60,26 @@ ProRes RAW is Apple's sensor RAW format that can **only** be decoded by Final Cu
 
 **DaVinci Resolve Free vs Studio:**
 
-- **Free**: Full support for most RAW formats, but may have limitations on:
-  - Advanced color science options
-  - GPU acceleration for certain codecs
-  - Noise reduction quality
+- **Free**: Full support for most RAW formats, but has limitations:
+  - **No external scripting API** - prevents automated headless testing
+  - Limited debayering options for RED, ARRI
+  - Advanced color science options restricted
+  - GPU acceleration limited for certain codecs
+  - Noise reduction quality reduced
 
 - **Studio**: Full professional feature set including:
+  - **External scripting API support** - enables automation and headless execution
   - Advanced debayering options for RED, ARRI
   - GPU acceleration for all supported codecs
   - Collaboration features
+  - Full color science toolkit
 
 **For proxy generation**: Both editions work, but Studio may be faster for high-resolution RAW formats.
+
+**Critical Limitation for Automation:** Resolve Free does not support external scripting API connections (as documented in [BMD forums](https://forum.blackmagicdesign.com/viewtopic.php?f=21&t=113252)). This means:
+- ✅ Internal scripts work (Workspace > Scripts menu)
+- ❌ External Python scripts cannot connect (headless automation impossible)
+- ❌ Forge test runner cannot validate Free edition automatically
 
 ---
 
