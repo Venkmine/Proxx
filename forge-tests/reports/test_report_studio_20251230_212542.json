@@ -1,0 +1,136 @@
+{
+  "test_suite": "resolve_studio_edition",
+  "description": "Test matrix for DaVinci Resolve Studio edition support validation",
+  "timestamp": "2025-12-30T21:25:42.356454+00:00",
+  "forge_version": "v2-dev5",
+  "resolve_metadata": {
+    "resolve_version": "20.3.1",
+    "resolve_edition": "studio",
+    "install_path": "/Applications/DaVinci Resolve/DaVinci Resolve.app",
+    "detection_method": "macos_license_check",
+    "detection_confidence": "high"
+  },
+  "results": [
+    {
+      "test_id": "arriraw_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.3.1",
+      "sources": [
+        "arriraw_sample.mxf"
+      ],
+      "engine_used": "resolve",
+      "proxy_profile": "proxy_prores_proxy_resolve",
+      "status": "PASSED",
+      "error_message": null,
+      "output_verified": true,
+      "output_file_size_bytes": 1477383282
+    },
+    {
+      "test_id": "braw_sample",
+      "resolve_edition_required": "either",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.3.1",
+      "sources": [
+        "braw_sample.braw"
+      ],
+      "engine_used": "resolve",
+      "proxy_profile": "proxy_prores_proxy_resolve",
+      "status": "PASSED",
+      "error_message": null,
+      "output_verified": true,
+      "output_file_size_bytes": 405225063
+    },
+    {
+      "test_id": "prores_raw_sample",
+      "resolve_edition_required": "either",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.3.1",
+      "sources": [
+        "prores_raw_sample.mov"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "SKIPPED",
+      "error_message": "Sample file not found: /Users/leon.grant/projects/Proxx/forge-tests/samples/prores_raw_sample.mov",
+      "output_verified": false,
+      "output_file_size_bytes": null,
+      "skip_metadata": {
+        "reason": null,
+        "detected_resolve_edition": null,
+        "required_resolve_edition": "either",
+        "resolve_version": null,
+        "timestamp": null
+      }
+    },
+    {
+      "test_id": "r3d_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.3.1",
+      "sources": [
+        "r3d_sample.r3d"
+      ],
+      "engine_used": "resolve",
+      "proxy_profile": "proxy_prores_proxy_resolve",
+      "status": "PASSED",
+      "error_message": null,
+      "output_verified": true,
+      "output_file_size_bytes": 500983414
+    },
+    {
+      "test_id": "xavc_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.3.1",
+      "sources": [
+        "xavc_sample.mxf"
+      ],
+      "engine_used": "resolve",
+      "proxy_profile": "proxy_prores_proxy_resolve",
+      "status": "PASSED",
+      "error_message": null,
+      "output_verified": true,
+      "output_file_size_bytes": 1513193447
+    },
+    {
+      "test_id": "xocn_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.3.1",
+      "sources": [
+        "xocn_sample.mxf"
+      ],
+      "engine_used": "resolve",
+      "proxy_profile": "proxy_prores_proxy_resolve",
+      "status": "PASSED",
+      "error_message": null,
+      "output_verified": true,
+      "output_file_size_bytes": 3944182107
+    }
+  ],
+  "summary": {
+    "total_tests": 6,
+    "completed": 5,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 1,
+    "errors": 0
+  },
+  "aggregate_summary": {
+    "by_status": {
+      "PASSED": 5,
+      "SKIPPED": 1
+    },
+    "by_engine": {
+      "null": 1,
+      "resolve": 5
+    },
+    "by_source_extension": {
+      ".braw": 1,
+      ".mov": 1,
+      ".mxf": 3,
+      ".r3d": 1
+    }
+  }
+}
