@@ -316,6 +316,7 @@ def _infer_codec_from_path(source_path: Path) -> str:
         "braw": "braw",        # Blackmagic RAW
         "crm": "canon_raw",    # Canon Cinema RAW
         "dng": "cinemadng",    # CinemaDNG
+        "exr": "exr",          # OpenEXR (not RAW, but requires Resolve)
     }
     
     if ext in raw_extensions:
