@@ -507,6 +507,7 @@ def _build_ffmpeg_command(
     source_path: str,
     output_path: str,
     job_spec: JobSpec,
+    lut_filepath: Optional[str] = None,
 ) -> List[str]:
     """
     Build FFmpeg command from JobSpec using canonical proxy profile.
@@ -521,11 +522,17 @@ def _build_ffmpeg_command(
     - Resolution scaling policy
     - Audio handling policy
     
+    LUT Support:
+    - If lut_filepath is provided, adds -vf lut3d filter
+    - LUT is applied BEFORE any resolution scaling
+    - Supported formats: .cube, .3dl
+    
     Args:
         ffmpeg_path: Path to FFmpeg executable
         source_path: Input file path
         output_path: Output file path
         job_spec: JobSpec with proxy_profile specified
+        lut_filepath: Optional path to LUT file to apply
         
     Returns:
         Complete FFmpeg command as list of strings
@@ -555,13 +562,44 @@ def _build_ffmpeg_command(
     # Input file
     cmd.extend(["-i", source_path])
     
-    # Codec arguments from profile
-    cmd.extend(resolve_ffmpeg_codec_args(profile))
+    # Build video filter chain
+    # LUT must be applied first, then scaling
+    vf_filters = []
     
-    # Resolution arguments from profile
+    # Add LUT filter if provided
+    if lut_filepath:
+        # FFmpeg lut3d filter supports .cube and .3dl formats
+        # The filter automatically detects format from extension
+        vf_filters.append(f"lut3d='{lut_filepath}'")
+    
+    # Resolution arguments from profile (may include scale filter)
     resolution_args = resolve_ffmpeg_resolution_args(profile)
+    
+    # Check if resolution_args contains a -vf flag and extract filters
+    if resolution_args:
+        vf_index = None
+        for i, arg in enumerate(resolution_args):
+            if arg == "-vf":
+                vf_index = i
+                break
+        
+        if vf_index is not None and vf_index + 1 < len(resolution_args):
+            # Extract the filter from resolution args
+            resolution_filter = resolution_args[vf_index + 1]
+            vf_filters.append(resolution_filter)
+            # Remove -vf and its argument from resolution_args
+            resolution_args = resolution_args[:vf_index] + resolution_args[vf_index + 2:]
+    
+    # Apply combined video filters
+    if vf_filters:
+        cmd.extend(["-vf", ",".join(vf_filters)])
+    
+    # Add remaining resolution args (if any)
     if resolution_args:
         cmd.extend(resolution_args)
+    
+    # Codec arguments from profile
+    cmd.extend(resolve_ffmpeg_codec_args(profile))
     
     # Audio arguments from profile
     cmd.extend(resolve_ffmpeg_audio_args(profile))
@@ -652,12 +690,72 @@ def execute_job_spec(
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
+    # Validate and resolve LUT if specified
+    lut_filepath = None
+    lut_hash = None
+    lut_name = None
+    lut_applied = False
+    
+    if job_spec.lut_id is not None:
+        try:
+            from lut_registry import (
+                validate_lut_for_engine,
+                LUTRegistryError,
+            )
+        except ImportError:
+            try:
+                from backend.lut_registry import (
+                    validate_lut_for_engine,
+                    LUTRegistryError,
+                )
+            except ImportError:
+                return ClipExecutionResult(
+                    source_path=str(source_path),
+                    resolved_output_path=str(output_path),
+                    ffmpeg_command=[],
+                    exit_code=-1,
+                    output_exists=False,
+                    output_size_bytes=None,
+                    status="FAILED",
+                    failure_reason=f"LUT registry module not available. Cannot apply lut_id='{job_spec.lut_id}'.",
+                    validation_stage="validation",
+                    engine_used=engine_used or "ffmpeg",
+                    proxy_profile_used=proxy_profile_used or job_spec.proxy_profile,
+                    resolve_preset_used=resolve_preset_used,
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc),
+                )
+        
+        try:
+            lut_entry = validate_lut_for_engine(job_spec.lut_id, "ffmpeg")
+            lut_filepath = lut_entry.filepath
+            lut_hash = lut_entry.file_hash
+            lut_name = lut_entry.filename
+        except LUTRegistryError as e:
+            return ClipExecutionResult(
+                source_path=str(source_path),
+                resolved_output_path=str(output_path),
+                ffmpeg_command=[],
+                exit_code=-1,
+                output_exists=False,
+                output_size_bytes=None,
+                status="FAILED",
+                failure_reason=f"LUT validation failed: {e}",
+                validation_stage="validation",
+                engine_used=engine_used or "ffmpeg",
+                proxy_profile_used=proxy_profile_used or job_spec.proxy_profile,
+                resolve_preset_used=resolve_preset_used,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+    
     # Build command
     ffmpeg_command = _build_ffmpeg_command(
         ffmpeg_path=ffmpeg_path,
         source_path=str(source_path),
         output_path=str(output_path),
         job_spec=job_spec,
+        lut_filepath=lut_filepath,
     )
     
     # Execute synchronously
@@ -692,11 +790,22 @@ def execute_job_spec(
     else:
         status = "COMPLETED"
         failure_reason = None
+        # Mark LUT as successfully applied if execution succeeded
+        if lut_filepath:
+            lut_applied = True
+    
+    # Build result with LUT audit information in command
+    # Add LUT metadata as comments in the command list for audit trail
+    audit_command = list(ffmpeg_command)
+    if lut_filepath and lut_applied:
+        audit_command.append(f"# LUT applied: {lut_name}")
+        audit_command.append(f"# LUT hash: {lut_hash}")
+        audit_command.append(f"# LUT engine: ffmpeg")
     
     return ClipExecutionResult(
         source_path=str(source_path),
         resolved_output_path=str(output_path),
-        ffmpeg_command=ffmpeg_command,
+        ffmpeg_command=audit_command,
         exit_code=exit_code,
         output_exists=output_exists,
         output_size_bytes=output_size,

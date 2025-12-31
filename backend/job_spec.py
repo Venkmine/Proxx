@@ -166,6 +166,10 @@ class JobSpec:
         "resolve_preset",
         "proxy_profile",
         "requires_resolve_edition",
+        # LUT Support Fields
+        "lut_id",
+        "lut_applied",
+        "lut_engine",
     }
     
     sources: List[str]
@@ -182,6 +186,13 @@ class JobSpec:
     resolve_preset: Optional[str] = None
     resolved_tokens: Dict[str, str] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # LUT Support Fields (V2 Phase 1)
+    # lut_id: Reference to registered LUT in lut_registry (nullable = no LUT)
+    # lut_applied: Whether LUT was successfully applied during execution
+    # lut_engine: Which engine applied the LUT (resolve, ffmpeg, or none)
+    lut_id: Optional[str] = None
+    lut_applied: bool = False
+    lut_engine: Optional[str] = None  # "resolve" | "ffmpeg" | None
     
     # -------------------------------------------------------------------------
     # Serialization
@@ -213,6 +224,10 @@ class JobSpec:
             "naming_template": self.naming_template,
             "resolved_tokens": dict(sorted(self.resolved_tokens.items())),  # Stable ordering
             "created_at": self.created_at,
+            # LUT fields
+            "lut_id": self.lut_id,
+            "lut_applied": self.lut_applied,
+            "lut_engine": self.lut_engine,
         }
     
     def to_json(self, indent: int = 2) -> str:
@@ -371,6 +386,10 @@ class JobSpec:
             naming_template=data["naming_template"],
             resolved_tokens=data.get("resolved_tokens", {}),
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
+            # LUT fields
+            lut_id=data.get("lut_id"),
+            lut_applied=data.get("lut_applied", False),
+            lut_engine=data.get("lut_engine"),
         )
     
     @classmethod
@@ -782,6 +801,80 @@ class JobSpec:
         except FileNotFoundError:
             # ffprobe not available
             return None
+
+    def validate_lut(self, routes_to_resolve: bool = False) -> None:
+        """
+        Validate LUT configuration if lut_id is specified.
+        
+        LUT Validation Contract
+        =======================
+        If a LUT is specified (lut_id is not None):
+        1. The LUT MUST be registered in the LUT registry
+        2. The LUT file MUST exist at the registered path
+        3. The LUT file hash MUST match the registered hash
+        4. The LUT format MUST be compatible with the execution engine
+        
+        Args:
+            routes_to_resolve: Whether this job will be processed by Resolve engine.
+                              Determines which LUT formats are acceptable.
+        
+        Raises:
+            JobSpecValidationError: If LUT validation fails.
+        """
+        # No LUT specified - nothing to validate
+        if self.lut_id is None:
+            return
+        
+        # Import LUT registry
+        try:
+            from lut_registry import (
+                validate_lut_for_engine,
+                LUTNotFoundError,
+                LUTFileNotFoundError,
+                LUTHashMismatchError,
+                LUTEngineCompatibilityError,
+            )
+        except ImportError:
+            try:
+                from backend.lut_registry import (
+                    validate_lut_for_engine,
+                    LUTNotFoundError,
+                    LUTFileNotFoundError,
+                    LUTHashMismatchError,
+                    LUTEngineCompatibilityError,
+                )
+            except ImportError:
+                raise JobSpecValidationError(
+                    f"LUT registry module not available. Cannot validate lut_id='{self.lut_id}'. "
+                    "Ensure backend/lut_registry.py is present."
+                )
+        
+        # Determine engine for compatibility check
+        engine = "resolve" if routes_to_resolve else "ffmpeg"
+        
+        try:
+            validate_lut_for_engine(self.lut_id, engine)
+        except LUTNotFoundError as e:
+            raise JobSpecValidationError(
+                f"LUT not registered: {e}. "
+                "LUTs must be explicitly registered before use. "
+                "Use 'python backend/lut_registry.py register <path>' to register."
+            )
+        except LUTFileNotFoundError as e:
+            raise JobSpecValidationError(
+                f"LUT file missing: {e}. "
+                "The LUT was registered but the file no longer exists."
+            )
+        except LUTHashMismatchError as e:
+            raise JobSpecValidationError(
+                f"LUT file modified: {e}. "
+                "The LUT file has changed since registration. Re-register if intentional."
+            )
+        except LUTEngineCompatibilityError as e:
+            raise JobSpecValidationError(
+                f"LUT incompatible with engine: {e}. "
+                f"This job routes to {engine} which has specific format requirements."
+            )
 
     def validate(self, check_paths: bool = True) -> None:
         """

@@ -212,6 +212,16 @@ class ResolveOutputVerificationError(ResolveEngineError):
     pass
 
 
+class ResolveLUTError(ResolveEngineError):
+    """
+    Raised when LUT application fails in Resolve.
+    
+    This includes LUT file not found, unsupported format,
+    or failure to apply at project level.
+    """
+    pass
+
+
 class ResolvePresetError(ResolveEngineError):
     """
     Raised when a required render preset is not available in Resolve.
@@ -479,9 +489,19 @@ class ResolveRenderJobMetadata:
     render_status: Optional[str] = None
     """Final render status from Resolve."""
     
+    # LUT application fields for audit trail
+    lut_applied: bool = False
+    """Whether a LUT was applied to the project."""
+    
+    lut_name: Optional[str] = None
+    """Name of the LUT file applied (if any)."""
+    
+    lut_hash: Optional[str] = None
+    """SHA256 hash of the LUT file (for verification)."""
+    
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary for JSON output."""
-        return {
+        result = {
             "engine": "resolve",
             "project_name": self.project_name,
             "timeline_name": self.timeline_name,
@@ -493,7 +513,12 @@ class ResolveRenderJobMetadata:
             "resolution": self.resolution,
             "render_job_id": self.render_job_id,
             "render_status": self.render_status,
+            "lut_applied": self.lut_applied,
         }
+        if self.lut_applied:
+            result["lut_name"] = self.lut_name
+            result["lut_hash"] = self.lut_hash
+        return result
     
     def to_command_list(self) -> List[str]:
         """
@@ -502,7 +527,7 @@ class ResolveRenderJobMetadata:
         Returns a list of strings that can be stored in the ffmpeg_command
         field of ClipExecutionResult for audit compatibility.
         """
-        return [
+        cmd = [
             f"resolve-render",
             f"--project={self.project_name}",
             f"--timeline={self.timeline_name}",
@@ -513,6 +538,10 @@ class ResolveRenderJobMetadata:
             f"--input={self.source_path}",
             f"--output={self.output_path}",
         ]
+        if self.lut_applied and self.lut_name:
+            cmd.append(f"--lut={self.lut_name}")
+            cmd.append(f"--lut-hash={self.lut_hash}")
+        return cmd
 
 
 # =============================================================================
@@ -697,7 +726,26 @@ class ResolveEngine:
         project_name = f"proxx_job_{job_spec.job_id}"
         project = self._create_project(project_name)
         
+        # Track LUT application status for audit logging
+        lut_applied = False
+        lut_filepath = None
+        lut_hash = None
+        
         try:
+            # =================================================================
+            # Apply LUT at Project Level (if specified)
+            # =================================================================
+            # LUT application is EXPLICIT and REQUIRED if lut_id is set.
+            # LUT is applied at the PROJECT level, not per-clip.
+            # If LUT application fails, the ENTIRE job fails.
+            # =================================================================
+            if job_spec.lut_id is not None:
+                lut_entry, lut_filepath, lut_hash = self._apply_project_lut(
+                    project=project,
+                    lut_id=job_spec.lut_id,
+                )
+                lut_applied = True
+            
             # =================================================================
             # Process Each Source Clip
             # =================================================================
@@ -733,6 +781,9 @@ class ResolveEngine:
                         project_name=project_name,
                         timeline_name=timeline_name,
                         source_path=source_path,
+                        lut_applied=lut_applied,
+                        lut_filepath=lut_filepath,
+                        lut_hash=lut_hash,
                     )
                     
                     # Verify output exists on disk
@@ -1053,6 +1104,119 @@ class ResolveEngine:
             pass
     
     # =========================================================================
+    # Private Methods - LUT Application
+    # =========================================================================
+    
+    def _apply_project_lut(
+        self,
+        project: Any,
+        lut_id: str,
+    ) -> tuple:
+        """
+        Apply a LUT at the project level in Resolve.
+        
+        LUT Application Rules:
+        ----------------------
+        1. LUT is applied at PROJECT level, affecting all timelines
+        2. LUT MUST be registered in the LUT registry
+        3. LUT file hash is verified before application
+        4. Application failure = job failure (no fallback)
+        
+        Resolve LUT Modes:
+        ------------------
+        Resolve applies LUTs at the color management level using:
+        - Project Settings > Color Management > Lookup Table
+        This ensures the LUT is applied uniformly to all clips.
+        
+        Args:
+            project: Resolve project object
+            lut_id: ID of the LUT in the registry
+            
+        Returns:
+            Tuple of (lut_entry, lut_filepath, lut_hash) for logging
+            
+        Raises:
+            ResolveLUTError: If LUT application fails
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Import LUT registry
+        try:
+            from lut_registry import (
+                validate_lut_for_engine,
+                LUTNotFoundError,
+                LUTFileNotFoundError,
+                LUTHashMismatchError,
+                LUTEngineCompatibilityError,
+            )
+        except ImportError:
+            try:
+                from backend.lut_registry import (
+                    validate_lut_for_engine,
+                    LUTNotFoundError,
+                    LUTFileNotFoundError,
+                    LUTHashMismatchError,
+                    LUTEngineCompatibilityError,
+                )
+            except ImportError:
+                raise ResolveLUTError(
+                    f"LUT registry module not available. Cannot apply lut_id='{lut_id}'."
+                )
+        
+        # Validate LUT exists, hash matches, and is Resolve-compatible
+        try:
+            lut_entry = validate_lut_for_engine(lut_id, "resolve")
+        except LUTNotFoundError as e:
+            raise ResolveLUTError(f"LUT not found: {e}")
+        except LUTFileNotFoundError as e:
+            raise ResolveLUTError(f"LUT file missing: {e}")
+        except LUTHashMismatchError as e:
+            raise ResolveLUTError(f"LUT file modified: {e}")
+        except LUTEngineCompatibilityError as e:
+            raise ResolveLUTError(f"LUT format incompatible: {e}")
+        
+        lut_filepath = lut_entry.filepath
+        lut_hash = lut_entry.file_hash
+        
+        logger.info(
+            f"Applying LUT to project: name={lut_entry.filename}, "
+            f"hash={lut_hash[:16]}..., format={lut_entry.format.value}"
+        )
+        
+        # Apply LUT via Resolve's Color Management settings
+        # SetSetting API: project.SetSetting(settingName, settingValue)
+        # LUT is applied via "colorScienceLUT" setting with the file path
+        try:
+            # Enable LUT usage in color management
+            project.SetSetting("colorScienceMode", "davinciYRGBColorManagedv2")
+            
+            # Set the LUT path
+            # Note: Resolve expects the full absolute path to the LUT file
+            lut_applied = project.SetSetting("colorScienceLUT", lut_filepath)
+            
+            if not lut_applied:
+                raise ResolveLUTError(
+                    f"Resolve rejected LUT application for '{lut_entry.filename}'. "
+                    "The LUT may be incompatible with the current color science mode. "
+                    "Verify the LUT format (.cube, .3dl, .dat) is correct."
+                )
+            
+            logger.info(
+                f"LUT applied successfully: {lut_entry.filename} "
+                f"[hash: {lut_hash[:16]}...] [engine: resolve]"
+            )
+            
+            return (lut_entry, lut_filepath, lut_hash)
+            
+        except Exception as e:
+            if isinstance(e, ResolveLUTError):
+                raise
+            raise ResolveLUTError(
+                f"Failed to apply LUT '{lut_entry.filename}' in Resolve: {e}"
+            )
+    
+    # =========================================================================
     # Private Methods - Timeline Management
     # =========================================================================
     
@@ -1136,6 +1300,9 @@ class ResolveEngine:
         project_name: str,
         timeline_name: str,
         source_path: Path,
+        lut_applied: bool = False,
+        lut_filepath: Optional[str] = None,
+        lut_hash: Optional[str] = None,
     ) -> ResolveRenderJobMetadata:
         """
         Configure and execute a render job for a timeline.
@@ -1156,6 +1323,9 @@ class ResolveEngine:
             project_name: Name of the project (for metadata).
             timeline_name: Name of the timeline (for metadata).
             source_path: Original source path (for metadata).
+            lut_applied: Whether a LUT was applied at project level.
+            lut_filepath: Path to the LUT file (if applied).
+            lut_hash: SHA256 hash of the LUT file (if applied).
         
         Returns:
             ResolveRenderJobMetadata with render job details.
@@ -1247,6 +1417,10 @@ class ResolveEngine:
         # Build metadata for result
         # Note: format_name and codec_name are derived from the preset
         # The preset is the source of truth for V2 deterministic rendering
+        #
+        # Extract LUT filename from path for logging
+        lut_name = Path(lut_filepath).name if lut_filepath else None
+        
         return ResolveRenderJobMetadata(
             project_name=project_name,
             timeline_name=timeline_name,
@@ -1258,6 +1432,9 @@ class ResolveEngine:
             resolution=job_spec.resolution,
             render_job_id=str(job_id),
             render_status="Complete",
+            lut_applied=lut_applied,
+            lut_name=lut_name,
+            lut_hash=lut_hash,
         )
     
     # =========================================================================
