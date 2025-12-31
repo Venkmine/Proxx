@@ -53,6 +53,9 @@ FORMAT_FAMILIES: Dict[str, str] = {
     # ProRes RAW
     ".mov": "prores_raw",  # ProRes RAW in MOV - proxy generation supported (Resolve-based)
     
+    # OpenEXR (not a camera RAW format, but requires Resolve routing)
+    ".exr": "exr",  # OpenEXR image sequence - proxy generation supported (Resolve-based)
+    
     # Common video extensions that need codec probing
     ".mp4": "unknown",
     ".mkv": "unknown",
@@ -69,6 +72,7 @@ EDITION_REQUIREMENTS: Dict[str, str] = {
     "xocn": "studio",  # X-OCN requires Studio
     "xavc": "either",  # XAVC works in both (if Resolve-routed)
     "prores_raw": "either",  # ProRes RAW proxy generation (Resolve-based, both editions)
+    "exr": "either",  # OpenEXR proxy generation (Resolve-based, both editions)
     "unknown": "either",  # Unknown formats - conservative default
 }
 
@@ -83,6 +87,7 @@ ROUTING_DECISIONS: Dict[str, str] = {
     "xocn": "resolve",
     "xavc": "ffmpeg",  # XAVC is standard codec, FFmpeg can handle it
     "prores_raw": "resolve",  # ProRes RAW routes to Resolve (proxy workflow only)
+    "exr": "resolve",  # OpenEXR routes to Resolve (FFmpeg cannot handle high-bit-depth sequences)
     "unknown": "blocked",  # Unknown formats blocked by default (conservative)
 }
 

@@ -896,3 +896,118 @@ class TestProResRoutingGuards:
     def test_prores_generic_is_not_raw(self):
         """prores (generic) must NOT be classified as a RAW codec."""
         assert is_raw_codec("prores") is False
+
+
+# =============================================================================
+# OpenEXR Routing Guards
+# =============================================================================
+# EXR is NOT a camera RAW format, but it MUST route to Resolve because:
+# - FFmpeg cannot reliably handle high-bit-depth EXR sequences
+# - Resolve has native OpenEXR support with proper colorspace handling
+#
+# CONSTRAINTS:
+# - exr + exr → Resolve engine (deterministic)
+# - Proxy generation only (no creative grading controls)
+# - Image sequence handling (one folder = one job)
+# =============================================================================
+
+class TestEXRRoutingGuards:
+    """
+    Enforce EXR routing determinism (NOT FFmpeg, MUST be Resolve).
+    
+    PURPOSE:
+    - Prevent FFmpeg from attempting EXR sequence processing
+    - Ensure EXR sequences use Resolve's native OpenEXR decoder
+    - Lock proxy-only expectations (no grading controls)
+    
+    POLICY:
+    - exr + exr → Resolve (high-bit-depth support)
+    - Unrecognized container + exr → BLOCK (no guessing)
+    
+    These tests use MOCKED data only (no engine invocation).
+    """
+    
+    # -------------------------------------------------------------------------
+    # EXR Image Sequence → Resolve
+    # -------------------------------------------------------------------------
+    
+    def test_exr_exr_is_supported(self):
+        """exr + exr is supported (Resolve-based)."""
+        assert is_source_supported("exr", "exr") is True
+    
+    def test_exr_exr_routes_to_resolve(self):
+        """exr + exr → Resolve engine (NOT FFmpeg)."""
+        engine = get_execution_engine("exr", "exr")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_exr_exr_not_ffmpeg(self):
+        """exr + exr must NOT route to FFmpeg."""
+        engine = get_execution_engine("exr", "exr")
+        assert engine != ExecutionEngine.FFMPEG
+    
+    def test_exr_exr_validation_succeeds(self):
+        """exr + exr passes validation."""
+        # Should not raise exception
+        validate_source_capability("exr", "exr")
+    
+    def test_exr_exr_has_capability_entry(self):
+        """exr + exr has a SourceCapability entry in RESOLVE_SOURCES."""
+        from backend.v2.source_capabilities import RESOLVE_SOURCES
+        assert ("exr", "exr") in RESOLVE_SOURCES
+    
+    def test_exr_exr_capability_has_reason(self):
+        """exr + exr capability entry has a descriptive reason."""
+        from backend.v2.source_capabilities import RESOLVE_SOURCES
+        capability = RESOLVE_SOURCES[("exr", "exr")]
+        assert capability.reason is not None
+        assert len(capability.reason) > 0
+        assert "exr" in capability.reason.lower() or "openexr" in capability.reason.lower()
+    
+    def test_exr_exr_capability_engine_is_resolve(self):
+        """exr + exr capability entry explicitly sets engine=RESOLVE."""
+        from backend.v2.source_capabilities import RESOLVE_SOURCES
+        capability = RESOLVE_SOURCES[("exr", "exr")]
+        assert capability.engine == ExecutionEngine.RESOLVE
+    
+    # -------------------------------------------------------------------------
+    # Unrecognized Container + EXR → Still Routes to Resolve
+    # -------------------------------------------------------------------------
+    # NOTE: Because 'exr' is in RAW_CODECS_RESOLVE, the routing logic will
+    # route ANY container + exr to Resolve (codec takes precedence).
+    # This is correct behavior - we want EXR to always go to Resolve.
+    
+    def test_mov_exr_routes_to_resolve(self):
+        """mov + exr → Resolve (codec takes precedence)."""
+        engine = get_execution_engine("mov", "exr")
+        assert engine == ExecutionEngine.RESOLVE
+    
+    def test_mov_exr_validation_succeeds(self):
+        """mov + exr → validation succeeds (codec in RAW_CODECS_RESOLVE)."""
+        # Should not raise exception
+        validate_source_capability("mov", "exr")
+    
+    def test_mov_exr_is_supported(self):
+        """mov + exr → is_source_supported returns True (codec in RAW_CODECS_RESOLVE)."""
+        assert is_source_supported("mov", "exr") is True
+    
+    # -------------------------------------------------------------------------
+    # Routing Determinism (Critical for reliability)
+    # -------------------------------------------------------------------------
+    
+    def test_exr_routing_is_deterministic(self):
+        """EXR routing must be deterministic across repeated calls."""
+        engines = [get_execution_engine("exr", "exr") for _ in range(10)]
+        assert all(e == ExecutionEngine.RESOLVE for e in engines)
+    
+    # -------------------------------------------------------------------------
+    # EXR Classification Assertions
+    # -------------------------------------------------------------------------
+    
+    def test_exr_is_classified_as_raw(self):
+        """exr must be in RAW_CODECS_RESOLVE (even though it's not technically RAW)."""
+        assert is_raw_codec("exr") is True
+    
+    def test_exr_in_raw_codecs_set(self):
+        """exr must be present in RAW_CODECS_RESOLVE set."""
+        from backend.v2.source_capabilities import RAW_CODECS_RESOLVE
+        assert "exr" in RAW_CODECS_RESOLVE

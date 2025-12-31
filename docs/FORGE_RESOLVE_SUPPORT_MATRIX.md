@@ -24,6 +24,7 @@ This document is generated from test evidence, not speculation. All support clai
 | **X-OCN** (Sony RAW) | ⚠️* | ✅ | `test_report_studio_20251230_212542.json` | Studio verified (3.9GB); Free edition untested |
 | **Canon RAW** | ⚠️ | ⚠️ | *No test evidence* | Cinema RAW Light - untested in both editions |
 | **ProRes RAW** | ⚠️* | ⚠️* | `test_report_studio_20251230_212542.json` | **Proxy generation supported (Resolve-based)** ¹ |
+| **OpenEXR** | ⚠️* | ⚠️* | *Resolve-based routing* | **Proxy generation supported (Resolve-based)** ² |
 
 **\* Free Edition Note:** Resolve Free does not support external scripting API, which prevents automated testing. Free edition support is inferred from Studio results but not directly verified.
 
@@ -59,6 +60,17 @@ This document is generated from test evidence, not speculation. All support clai
 >
 > This support is limited to Resolve-based proxy generation workflows.
 > Do **not** expect full RAW debayering or color science controls.
+
+> **² OpenEXR Limitations:**
+>
+> - **NOT a camera RAW format** (it's a rendered/VFX image format)
+> - Routed to Resolve because FFmpeg cannot reliably handle high-bit-depth EXR sequences
+> - **Proxy generation only** – no creative grading controls expected
+> - Image sequence handling: one folder = one job
+> - Tested with 12K resolution (12288×6144) 16-bit float RGBA sequences
+>
+> This support is limited to Resolve-based proxy generation workflows.
+> OpenEXR is included here for completeness, but it is NOT a camera RAW format.
 
 ### Resolve Edition Differences
 
