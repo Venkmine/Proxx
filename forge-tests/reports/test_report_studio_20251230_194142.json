@@ -1,0 +1,142 @@
+{
+  "test_suite": "resolve_studio_edition",
+  "description": "Test matrix for DaVinci Resolve Studio edition support validation",
+  "timestamp": "2025-12-30T19:41:42.210204+00:00",
+  "forge_version": "v2-dev5",
+  "resolve_metadata": {
+    "resolve_version": "20.0.1",
+    "resolve_edition": "studio",
+    "install_path": "/Applications/DaVinci Resolve/DaVinci Resolve.app",
+    "detection_method": "macos_license_check",
+    "detection_confidence": "high"
+  },
+  "results": [
+    {
+      "test_id": "arriraw_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.0.1",
+      "sources": [
+        "arriraw_sample.mxf"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "FAILED",
+      "error_message": "Resolve jobs must specify resolve_preset (e.g., 'ProRes 422 Proxy'). The preset determines the exact output format and quality. Create the preset in Resolve: Preferences \u2192 System \u2192 Render Presets, or use an existing preset like 'ProRes 422 Proxy', 'H.264 Master', etc.",
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "braw_sample",
+      "resolve_edition_required": "either",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.0.1",
+      "sources": [
+        "braw_sample.braw"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "FAILED",
+      "error_message": "Resolve jobs must specify resolve_preset (e.g., 'ProRes 422 Proxy'). The preset determines the exact output format and quality. Create the preset in Resolve: Preferences \u2192 System \u2192 Render Presets, or use an existing preset like 'ProRes 422 Proxy', 'H.264 Master', etc.",
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "prores_raw_sample",
+      "resolve_edition_required": "either",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.0.1",
+      "sources": [
+        "prores_raw_sample.mov"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "SKIPPED",
+      "error_message": "Sample file not found: /Users/leon.grant/projects/Proxx/forge-tests/samples/prores_raw_sample.mov",
+      "output_verified": false,
+      "output_file_size_bytes": null,
+      "skip_metadata": {
+        "reason": null,
+        "detected_resolve_edition": null,
+        "required_resolve_edition": "either",
+        "resolve_version": null,
+        "timestamp": null
+      }
+    },
+    {
+      "test_id": "r3d_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.0.1",
+      "sources": [
+        "r3d_sample.r3d"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "FAILED",
+      "error_message": "Resolve jobs must specify resolve_preset (e.g., 'ProRes 422 Proxy'). The preset determines the exact output format and quality. Create the preset in Resolve: Preferences \u2192 System \u2192 Render Presets, or use an existing preset like 'ProRes 422 Proxy', 'H.264 Master', etc.",
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "xavc_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.0.1",
+      "sources": [
+        "xavc_sample.mxf"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "SKIPPED",
+      "error_message": "Sample file not found: /Users/leon.grant/projects/Proxx/forge-tests/samples/xavc_sample.mxf",
+      "output_verified": false,
+      "output_file_size_bytes": null,
+      "skip_metadata": {
+        "reason": null,
+        "detected_resolve_edition": null,
+        "required_resolve_edition": "studio",
+        "resolve_version": null,
+        "timestamp": null
+      }
+    },
+    {
+      "test_id": "xocn_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": "studio",
+      "resolve_version_detected": "20.0.1",
+      "sources": [
+        "xocn_sample.mxf"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "FAILED",
+      "error_message": "Resolve jobs must specify resolve_preset (e.g., 'ProRes 422 Proxy'). The preset determines the exact output format and quality. Create the preset in Resolve: Preferences \u2192 System \u2192 Render Presets, or use an existing preset like 'ProRes 422 Proxy', 'H.264 Master', etc.",
+      "output_verified": false,
+      "output_file_size_bytes": null
+    }
+  ],
+  "summary": {
+    "total_tests": 6,
+    "completed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 2,
+    "errors": 4
+  },
+  "aggregate_summary": {
+    "by_status": {
+      "FAILED": 4,
+      "SKIPPED": 2
+    },
+    "by_engine": {
+      "null": 6
+    },
+    "by_source_extension": {
+      ".braw": 1,
+      ".mov": 1,
+      ".mxf": 3,
+      ".r3d": 1
+    }
+  }
+}

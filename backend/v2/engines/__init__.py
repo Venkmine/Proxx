@@ -18,6 +18,9 @@ All engines in this package share these principles:
 5. Output verification - files must exist on disk before COMPLETED
 """
 
-from backend.v2.engines.resolve_engine import ResolveEngine
+try:
+    from backend.v2.engines.resolve_engine import ResolveEngine
+except ImportError:
+    from v2.engines.resolve_engine import ResolveEngine
 
 __all__ = ["ResolveEngine"]

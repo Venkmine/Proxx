@@ -1,0 +1,125 @@
+{
+  "test_suite": "resolve_studio_edition",
+  "description": "Test matrix for DaVinci Resolve Studio edition support validation",
+  "timestamp": "2025-12-30T20:25:18.191896+00:00",
+  "forge_version": "v2-dev5",
+  "resolve_metadata": {
+    "resolve_version": "20.0.1",
+    "resolve_edition": "free",
+    "install_path": "/Applications/DaVinci Resolve/DaVinci Resolve.app",
+    "detection_method": "macos_install_path",
+    "detection_confidence": "high"
+  },
+  "results": [
+    {
+      "test_id": "arriraw_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": null,
+      "resolve_version_detected": null,
+      "sources": [
+        "arriraw_sample.mxf"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "dry_run",
+      "error_message": null,
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "braw_sample",
+      "resolve_edition_required": "either",
+      "resolve_edition_detected": null,
+      "resolve_version_detected": null,
+      "sources": [
+        "braw_sample.braw"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "dry_run",
+      "error_message": null,
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "prores_raw_sample",
+      "resolve_edition_required": "either",
+      "resolve_edition_detected": null,
+      "resolve_version_detected": null,
+      "sources": [
+        "prores_raw_sample.mov"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "dry_run",
+      "error_message": null,
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "r3d_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": null,
+      "resolve_version_detected": null,
+      "sources": [
+        "r3d_sample.r3d"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "dry_run",
+      "error_message": null,
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "xavc_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": null,
+      "resolve_version_detected": null,
+      "sources": [
+        "xavc_sample.mxf"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "dry_run",
+      "error_message": null,
+      "output_verified": false,
+      "output_file_size_bytes": null
+    },
+    {
+      "test_id": "xocn_sample",
+      "resolve_edition_required": "studio",
+      "resolve_edition_detected": null,
+      "resolve_version_detected": null,
+      "sources": [
+        "xocn_sample.mxf"
+      ],
+      "engine_used": null,
+      "proxy_profile": null,
+      "status": "dry_run",
+      "error_message": null,
+      "output_verified": false,
+      "output_file_size_bytes": null
+    }
+  ],
+  "summary": {
+    "total_tests": 6,
+    "completed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "errors": 0
+  },
+  "aggregate_summary": {
+    "by_status": {},
+    "by_engine": {
+      "null": 6
+    },
+    "by_source_extension": {
+      ".braw": 1,
+      ".mov": 1,
+      ".mxf": 3,
+      ".r3d": 1
+    }
+  }
+}

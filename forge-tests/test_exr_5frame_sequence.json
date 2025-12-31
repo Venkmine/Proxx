@@ -1,0 +1,18 @@
+{
+  "jobspec_version": "2.1",
+  "sources": [
+    "/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Image_SEQS/EXR/LA_70s_EXRs/City/City_Ambient_Denoised/City_Output AOV 3_0001.exr",
+    "/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Image_SEQS/EXR/LA_70s_EXRs/City/City_Ambient_Denoised/City_Output AOV 3_0002.exr",
+    "/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Image_SEQS/EXR/LA_70s_EXRs/City/City_Ambient_Denoised/City_Output AOV 3_0003.exr",
+    "/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Image_SEQS/EXR/LA_70s_EXRs/City/City_Ambient_Denoised/City_Output AOV 3_0004.exr",
+    "/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Image_SEQS/EXR/LA_70s_EXRs/City/City_Ambient_Denoised/City_Output AOV 3_0005.exr"
+  ],
+  "output_directory": "/Users/leon.grant/projects/Proxx/forge-tests/output/exr_collapse_test",
+  "codec": "prores_proxy",
+  "container": "mov",
+  "resolution": "half",
+  "proxy_profile": "proxy_prores_proxy_resolve",
+  "resolve_preset": "ProRes 422 Proxy",
+  "naming_template": "{source_name}_proxy.mov",
+  "fps_mode": "same-as-source"
+}

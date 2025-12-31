@@ -9,6 +9,7 @@ from app.routes import control
 from app.routes import preview
 from app.routes import filesystem
 from app.routes import v2_execute  # V2 Step 3: Thin Client JobSpec execution
+from app.routes import readiness  # V2 Slice 6: First-run readiness check
 from app.monitoring import server as monitoring
 from app.jobs.registry import JobRegistry
 from app.jobs.bindings import JobPresetBindingRegistry
@@ -122,6 +123,7 @@ app.include_router(control.router)  # Phase 14
 app.include_router(preview.router)  # Alpha: Preview video generation
 app.include_router(filesystem.router)  # Phase 4A: Directory navigator
 app.include_router(v2_execute.router)  # V2 Step 3: Thin Client JobSpec execution
+app.include_router(readiness.router)  # V2 Slice 6: First-run readiness check
 
 
 @app.get("/")
