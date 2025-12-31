@@ -45,6 +45,11 @@ export { TokenPalette } from './TokenPalette'
 // Alpha: Text Burn-In Panel (legacy watermark)
 export { TextBurnInPanel } from './TextBurnInPanel'
 
+// Burn-In Preset Schema Enforcement
+export { BurnInSelector } from './BurnInSelector'
+export type { BurnInPreset, PresetType, PresetBadgeInfo } from './BurnInSelector'
+export { BurnInEditor } from './BurnInEditor'
+
 // Phase 23: Unified Visual Preview Modal
 export { VisualPreviewModal } from './VisualPreviewModal'
 
