@@ -21,6 +21,12 @@ export { ClipRow } from './ClipRow'
 export { JobGroup } from './JobGroup'
 export { CreateJobPanel } from './CreateJobPanel'
 
+// Preflight Validation (Job Creation Hardening)
+export { PreflightSummary, canSubmitWithPreflight, getBlockingFailures } from './PreflightSummary'
+export type { PreflightCheck, PreflightStatus, PreflightSummaryProps } from './PreflightSummary'
+export { JobSubmitButton } from './JobSubmitButton'
+export type { JobSummary, JobSubmitButtonProps } from './JobSubmitButton'
+
 // Phase 17: Deliver Control Panel (replaces modal settings)
 export { DeliverControlPanel } from './DeliverControlPanel'
 export type { 

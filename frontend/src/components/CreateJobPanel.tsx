@@ -1,18 +1,8 @@
 // Alpha scope defined in docs/ALPHA_REALITY.md.
 // Do not add features that contradict it without updating that file first.
 
-import { useState } from 'react'
-import { Button } from './Button'
-import { Select } from './Select'
-// REMOVED: Drag & drop completely removed from UI for honesty
-// import { ExplicitDropZone } from './ExplicitDropZone'
-// import { FEATURE_FLAGS } from '../config/featureFlags'
-import type { WorkspaceMode } from '../stores/workspaceModeStore'
-import { PresetSummary, getPresetDescriptionLine } from './PresetSummary'
-import type { DeliverSettings } from './DeliverControlPanel'
-
 /**
- * CreateJobPanel component - Sources panel (Phase 3: UX Clarity).
+ * CreateJobPanel - Hardened Job Creation UX with Preflight Enforcement.
  * 
  * ⚠️ VERIFY GUARD:
  * Any change to this component requires Playwright coverage.
@@ -20,51 +10,85 @@ import type { DeliverSettings } from './DeliverControlPanel'
  *        qa/verify/ui/proxy/validation_errors.spec.ts
  * Run: make verify-ui before committing changes.
  * 
- * Phase 3 improvements:
- * - Clearer labels: "Add to Queue" becomes explicit job creation
- * - Immediate feedback when job is created
- * - Explicit file/folder selection via buttons (no drag & drop)
+ * LAYOUT (STRICT VERTICAL ORDER):
+ * 1. SOURCE - Input paths, file discovery summary
+ * 2. OUTPUT - Output path, storage warnings
+ * 3. PROCESSING (collapsed by default) - Profile, burn-in, LUT, engine
+ * 4. PREFLIGHT SUMMARY (mandatory, always visible)
  * 
- * Architecture:
- * - File selection (Electron: file picker, Browser: manual path entry)
- * - Output directory (required)
- * - Engine selection (FFmpeg only)
- * - "Add to Queue" triggers useIngestion.ingest() → job appears in queue
+ * SUBMIT RULES:
+ * - If ANY ❌ exists: Submit button is HIDDEN
+ * - If only ⚠ exists: Submit allowed, warnings visible
+ * - On submit: Show immutable job summary, require explicit confirmation
  * 
- * NOTE: Drag & drop removed from UI for honesty.
- * Use explicit "Select Files" and "Select Folder" buttons.
- * 
- * LAYOUT RULE: This component receives space from App.tsx.
- * It MUST NOT set its own max-width or decide its visibility.
- * WorkspaceMode controls layout authority.
+ * DESIGN PRINCIPLES:
+ * - Users must know EXACTLY what will happen before submit
+ * - All failures must surface BEFORE job creation
+ * - No hidden defaults
+ * - No optimistic submission
+ * - No modal popups for validation
+ * - All errors are inline and persistent
  */
 
-// ALPHA BLOCKER FIX: absolute source paths required for job creation
-// Validates that a path is absolute (contains '/' or starts with drive letter on Windows)
+import { useState, useMemo } from 'react'
+import { Button } from './Button'
+import { Select } from './Select'
+import { PreflightSummary, type PreflightCheck } from './PreflightSummary'
+import { JobSubmitButton, type JobSummary } from './JobSubmitButton'
+import type { WorkspaceMode } from '../stores/workspaceModeStore'
+import type { DeliverSettings } from './DeliverControlPanel'
+
+// =============================================================================
+// Path Validation
+// =============================================================================
+
 function isAbsolutePath(path: string): boolean {
-  // Unix-style absolute paths start with /
-  // Windows-style absolute paths start with C:\\ or similar
   return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path)
 }
 
-// Phase 16: Engine info
+// =============================================================================
+// Types
+// =============================================================================
+
 interface EngineInfo {
   type: string
   name: string
   available: boolean
 }
 
-// Phase 7B: Preset scope type
-type PresetScope = 'user' | 'workspace'
+interface ProxyProfileInfo {
+  id: string
+  name: string
+  description?: string
+  engine: 'ffmpeg' | 'resolve'
+}
 
-// Phase 6: Settings preset info (Phase 7A: extended for summary preview, Phase 7B: added scope)
+interface BurnInRecipeInfo {
+  id: string
+  name: string
+}
+
+interface LutInfo {
+  id: string
+  name: string
+  path: string
+}
+
+interface FileDiscoverySummary {
+  totalFiles: number
+  rawCount: number
+  nonRawCount: number
+  imageSequenceCount: number
+  mixedSources: boolean
+}
+
+// Legacy preset type for backward compatibility
 interface SettingsPresetInfo {
   id: string
   name: string
   description?: string
-  scope?: PresetScope  // Phase 7B: user or workspace
+  scope?: 'user' | 'workspace'
   fingerprint: string
-  /** Phase 7A: Optional settings snapshot for summary preview */
   settings_snapshot?: DeliverSettings
 }
 
@@ -76,19 +100,30 @@ interface CreateJobPanelProps {
   selectedFiles: string[]
   onFilesChange: (files: string[]) => void
   onSelectFilesClick: () => void
-  
-  // Phase 4C: Explicit drop zone
   onFilesDropped?: (paths: string[]) => void
   
-  // Phase 16: Engine selection
+  // File discovery (computed externally for display)
+  fileDiscovery?: FileDiscoverySummary
+  
+  // Engine info
   engines?: EngineInfo[]
   selectedEngine?: string
   onEngineChange?: (engine: string) => void
   
-  // Phase 6: Settings preset selection
-  settingsPresets?: SettingsPresetInfo[]
-  selectedSettingsPresetId?: string | null
-  onSettingsPresetChange?: (presetId: string | null) => void
+  // Proxy profiles
+  proxyProfiles?: ProxyProfileInfo[]
+  selectedProxyProfileId?: string | null
+  onProxyProfileChange?: (profileId: string | null) => void
+  
+  // Burn-in recipes
+  burnInRecipes?: BurnInRecipeInfo[]
+  selectedBurnInRecipeId?: string | null
+  onBurnInRecipeChange?: (recipeId: string | null) => void
+  
+  // LUTs
+  luts?: LutInfo[]
+  selectedLutId?: string | null
+  onLutChange?: (lutId: string | null) => void
   
   // Output directory
   outputDirectory: string
@@ -107,18 +142,97 @@ interface CreateJobPanelProps {
   // State
   loading?: boolean
   hasElectron?: boolean
-  backendUrl?: string
-  
-  // WorkspaceMode — controls layout behaviour (passed from App.tsx)
   workspaceMode?: WorkspaceMode
   
-  // Phase 4A: Directory navigator toggle
+  // Preflight data (computed externally)
+  preflightChecks?: PreflightCheck[]
+  preflightLoading?: boolean
+  
+  // Directory navigator toggle
   showDirectoryNavigator?: boolean
   onToggleDirectoryNavigator?: () => void
   
-  // V2 Thin Client: Lock inputs when JobSpec is submitted
+  // V2 lock state
   v2JobSpecSubmitted?: boolean
+  
+  // DEPRECATED - kept for compatibility
+  settingsPresets?: SettingsPresetInfo[]
+  selectedSettingsPresetId?: string | null
+  onSettingsPresetChange?: (presetId: string | null) => void
+  backendUrl?: string
 }
+
+// =============================================================================
+// Section Components
+// =============================================================================
+
+interface SectionProps {
+  title: string
+  children: React.ReactNode
+  collapsed?: boolean
+  onToggle?: () => void
+  collapsible?: boolean
+  testId?: string
+  badge?: React.ReactNode
+}
+
+function Section({ title, children, collapsed = false, onToggle, collapsible = false, testId, badge }: SectionProps) {
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        borderBottom: '1px solid var(--border-secondary)',
+        paddingBottom: '1rem',
+        marginBottom: '1rem',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: collapsed ? 0 : '0.75rem',
+          cursor: collapsible ? 'pointer' : 'default',
+        }}
+        onClick={collapsible ? onToggle : undefined}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {collapsible && (
+            <span
+              style={{
+                fontSize: '0.625rem',
+                color: 'var(--text-muted)',
+                transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                transition: 'transform 0.15s',
+              }}
+            >
+              ▶
+            </span>
+          )}
+          <h3
+            style={{
+              margin: 0,
+              fontSize: '0.8125rem',
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              letterSpacing: '-0.01em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {title}
+          </h3>
+          {badge}
+        </div>
+      </div>
+      {!collapsed && <div>{children}</div>}
+    </div>
+  )
+}
+
+// =============================================================================
+// Main Component
+// =============================================================================
 
 export function CreateJobPanel({
   isVisible,
@@ -127,12 +241,19 @@ export function CreateJobPanel({
   onFilesChange,
   onSelectFilesClick,
   onFilesDropped,
+  fileDiscovery,
   engines = [],
   selectedEngine = 'ffmpeg',
   onEngineChange,
-  settingsPresets = [],
-  selectedSettingsPresetId = null,
-  onSettingsPresetChange,
+  proxyProfiles = [],
+  selectedProxyProfileId = null,
+  onProxyProfileChange,
+  burnInRecipes = [],
+  selectedBurnInRecipeId = null,
+  onBurnInRecipeChange,
+  luts = [],
+  selectedLutId = null,
+  onLutChange,
   outputDirectory,
   onOutputDirectoryChange,
   onSelectFolderClick,
@@ -143,71 +264,192 @@ export function CreateJobPanel({
   onClear,
   loading = false,
   hasElectron = false,
-  backendUrl: _backendUrl = '',
   workspaceMode = 'configure',
+  preflightChecks = [],
+  preflightLoading = false,
   showDirectoryNavigator = false,
   onToggleDirectoryNavigator,
   v2JobSpecSubmitted = false,
 }: CreateJobPanelProps) {
-  // Web mode: show prompt when files dropped without absolute paths
+  // Section collapse states
+  const [processingCollapsed, setProcessingCollapsed] = useState(true)
+  
+  // Web mode path prompt
   const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
   const [showPathPrompt, setShowPathPrompt] = useState(false)
   const [pathPromptValue, setPathPromptValue] = useState('')
-  // Phase 6: Preset preview collapsed state
-  const [showPresetPreview, setShowPresetPreview] = useState(false)
-  // Phase 7A: Raw JSON toggle (collapsed by default)
-  const [showRawSnapshot, setShowRawSnapshot] = useState(false)
-  
-  // Design mode guard: Add to Queue is blocked in design mode
+
   const isDesignMode = workspaceMode === 'design'
-
-  // Phase 6: Get selected preset for preview
-  const selectedPreset = settingsPresets.find(p => p.id === selectedSettingsPresetId)
-
-  // Phase 9F: Explicit validation with human-readable reasons
-  // V2 Thin Client: Lock inputs when JobSpec is submitted
-  const getCreateJobValidation = (): { canCreate: boolean; reason: string } => {
-    if (v2JobSpecSubmitted) {
-      return { canCreate: false, reason: 'V2 execution in progress — inputs locked' }
-    }
-    if (loading) {
-      return { canCreate: false, reason: 'Processing...' }
-    }
-    if (isDesignMode) {
-      return { canCreate: false, reason: 'Exit Design mode to create jobs' }
-    }
-    if (selectedFiles.length === 0) {
-      return { canCreate: false, reason: 'Select at least one source file' }
-    }
-    if (!outputDirectory) {
-      return { canCreate: false, reason: 'Set an output directory' }
-    }
-    // Validate paths are absolute
-    const invalidPaths = selectedFiles.filter(p => !isAbsolutePath(p))
-    if (invalidPaths.length > 0) {
-      return { canCreate: false, reason: `Invalid path: ${invalidPaths[0]} (must be absolute)` }
-    }
-    return { canCreate: true, reason: 'Ready to create job' }
-  }
-  
-  const validation = getCreateJobValidation()
-  const canCreate = validation.canCreate
   const favoriteOptions = pathFavorites.map(p => ({ value: p, label: p }))
 
-  if (!isVisible) {
-    return null
-  }
+  // Compute preflight checks if not provided externally
+  const computedPreflightChecks = useMemo<PreflightCheck[]>(() => {
+    if (preflightChecks.length > 0) return preflightChecks
+
+    const checks: PreflightCheck[] = []
+
+    // Source validation
+    if (selectedFiles.length === 0) {
+      checks.push({
+        id: 'sources-required',
+        label: 'Source Files',
+        status: 'fail',
+        message: 'At least one source file is required',
+      })
+    } else {
+      const invalidPaths = selectedFiles.filter(p => !isAbsolutePath(p))
+      if (invalidPaths.length > 0) {
+        checks.push({
+          id: 'sources-absolute',
+          label: 'Source Paths',
+          status: 'fail',
+          message: `${invalidPaths.length} path(s) are not absolute`,
+          detail: invalidPaths[0],
+        })
+      } else {
+        checks.push({
+          id: 'sources-valid',
+          label: 'Source Files',
+          status: 'pass',
+          message: `${selectedFiles.length} file(s) selected`,
+        })
+      }
+    }
+
+    // Mixed source warning
+    if (fileDiscovery?.mixedSources) {
+      checks.push({
+        id: 'sources-mixed',
+        label: 'Mixed Source Types',
+        status: 'warning',
+        message: `Job contains ${fileDiscovery.rawCount} RAW + ${fileDiscovery.nonRawCount} non-RAW files`,
+      })
+    }
+
+    // Output validation
+    if (!outputDirectory) {
+      checks.push({
+        id: 'output-required',
+        label: 'Output Directory',
+        status: 'fail',
+        message: 'Output directory is required',
+      })
+    } else if (!isAbsolutePath(outputDirectory)) {
+      checks.push({
+        id: 'output-absolute',
+        label: 'Output Directory',
+        status: 'fail',
+        message: 'Output directory must be an absolute path',
+        detail: outputDirectory,
+      })
+    } else {
+      checks.push({
+        id: 'output-valid',
+        label: 'Output Directory',
+        status: 'pass',
+        message: outputDirectory,
+      })
+    }
+
+    // Engine availability
+    const selectedEngineInfo = engines.find(e => e.type === selectedEngine)
+    if (!selectedEngineInfo) {
+      checks.push({
+        id: 'engine-selected',
+        label: 'Execution Engine',
+        status: 'fail',
+        message: 'No execution engine selected',
+      })
+    } else if (!selectedEngineInfo.available) {
+      checks.push({
+        id: 'engine-available',
+        label: 'Execution Engine',
+        status: 'fail',
+        message: `${selectedEngineInfo.name} is not available`,
+      })
+    } else {
+      checks.push({
+        id: 'engine-valid',
+        label: 'Execution Engine',
+        status: 'pass',
+        message: selectedEngineInfo.name,
+      })
+    }
+
+    // Design mode check
+    if (isDesignMode) {
+      checks.push({
+        id: 'design-mode',
+        label: 'Workspace Mode',
+        status: 'fail',
+        message: 'Cannot create jobs in Design mode',
+      })
+    }
+
+    // V2 lock check
+    if (v2JobSpecSubmitted) {
+      checks.push({
+        id: 'v2-locked',
+        label: 'V2 Execution',
+        status: 'fail',
+        message: 'V2 execution in progress — inputs locked',
+      })
+    }
+
+    return checks
+  }, [
+    selectedFiles,
+    outputDirectory,
+    engines,
+    selectedEngine,
+    fileDiscovery,
+    isDesignMode,
+    v2JobSpecSubmitted,
+    preflightChecks,
+  ])
+
+  // Build job summary for confirmation
+  const jobSummary: JobSummary = useMemo(() => {
+    const profile = proxyProfiles.find(p => p.id === selectedProxyProfileId)
+    const burnIn = burnInRecipes.find(r => r.id === selectedBurnInRecipeId)
+    const lut = luts.find(l => l.id === selectedLutId)
+    const engine = engines.find(e => e.type === selectedEngine)
+
+    return {
+      sourceCount: selectedFiles.length,
+      sourcePaths: selectedFiles,
+      outputDirectory: outputDirectory || '(not set)',
+      proxyProfile: profile?.name || selectedProxyProfileId || 'Default',
+      engine: engine?.name || selectedEngine || 'FFmpeg',
+      burnInRecipe: burnIn?.name,
+      lut: lut?.name,
+    }
+  }, [
+    selectedFiles,
+    outputDirectory,
+    proxyProfiles,
+    selectedProxyProfileId,
+    burnInRecipes,
+    selectedBurnInRecipeId,
+    luts,
+    selectedLutId,
+    engines,
+    selectedEngine,
+  ])
 
   // Handler for path prompt confirmation
-  // V1 GOLDEN PATH: Only 1 clip per job, so REPLACE instead of append
   const handlePathPromptConfirm = () => {
     const path = pathPromptValue.trim()
     if (path && isAbsolutePath(path)) {
-      onFilesChange([path])  // V1: Replace, not append
+      onFilesChange([path])
       setShowPathPrompt(false)
       setDroppedFileNames([])
       setPathPromptValue('')
     }
+  }
+
+  if (!isVisible) {
+    return null
   }
 
   return (
@@ -216,12 +458,11 @@ export function CreateJobPanel({
       style={{
         padding: '1.25rem 1.5rem',
         borderBottom: '1px solid var(--border-primary)',
-        // Use gradient background, same as main UI
         background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
         position: 'relative',
-        transition: 'all 0.2s ease',
-        // Ensure content doesn't shrink and remains scrollable
         flexShrink: 0,
+        maxHeight: '80vh',
+        overflowY: 'auto',
       }}
     >
       {/* Path Prompt Dialog for Web Mode */}
@@ -275,7 +516,7 @@ export function CreateJobPanel({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => { setShowPathPrompt(false); setDroppedFileNames([]); }}
+                onClick={() => { setShowPathPrompt(false); setDroppedFileNames([]) }}
               >
                 Cancel
               </Button>
@@ -291,30 +532,31 @@ export function CreateJobPanel({
         </div>
       )}
 
-      {/* Header with Chevron Toggle */}
+      {/* Header */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: '1rem',
+          paddingBottom: '0.75rem',
+          borderBottom: '1px solid var(--border-secondary)',
         }}
       >
         <h2
           style={{
             margin: 0,
-            fontSize: '0.9375rem',
+            fontSize: '1rem',
             fontFamily: 'var(--font-sans)',
             fontWeight: 600,
             color: 'var(--text-primary)',
             letterSpacing: '-0.01em',
           }}
         >
-          Sources
+          Create Job
         </h2>
         
         <div style={{ display: 'flex', gap: '0.375rem' }}>
-          {/* Phase 4A: Browse Folders toggle button */}
           {onToggleDirectoryNavigator && (
             <button
               onClick={onToggleDirectoryNavigator}
@@ -339,65 +581,64 @@ export function CreateJobPanel({
                 fontWeight: 500,
                 transition: 'all 0.15s',
               }}
-              onMouseEnter={(e) => {
-                if (!showDirectoryNavigator) {
-                  e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
-                  e.currentTarget.style.borderColor = 'var(--border-hover)'
-                  e.currentTarget.style.color = 'var(--text-secondary)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!showDirectoryNavigator) {
-                  e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.3)'
-                  e.currentTarget.style.borderColor = 'var(--border-primary)'
-                  e.currentTarget.style.color = 'var(--text-muted)'
-                }
-              }}
               title={showDirectoryNavigator ? 'Hide directory browser' : 'Browse folders'}
             >
               <span style={{ fontSize: '0.75rem' }}>📁</span>
               Browse
             </button>
           )}
-          
-          {/* V1 DOGFOOD FIX: Collapse button removed.
-              The Sources panel is part of the fixed 3-zone layout and cannot collapse.
-              This button was non-functional and misleading.
-              If collapse is needed in future, implement via WorkspaceLayout zone control.
-          */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClear}
+            disabled={loading}
+            title="Clear all fields"
+          >
+            Clear
+          </Button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {/* REMOVED: Drag & drop completely removed from UI for honesty.
-            Use explicit "Select Files" and "Select Folder" buttons instead.
-            
-            Previous code:
-            {FEATURE_FLAGS.EXPLICIT_DROP_ZONE_ENABLED && onFilesDropped && (
-              <ExplicitDropZone
-                onFilesDropped={onFilesDropped}
-                disabled={loading || isDesignMode}
-              />
-            )}
-        */}
-
-        {/* File Selection */}
-        <div>
+      {/* ================================================================= */}
+      {/* SECTION 1: SOURCE */}
+      {/* ================================================================= */}
+      <Section 
+        title="Source" 
+        testId="section-source"
+        badge={
+          selectedFiles.length > 0 ? (
+            <span
+              style={{
+                fontSize: '0.625rem',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-muted)',
+                background: 'rgba(59, 130, 246, 0.1)',
+                padding: '0.125rem 0.375rem',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}
+            </span>
+          ) : undefined
+        }
+      >
+        {/* File Input */}
+        <div style={{ marginBottom: '0.75rem' }}>
           <label
             style={{
               display: 'block',
-              fontSize: '0.75rem',
+              fontSize: '0.6875rem',
               fontWeight: 500,
-              color: 'var(--text-secondary)',
-              marginBottom: '0.375rem',
+              color: 'var(--text-muted)',
+              marginBottom: '0.25rem',
               fontFamily: 'var(--font-sans)',
               textTransform: 'uppercase',
               letterSpacing: '0.03em',
             }}
           >
-            Source Files *
+            Input Path(s) *
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             {hasElectron ? (
               <Button
                 variant="secondary"
@@ -408,323 +649,140 @@ export function CreateJobPanel({
                 Select Files...
               </Button>
             ) : (
-              /* Manual path input for browser mode - allows entering full paths */
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <input
-                  type="text"
-                  data-testid="file-path-input"
-                  placeholder="Paste absolute path here: /Users/yourname/path/to/video.mp4"
-                  disabled={loading}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const input = e.target as HTMLInputElement
-                      const path = input.value.trim()
-                      if (path) {
-                        console.log('[CreateJobPanel] Adding path:', path)
-                        // V1 GOLDEN PATH: Replace, not append - only 1 clip per job
-                        onFilesChange([path])
-                        input.value = ''
-                      }
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    fontSize: '0.8125rem',
-                    fontFamily: 'var(--font-mono)',
-                    backgroundColor: 'var(--input-bg)',
-                    border: '2px solid var(--border-primary)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                  }}
-                />
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                  Press Enter to add file. Example: ~/test_media/test_input.mp4
-                </span>
-              </div>
-            )}
-            <span
-              style={{
-                fontSize: '0.8125rem',
-                color: selectedFiles.length > 0 ? 'var(--text-secondary)' : 'var(--text-muted)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              {selectedFiles.length === 0
-                ? 'No files selected — drag & drop or click to browse'
-                : `${selectedFiles.length} file(s) selected`}
-            </span>
-          </div>
-          
-          {/* Selected Files List */}
-          {selectedFiles.length > 0 && (
-            <div
-              style={{
-                marginTop: '0.5rem',
-                maxHeight: '100px',
-                overflow: 'auto',
-                padding: '0.5rem',
-                backgroundColor: 'var(--card-bg)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-secondary)',
-              }}
-            >
-              {selectedFiles.map((f, i) => (
-                <div
-                  key={i}
-                  style={{
-                    fontSize: '0.75rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-muted)',
-                    padding: '0.125rem 0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {f}
-                  </span>
-                  <button
-                    onClick={() => {
-                      const newFiles = [...selectedFiles]
-                      newFiles.splice(i, 1)
-                      onFilesChange(newFiles)
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: 'var(--text-dim)',
-                      fontSize: '0.875rem',
-                      padding: '0 0.25rem',
-                    }}
-                    title="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Phase 6/7A: Settings Preset Selector with enhanced clarity */}
-        <div>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              color: 'var(--text-secondary)',
-              marginBottom: '0.375rem',
-              fontFamily: 'var(--font-sans)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.03em',
-            }}
-          >
-            Preset Snapshot
-          </label>
-          <Select
-            value={selectedSettingsPresetId || ''}
-            onChange={(val) => onSettingsPresetChange?.(val || null)}
-            options={[
-              { value: '', label: 'No preset (manual)' },
-              ...settingsPresets.map(p => ({ 
-                value: p.id, 
-                // Phase 7A: Show descriptive secondary text with codec, overlays, etc.
-                label: p.name + (p.settings_snapshot 
-                  ? ` · ${getPresetDescriptionLine(p.settings_snapshot)}`
-                  : (p.description ? ` — ${p.description}` : '')
-                )
-              }))
-            ]}
-            disabled={loading || isDesignMode}
-            size="sm"
-          />
-          {/* Phase 7A: Badge when preset is selected */}
-          {selectedSettingsPresetId && (
-            <div
-              style={{
-                display: 'inline-block',
-                marginTop: '0.375rem',
-                padding: '0.125rem 0.375rem',
-                fontSize: '0.5625rem',
-                fontFamily: 'var(--font-sans)',
-                color: 'var(--text-muted)',
-                backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
-              }}
-            >
-              Applied to new jobs only
-            </div>
-          )}
-          {/* Phase 7A: Informational label with consistent terminology */}
-          <div
-            style={{
-              fontSize: '0.625rem',
-              color: 'var(--text-dim)',
-              fontFamily: 'var(--font-sans)',
-              fontStyle: 'italic',
-              marginTop: '0.25rem',
-            }}
-          >
-            {selectedSettingsPresetId 
-              ? 'Preset snapshot is copied at job creation. Does not affect existing jobs.'
-              : 'Job will use current settings from the Deliver panel.'
-            }
-          </div>
-          {/* Phase 7A: Preset preview with grouped summary + raw JSON toggle */}
-          {selectedPreset && (
-            <div style={{ marginTop: '0.375rem' }}>
-              <button
-                onClick={() => setShowPresetPreview(!showPresetPreview)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid var(--border-secondary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-muted)',
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.625rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                }}
-              >
-                <span style={{ transform: showPresetPreview ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
-                {showPresetPreview ? 'Hide Preset Preview' : 'Show Preset Preview'}
-              </button>
-              {showPresetPreview && (
-                <div style={{ marginTop: '0.25rem' }}>
-                  {/* Phase 7A: Grouped summary view (if settings available) */}
-                  {selectedPreset.settings_snapshot ? (
-                    <PresetSummary settings={selectedPreset.settings_snapshot} />
-                  ) : (
-                    /* Fallback: basic info if no settings snapshot */
-                    <div
-                      style={{
-                        padding: '0.5rem',
-                        backgroundColor: 'rgba(0, 0, 0, 0.15)',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.625rem',
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-secondary)',
-                      }}
-                    >
-                      <div><strong>Name:</strong> {selectedPreset.name}</div>
-                      {selectedPreset.description && <div><strong>Description:</strong> {selectedPreset.description}</div>}
-                      <div><strong>Fingerprint:</strong> {selectedPreset.fingerprint.slice(0, 16)}...</div>
-                    </div>
-                  )}
-                  {/* Phase 7A: Raw JSON toggle (collapsed by default) */}
-                  {selectedPreset.settings_snapshot && (
-                    <div style={{ marginTop: '0.375rem' }}>
-                      <button
-                        onClick={() => setShowRawSnapshot(!showRawSnapshot)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-dim)',
-                          padding: '0.125rem 0',
-                          fontSize: '0.5625rem',
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
-                        }}
-                      >
-                        {showRawSnapshot ? 'Hide raw snapshot' : 'View raw snapshot'}
-                      </button>
-                      {showRawSnapshot && (
-                        <pre
-                          style={{
-                            margin: 0,
-                            marginTop: '0.25rem',
-                            padding: '0.5rem',
-                            backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontSize: '0.5625rem',
-                            fontFamily: 'var(--font-mono)',
-                            color: 'var(--text-muted)',
-                            lineHeight: 1.4,
-                            overflow: 'auto',
-                            maxHeight: '150px',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-all',
-                          }}
-                        >
-                          {JSON.stringify(selectedPreset.settings_snapshot, null, 2)}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Alpha: Engine Selection - FFmpeg only */}
-        <div>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              color: 'var(--text-secondary)',
-              marginBottom: '0.375rem',
-              fontFamily: 'var(--font-sans)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.03em',
-            }}
-          >
-            Execution Engine
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {/* Alpha: Only show available engines (FFmpeg) */}
-            {engines.filter(e => e.available).map(engine => (
-              <button
-                key={engine.type}
-                onClick={() => onEngineChange?.(engine.type)}
+              <input
+                type="text"
+                data-testid="file-path-input"
+                placeholder="/Users/yourname/path/to/video.mp4"
                 disabled={loading}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const input = e.target as HTMLInputElement
+                    const path = input.value.trim()
+                    if (path) {
+                      onFilesChange([path])
+                      input.value = ''
+                    }
+                  }
+                }}
                 style={{
                   flex: 1,
-                  padding: '0.625rem 1rem',
-                  border: selectedEngine === engine.type
-                    ? '2px solid var(--button-primary-bg)'
-                    : '1px solid var(--border-primary)',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.75rem',
+                  fontFamily: 'var(--font-mono)',
+                  backgroundColor: 'var(--input-bg)',
+                  border: '1px solid var(--border-primary)',
                   borderRadius: 'var(--radius-sm)',
-                  backgroundColor: selectedEngine === engine.type
-                    ? 'rgba(59, 130, 246, 0.1)'
-                    : 'var(--card-bg)',
-                  color: selectedEngine === engine.type
-                      ? 'var(--button-primary-bg)'
-                      : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  fontSize: '0.8125rem',
-                  fontFamily: 'var(--font-sans)',
-                  fontWeight: selectedEngine === engine.type ? 600 : 400,
-                  transition: 'all 0.15s',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
                 }}
-              >
-                {engine.name}
-              </button>
-            ))}
+              />
+            )}
           </div>
         </div>
 
-        {/* Output Directory */}
+        {/* Selected Files List */}
+        {selectedFiles.length > 0 && (
+          <div
+            style={{
+              maxHeight: '80px',
+              overflow: 'auto',
+              padding: '0.5rem',
+              backgroundColor: 'rgba(0, 0, 0, 0.15)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-secondary)',
+              marginBottom: '0.75rem',
+            }}
+          >
+            {selectedFiles.map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: '0.6875rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--text-secondary)',
+                  padding: '0.125rem 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {f}
+                </span>
+                <button
+                  onClick={() => {
+                    const newFiles = [...selectedFiles]
+                    newFiles.splice(i, 1)
+                    onFilesChange(newFiles)
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-dim)',
+                    fontSize: '0.875rem',
+                    padding: '0 0.25rem',
+                  }}
+                  title="Remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* File Discovery Summary */}
+        {fileDiscovery && (
+          <div
+            data-testid="file-discovery-summary"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '0.5rem',
+              padding: '0.5rem',
+              background: 'rgba(0, 0, 0, 0.1)',
+              borderRadius: 'var(--radius-sm)',
+            }}
+          >
+            <DiscoveryStat label="Total" value={fileDiscovery.totalFiles} />
+            <DiscoveryStat label="RAW" value={fileDiscovery.rawCount} highlight={fileDiscovery.rawCount > 0} />
+            <DiscoveryStat label="Non-RAW" value={fileDiscovery.nonRawCount} />
+            <DiscoveryStat label="Sequences" value={fileDiscovery.imageSequenceCount} />
+          </div>
+        )}
+
+        {/* Mixed Source Warning */}
+        {fileDiscovery?.mixedSources && (
+          <div
+            style={{
+              marginTop: '0.5rem',
+              padding: '0.375rem 0.5rem',
+              background: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.625rem',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--status-warning-fg, #f59e0b)',
+            }}
+          >
+            ⚠ Mixed RAW + non-RAW sources detected
+          </div>
+        )}
+      </Section>
+
+      {/* ================================================================= */}
+      {/* SECTION 2: OUTPUT */}
+      {/* ================================================================= */}
+      <Section title="Output" testId="section-output">
         <div>
           <label
             style={{
               display: 'block',
-              fontSize: '0.75rem',
+              fontSize: '0.6875rem',
               fontWeight: 500,
-              color: 'var(--text-secondary)',
-              marginBottom: '0.375rem',
+              color: 'var(--text-muted)',
+              marginBottom: '0.25rem',
               fontFamily: 'var(--font-sans)',
               textTransform: 'uppercase',
               letterSpacing: '0.03em',
@@ -737,13 +795,12 @@ export function CreateJobPanel({
               type="text"
               value={outputDirectory}
               onChange={(e) => onOutputDirectoryChange(e.target.value)}
-              placeholder="/Users/yourname/Desktop/OUTPUT"
+              placeholder="/Users/yourname/OUTPUT"
               disabled={loading}
-              title="Paste output directory path or click Browse..."
               data-testid="output-directory-input"
               style={{
                 flex: 1,
-                padding: '0.375rem 0.5rem',
+                padding: '0.5rem 0.75rem',
                 fontSize: '0.75rem',
                 fontFamily: 'var(--font-mono)',
                 backgroundColor: 'var(--input-bg)',
@@ -759,14 +816,15 @@ export function CreateJobPanel({
                 size="sm"
                 onClick={onSelectFolderClick}
                 disabled={loading}
-                style={{ whiteSpace: 'nowrap' }}
               >
                 Browse...
               </Button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.375rem' }}>
-            {pathFavorites.length > 0 && (
+
+          {/* Favorites */}
+          {pathFavorites.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.375rem' }}>
               <Select
                 value=""
                 onChange={(val) => val && onOutputDirectoryChange(val)}
@@ -775,168 +833,231 @@ export function CreateJobPanel({
                 disabled={loading}
                 size="sm"
               />
-            )}
-            {outputDirectory && !pathFavorites.includes(outputDirectory) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onAddFavorite(outputDirectory)}
-                style={{ fontSize: '0.6875rem' }}
-              >
-                ★ Favorite
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Favorites Management - Collapsible Utility Section (Phase 19) */}
-        {pathFavorites.length > 0 && (
-          <details style={{ marginTop: '0.5rem' }}>
-            <summary
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-sans)',
-                padding: '0.25rem 0',
-                listStyle: 'none',
-              }}
-            >
-              <span style={{ marginRight: '0.5rem', fontSize: '0.625rem' }}>▶</span>
-              Saved Paths ({pathFavorites.length})
-            </summary>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingLeft: '1rem', marginTop: '0.25rem' }}>
-              {pathFavorites.map((path, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    gap: '0.5rem',
-                    alignItems: 'center',
-                    padding: '0.125rem 0',
-                  }}
-                >
-                  <button
-                    onClick={() => onOutputDirectoryChange(path)}
-                    style={{
-                      flex: 1,
-                      fontSize: '0.6875rem',
-                      fontFamily: 'var(--font-mono)',
-                      color: 'var(--text-muted)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      background: 'none',
-                      border: 'none',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                    title={`Use: ${path}`}
-                  >
-                    {path}
-                  </button>
-                  <button
-                    onClick={() => onRemoveFavorite(path)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-dim)',
-                      cursor: 'pointer',
-                      fontSize: '0.75rem',
-                      padding: '0 0.25rem',
-                    }}
-                    title="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-
-        {/* Action Buttons */}
-        <div
-          style={{
-            paddingTop: '0.75rem',
-            borderTop: '1px solid var(--border-secondary)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.5rem',
-          }}
-        >
-          {/* Design mode guard message */}
-          {isDesignMode && (
-            <div
-              style={{
-                fontSize: '0.75rem',
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-sans)',
-                fontStyle: 'italic',
-                padding: '0.5rem',
-                background: 'rgba(251, 191, 36, 0.1)',
-                border: '1px solid rgba(251, 191, 36, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-              }}
-            >
-              Exit design mode to queue jobs
             </div>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <Button
-                data-testid="add-to-queue-button"
-                variant="primary"
-                size="md"
-                onClick={onCreateJob}
-                disabled={!canCreate}
-                loading={loading}
-                title={validation.reason}
-              >
-                + Create Job
-              </Button>
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={onClear}
-                disabled={loading}
-                title="Clear selected files and output directory"
-              >
-                Clear
-              </Button>
-            </div>
-            {/* Phase 9F: Show explicit feedback with reason */}
-            <div
+          
+          {outputDirectory && !pathFavorites.includes(outputDirectory) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onAddFavorite(outputDirectory)}
+              style={{ marginTop: '0.25rem', fontSize: '0.625rem' }}
+            >
+              ★ Save as favorite
+            </Button>
+          )}
+        </div>
+      </Section>
+
+      {/* ================================================================= */}
+      {/* SECTION 3: PROCESSING (collapsed by default) */}
+      {/* ================================================================= */}
+      <Section
+        title="Processing"
+        testId="section-processing"
+        collapsible
+        collapsed={processingCollapsed}
+        onToggle={() => setProcessingCollapsed(!processingCollapsed)}
+        badge={
+          <span
+            style={{
+              fontSize: '0.5625rem',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text-dim)',
+              textTransform: 'none',
+              fontWeight: 400,
+            }}
+          >
+            {processingCollapsed ? '(click to expand)' : ''}
+          </span>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {/* Proxy Profile */}
+          <div>
+            <label
               style={{
+                display: 'block',
                 fontSize: '0.6875rem',
-                color: canCreate ? 'var(--text-dim)' : 'var(--status-warning-fg, #f59e0b)',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+                marginBottom: '0.25rem',
                 fontFamily: 'var(--font-sans)',
-                fontStyle: 'italic',
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
               }}
             >
-              {validation.reason}
+              Proxy Profile
+            </label>
+            <Select
+              value={selectedProxyProfileId || ''}
+              onChange={(val) => onProxyProfileChange?.(val || null)}
+              options={[
+                { value: '', label: 'Default' },
+                ...proxyProfiles.map(p => ({
+                  value: p.id,
+                  label: `${p.name}${p.description ? ` — ${p.description}` : ''}`,
+                })),
+              ]}
+              disabled={loading}
+              size="sm"
+            />
+          </div>
+
+          {/* Burn-in Recipe */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+                marginBottom: '0.25rem',
+                fontFamily: 'var(--font-sans)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
+              }}
+            >
+              Burn-in Recipe
+            </label>
+            <Select
+              value={selectedBurnInRecipeId || ''}
+              onChange={(val) => onBurnInRecipeChange?.(val || null)}
+              options={[
+                { value: '', label: 'None' },
+                ...burnInRecipes.map(r => ({
+                  value: r.id,
+                  label: r.name,
+                })),
+              ]}
+              disabled={loading}
+              size="sm"
+            />
+          </div>
+
+          {/* LUT */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '0.6875rem',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+                marginBottom: '0.25rem',
+                fontFamily: 'var(--font-sans)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
+              }}
+            >
+              LUT
+            </label>
+            <Select
+              value={selectedLutId || ''}
+              onChange={(val) => onLutChange?.(val || null)}
+              options={[
+                { value: '', label: 'None' },
+                ...luts.map(l => ({
+                  value: l.id,
+                  label: l.name,
+                })),
+              ]}
+              disabled={loading}
+              size="sm"
+            />
+          </div>
+
+          {/* Engine Summary (read-only) */}
+          <div
+            style={{
+              padding: '0.5rem 0.75rem',
+              background: 'rgba(0, 0, 0, 0.15)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-secondary)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '0.625rem',
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
+                marginBottom: '0.25rem',
+              }}
+            >
+              Execution Engine
+            </div>
+            <div
+              style={{
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-sans)',
+                color: 'var(--text-primary)',
+                fontWeight: 500,
+              }}
+            >
+              {engines.find(e => e.type === selectedEngine)?.name || selectedEngine || 'FFmpeg'}
             </div>
           </div>
         </div>
+      </Section>
 
-        <div
-          style={{
-            marginTop: '0.75rem',
-            fontSize: '0.6875rem',
-            color: 'var(--text-dim)',
-            fontFamily: 'var(--font-sans)',
-            fontStyle: 'italic',
-          }}
-        >
-          {hasElectron 
-            ? 'Use Select Files, Browse folders, or drop media above'
-            : 'Enter file paths above, use Browse folders, then click "Create Job"'
-          }
-        </div>
+      {/* ================================================================= */}
+      {/* SECTION 4: PREFLIGHT SUMMARY (mandatory, always visible) */}
+      {/* ================================================================= */}
+      <PreflightSummary 
+        checks={computedPreflightChecks} 
+        loading={preflightLoading} 
+      />
+
+      {/* ================================================================= */}
+      {/* SUBMIT BUTTON */}
+      {/* ================================================================= */}
+      <div style={{ marginTop: '1rem' }}>
+        <JobSubmitButton
+          preflightChecks={computedPreflightChecks}
+          jobSummary={jobSummary}
+          onSubmit={onCreateJob}
+          loading={loading}
+          disabled={isDesignMode || v2JobSpecSubmitted}
+        />
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
+// Helper Components
+// =============================================================================
+
+interface DiscoveryStatProps {
+  label: string
+  value: number
+  highlight?: boolean
+}
+
+function DiscoveryStat({ label, value, highlight = false }: DiscoveryStatProps) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div
+        style={{
+          fontSize: '1rem',
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 600,
+          color: highlight ? 'var(--button-primary-bg)' : 'var(--text-primary)',
+        }}
+      >
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: '0.5625rem',
+          fontFamily: 'var(--font-sans)',
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.03em',
+        }}
+      >
+        {label}
       </div>
     </div>
   )
