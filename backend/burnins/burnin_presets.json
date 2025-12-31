@@ -1,0 +1,61 @@
+{
+  "$schema": "burnin_presets.schema.json",
+  "version": "1.0.0",
+  "description": "Atomic Burn-In Presets for DaVinci Resolve Project Data Burn-In. These presets are fixed and deterministic - no user editing allowed.",
+  "presets": [
+    {
+      "id": "SRC_TC_TL_25",
+      "fields": ["Source Timecode"],
+      "position": "TL",
+      "text_opacity": 0.25,
+      "background_enabled": true,
+      "background_opacity": 0.5,
+      "font_scale": "medium"
+    },
+    {
+      "id": "FILENAME_BR_50",
+      "fields": ["File Name"],
+      "position": "BR",
+      "text_opacity": 0.5,
+      "background_enabled": true,
+      "background_opacity": 0.5,
+      "font_scale": "medium"
+    },
+    {
+      "id": "FRAME_BL_50",
+      "fields": ["Source Frame"],
+      "position": "BL",
+      "text_opacity": 0.5,
+      "background_enabled": true,
+      "background_opacity": 0.5,
+      "font_scale": "medium"
+    },
+    {
+      "id": "QC_METADATA_TR",
+      "fields": ["Codec", "Resolution", "Frame Rate"],
+      "position": "TR",
+      "text_opacity": 0.5,
+      "background_enabled": true,
+      "background_opacity": 0.6,
+      "font_scale": "small"
+    },
+    {
+      "id": "SHOT_NAME_TR_50",
+      "fields": ["Clip Name"],
+      "position": "TR",
+      "text_opacity": 0.5,
+      "background_enabled": true,
+      "background_opacity": 0.5,
+      "font_scale": "medium"
+    },
+    {
+      "id": "DATE_BR_25",
+      "fields": ["Render Date", "Render Time"],
+      "position": "BR",
+      "text_opacity": 0.25,
+      "background_enabled": false,
+      "background_opacity": null,
+      "font_scale": "small"
+    }
+  ]
+}

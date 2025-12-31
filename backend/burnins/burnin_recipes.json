@@ -1,0 +1,40 @@
+{
+  "$schema": "burnin_recipes.schema.json",
+  "version": "1.0.0",
+  "description": "Burn-In Recipes are ordered stacks of atomic presets. These are fixed and deterministic - no user editing allowed.",
+  "recipes": [
+    {
+      "id": "OFFLINE_EDITORIAL",
+      "description": "Standard offline editorial proxy with timecode and filename. Minimal metadata for editorial workflows.",
+      "presets": [
+        "SRC_TC_TL_25",
+        "FILENAME_BR_50"
+      ]
+    },
+    {
+      "id": "VFX_PLATE",
+      "description": "VFX plate delivery with timecode, shot name, and frame number for visual effects workflows.",
+      "presets": [
+        "SRC_TC_TL_25",
+        "SHOT_NAME_TR_50",
+        "FRAME_BL_50"
+      ]
+    },
+    {
+      "id": "QC_REVIEW",
+      "description": "Quality control review with full technical metadata for review and approval workflows.",
+      "presets": [
+        "SRC_TC_TL_25",
+        "FILENAME_BR_50",
+        "QC_METADATA_TR"
+      ]
+    },
+    {
+      "id": "CLEAN_TC",
+      "description": "Minimal burn-in with source timecode only. For workflows requiring minimal visible metadata.",
+      "presets": [
+        "SRC_TC_TL_25"
+      ]
+    }
+  ]
+}

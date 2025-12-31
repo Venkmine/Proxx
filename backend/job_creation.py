@@ -37,7 +37,7 @@ Part of V2 IMPLEMENTATION SLICE 1
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from backend.user_proxy_profiles import (
     UserProxyProfile,
@@ -48,6 +48,7 @@ from backend.user_proxy_profiles import (
 )
 from backend.job_spec import JobSpec, JobSpecValidationError
 from backend.v2.proxy_profiles import PROXY_PROFILES, get_profile, ProxyProfile
+from backend.burnins import validate_recipe_id, BurnInRecipeNotFoundError
 
 
 # =============================================================================
@@ -87,6 +88,16 @@ class ProfileDeprecatedError(JobCreationError):
     pass
 
 
+class BurnInRecipeError(JobCreationError):
+    """
+    Raised when a burn-in recipe ID is invalid at job creation.
+    
+    This is a pre-job failure. No JobSpec is created.
+    Burn-in recipe must exist when specified.
+    """
+    pass
+
+
 # =============================================================================
 # Job Creation
 # =============================================================================
@@ -96,6 +107,7 @@ def create_jobspec_from_user_profile(
     sources: List[str],
     output_directory: str,
     naming_template: str,
+    burnin_recipe_id: Optional[str] = None,
 ) -> JobSpec:
     """
     Create a JobSpec from a UserProxyProfile with deterministic compilation.
@@ -123,6 +135,7 @@ def create_jobspec_from_user_profile(
         sources: List of absolute paths to source media files
         output_directory: Absolute path to output directory
         naming_template: Template string for output file naming
+        burnin_recipe_id: Optional burn-in recipe ID to apply (Resolve Studio only)
         
     Returns:
         Immutable JobSpec instance
@@ -131,6 +144,7 @@ def create_jobspec_from_user_profile(
         ProfileCompilationError: If compilation fails (pre-job failure)
         ProfileDeprecatedError: If profile is deprecated (pre-job failure)
         ValidationError: If profile schema is invalid (pre-job failure)
+        BurnInRecipeError: If burn-in recipe is invalid (pre-job failure)
         JobSpecValidationError: If JobSpec validation fails (job validation failure)
         
     Example:
@@ -202,6 +216,22 @@ def create_jobspec_from_user_profile(
     metadata = generate_profile_origin_metadata(user_profile, canonical_profile_id)
     
     # =========================================================================
+    # PRE-JOB BURN-IN VALIDATION
+    # =========================================================================
+    # Validate burn-in recipe ID if provided. Recipe must exist.
+    # This is a pre-job failure - no JobSpec is created if recipe is invalid.
+    # Burn-in recipe is immutable after job creation.
+    
+    validated_burnin_recipe_id = None
+    if burnin_recipe_id is not None:
+        try:
+            validated_burnin_recipe_id = validate_recipe_id(burnin_recipe_id)
+        except BurnInRecipeNotFoundError as e:
+            raise BurnInRecipeError(
+                f"Invalid burn-in recipe for job: {str(e)}"
+            ) from e
+    
+    # =========================================================================
     # CREATE JOBSPEC
     # =========================================================================
     # JobSpec fields are fully resolved at creation time from the canonical profile.
@@ -239,6 +269,18 @@ def create_jobspec_from_user_profile(
     # Path validation is deferred to execution time.
     
     # =========================================================================
+    # ATTACH BURN-IN RECIPE (IMMUTABLE)
+    # =========================================================================
+    # Burn-in recipe is stored as a private attribute on the JobSpec.
+    # This avoids modifying the JobSpec schema while still associating
+    # the burn-in config with the job. It is immutable after creation.
+    # 
+    # NOTE: The burn-in recipe is NOT serialized with the JobSpec to maintain
+    # schema stability. It must be passed separately to execution.
+    
+    jobspec._burnin_recipe_id = validated_burnin_recipe_id  # type: ignore
+    
+    # =========================================================================
     # SUCCESS: Return immutable JobSpec
     # =========================================================================
     return jobspec
@@ -273,3 +315,36 @@ def _resolve_resolution_policy(resolution_policy) -> str:
         raise ValueError(f"Unknown resolution policy: {resolution_policy}")
     
     return mapping[resolution_policy]
+
+
+# =============================================================================
+# Burn-In Helpers
+# =============================================================================
+
+def get_burnin_recipe_id(jobspec: JobSpec) -> Optional[str]:
+    """
+    Get the burn-in recipe ID associated with a JobSpec.
+    
+    The burn-in recipe is attached at job creation time and is immutable.
+    Returns None if no burn-in recipe was specified.
+    
+    Args:
+        jobspec: JobSpec instance
+        
+    Returns:
+        Burn-in recipe ID or None
+    """
+    return getattr(jobspec, "_burnin_recipe_id", None)
+
+
+def has_burnins(jobspec: JobSpec) -> bool:
+    """
+    Check if a JobSpec has burn-ins configured.
+    
+    Args:
+        jobspec: JobSpec instance
+        
+    Returns:
+        True if burn-ins are configured, False otherwise
+    """
+    return get_burnin_recipe_id(jobspec) is not None
