@@ -508,6 +508,7 @@ def _build_ffmpeg_command(
     output_path: str,
     job_spec: JobSpec,
     lut_filepath: Optional[str] = None,
+    source_audio_props = None,
 ) -> List[str]:
     """
     Build FFmpeg command from JobSpec using canonical proxy profile.
@@ -526,6 +527,12 @@ def _build_ffmpeg_command(
     - If lut_filepath is provided, adds -vf lut3d filter
     - LUT is applied BEFORE any resolution scaling
     - Supported formats: .cube, .3dl
+    
+    Audio Parity Enforcement:
+    - Probes source audio properties
+    - Enforces exact channel count match
+    - Enforces sample rate match
+    - Validates container compatibility
     
     Args:
         ffmpeg_path: Path to FFmpeg executable
@@ -553,8 +560,38 @@ def _build_ffmpeg_command(
             resolve_ffmpeg_audio_args,
         )
     
+    # Import audio probe utilities for parity enforcement
+    try:
+        from audio_probe import validate_container_compatibility
+    except ImportError:
+        try:
+            from backend.audio_probe import validate_container_compatibility
+        except ImportError:
+            validate_container_compatibility = None
+    
     # Get profile (validation already done, this should not fail)
     profile = get_profile(job_spec.proxy_profile)
+    
+    # Validate container compatibility if audio props provided
+    container_ext = Path(output_path).suffix.lstrip('.').lower()
+    
+    if source_audio_props is not None and validate_container_compatibility is not None:
+        try:
+            compatible, error_msg = validate_container_compatibility(
+                container_ext, 
+                source_audio_props.channels
+            )
+            if not compatible:
+                logger.warning(f"Container compatibility warning: {error_msg}")
+                # Force error for multichannel MP4
+                if source_audio_props.channels > 2 and container_ext == 'mp4':
+                    logger.error(
+                        f"CRITICAL: MP4 container cannot support {source_audio_props.channels} channels. "
+                        "Use MOV container for attach compatibility."
+                    )
+                    raise ValueError(error_msg)
+        except Exception as e:
+            logger.warning(f"Container validation error: {e}")
     
     # Start building command
     cmd = [ffmpeg_path, "-y"]  # -y to overwrite output
@@ -601,8 +638,28 @@ def _build_ffmpeg_command(
     # Codec arguments from profile
     cmd.extend(resolve_ffmpeg_codec_args(profile))
     
-    # Audio arguments from profile
-    cmd.extend(resolve_ffmpeg_audio_args(profile))
+    # Audio arguments from profile with parity enforcement
+    audio_args = resolve_ffmpeg_audio_args(profile)
+    
+    # Override audio args to enforce exact parity with source
+    if source_audio_props is not None:
+        # Force exact audio parity for attach compatibility
+        # Use PCM for maximum NLE compatibility
+        audio_args = [
+            "-c:a", "pcm_s16le",
+            "-ar", str(source_audio_props.sample_rate),
+            "-ac", str(source_audio_props.channels)
+        ]
+        # Preserve channel layout if specified
+        if source_audio_props.channel_layout:
+            audio_args.extend(["-channel_layout", source_audio_props.channel_layout])
+        
+        logger.info(
+            f"Enforcing audio parity: {source_audio_props.channels}ch @ "
+            f"{source_audio_props.sample_rate}Hz, layout={source_audio_props.channel_layout}"
+        )
+    
+    cmd.extend(audio_args)
     
     # Output file
     cmd.append(output_path)
@@ -749,6 +806,25 @@ def execute_job_spec(
                 completed_at=datetime.now(timezone.utc),
             )
     
+    # Probe source audio for attach compatibility enforcement
+    source_audio_props = None
+    try:
+        from audio_probe import probe_audio, AudioProbeError
+    except ImportError:
+        try:
+            from backend.audio_probe import probe_audio, AudioProbeError
+        except ImportError:
+            probe_audio = None
+            AudioProbeError = Exception
+    
+    if probe_audio is not None:
+        try:
+            source_audio_props = probe_audio(source_path)
+        except AudioProbeError as e:
+            logger.warning(f"Could not probe source audio: {e}")
+        except Exception as e:
+            logger.warning(f"Audio probe error: {e}")
+    
     # Build command
     ffmpeg_command = _build_ffmpeg_command(
         ffmpeg_path=ffmpeg_path,
@@ -756,6 +832,7 @@ def execute_job_spec(
         output_path=str(output_path),
         job_spec=job_spec,
         lut_filepath=lut_filepath,
+        source_audio_props=source_audio_props,
     )
     
     # Execute synchronously
@@ -780,6 +857,29 @@ def execute_job_spec(
     # Verify output
     output_exists, output_size = _verify_output(output_path)
     
+    # Verify audio parity if source was probed
+    audio_parity_passed = True
+    audio_parity_error = None
+    
+    if output_exists and source_audio_props is not None:
+        try:
+            from audio_probe import verify_audio_parity
+        except ImportError:
+            try:
+                from backend.audio_probe import verify_audio_parity
+            except ImportError:
+                verify_audio_parity = None
+        
+        if verify_audio_parity is not None:
+            audio_parity_passed, audio_parity_error = verify_audio_parity(
+                Path(source_path),
+                Path(output_path)
+            )
+            if not audio_parity_passed:
+                logger.error(f"Audio parity check FAILED: {audio_parity_error}")
+            else:
+                logger.info("Audio parity check PASSED")
+    
     # Determine status and failure reason
     if exit_code != 0:
         status = "FAILED"
@@ -787,6 +887,9 @@ def execute_job_spec(
     elif not output_exists:
         status = "FAILED"
         failure_reason = "Output file does not exist or has zero size"
+    elif not audio_parity_passed:
+        status = "FAILED"
+        failure_reason = f"Audio parity validation failed: {audio_parity_error}"
     else:
         status = "COMPLETED"
         failure_reason = None

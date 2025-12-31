@@ -786,8 +786,8 @@ class ResolveEngine:
                         lut_hash=lut_hash,
                     )
                     
-                    # Verify output exists on disk
-                    self._verify_output(output_path)
+                    # Verify output exists on disk and validate audio parity
+                    self._verify_output(output_path, source_path)
                     
                     # Record success
                     clip_results.append(ClipExecutionResult(
@@ -1441,15 +1441,21 @@ class ResolveEngine:
     # Private Methods - Output Verification
     # =========================================================================
     
-    def _verify_output(self, output_path: Path) -> None:
+    def _verify_output(self, output_path: Path, source_path: Optional[Path] = None) -> None:
         """
         Verify that the rendered output file exists and is valid.
         
         This is the final gate before marking a clip as COMPLETED.
         The file MUST exist on disk with non-zero size.
         
+        Audio Parity Enforcement (V2 Phase 1):
+        - Validates audio channel count matches source
+        - Validates audio sample rate matches source
+        - Validates channel layout matches source
+        
         Args:
             output_path: Expected output file path.
+            source_path: Source file path (for audio parity validation).
         
         Raises:
             ResolveOutputVerificationError: If output is missing or invalid.
@@ -1467,6 +1473,24 @@ class ResolveEngine:
                 "Resolve may have encountered an encoding error. "
                 "Check the source media for corruption."
             )
+        
+        # Audio parity validation
+        if source_path is not None:
+            try:
+                from audio_probe import verify_audio_parity
+            except ImportError:
+                try:
+                    from backend.audio_probe import verify_audio_parity
+                except ImportError:
+                    verify_audio_parity = None
+            
+            if verify_audio_parity is not None:
+                passed, error_msg = verify_audio_parity(source_path, output_path)
+                if not passed:
+                    raise ResolveOutputVerificationError(
+                        f"Audio parity validation failed: {error_msg}. "
+                        "Proxy audio does not match source. This breaks attach compatibility."
+                    )
     
     # =========================================================================
     # Private Methods - Path Resolution
