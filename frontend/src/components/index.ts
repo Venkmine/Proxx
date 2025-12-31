@@ -71,5 +71,8 @@ export type { ColourSettings } from './ColourPanel'
 // Attach Proxies Guidance (read-only info panel)
 export { AttachProxiesInfoPanel } from './AttachProxiesInfoPanel'
 
+// License Status (read-only observability)
+export { LicenseStatusReadOnly } from './LicenseStatusReadOnly'
+
 // Electron components
 export { TitleBar } from './TitleBar'

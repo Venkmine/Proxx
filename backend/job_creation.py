@@ -98,6 +98,68 @@ class BurnInRecipeError(JobCreationError):
     pass
 
 
+class WorkerLimitError(JobCreationError):
+    """
+    Raised when job cannot be created due to license worker limits.
+    
+    This is a pre-job failure. No JobSpec is created.
+    The message is explicit about the license tier and limits.
+    """
+    
+    def __init__(self, tier: str, current_workers: int, max_workers: int):
+        self.tier = tier
+        self.current_workers = current_workers
+        self.max_workers = max_workers
+        message = (
+            f"Worker limit reached for license tier: {tier}. "
+            f"Active workers: {current_workers}, limit: {max_workers}. "
+            "Cannot create job when no eligible workers are available."
+        )
+        super().__init__(message)
+
+
+# =============================================================================
+# License Enforcement
+# =============================================================================
+
+def _check_worker_limits() -> None:
+    """
+    Check license worker limits before job creation.
+    
+    This is called at the start of job creation to fail fast
+    if no workers are available due to license limits.
+    
+    Raises:
+        WorkerLimitError: If worker limit is exceeded
+    """
+    try:
+        from backend.licensing import get_enforcer, WorkerLimitExceededError
+        enforcer = get_enforcer()
+        
+        # Check if we can create jobs
+        # This doesn't require active workers, but respects limits
+        status = enforcer.get_status()
+        
+        # If at limit and no active workers, fail
+        if status["at_limit"] and status["active_workers"] == 0:
+            raise WorkerLimitError(
+                tier=status["license_tier"],
+                current_workers=status["active_workers"],
+                max_workers=status["max_workers"],
+            )
+        
+    except ImportError:
+        # Licensing module not available - allow by default
+        pass
+    except WorkerLimitError:
+        # Re-raise our own error
+        raise
+    except Exception:
+        # Non-fatal - allow by default
+        # License enforcement should not block legitimate work
+        pass
+
+
 # =============================================================================
 # Job Creation
 # =============================================================================
@@ -145,6 +207,7 @@ def create_jobspec_from_user_profile(
         ProfileDeprecatedError: If profile is deprecated (pre-job failure)
         ValidationError: If profile schema is invalid (pre-job failure)
         BurnInRecipeError: If burn-in recipe is invalid (pre-job failure)
+        WorkerLimitError: If worker limit is exceeded (pre-job failure)
         JobSpecValidationError: If JobSpec validation fails (job validation failure)
         
     Example:
@@ -165,6 +228,15 @@ def create_jobspec_from_user_profile(
         ...     naming_template="{source_name}_proxy.mov"
         ... )
     """
+    # =========================================================================
+    # PRE-JOB LICENSE CHECK: Verify worker availability
+    # =========================================================================
+    # License enforcement is explicit. If worker limits are exceeded,
+    # we fail BEFORE creating the JobSpec. No partial acceptance.
+    # No queueing jobs that cannot run.
+    
+    _check_worker_limits()
+    
     # =========================================================================
     # PRE-JOB VALIDATION: Check profile lifecycle state
     # =========================================================================

@@ -304,6 +304,58 @@ def create_monitor_app(store: Optional[StateStore] = None) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
+    # -------------------------------------------------------------------------
+    # LICENSE ENDPOINTS (Read-Only)
+    # -------------------------------------------------------------------------
+    
+    @app.get("/license/status")
+    async def license_status():
+        """
+        Get current license status and worker limits.
+        
+        Returns:
+        - license_tier: Current license tier (free, freelance, facility)
+        - max_workers: Maximum allowed workers (null = unlimited)
+        - active_workers: Currently active worker count
+        - rejected_workers: Workers rejected due to limits
+        - allows_lan_monitoring: Whether LAN monitoring is allowed
+        
+        This is observability only. No upgrade prompts.
+        """
+        try:
+            # Get license status from worker monitor
+            license_data = worker_monitor.get_license_status()
+            
+            # Get rejected worker details from enforcer if available
+            rejected_details = []
+            try:
+                from backend.licensing import get_enforcer
+                enforcer = get_enforcer()
+                rejected_details = [
+                    r.to_dict() for r in enforcer.get_rejected_workers()
+                ]
+            except ImportError:
+                pass
+            except Exception:
+                pass
+            
+            return {
+                "status": license_data,
+                "rejected_workers": rejected_details,
+            }
+        except Exception as e:
+            # Fallback to default values if licensing module not available
+            return {
+                "status": {
+                    "license_tier": "free",
+                    "max_workers": 1,
+                    "active_workers": 0,
+                    "rejected_workers": 0,
+                    "allows_lan_monitoring": False,
+                },
+                "rejected_workers": [],
+            }
+    
     return app
 
 

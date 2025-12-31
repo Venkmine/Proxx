@@ -6,6 +6,11 @@ Determines worker status based on last-seen timestamps.
 
 This module provides OBSERVATION ONLY.
 It does not control workers or send commands.
+
+License enforcement is integrated at heartbeat time:
+- Workers are counted against license limits
+- Excess workers are marked as REJECTED
+- Rejection is explicit and logged
 """
 
 import socket
@@ -24,6 +29,9 @@ OFFLINE_THRESHOLD_SECONDS = 60
 
 # Default heartbeat interval
 HEARTBEAT_INTERVAL_SECONDS = 15
+
+# Worker rejection status for license enforcement
+WORKER_STATUS_REJECTED = "rejected"
 
 
 def get_hostname() -> str:
@@ -54,13 +62,19 @@ class HeartbeatEmitter:
     
     This runs in a background thread and updates the state store
     with the worker's current status.
+    
+    License enforcement is integrated:
+    - Each heartbeat checks license worker limits
+    - Rejected workers are marked with explicit status
+    - Workers can query their rejection status
     """
     
     def __init__(
         self,
         worker_id: Optional[str] = None,
         store: Optional[StateStore] = None,
-        interval: int = HEARTBEAT_INTERVAL_SECONDS
+        interval: int = HEARTBEAT_INTERVAL_SECONDS,
+        enforce_license: bool = True
     ):
         """
         Initialize the heartbeat emitter.
@@ -69,16 +83,20 @@ class HeartbeatEmitter:
             worker_id: Worker ID to report. Auto-generated if not provided.
             store: State store to update. Uses default if not provided.
             interval: Seconds between heartbeats.
+            enforce_license: Whether to enforce license limits on this worker.
         """
         self.worker_id = worker_id or get_worker_id()
         self.store = store or get_store()
         self.interval = interval
         self.hostname = get_hostname()
+        self.enforce_license = enforce_license
         
         self._current_job_id: Optional[str] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._rejected = False
+        self._rejection_reason: Optional[str] = None
     
     def set_current_job(self, job_id: Optional[str]) -> None:
         """
@@ -90,12 +108,93 @@ class HeartbeatEmitter:
         with self._lock:
             self._current_job_id = job_id
     
+    def is_rejected(self) -> bool:
+        """
+        Check if this worker has been rejected due to license limits.
+        
+        Returns:
+            True if rejected, False if accepted
+        """
+        with self._lock:
+            return self._rejected
+    
+    def get_rejection_reason(self) -> Optional[str]:
+        """
+        Get the reason for rejection if rejected.
+        
+        Returns:
+            Rejection reason string, or None if not rejected
+        """
+        with self._lock:
+            return self._rejection_reason
+    
+    def can_execute_jobs(self) -> bool:
+        """
+        Check if this worker is allowed to execute jobs.
+        
+        A worker cannot execute if:
+        - It has been rejected due to license limits
+        - It is not running (stopped emitting heartbeats)
+        
+        Returns:
+            True if jobs can be executed, False otherwise
+        """
+        with self._lock:
+            return self._running and not self._rejected
+    
+    def _check_license_enforcement(self) -> bool:
+        """
+        Check license limits and update rejection status.
+        
+        Returns:
+            True if worker is accepted, False if rejected
+        """
+        if not self.enforce_license:
+            return True
+        
+        try:
+            from backend.licensing import get_enforcer
+            enforcer = get_enforcer()
+            accepted = enforcer.register_worker_heartbeat(self.worker_id)
+            
+            with self._lock:
+                if not accepted:
+                    self._rejected = True
+                    rejection = enforcer.get_rejection_reason(self.worker_id)
+                    if rejection:
+                        self._rejection_reason = (
+                            f"Worker limit reached: {rejection.current_workers}/"
+                            f"{rejection.max_workers} workers active for "
+                            f"{rejection.license_tier.value} license"
+                        )
+                else:
+                    self._rejected = False
+                    self._rejection_reason = None
+            
+            return accepted
+        except ImportError:
+            # Licensing module not available - accept by default
+            return True
+        except Exception:
+            # Non-fatal - accept by default but log
+            return True
+    
     def _emit_heartbeat(self) -> None:
         """Send a single heartbeat to the store."""
+        # Check license enforcement first
+        license_accepted = self._check_license_enforcement()
+        
         with self._lock:
             current_job = self._current_job_id
+            rejected = self._rejected
         
-        status = "busy" if current_job else "idle"
+        # Determine status
+        if rejected:
+            status = WORKER_STATUS_REJECTED
+        elif current_job:
+            status = "busy"
+        else:
+            status = "idle"
         
         worker_status = WorkerStatus(
             worker_id=self.worker_id,
@@ -139,6 +238,14 @@ class HeartbeatEmitter:
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
+        
+        # Deregister from license enforcer
+        if self.enforce_license:
+            try:
+                from backend.licensing import get_enforcer
+                get_enforcer().deregister_worker(self.worker_id)
+            except (ImportError, Exception):
+                pass
 
 
 class WorkerMonitor:
@@ -245,6 +352,38 @@ class WorkerMonitor:
     def get_offline_workers(self) -> list[WorkerStatus]:
         """Get workers that have not sent a heartbeat recently."""
         return [w for w in self.get_all_workers() if w.status == "offline"]
+    
+    def get_rejected_workers(self) -> list[WorkerStatus]:
+        """Get workers that have been rejected due to license limits."""
+        return [w for w in self.get_all_workers() if w.status == WORKER_STATUS_REJECTED]
+    
+    def get_license_status(self) -> dict:
+        """
+        Get current license enforcement status.
+        
+        Returns:
+            Dict with license tier, limits, and worker counts
+        """
+        try:
+            from backend.licensing import get_enforcer, get_current_license
+            enforcer = get_enforcer()
+            license = get_current_license()
+            
+            return {
+                "license_tier": license.license_type.value,
+                "max_workers": license.max_workers,
+                "active_workers": enforcer.get_active_worker_count(),
+                "rejected_workers": len(enforcer.get_rejected_workers()),
+                "allows_lan_monitoring": license.allows_lan_monitoring(),
+            }
+        except ImportError:
+            return {
+                "license_tier": "unknown",
+                "max_workers": None,
+                "active_workers": len(self.get_active_workers()),
+                "rejected_workers": 0,
+                "allows_lan_monitoring": True,
+            }
 
 
 # Module-level singleton emitter
