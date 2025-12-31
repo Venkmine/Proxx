@@ -1,0 +1,4 @@
+# Golden render results are generated artifacts - do not commit
+# Only .gitkeep should be committed to preserve directory structure
+*
+!.gitkeep

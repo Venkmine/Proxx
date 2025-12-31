@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "Golden render verification test manifest for Forge proxy outputs",
+  "tests": [
+    {
+      "id": "ffmpeg_basic_proxy",
+      "description": "Basic FFmpeg proxy generation from standard video",
+      "engine": "ffmpeg",
+      "source": "qa/media/ffmpeg_sample.mov",
+      "profile": "proxy_h264_low",
+      "burnin_recipe": "OFFLINE_EDITORIAL",
+      "lut": null,
+      "expectations": [
+        "duration_matches",
+        "frame_count_matches",
+        "audio_channel_count_matches",
+        "container_is_mov",
+        "burnin_present"
+      ]
+    },
+    {
+      "id": "ffmpeg_prores_proxy",
+      "description": "FFmpeg ProRes Proxy generation from standard video",
+      "engine": "ffmpeg",
+      "source": "qa/media/ffmpeg_sample.mov",
+      "profile": "proxy_prores_proxy",
+      "burnin_recipe": null,
+      "lut": null,
+      "expectations": [
+        "duration_matches",
+        "frame_count_matches",
+        "audio_channel_count_matches",
+        "container_is_mov",
+        "proxy_codec_matches_profile"
+      ]
+    },
+    {
+      "id": "ffmpeg_audio_only",
+      "description": "FFmpeg audio-only proxy (WAV passthrough)",
+      "engine": "ffmpeg",
+      "source": "qa/media/ffmpeg_sample.wav",
+      "profile": "audio_passthrough",
+      "burnin_recipe": null,
+      "lut": null,
+      "expectations": [
+        "duration_matches",
+        "audio_channel_count_matches",
+        "audio_sample_rate_matches"
+      ]
+    },
+    {
+      "id": "resolve_braw_proxy",
+      "description": "Resolve BRAW RAW proxy generation",
+      "engine": "resolve",
+      "source": "qa/media/resolve_raw_sample.braw",
+      "profile": "proxy_prores_proxy_resolve",
+      "burnin_recipe": "OFFLINE_EDITORIAL",
+      "lut": null,
+      "expectations": [
+        "duration_matches",
+        "frame_count_matches",
+        "container_is_mov",
+        "proxy_codec_matches_profile",
+        "burnin_present"
+      ]
+    }
+  ]
+}
