@@ -1089,6 +1089,17 @@ class ResolveEngine:
         
         # Import the source media
         # ImportMedia returns a list of MediaPoolItem objects
+        # 
+        # IMAGE SEQUENCE HANDLING:
+        # When source_path is the first frame of a numbered sequence,
+        # Resolve automatically detects and imports the ENTIRE sequence
+        # as a SINGLE clip. This is the required behavior.
+        # 
+        # Example: Given "clip.0001.exr"
+        # - Resolve scans the directory
+        # - Detects "clip.0002.exr", "clip.0003.exr", etc.
+        # - Creates ONE MediaPoolItem spanning all frames
+        # - Timeline duration = frame_count / framerate
         imported = media_pool.ImportMedia([str(source_path)])
         
         if not imported or len(imported) == 0:
@@ -1097,6 +1108,7 @@ class ResolveEngine:
                 "The file may be corrupt, unsupported, or inaccessible."
             )
         
+        # For image sequences, this is ONE clip representing the entire sequence
         media_item = imported[0]
         
         # Create a new timeline with the imported clip

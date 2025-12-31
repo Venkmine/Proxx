@@ -66,7 +66,12 @@ This document is generated from test evidence, not speculation. All support clai
 > - **NOT a camera RAW format** (it's a rendered/VFX image format)
 > - Routed to Resolve because FFmpeg cannot reliably handle high-bit-depth EXR sequences
 > - **Proxy generation only** – no creative grading controls expected
-> - Image sequence handling: one folder = one job
+> - **Image sequence handling**:
+>   - One numbered sequence = ONE clip = ONE proxy video output
+>   - Example: 144 frames (`clip.0001.exr` through `clip.0144.exr`) → ONE output file
+>   - Resolve automatically detects sequences from the first frame
+>   - Mixed sequences or standalone frames in one job are rejected
+>   - Supported naming patterns: `name.####.ext`, `name_####.ext`
 > - Tested with 12K resolution (12288×6144) 16-bit float RGBA sequences
 >
 > This support is limited to Resolve-based proxy generation workflows.

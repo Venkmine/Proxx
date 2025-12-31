@@ -31,6 +31,28 @@ import sys
 from job_spec import JobSpec, JobSpecValidationError, FpsMode, JOBSPEC_VERSION
 from execution_results import ClipExecutionResult, JobExecutionResult
 
+# Import image sequence detection
+try:
+    from v2.image_sequence import (
+        detect_sequences_from_paths,
+        collapse_sequence_to_single_source,
+        is_image_sequence_format,
+        ImageSequenceError,
+    )
+    _IMAGE_SEQUENCE_AVAILABLE = True
+except ImportError:
+    try:
+        from backend.v2.image_sequence import (
+            detect_sequences_from_paths,
+            collapse_sequence_to_single_source,
+            is_image_sequence_format,
+            ImageSequenceError,
+        )
+        _IMAGE_SEQUENCE_AVAILABLE = True
+    except ImportError:
+        _IMAGE_SEQUENCE_AVAILABLE = False
+        ImageSequenceError = None  # type: ignore
+
 # Import source capabilities for engine routing
 try:
     from v2.source_capabilities import (
@@ -689,6 +711,101 @@ def execute_job_spec(
     )
 
 
+def _detect_and_collapse_sequences(job_spec: JobSpec) -> Tuple[JobSpec, Optional[Dict]]:
+    """
+    Detect image sequences and collapse them into single logical sources.
+    
+    MANDATORY BEHAVIOR:
+    - Image sequence jobs MUST result in ONE output file
+    - Sequences are detected by numbered frames
+    - Multiple sequences or mixed formats are rejected
+    
+    Args:
+        job_spec: Original JobSpec with potentially multiple frames
+        
+    Returns:
+        Tuple of (modified_jobspec, sequence_metadata)
+        - modified_jobspec: JobSpec with collapsed sources
+        - sequence_metadata: Dict with sequence info (or None if not a sequence)
+        
+    Raises:
+        JobSpecValidationError: If sequence validation fails
+    """
+    if not _IMAGE_SEQUENCE_AVAILABLE:
+        # No sequence detection available, pass through unchanged
+        return (job_spec, None)
+    
+    # Check if any sources are image sequence formats
+    source_paths = [Path(s) for s in job_spec.sources]
+    has_sequence_formats = any(is_image_sequence_format(p) for p in source_paths)
+    
+    if not has_sequence_formats:
+        # No image sequences, pass through unchanged
+        return (job_spec, None)
+    
+    # Detect sequences
+    try:
+        sequences, standalone = detect_sequences_from_paths(source_paths)
+    except ImageSequenceError as e:
+        raise JobSpecValidationError(f"Image sequence detection failed: {e}")
+    
+    # If we detected a sequence, validate it's the only thing in this job
+    if sequences:
+        if len(sequences) > 1:
+            raise JobSpecValidationError(
+                f"Multiple image sequences detected ({len(sequences)} sequences). "
+                f"Each job must contain only ONE sequence. Split into separate jobs."
+            )
+        
+        if standalone:
+            raise JobSpecValidationError(
+                f"Mixed sources detected: {len(sequences)} sequence(s) and "
+                f"{len(standalone)} standalone file(s). Image sequence jobs must "
+                f"contain ONLY sequence frames."
+            )
+        
+        # We have exactly one sequence - collapse it
+        sequence = sequences[0]
+        
+        # Create modified JobSpec with first frame as the single source
+        # The Resolve engine will detect the rest of the sequence
+        modified_spec = JobSpec(
+            sources=[str(sequence.frame_files[0])],  # First frame only
+            output_directory=job_spec.output_directory,
+            codec=job_spec.codec,
+            container=job_spec.container,
+            resolution=job_spec.resolution,
+            naming_template=job_spec.naming_template,
+            fps_mode=job_spec.fps_mode,
+            fps_explicit=job_spec.fps_explicit,
+            proxy_profile=job_spec.proxy_profile,
+            resolve_preset=job_spec.resolve_preset,
+            requires_resolve_edition=job_spec.requires_resolve_edition,
+            job_id=job_spec.job_id,
+            resolved_tokens=job_spec.resolved_tokens,
+            created_at=job_spec.created_at,
+        )
+        
+        # Create sequence metadata
+        sequence_metadata = {
+            'is_sequence': True,
+            'pattern': sequence.pattern,
+            'frame_count': sequence.frame_count,
+            'first_frame': sequence.first_frame,
+            'last_frame': sequence.last_frame,
+            'original_source_count': len(job_spec.sources),
+        }
+        
+        print(f"Detected image sequence: {sequence.pattern}")
+        print(f"  Frames: {sequence.first_frame}-{sequence.last_frame} ({sequence.frame_count} total)")
+        print(f"  Collapsed {len(job_spec.sources)} sources → 1 logical source")
+        
+        return (modified_spec, sequence_metadata)
+    
+    # No sequences detected, pass through unchanged
+    return (job_spec, None)
+
+
 def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     """
     Execute a multi-source JobSpec with automatic engine routing.
@@ -742,6 +859,21 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
             clips=[],
             final_status="FAILED",
             validation_error=str(e),
+            jobspec_version=JOBSPEC_VERSION,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
+    # Step 1.5: Detect and collapse image sequences
+    # This MUST happen before engine routing because it changes the sources list
+    try:
+        job_spec, sequence_metadata = _detect_and_collapse_sequences(job_spec)
+    except JobSpecValidationError as e:
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error=f"Image sequence validation failed: {e}",
             jobspec_version=JOBSPEC_VERSION,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
