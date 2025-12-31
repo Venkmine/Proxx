@@ -13,9 +13,14 @@
  * - All job creation calls canonical ingestion pipeline
  * - No mixed file+folder selection
  * - Visual clarity: selected ≠ queued
+ * 
+ * HARDENING (INC-002):
+ * - Risky paths (/Volumes, network mounts) get shorter timeouts
+ * - Warnings displayed for slow/unavailable volumes
+ * - Explicit timeout feedback instead of indefinite spinners
  */
 
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from './Button'
 import {
   recordBrowseClicked,
@@ -23,6 +28,11 @@ import {
   recordBrowseSuccess,
   recordBrowseError,
 } from '../utils/uiEventLog'
+import {
+  isRiskyPath,
+  getTimeoutForPath,
+  getRiskyPathWarning,
+} from '../utils/filesystem'
 
 // ============================================================================
 // TYPES
@@ -43,6 +53,12 @@ interface DirectoryState {
   loading: boolean
   error: string | null
   expanded: boolean
+  /** INC-002: Path is risky (network mount, /Volumes root, etc.) */
+  isRiskyPath?: boolean
+  /** INC-002: Request timed out before completing */
+  timedOut?: boolean
+  /** INC-002: Warning message to display (e.g., "Some volumes may be slow") */
+  warning?: string | null
 }
 
 interface DirectoryNavigatorProps {
@@ -288,6 +304,22 @@ function DirectoryNode({
       {/* Children (if expanded) */}
       {isDir && isExpanded && dirState && (
         <div>
+          {/* INC-002: Warning banner for risky paths */}
+          {dirState.warning && !dirState.loading && !dirState.error && (
+            <div style={{
+              paddingLeft: `${0.5 + (level + 1) * 1}rem`,
+              padding: '0.375rem 0.5rem',
+              fontSize: '0.6875rem',
+              color: 'var(--text-warning, #f59e0b)',
+              fontStyle: 'italic',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+            }}>
+              ⚠️ {dirState.warning}
+            </div>
+          )}
+          {/* INC-002: Enhanced loading state for risky paths */}
           {dirState.loading && (
             <div style={{
               paddingLeft: `${0.5 + (level + 1) * 1}rem`,
@@ -296,10 +328,13 @@ function DirectoryNode({
               color: 'var(--text-muted, #6b7280)',
               fontStyle: 'italic',
             }}>
-              Loading...
+              {dirState.isRiskyPath 
+                ? 'Loading (may be slow)...' 
+                : 'Loading...'}
             </div>
           )}
           {/* INC-001: Error state with retry capability */}
+          {/* INC-002: Enhanced with timeout-specific styling */}
           {dirState.error && (
             <div 
               onClick={(e) => {
@@ -312,12 +347,15 @@ function DirectoryNode({
                 paddingLeft: `${0.5 + (level + 1) * 1}rem`,
                 padding: '0.375rem 0.5rem',
                 fontSize: '0.75rem',
-                color: 'var(--text-error, #ef4444)',
+                // INC-002: Use warning color for timeouts, error color for other errors
+                color: dirState.timedOut 
+                  ? 'var(--text-warning, #f59e0b)' 
+                  : 'var(--text-error, #ef4444)',
                 cursor: 'pointer',
               }}
               title="Click to retry"
             >
-              ⚠️ {dirState.error}
+              {dirState.timedOut ? '⏱️' : '⚠️'} {dirState.error}
             </div>
           )}
           {!dirState.loading && !dirState.error && dirState.entries.length === 0 && (
@@ -378,13 +416,18 @@ export function DirectoryNavigator({
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   
-  // INC-001: Request timeout for directory operations (5 seconds)
-  const FETCH_TIMEOUT_MS = 5000
+  // INC-001: Request timeout for directory operations (5 seconds default)
+  // INC-002: Use dynamic timeouts for risky paths
+  const DEFAULT_FETCH_TIMEOUT_MS = 5000
   
-  // INC-001: Helper to fetch with timeout and abort controller
-  const fetchWithTimeout = useCallback(async (url: string): Promise<Response> => {
+  // INC-002: Track active fetch controllers for cleanup
+  const activeControllersRef = useRef<Map<string, AbortController>>(new Map())
+  
+  // INC-002: Helper to fetch with dynamic timeout based on path risk
+  const fetchWithTimeout = useCallback(async (url: string, timeoutMs?: number): Promise<Response> => {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    const timeout = timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
     
     try {
       const response = await fetch(url, { signal: controller.signal })
@@ -447,6 +490,10 @@ export function DirectoryNavigator({
       }
       
       // Need to fetch (or retry after error)
+      // INC-002: Check if path is risky and get appropriate warning
+      const risky = isRiskyPath(path)
+      const warning = risky ? getRiskyPathWarning(path) : null
+      
       updated.set(path, {
         path,
         parent: null,
@@ -454,6 +501,8 @@ export function DirectoryNavigator({
         loading: true,
         error: null,
         expanded: true,
+        isRiskyPath: risky,
+        warning,
       })
       
       // V1 OBSERVABILITY: Log browse request start
@@ -462,8 +511,13 @@ export function DirectoryNavigator({
       // V1 DOGFOOD FIX: Robust error handling for folder listing.
       // Ensures loading spinner always resolves with either data or error.
       // Never silently swallows errors.
+      // INC-002: Use dynamic timeout based on path risk level
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+      const dynamicTimeout = getTimeoutForPath(path)
+      const timeoutId = setTimeout(() => controller.abort(), dynamicTimeout)
+      
+      // INC-002: Track controller for potential cleanup
+      activeControllersRef.current.set(path, controller)
       
       fetch(`${backendUrl}/filesystem/browse?path=${encodeURIComponent(path)}`, {
         signal: controller.signal,
@@ -477,8 +531,13 @@ export function DirectoryNavigator({
         })
         .then(data => {
           clearTimeout(timeoutId)
+          activeControllersRef.current.delete(path)
           const entries = data.entries || []
           const errorFromBackend = data.error || null
+          // INC-002: Capture new response fields
+          const backendTimedOut = data.timed_out || false
+          const backendRisky = data.is_risky_path || risky
+          const backendWarning = data.warning || warning
           
           // V1 OBSERVABILITY: Log browse result
           if (errorFromBackend) {
@@ -497,18 +556,30 @@ export function DirectoryNavigator({
               // V1 FIX: Backend may return error field for permission issues
               error: errorFromBackend,
               expanded: true,
+              // INC-002: Include hardening fields
+              isRiskyPath: backendRisky,
+              timedOut: backendTimedOut,
+              warning: backendWarning,
             })
             return newMap
           })
         })
         .catch(err => {
           clearTimeout(timeoutId)
+          activeControllersRef.current.delete(path)
           // V1 DOGFOOD FIX INC-001: Surface all errors clearly, never leave spinner stuck.
           // Ensure human-readable errors for common failure modes.
+          // INC-002: Enhanced timeout messages for risky paths
           let errorMessage: string
+          let timedOut = false
           if (err.name === 'AbortError') {
-            // INC-001: Timeout on network volume or slow directory
-            errorMessage = 'Unable to list this folder (permissions or slow volume)'
+            // INC-002: Better message for risky paths that timed out
+            timedOut = true
+            if (risky) {
+              errorMessage = 'Volume may be slow, disconnected, or unavailable'
+            } else {
+              errorMessage = 'Unable to list this folder (timed out)'
+            }
           } else if (err.message?.includes('HTTP 403') || err.message?.includes('403')) {
             errorMessage = 'Access denied (permissions)'
           } else if (err.message?.includes('HTTP 404') || err.message?.includes('404')) {
@@ -533,6 +604,10 @@ export function DirectoryNavigator({
               loading: false,
               error: errorMessage,
               expanded: true,
+              // INC-002: Include hardening fields
+              isRiskyPath: risky,
+              timedOut,
+              warning: risky ? 'Some volumes may be slow or unavailable' : null,
             })
             return newMap
           })

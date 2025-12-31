@@ -53,8 +53,54 @@ router = APIRouter(prefix="/filesystem", tags=["filesystem"])
 # Network volumes can hang indefinitely - enforce a reasonable timeout
 DIRECTORY_TIMEOUT_SECONDS = 3.0
 
+# INC-001: Shorter timeout for volume root enumeration
+# /Volumes itself should enumerate quickly if healthy
+VOLUMES_TIMEOUT_SECONDS = 1.0
+
 # Executor for running blocking filesystem operations in threads
 _fs_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fs_enum")
+
+# =============================================================================
+# RISKY PATH DETECTION
+# =============================================================================
+# These paths can hang indefinitely due to network mounts, FUSE filesystems,
+# or disconnected volumes. We apply special handling to prevent UI freezes.
+#
+# Why /Volumes is special (macOS):
+# - Contains all mounted volumes including network shares
+# - Dead SMB/AFP mounts can block filesystem calls indefinitely
+# - FUSE filesystems may have unpredictable latency
+# - Removable media may be slow or unresponsive
+#
+# Why timeouts exist:
+# - Filesystem calls have no guaranteed completion time
+# - Network filesystems may never respond
+# - Partial results are acceptable for UI responsiveness
+# =============================================================================
+
+RISKY_PATH_PREFIXES = (
+    "/Volumes",           # macOS mounted volumes
+    "/mnt",               # Linux mount points  
+    "/media",             # Linux removable media
+    "/net",               # Network automounts
+    "/Network",           # macOS network
+    "//",                 # UNC paths (Windows-style)
+    "smb://",             # SMB URLs
+    "afp://",             # AFP URLs
+)
+
+def is_risky_path(path: str) -> bool:
+    """
+    Check if a path is potentially slow or may hang.
+    
+    Risky paths include:
+    - /Volumes (macOS mounted volumes including network shares)
+    - /mnt, /media (Linux mount points)
+    - Network paths (UNC, SMB, AFP)
+    
+    These paths get shorter timeouts and explicit UI warnings.
+    """
+    return any(path.startswith(prefix) for prefix in RISKY_PATH_PREFIXES)
 
 # Supported media extensions (lowercase, without dot)
 SUPPORTED_MEDIA_EXTENSIONS = {
@@ -172,6 +218,12 @@ class BrowseResponse(BaseModel):
     parent: Optional[str] = None
     entries: List[DirectoryEntry]
     error: Optional[str] = None
+    # HARDENING: Indicate if this path is risky (may be slow/hang)
+    is_risky_path: bool = False
+    # HARDENING: Indicate if results are partial due to timeout
+    timed_out: bool = False
+    # HARDENING: Warning message for risky paths
+    warning: Optional[str] = None
 
 
 class RootsResponse(BaseModel):
@@ -284,6 +336,7 @@ async def get_directory_entries(
     directory: Path,
     include_hidden: bool = False,
     media_only: bool = True,
+    timeout: float = DIRECTORY_TIMEOUT_SECONDS,
 ) -> List[DirectoryEntry]:
     """
     List entries in a directory.
@@ -294,6 +347,7 @@ async def get_directory_entries(
         directory: Path to directory to list
         include_hidden: Whether to include hidden files/folders
         media_only: Only include supported media files (dirs always included)
+        timeout: Maximum seconds to wait for enumeration (default: 3.0)
     
     Returns:
         List of DirectoryEntry objects, sorted (dirs first, then files)
@@ -304,7 +358,7 @@ async def get_directory_entries(
     entries: List[DirectoryEntry] = []
     
     # INC-001: Use timeout-protected directory listing
-    items = await list_directory_with_timeout(directory)
+    items = await list_directory_with_timeout(directory, timeout=timeout)
     
     for item in items:
         # Skip hidden files unless requested
@@ -354,6 +408,10 @@ async def get_filesystem_roots():
     INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
     on network volumes that are unreachable.
     
+    HARDENING: /Volumes enumeration uses a shorter timeout (1s) since
+    the directory itself should list quickly. Individual volumes are
+    NOT auto-enumerated - they require explicit user expansion.
+    
     V1 OBSERVABILITY: All browse attempts are logged to browse event log.
     
     Returns mounted volumes on macOS, common directories on other platforms.
@@ -363,13 +421,24 @@ async def get_filesystem_roots():
     
     roots: List[DirectoryEntry] = []
     
+    # ==========================================================================
     # macOS: /Volumes contains mounted drives
-    # INC-001: Network volumes can hang indefinitely - use timeout
+    # ==========================================================================
+    # HARDENING: /Volumes itself should enumerate quickly (it's local metadata).
+    # Use a shorter timeout. If this times out, the system is severely impaired.
+    #
+    # We do NOT recursively enumerate each volume here - that happens on-demand
+    # when the user explicitly expands a volume. This prevents UI hangs from
+    # dead network mounts appearing in /Volumes.
+    # ==========================================================================
     volumes_path = Path("/Volumes")
     if volumes_path.exists():
         try:
-            # Use timeout-protected enumeration
-            volume_items = await list_directory_with_timeout(volumes_path)
+            # Use shorter timeout for /Volumes root (local metadata only)
+            volume_items = await list_directory_with_timeout(
+                volumes_path, 
+                timeout=VOLUMES_TIMEOUT_SECONDS
+            )
             for item in volume_items:
                 if item.is_dir() and os.access(item, os.R_OK):
                     roots.append(DirectoryEntry(
@@ -416,6 +485,9 @@ async def browse_directory(
     INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
     on network volumes.
     
+    HARDENING: Risky paths (/Volumes, network mounts) use shorter timeouts
+    and include explicit warnings in the response.
+    
     V1 OBSERVABILITY: All browse attempts are logged to browse event log.
     V1 FILESYSTEM INVARIANT: Browse MUST resolve to directory list OR visible error.
     
@@ -427,6 +499,11 @@ async def browse_directory(
     
     # V1 DEBUG: Log the requested and resolved paths for diagnosis
     logger.info(f"[BROWSE] Requested path: {path}")
+    
+    # HARDENING: Detect risky paths early
+    risky = is_risky_path(path)
+    if risky:
+        logger.info(f"[BROWSE] Risky path detected: {path}")
     
     try:
         resolved = normalize_and_validate_path(path)
@@ -448,15 +525,20 @@ async def browse_directory(
     # Compute parent path
     parent = str(resolved.parent) if resolved.parent != resolved else None
     
+    # HARDENING: Use shorter timeout for risky paths
+    timeout = VOLUMES_TIMEOUT_SECONDS if risky else DIRECTORY_TIMEOUT_SECONDS
+    warning_msg = "Some volumes may be slow or unavailable" if risky else None
+    
     # INC-001: Use timeout-protected enumeration with HARD timeout.
     # Network volumes (/Volumes) can hang indefinitely.
     # V1 FILESYSTEM INVARIANT: Browse MUST resolve to directory list OR visible error.
     try:
-        logger.info(f"[BROWSE] Starting directory enumeration for: {resolved}")
+        logger.info(f"[BROWSE] Starting directory enumeration for: {resolved} (timeout: {timeout}s)")
         entries = await get_directory_entries(
             resolved,
             include_hidden=include_hidden,
             media_only=media_only,
+            timeout=timeout,
         )
         logger.info(f"[BROWSE] Enumeration complete: {len(entries)} entries for {resolved}")
         
@@ -471,16 +553,19 @@ async def browse_directory(
             logger.info(f"[BROWSE] Empty directory (or no media files): {resolved}")
         
     except asyncio.TimeoutError:
-        # INC-001: Directory enumeration timed out — log ONCE (no spam)
-        # V1 OBSERVABILITY: Record timeout with explicit error payload
-        logger.warning(f"INC-001: Timeout browsing directory after {DIRECTORY_TIMEOUT_SECONDS}s: {path}")
-        browse_log.record_browse_timeout(path, DIRECTORY_TIMEOUT_SECONDS)
+        # HARDENING: Directory enumeration timed out
+        # Return empty results with explicit timeout flag for UI to show appropriate state
+        logger.warning(f"HARDENING: Timeout browsing directory after {timeout}s: {path}")
+        browse_log.record_browse_timeout(path, timeout)
         
         return BrowseResponse(
             path=str(resolved),
             parent=parent,
             entries=[],
-            error="Unable to list this folder (permissions or slow volume)",
+            error="Unable to list this folder (timed out)",
+            is_risky_path=risky,
+            timed_out=True,
+            warning="This volume may be slow, disconnected, or unavailable",
         )
     except PermissionError as e:
         # V1 OBSERVABILITY: Record permission error
@@ -492,6 +577,7 @@ async def browse_directory(
             parent=parent,
             entries=[],
             error="Permission denied",
+            is_risky_path=risky,
         )
     except OSError as e:
         # V1 OBSERVABILITY: Record OS error
@@ -503,6 +589,7 @@ async def browse_directory(
             parent=parent,
             entries=[],
             error=str(e),
+            is_risky_path=risky,
         )
     except Exception as e:
         # V1 FIX: Catch-all to ensure we NEVER hang
@@ -514,13 +601,98 @@ async def browse_directory(
             parent=parent,
             entries=[],
             error=f"Unexpected error: {type(e).__name__}",
+            is_risky_path=risky,
         )
     
     return BrowseResponse(
         path=str(resolved),
         parent=parent,
         entries=entries,
+        is_risky_path=risky,
+        warning=warning_msg,
     )
+
+
+# =============================================================================
+# MANUAL PATH ENTRY - SAFE ESCAPE HATCH
+# =============================================================================
+# This endpoint validates a path exists WITHOUT enumerating its contents.
+# Used for manual path entry where the user types a path directly.
+# This bypasses all directory scanning and timeout concerns.
+# =============================================================================
+
+class ValidatePathResponse(BaseModel):
+    """Response from path validation endpoint."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    path: str
+    exists: bool
+    is_directory: bool
+    is_file: bool
+    is_readable: bool
+    is_risky_path: bool
+    error: Optional[str] = None
+
+
+@router.get("/validate-path", response_model=ValidatePathResponse)
+async def validate_path(
+    path: str = Query(..., description="Absolute path to validate"),
+):
+    """
+    Validate a path exists without enumerating contents.
+    
+    HARDENING: This is the safe escape hatch for manual path entry.
+    It ONLY checks if a path exists and is accessible, without
+    triggering any directory enumeration. This prevents hangs
+    when users type paths to slow or dead volumes.
+    
+    Use this for:
+    - Manual path entry validation
+    - Quick existence checks
+    - Pre-flight checks before browsing
+    
+    Returns:
+        Path existence, type, and accessibility information
+    """
+    risky = is_risky_path(path)
+    
+    try:
+        # Validate path format
+        resolved = normalize_and_validate_path(path)
+        
+        # Check accessibility (does NOT enumerate)
+        is_readable = os.access(resolved, os.R_OK)
+        
+        return ValidatePathResponse(
+            path=str(resolved),
+            exists=True,
+            is_directory=resolved.is_dir(),
+            is_file=resolved.is_file(),
+            is_readable=is_readable,
+            is_risky_path=risky,
+        )
+        
+    except HTTPException as e:
+        return ValidatePathResponse(
+            path=path,
+            exists=False,
+            is_directory=False,
+            is_file=False,
+            is_readable=False,
+            is_risky_path=risky,
+            error=e.detail,
+        )
+    except Exception as e:
+        return ValidatePathResponse(
+            path=path,
+            exists=False,
+            is_directory=False,
+            is_file=False,
+            is_readable=False,
+            is_risky_path=risky,
+            error=str(e),
+        )
 
 
 @router.get("/enumerate", response_model=EnumerateResponse)
