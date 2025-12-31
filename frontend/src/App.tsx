@@ -27,6 +27,7 @@ import { JobGroup } from './components/JobGroup'
 import { MediaWorkspace } from './components/MediaWorkspace'
 import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
+import { AttachProxiesInfoPanel } from './components/AttachProxiesInfoPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
 import { VisualPreviewWorkspace } from './components/VisualPreviewWorkspace'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
@@ -2093,6 +2094,11 @@ function App() {
                 onOpenVisualEditor={openVisualPreviewModal}
                 hasQueuedJobSelected={!!selectedJobId && jobs.some(j => j.id === selectedJobId)}
               />
+              
+              {/* Attach Proxies Info Panel — read-only guidance */}
+              <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border-primary)' }}>
+                <AttachProxiesInfoPanel />
+              </div>
             </div>
           }
           rightZoneQueue={

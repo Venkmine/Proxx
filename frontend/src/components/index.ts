@@ -63,5 +63,8 @@ export type { Volume } from './VolumesPanel'
 export { ColourPanel } from './ColourPanel'
 export type { ColourSettings } from './ColourPanel'
 
+// Attach Proxies Guidance (read-only info panel)
+export { AttachProxiesInfoPanel } from './AttachProxiesInfoPanel'
+
 // Electron components
 export { TitleBar } from './TitleBar'
