@@ -5,10 +5,10 @@
  * │                           HEADER                                     │
  * ├──────────────┬─────────────────────────────────┬────────────────────┤
  * │              │                                 │                    │
- * │   LEFT       │           CENTER                │     RIGHT          │
- * │   352px      │       (Preview ONLY)            │     420px          │
- * │   IMMUTABLE  │      fills remaining            │   IMMUTABLE        │
- * │   Sources    │                                 │  Settings/Queue    │
+ * │   LEFT       │    CENTER (MONITOR SURFACE)    │     RIGHT          │
+ * │   352px      │    Full-bleed visual anchor    │     420px          │
+ * │   IMMUTABLE  │    Fills remaining space       │   IMMUTABLE        │
+ * │   Sources    │    No card/panel borders       │  Settings/Queue    │
  * │              │                                 │     [tabbed]       │
  * │              │                                 │                    │
  * ├──────────────┴─────────────────────────────────┴────────────────────┤
@@ -20,9 +20,9 @@
  * ╠═══════════════════════════════════════════════════════════════════════╣
  * ║  1. LEFT zone is EXACTLY 352px — never resizes                        ║
  * ║  2. RIGHT zone is EXACTLY 420px — never resizes                       ║
- * ║  3. CENTER (Preview) fills remaining — content-agnostic               ║
- * ║  4. Queue NEVER resizes Preview                                       ║
- * ║  5. Preview NEVER resizes due to jobs                                 ║
+ * ║  3. CENTER (Monitor Surface) fills remaining — edge-to-edge           ║
+ * ║  4. Queue NEVER resizes Monitor                                       ║
+ * ║  5. Monitor NEVER resizes due to jobs                                 ║
  * ║  6. NO animations on layout zones                                     ║
  * ║  7. NO dynamic resizing — zones are rigid                             ║
  * ║  8. StatusLog floats independently (fixed position, not in layout)    ║
@@ -127,7 +127,7 @@ export function WorkspaceLayout({
         {leftZone}
       </aside>
 
-      {/* CENTER ZONE — Fills remaining space, Preview ONLY */}
+      {/* CENTER ZONE — Full-bleed Monitor Surface, fills remaining space */}
       <main
         data-testid="center-zone"
         style={{
@@ -136,7 +136,10 @@ export function WorkspaceLayout({
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: 'var(--card-bg-solid, rgba(16, 18, 20, 0.98))',
+          /* True black background for monitor surface — no card styling */
+          background: '#0a0b0d',
+          /* No padding — monitor fills edge-to-edge */
+          padding: 0,
         }}
       >
         {centerZone}

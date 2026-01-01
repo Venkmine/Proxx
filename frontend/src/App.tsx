@@ -29,7 +29,7 @@ import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { AttachProxiesInfoPanel } from './components/AttachProxiesInfoPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
-import { VisualPreviewWorkspace } from './components/VisualPreviewWorkspace'
+import { MonitorSurface, MonitorState, SourceMetadata, JobProgress, JobResult } from './components/MonitorSurface'
 import { WorkspaceLayout, RightPanelTab } from './components/WorkspaceLayout'
 import { PresetEditorHeader } from './components/PresetEditorHeader'
 import { AppFooter } from './components/AppFooter'
@@ -465,6 +465,94 @@ function App() {
     // No job selected, fall back to pending files
     return selectedFiles.length > 0 ? selectedFiles[0] : undefined
   }, [selectedJobId, jobDetails, previewClipId, selectedFiles])
+
+  // ============================================
+  // Monitor Surface State Derivation
+  // ============================================
+  // Derive MonitorSurface state from app/job state
+  const monitorState = useMemo((): MonitorState => {
+    if (selectedJobId) {
+      const job = jobs.find(j => j.id === selectedJobId)
+      if (!job) return 'idle'
+      const status = job.status.toUpperCase()
+      if (status === 'RUNNING' || status === 'PAUSED') return 'job-running'
+      if (status === 'COMPLETED' || status === 'FAILED') return 'job-complete'
+      // PENDING job with source = source-loaded
+      return 'source-loaded'
+    }
+    if (selectedFiles.length > 0) return 'source-loaded'
+    return 'idle'
+  }, [selectedJobId, jobs, selectedFiles])
+
+  // Derive source metadata for monitor
+  const monitorSourceMetadata = useMemo((): SourceMetadata | undefined => {
+    if (monitorState !== 'source-loaded') return undefined
+    
+    if (selectedJobId) {
+      const detail = jobDetails.get(selectedJobId)
+      const task = detail?.tasks?.[0]
+      if (task) {
+        return {
+          filename: task.source_path?.split('/').pop(),
+          codec: task.codec || undefined,
+          resolution: task.resolution || undefined,
+          fps: task.frame_rate || undefined,
+          duration: task.duration || undefined,
+          audioChannels: task.audio_channels || undefined,
+        }
+      }
+    }
+    
+    // Fallback to file name for pending files
+    if (selectedFiles.length > 0) {
+      return {
+        filename: selectedFiles[0].split('/').pop(),
+      }
+    }
+    return undefined
+  }, [monitorState, selectedJobId, jobDetails, selectedFiles])
+
+  // Derive job progress for monitor
+  const monitorJobProgress = useMemo((): JobProgress | undefined => {
+    if (monitorState !== 'job-running' || !selectedJobId) return undefined
+    
+    const job = jobs.find(j => j.id === selectedJobId)
+    const detail = jobDetails.get(selectedJobId)
+    if (!job || !detail) return undefined
+    
+    const runningTask = detail.tasks?.find(t => t.status.toUpperCase() === 'RUNNING')
+    const startedAt = job.started_at ? new Date(job.started_at) : new Date()
+    const elapsed = Math.floor((Date.now() - startedAt.getTime()) / 1000)
+    
+    return {
+      currentClip: detail.completed_count + 1,
+      totalClips: detail.total_tasks,
+      elapsedSeconds: elapsed,
+      sourceFilename: runningTask?.source_path?.split('/').pop(),
+      outputCodec: deliverSettings.video?.codec?.toUpperCase(),
+    }
+  }, [monitorState, selectedJobId, jobs, jobDetails, deliverSettings.video?.codec])
+
+  // Derive job result for monitor
+  const monitorJobResult = useMemo((): JobResult | undefined => {
+    if (monitorState !== 'job-complete' || !selectedJobId) return undefined
+    
+    const detail = jobDetails.get(selectedJobId)
+    if (!detail) return undefined
+    
+    // Get output info from first completed task
+    const completedTask = detail.tasks?.find(t => t.status.toUpperCase() === 'COMPLETED')
+    const outputDir = completedTask?.output_path
+      ? completedTask.output_path.split('/').slice(0, -1).join('/')
+      : undefined
+    
+    return {
+      outputCodec: detail.settings_summary?.codec || deliverSettings.video?.codec?.toUpperCase(),
+      outputResolution: detail.settings_summary?.resolution,
+      outputDirectory: outputDir,
+      totalClips: detail.completed_count,
+    }
+  }, [monitorState, selectedJobId, jobDetails, deliverSettings.video?.codec])
 
   // ============================================
   // Data Fetching
@@ -2101,18 +2189,12 @@ function App() {
             />
           }
           centerZone={
-            /* CENTER ZONE: VisualPreviewWorkspace — Preview ONLY */
-            <VisualPreviewWorkspace
-              sourceFilePath={previewSourcePath}
-              hasSource={selectedJobId !== null || selectedFiles.length > 0}
-              backendUrl={BACKEND_URL}
-              overlaySettings={deliverSettings.overlay}
-              outputSummary={{
-                codec: deliverSettings.video?.codec?.toUpperCase(),
-                container: deliverSettings.file?.container,
-                resolution: deliverSettings.video?.resolution_policy === 'source' ? 'Source' : deliverSettings.video?.resolution_policy,
-                fps: deliverSettings.video?.frame_rate_policy === 'source' ? 'Source' : deliverSettings.video?.frame_rate_policy,
-              }}
+            /* CENTER ZONE: MonitorSurface — Full-bleed state-driven display */
+            <MonitorSurface
+              state={monitorState}
+              sourceMetadata={monitorSourceMetadata}
+              jobProgress={monitorJobProgress}
+              jobResult={monitorJobResult}
             />
           }
           rightZoneSettings={
