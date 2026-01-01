@@ -102,13 +102,62 @@ When/if frame extraction or thumbnail generation is added:
 
 The abstraction is designed to support future enhancement without API changes.
 
+## Playback Mode Limitations
+
+### Proxy Playback
+
+When a preview proxy is successfully generated, MonitorSurface enters **Playback Mode**. This mode provides professional-style transport controls for reviewing source media. However, it's important to understand that:
+
+1. **You are watching a proxy, not the source.** The preview proxy is a browser-safe H.264 transcode, not your original media. This is by design — many professional codecs (ProRes RAW, BRAW, R3D, etc.) cannot play in browsers.
+
+2. **Visual quality is reduced.** Proxies are lower-resolution and lower-bitrate to ensure smooth playback in any browser.
+
+3. **Audio may be simplified.** Multi-channel audio is mixed to stereo for preview.
+
+### Frame Stepping Accuracy
+
+**HTML5 video is NOT frame-accurate for all codecs.**
+
+The transport controls include frame-step buttons (±1 frame), but these are **best-effort approximations**:
+
+- The `video.currentTime` API does not guarantee frame-aligned seeking
+- Different browsers have different seeking behavior
+- The preview proxy codec affects seeking precision
+
+This is a fundamental limitation of browser-based video playback, not a bug in Forge.
+
+**For frame-accurate work**, use dedicated NLE software (DaVinci Resolve, Premiere Pro, etc.).
+
+### Timecode Display
+
+The timecode display (HH:MM:SS:FF) is derived from:
+- `video.currentTime` (seconds)
+- Source frame rate from metadata
+
+The timecode is updated at ~60Hz via `requestAnimationFrame` for smooth visual feedback, but the underlying precision is limited by the video element.
+
+### Transport Controls
+
+| Control | Action | Keyboard |
+|---------|--------|----------|
+| Play/Pause | Toggle playback | Space |
+| Step Back | Move back ~1 frame | ← |
+| Step Forward | Move forward ~1 frame | → |
+| Jump Back | Move back 1 second | Shift + ← |
+| Jump Forward | Move forward 1 second | Shift + → |
+| Mute Toggle | Mute/unmute audio | M |
+| Scrubber | Seek to position | Drag |
+
 ## Files Modified
 
-- `frontend/src/components/MonitorSurface.tsx` — New component
+- `frontend/src/components/MonitorSurface.tsx` — Main monitor component
+- `frontend/src/components/TransportBar.tsx` — Professional transport controls
+- `frontend/src/hooks/usePlaybackClock.ts` — High-frequency timecode hook
 - `frontend/src/components/WorkspaceLayout.tsx` — Updated center zone styling
 - `frontend/src/App.tsx` — State derivation and component integration
 
 ## Related Documentation
 
+- [PREVIEW_PROXY_PIPELINE.md](./PREVIEW_PROXY_PIPELINE.md)
 - [PREVIEW_AND_PROGRESS_PHILOSOPHY.md](./PREVIEW_AND_PROGRESS_PHILOSOPHY.md)
 - [ALPHA_REALITY.md](./ALPHA_REALITY.md)
