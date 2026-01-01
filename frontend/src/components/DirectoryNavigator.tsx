@@ -46,14 +46,32 @@ interface DirectoryEntry {
   extension?: string
 }
 
+/**
+ * DirectoryState - Explicit state machine for directory listing.
+ * 
+ * STATE INVARIANT (INC-003):
+ * After any fetch completes (success, error, or timeout), `loading` MUST be false.
+ * The UI must never show "Loading..." indefinitely after a response is received.
+ * 
+ * Valid states:
+ * - idle: entries=[], loading=false, error=null (initial state)
+ * - loading: entries=[], loading=true, error=null (fetch in progress)
+ * - loaded: entries=[...], loading=false, error=null (success)
+ * - error: entries=[], loading=false, error="..." (fetch failed)
+ * - timeout: entries=[], loading=false, error="...", timedOut=true (request timed out)
+ * 
+ * Note: `isRiskyPath` affects messaging only, NOT lifecycle.
+ * A risky path may succeed quickly or timeout — the state transitions are identical.
+ */
 interface DirectoryState {
   path: string
   parent: string | null
   entries: DirectoryEntry[]
+  /** INVARIANT: Must be false after any fetch completes (success, error, timeout) */
   loading: boolean
   error: string | null
   expanded: boolean
-  /** INC-002: Path is risky (network mount, /Volumes root, etc.) */
+  /** INC-002: Path is risky (network mount, /Volumes root, etc.) — affects messaging only */
   isRiskyPath?: boolean
   /** INC-002: Request timed out before completing */
   timedOut?: boolean
@@ -546,17 +564,23 @@ export function DirectoryNavigator({
             recordBrowseSuccess(path, entries.length)
           }
           
+          // INC-003 STATE INVARIANT:
+          // After successful fetch, loading MUST be false.
+          // This ensures "Loading..." never persists after a response.
+          // Note: Even if is_risky_path is true, we still render entries normally.
+          // The risky flag only affects warning messaging, not state lifecycle.
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {
               path: data.path || path,
               parent: data.parent,
               entries: entries,
+              // INVARIANT: loading=false after success (never leave stuck)
               loading: false,
               // V1 FIX: Backend may return error field for permission issues
               error: errorFromBackend,
               expanded: true,
-              // INC-002: Include hardening fields
+              // INC-002: Include hardening fields (affect messaging only)
               isRiskyPath: backendRisky,
               timedOut: backendTimedOut,
               warning: backendWarning,
@@ -570,6 +594,7 @@ export function DirectoryNavigator({
           // V1 DOGFOOD FIX INC-001: Surface all errors clearly, never leave spinner stuck.
           // Ensure human-readable errors for common failure modes.
           // INC-002: Enhanced timeout messages for risky paths
+          // INC-003 STATE INVARIANT: loading=false after ANY fetch completion (including errors)
           let errorMessage: string
           let timedOut = false
           if (err.name === 'AbortError') {
@@ -595,16 +620,19 @@ export function DirectoryNavigator({
           // V1 OBSERVABILITY: Log browse error
           recordBrowseError(path, errorMessage)
           
+          // INC-003 STATE INVARIANT: loading=false after error/timeout
+          // Never leave UI in "Loading..." state after fetch completes
           setExpandedDirs(curr => {
             const newMap = new Map(curr)
             newMap.set(path, {
               path,
               parent: null,
               entries: [],
+              // INVARIANT: loading=false after error (never leave stuck)
               loading: false,
               error: errorMessage,
               expanded: true,
-              // INC-002: Include hardening fields
+              // INC-002: Include hardening fields (affect messaging only)
               isRiskyPath: risky,
               timedOut,
               warning: risky ? 'Some volumes may be slow or unavailable' : null,

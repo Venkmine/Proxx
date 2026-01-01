@@ -147,8 +147,11 @@ export function VisualPreviewWorkspace({
   const canvasRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
-  // ALPHA LIMITATION: static preview frame only (no scrubbing)
-  // Auto-load preview when source changes
+  // INC-003: Preview endpoints intentionally removed in v1
+  // The /preview/thumbnail and /metadata/extract endpoints were removed
+  // to preserve determinism and avoid misleading previews.
+  // We no longer fetch thumbnails or metadata from the backend.
+  // See docs/DECISIONS.md for rationale.
   useEffect(() => {
     if (!sourceFilePath || !hasSource) {
       setThumbnailUrl(null)
@@ -156,62 +159,13 @@ export function VisualPreviewWorkspace({
       return
     }
 
-    let cancelled = false
+    // INC-003: No thumbnail fetch - endpoint removed
+    // setThumbnailLoading stays false, thumbnailUrl stays null
+    // The UI will show placeholder instead of actual thumbnail
     
-    const fetchThumbnail = async () => {
-      setThumbnailLoading(true)
-      try {
-        const response = await fetch(`${backendUrl}/preview/thumbnail`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source_path: sourceFilePath, frame: 0 }),
-        })
-        
-        if (!cancelled && response.ok) {
-          const blob = await response.blob()
-          const url = URL.createObjectURL(blob)
-          setThumbnailUrl(prev => {
-            if (prev) URL.revokeObjectURL(prev)
-            return url
-          })
-        }
-      } catch (err) {
-        console.warn('Thumbnail fetch error:', err)
-      } finally {
-        if (!cancelled) setThumbnailLoading(false)
-      }
-    }
-
-    const fetchMetadata = async () => {
-      try {
-        const response = await fetch(`${backendUrl}/metadata/extract`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source_path: sourceFilePath }),
-        })
-        
-        if (!cancelled && response.ok) {
-          const data = await response.json()
-          setMetadata({
-            resolution: data.width && data.height ? `${data.width}×${data.height}` : undefined,
-            fps: data.frame_rate,
-            duration: data.duration,
-            codec: data.video_codec,
-            timecode_start: data.timecode_start,
-            reel_name: data.reel_name,
-          })
-        }
-      } catch (err) {
-        console.warn('Metadata fetch error:', err)
-      }
-    }
-
-    fetchThumbnail()
-    fetchMetadata()
-
-    return () => {
-      cancelled = true
-    }
+    // INC-003: No metadata fetch - endpoint removed  
+    // Metadata must be provided via props if needed
+    
   }, [sourceFilePath, hasSource, backendUrl])
 
   // Cleanup thumbnail URL on unmount
@@ -225,6 +179,10 @@ export function VisualPreviewWorkspace({
   // Preview Video Generation & Polling
   // ============================================
   
+  // INC-003: Preview endpoints intentionally removed in v1
+  // The /preview/status and /preview/stream endpoints were removed
+  // to preserve determinism and avoid misleading previews.
+  // Video preview generation is disabled. Set status to 'unsupported'.
   useEffect(() => {
     if (!sourceFilePath || !hasSource) {
       setPreviewVideoUrl(null)
@@ -233,64 +191,12 @@ export function VisualPreviewWorkspace({
       return
     }
 
-    let cancelled = false
-    let pollInterval: ReturnType<typeof setInterval> | null = null
+    // INC-003: No preview status polling - endpoint removed
+    // Set status to 'unsupported' to show placeholder instead of spinner
+    setPreviewStatus('unsupported')
+    setPreviewVideoUrl(null)
     
-    const checkPreviewStatus = async () => {
-      try {
-        const response = await fetch(`${backendUrl}/preview/status`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source_path: sourceFilePath }),
-        })
-        
-        if (cancelled) return
-        
-        if (response.ok) {
-          const data = await response.json()
-          
-          if (data.status === 'ready') {
-            setPreviewStatus('ready')
-            setPreviewProgress(100)
-            // Build the stream URL
-            const streamUrl = `${backendUrl}/preview/stream?source_path=${encodeURIComponent(sourceFilePath)}`
-            setPreviewVideoUrl(streamUrl)
-            if (pollInterval) {
-              clearInterval(pollInterval)
-              pollInterval = null
-            }
-          } else if (data.status === 'generating') {
-            setPreviewStatus('generating')
-            setPreviewProgress(data.progress || 0)
-          } else if (data.status === 'error') {
-            setPreviewStatus('error')
-            if (pollInterval) {
-              clearInterval(pollInterval)
-              pollInterval = null
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Preview status check error:', err)
-      }
-    }
-    
-    // Initial check
-    checkPreviewStatus()
-    
-    // Poll every 500ms while generating
-    pollInterval = setInterval(() => {
-      if (!cancelled) {
-        checkPreviewStatus()
-      }
-    }, 500)
-    
-    return () => {
-      cancelled = true
-      if (pollInterval) {
-        clearInterval(pollInterval)
-      }
-    }
+    // No cleanup needed since we don't poll
   }, [sourceFilePath, hasSource, backendUrl])
 
   // Video playback controls

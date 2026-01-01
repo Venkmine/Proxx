@@ -117,31 +117,13 @@ export function TokenPalette({
         const preview = generateLocalPreview(value)
         setPreviewResult(preview)
         
-        // Validate with backend if available
-        const response = await fetch(`${backendUrl}/control/validate-naming-template`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ template: value }),
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data.valid) {
-            setValidationError(null)
-            if (data.preview) {
-              setPreviewResult(data.preview)
-            }
-          } else {
-            setValidationError(data.error || 'Invalid template')
-          }
-        } else {
-          // Backend validation endpoint not available - use local preview
-          // Alpha limitation: No backend validation, local preview only
-          setValidationError(null)
-        }
+        // INC-003: Backend validation endpoint (/control/validate-naming-template)
+        // was intentionally removed in v1 to preserve determinism.
+        // We use local-only preview without backend validation.
+        // This avoids 404 errors in devtools for removed endpoints.
+        setValidationError(null)
       } catch {
-        // Alpha limitation: Backend validation unavailable
-        // Still show local preview
+        // Local preview failed - should not happen in practice
         setValidationError(null)
       } finally {
         setIsValidating(false)

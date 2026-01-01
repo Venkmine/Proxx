@@ -103,11 +103,14 @@ function isJobTerminal(status: string): boolean {
 }
 
 // Electron IPC types
+// INC-003: Added openFilesOrFolders for combined file+folder selection
 declare global {
   interface Window {
     electron?: {
       openFiles: () => Promise<string[]>
       openFolder: () => Promise<string | null>
+      /** INC-003: Select files AND/OR folders together. Does NOT auto-expand directories. */
+      openFilesOrFolders: () => Promise<string[]>
       showItemInFolder: (filePath: string) => Promise<void>
     }
   }
@@ -1166,6 +1169,37 @@ function App() {
   // File/Folder Selection (Electron)
   // ============================================
 
+  /**
+   * INC-003: Select files AND/OR folders via native OS dialog.
+   * 
+   * Uses the combined openFilesOrFolders dialog that allows selecting
+   * both files and directories in a single operation.
+   * 
+   * IMPORTANT: Selected directories are NOT auto-expanded here.
+   * The backend enumerates folder contents during preflight/job creation.
+   * This avoids scanning slow network volumes at selection time.
+   */
+  const selectFilesOrFolders = async () => {
+    console.log('[App] selectFilesOrFolders called, hasElectron:', hasElectron)
+    if (!hasElectron) {
+      alert('File picker requires Electron runtime')
+      return
+    }
+    try {
+      // INC-003: Use combined file+folder dialog
+      const paths = await window.electron!.openFilesOrFolders()
+      console.log('[App] openFilesOrFolders returned:', paths)
+      if (paths.length > 0) {
+        setSelectedFiles(paths)
+        console.log('[App] Sources selected (files and/or folders):', paths)
+      }
+    } catch (err) {
+      console.error('[App] Source selection error:', err)
+      setError(`Source selection failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  // Legacy: Select files only (kept for backwards compatibility)
   const selectFiles = async () => {
     console.log('[App] selectFiles called, hasElectron:', hasElectron)
     console.log('[App] window.electron:', window.electron)

@@ -3,9 +3,14 @@
  * 
  * Shows metadata for the currently selected source file or job file.
  * Located below the Sources panel in the left sidebar.
+ * 
+ * INC-003 (v1): The /metadata/extract endpoint was intentionally removed
+ * to preserve determinism and avoid misleading previews.
+ * This component now ONLY displays customMetadata passed from parent.
+ * It does NOT fetch metadata from the backend.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 interface SourceMetadata {
   resolution?: string
@@ -46,77 +51,17 @@ export function SourceMetadataPanel({
   customMetadata,
 }: SourceMetadataPanelProps) {
   const [metadata, setMetadata] = useState<SourceMetadata | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // INC-003: Removed loading/error state since we no longer fetch from backend.
+  // The /metadata/extract endpoint was intentionally removed in v1
+  // to preserve determinism and avoid misleading previews.
+  // Metadata is ONLY provided via customMetadata prop from parent.
 
-  // Fetch metadata when source file changes
-  useEffect(() => {
-    if (customMetadata) {
-      setMetadata(customMetadata)
-      return
-    }
-
-    if (!sourceFilePath) {
-      setMetadata(null)
-      return
-    }
-
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-
-    const fetchMetadata = async () => {
-      try {
-        const response = await fetch(`${backendUrl}/metadata/extract`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source_path: sourceFilePath }),
-        })
-
-        if (!cancelled) {
-          if (response.ok) {
-            const data = await response.json()
-            setMetadata({
-              resolution: data.width && data.height ? `${data.width}×${data.height}` : undefined,
-              width: data.width,
-              height: data.height,
-              fps: data.frame_rate,
-              frame_rate: data.frame_rate,
-              duration: data.duration,
-              video_codec: data.video_codec,
-              codec: data.video_codec,
-              timecode_start: data.timecode_start,
-              timecode_end: data.timecode_end,
-              frames: data.frames,
-              container: data.container,
-              audio_codec: data.audio_codec,
-              audio_channels: data.audio_channels,
-              reel_name: data.reel_name,
-              aspect_ratio: data.aspect_ratio,
-              bit_rate: data.bit_rate,
-              file_size: data.file_size,
-            })
-          } else {
-            setError('Failed to load metadata')
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError('Failed to connect')
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    fetchMetadata()
-
-    return () => {
-      cancelled = true
-    }
-  }, [sourceFilePath, backendUrl, customMetadata])
+  // Set metadata from custom prop (no backend fetch)
+  if (customMetadata && metadata !== customMetadata) {
+    setMetadata(customMetadata)
+  } else if (!customMetadata && !sourceFilePath && metadata !== null) {
+    setMetadata(null)
+  }
 
   if (!isVisible) {
     return null
@@ -150,9 +95,7 @@ export function SourceMetadataPanel({
         }}>
           Source Info
         </span>
-        {loading && (
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.625rem' }}>Loading...</span>
-        )}
+        {/* INC-003: Loading indicator removed - no backend fetch */}
       </div>
 
       {/* No source state */}
@@ -162,10 +105,10 @@ export function SourceMetadataPanel({
         </div>
       )}
 
-      {/* Error state */}
-      {error && sourceFilePath && (
-        <div style={{ color: 'var(--text-warning)', fontSize: '0.625rem' }}>
-          {error}
+      {/* INC-003: No metadata available state (backend endpoint removed) */}
+      {sourceFilePath && !metadata && (
+        <div style={{ color: 'var(--text-dim)', fontStyle: 'italic', padding: '0.5rem 0' }}>
+          Metadata not available
         </div>
       )}
 
