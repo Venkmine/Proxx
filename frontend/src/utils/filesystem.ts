@@ -49,6 +49,19 @@ export function isRiskyPath(path: string): boolean {
 }
 
 /**
+ * Check if a path is the /Volumes root itself.
+ * 
+ * INC-005: /Volumes is NOT a browsable directory — it's a volume selector.
+ * This prevents UI deadlock from attempting to enumerate volumes like normal directories.
+ * 
+ * @param path - The filesystem path to check
+ * @returns true if the path is exactly '/Volumes'
+ */
+export function isVolumesRoot(path: string): boolean {
+  return path === '/Volumes'
+}
+
+/**
  * Check if a path is a volume root (direct child of /Volumes).
  *
  * Volume roots get special treatment:

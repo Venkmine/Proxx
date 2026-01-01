@@ -38,6 +38,7 @@ import {
   isRiskyPath,
   getTimeoutForPath,
   getRiskyPathWarning,
+  isVolumesRoot,
 } from '../utils/filesystem'
 
 // ============================================================================
@@ -334,6 +335,10 @@ function DirectoryNode({
       {/* Children (if expanded) */}
       {isDir && isExpanded && dirState && (
         <div>
+          {/* INC-005: /Volumes is a volume selector, NOT a loading directory */}
+          {/* At /Volumes, we never show loading — volumes are rendered immediately */}
+          {/* This prevents UI deadlock from treating /Volumes like a normal directory */}
+          
           {/* INC-002: Warning banner for risky paths */}
           {dirState.warning && !dirState.loading && !dirState.error && (
             <div style={{
@@ -350,7 +355,8 @@ function DirectoryNode({
             </div>
           )}
           {/* INC-002: Enhanced loading state for risky paths */}
-          {dirState.loading && (
+          {/* INC-005: /Volumes never shows loading state */}
+          {dirState.loading && !isVolumesRoot(entry.path) && (
             <div style={{
               paddingLeft: `${0.5 + (level + 1) * 1}rem`,
               padding: '0.375rem 0.5rem',
@@ -388,7 +394,8 @@ function DirectoryNode({
               {dirState.timedOut ? '⏱️' : '⚠️'} {dirState.error}
             </div>
           )}
-          {!dirState.loading && !dirState.error && dirState.entries.length === 0 && (
+          {/* INC-005: Empty /Volumes is NOT loading — it's intentional */}
+          {!dirState.loading && !dirState.error && dirState.entries.length === 0 && !isVolumesRoot(entry.path) && (
             <div style={{
               paddingLeft: `${0.5 + (level + 1) * 1}rem`,
               padding: '0.375rem 0.5rem',
@@ -399,6 +406,7 @@ function DirectoryNode({
               No media files
             </div>
           )}
+          {/* INC-005: Render children — at /Volumes, these are selectable volumes */}
           {dirState.entries.map((child) => (
             <DirectoryNode
               key={child.path}
@@ -561,8 +569,10 @@ export function DirectoryNavigator({
     
     // Step 2: Set loading state FIRST (pure state update)
     // INC-004: STATE TRANSITION: idle/error -> loading
+    // INC-005: /Volumes is NOT loading — it's a volume selector
     const risky = isRiskyPath(path)
     const warning = risky ? getRiskyPathWarning(path) : null
+    const isVolumes = isVolumesRoot(path)
     
     setExpandedDirs(prev => {
       const updated = new Map(prev)
@@ -570,7 +580,7 @@ export function DirectoryNavigator({
         path,
         parent: null,
         entries: [],
-        loading: true,
+        loading: !isVolumes,  // INC-005: /Volumes never shows loading
         error: null,
         expanded: true,
         isRiskyPath: risky,
