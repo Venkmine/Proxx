@@ -2,35 +2,33 @@
  * MonitorSurface — Full-Bleed Monitor with Dual-Mode Playback
  * 
  * ============================================================================
- * DESIGN PHILOSOPHY — UX TRUTHFULNESS PASS
+ * DESIGN PHILOSOPHY — PREVIEW PROXY SYSTEM
  * ============================================================================
- * This component implements a "Monitor" abstraction with TWO distinct modes:
+ * This component implements a "Monitor" abstraction with deterministic,
+ * honest preview proxy playback.
  * 
- * MODE A — IDENTIFICATION MODE (no playback)
- * Used when:
- * - Source is loaded but not playback-compatible
- * - Preflight has NOT completed
- * - Media is unsupported for browser playback
+ * ARCHITECTURAL PRINCIPLES:
+ * 1. UI NEVER attempts playback from original sources
+ * 2. ALL playback comes from preview-safe proxy files
+ * 3. Preview proxies are temporary, disposable, isolated from output jobs
+ * 4. If preview proxy generation fails, UI falls back to Identification Mode
+ * 5. No speculative playback. No fake scrubbers. No guessing codec support.
  * 
- * MODE B — PLAYBACK MODE (working HTML5 video)
- * Used ONLY when:
- * - Source is a supported format (H.264, ProRes, DNx in compatible containers)
- * - Local playback is possible via <video> element
- * - Playback is actually functional
+ * STATES:
+ * - IDLE: No source, show branding
+ * - PREPARING_PREVIEW: Preview proxy being generated
+ * - PREVIEW_PROXY_READY: Preview proxy available, Playback Mode active
+ * - IDENTIFICATION_ONLY: Preview failed, metadata-only display
+ * - JOB_RUNNING: Encoding progress overlay
+ * - JOB_COMPLETE: Output summary overlay
  * 
  * Key principles:
  * - Full-bleed: No card borders, padding, or nested panels
  * - Edge-to-edge with centered 16:9 content area
  * - NO fake controls — if playback doesn't work, controls don't appear
- * - Real HTML5 video playback when supported
+ * - Real HTML5 video playback ONLY from preview proxies
  * 
- * VISUAL STATES:
- * 1. IDLE        - Dark neutral background + logo at ~12% opacity
- * 2. SOURCE_LOADED - Either Identification Mode OR Playback Mode
- * 3. JOB_RUNNING   - Playback disabled, encoding progress overlay
- * 4. JOB_COMPLETE  - Same matte + output summary overlay
- * 
- * See: docs/MONITOR_SURFACE.md
+ * See: docs/PREVIEW_PROXY_PIPELINE.md, docs/MONITOR_SURFACE.md
  * ============================================================================
  */
 
@@ -50,6 +48,15 @@ export type MonitorState =
   | 'job-running'    // Job executing, show progress
   | 'job-complete'   // Job finished, show summary
 
+/**
+ * Preview proxy state for playback control.
+ */
+export type PreviewProxyState = 
+  | 'idle'           // No preview requested
+  | 'generating'     // Preview proxy being generated
+  | 'ready'          // Preview proxy available
+  | 'failed'         // Preview proxy generation failed
+
 export interface SourceMetadata {
   filename?: string
   codec?: string
@@ -59,8 +66,24 @@ export interface SourceMetadata {
   durationSeconds?: number
   audioChannels?: number | string
   fileSize?: string
-  /** Absolute path for local file:// playback */
+  /** Absolute path for source file (used for preview generation, NOT playback) */
   filePath?: string
+}
+
+export interface PreviewProxyInfo {
+  /** HTTP URL to stream the preview proxy */
+  previewUrl: string
+  /** Duration in seconds */
+  duration: number | null
+  /** Resolution string (e.g., "1280x720") */
+  resolution: string | null
+  /** Codec (always "h264") */
+  codec: string
+}
+
+export interface PreviewProxyError {
+  /** Human-readable error message */
+  message: string
 }
 
 export interface JobProgress {
@@ -69,6 +92,8 @@ export interface JobProgress {
   elapsedSeconds: number
   sourceFilename?: string
   outputCodec?: string
+  /** Preview proxy URL for encoding overlay (if available) */
+  previewUrl?: string
 }
 
 export interface JobResult {
@@ -88,15 +113,24 @@ interface MonitorSurfaceProps {
   jobProgress?: JobProgress
   /** Job result info (for job-complete state) */
   jobResult?: JobResult
+  /** Preview proxy state */
+  previewProxyState?: PreviewProxyState
+  /** Preview proxy info (when previewProxyState === 'ready') */
+  previewProxyInfo?: PreviewProxyInfo | null
+  /** Preview proxy error (when previewProxyState === 'failed') */
+  previewProxyError?: PreviewProxyError | null
 }
 
 // ============================================================================
-// PLAYBACK SUPPORT DETECTION
+// PLAYBACK SUPPORT DETECTION (DEPRECATED)
 // ============================================================================
 
 /**
- * Codecs that can be played back in HTML5 <video> in most browsers.
- * Note: ProRes and DNx typically cannot play in browsers without transcoding.
+ * @deprecated Playback is now ONLY supported via preview proxies.
+ * This function is kept for reference but should not be used.
+ * 
+ * All playback must come from preview proxy files generated by the backend.
+ * See: docs/PREVIEW_PROXY_PIPELINE.md
  */
 const PLAYBACK_SUPPORTED_CODECS = new Set([
   'h.264', 'h264', 'avc', 'avc1',
@@ -330,6 +364,9 @@ export function MonitorSurface({
   sourceMetadata,
   jobProgress,
   jobResult,
+  previewProxyState = 'idle',
+  previewProxyInfo,
+  previewProxyError,
 }: MonitorSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -343,11 +380,25 @@ export function MonitorSurface({
   const [videoError, setVideoError] = useState(false)
   const [videoLoaded, setVideoLoaded] = useState(false)
   
-  // Determine if playback is supported for current source
+  // PREVIEW PROXY SYSTEM:
+  // Playback is ONLY allowed when:
+  // 1. Source is loaded
+  // 2. Preview proxy is ready
+  // 3. No video playback errors
+  //
+  // We NEVER attempt to play from the original source.
+  // All playback comes from the preview proxy URL.
   const canPlayback = state === 'source-loaded' && 
-    isPlaybackSupported(sourceMetadata) && 
-    !videoError &&
-    sourceMetadata?.filePath // Need file path for local playback
+    previewProxyState === 'ready' && 
+    previewProxyInfo?.previewUrl &&
+    !videoError
+
+  // Is preview currently being prepared?
+  const isPreparingPreview = state === 'source-loaded' && previewProxyState === 'generating'
+  
+  // Is preview in identification-only mode (failed or not started)?
+  const isIdentificationOnly = state === 'source-loaded' && 
+    (previewProxyState === 'failed' || previewProxyState === 'idle')
 
   // Reset states when source changes
   useEffect(() => {
@@ -363,7 +414,7 @@ export function MonitorSurface({
       videoRef.current.pause()
       videoRef.current.currentTime = 0
     }
-  }, [sourceMetadata?.filePath, sourceMetadata?.filename])
+  }, [sourceMetadata?.filePath, sourceMetadata?.filename, previewProxyInfo?.previewUrl])
 
   // Pause playback when job starts running
   useEffect(() => {
@@ -459,10 +510,10 @@ export function MonitorSurface({
   // Determine if we're in a "content" state (not idle)
   const hasContent = state !== 'idle'
   
-  // Build video source URL (file:// protocol for local files in Electron)
-  const videoSrc = sourceMetadata?.filePath 
-    ? `file://${sourceMetadata.filePath}`
-    : undefined
+  // PREVIEW PROXY SYSTEM:
+  // Video source is the preview proxy URL from the backend.
+  // We NEVER use file:// URLs directly — all playback comes from HTTP-served proxies.
+  const videoSrc = previewProxyInfo?.previewUrl || undefined
 
   return (
     <div
@@ -546,9 +597,10 @@ export function MonitorSurface({
         )}
 
         {/* ============================================ */}
-        {/* STATE: SOURCE_LOADED — Dual Mode Display */}
-        {/* MODE A: Identification Mode (no playback) */}
-        {/* MODE B: Playback Mode (working HTML5 video) */}
+        {/* STATE: SOURCE_LOADED — Three Sub-States */}
+        {/* 1. PREPARING_PREVIEW: Generating proxy */}
+        {/* 2. PLAYBACK_MODE: Preview proxy ready */}
+        {/* 3. IDENTIFICATION_ONLY: Preview failed */}
         {/* ============================================ */}
         {state === 'source-loaded' && sourceMetadata && (
           <div
@@ -558,7 +610,70 @@ export function MonitorSurface({
               inset: 0,
             }}
           >
-            {/* MODE B: Playback Mode — Show video if playback is supported */}
+            {/* PREPARING PREVIEW — Show loading overlay */}
+            {isPreparingPreview && (
+              <div
+                data-testid="preparing-preview-overlay"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                }}
+              >
+                {/* Preparing Preview badge */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.75rem 1.25rem',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  {/* Spinner */}
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '1rem',
+                      height: '1rem',
+                      borderRadius: '50%',
+                      border: '2px solid var(--text-muted)',
+                      borderTopColor: 'var(--accent-primary, #3b82f6)',
+                      animation: 'monitorSpin 1s linear infinite',
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: '0.875rem',
+                      fontFamily: 'var(--font-sans)',
+                      color: 'var(--text-primary)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Preparing Preview…
+                  </span>
+                </div>
+
+                {/* Source filename */}
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  {sourceMetadata.filename || 'Unknown source'}
+                </span>
+              </div>
+            )}
+
+            {/* PLAYBACK MODE — Show video when preview proxy is ready */}
             {canPlayback && videoSrc && (
               <>
                 <video
@@ -578,6 +693,7 @@ export function MonitorSurface({
                   onEnded={handleVideoEnded}
                   muted={isMuted}
                   playsInline
+                  crossOrigin="anonymous"
                 />
                 {/* Playback controls — only shown when video is loaded */}
                 {videoLoaded && (
@@ -595,10 +711,10 @@ export function MonitorSurface({
               </>
             )}
 
-            {/* MODE A: Identification Mode — Show metadata overlay when playback not supported */}
-            {!canPlayback && (
+            {/* IDENTIFICATION MODE — Show metadata overlay when preview failed or not available */}
+            {isIdentificationOnly && (
               <>
-                {/* Mode label at top */}
+                {/* Mode label at top — include error reason if available */}
                 <div
                   data-testid="identification-mode-label"
                   style={{
@@ -607,20 +723,28 @@ export function MonitorSurface({
                     left: '50%',
                     transform: 'translateX(-50%)',
                     padding: '0.375rem 0.75rem',
-                    background: 'rgba(100, 116, 139, 0.3)',
+                    background: previewProxyError 
+                      ? 'rgba(239, 68, 68, 0.15)' 
+                      : 'rgba(100, 116, 139, 0.3)',
                     borderRadius: '4px',
-                    border: '1px solid rgba(100, 116, 139, 0.4)',
+                    border: previewProxyError 
+                      ? '1px solid rgba(239, 68, 68, 0.35)' 
+                      : '1px solid rgba(100, 116, 139, 0.4)',
+                    maxWidth: '90%',
+                    textAlign: 'center',
                   }}
                 >
                   <span
                     style={{
                       fontSize: '0.6875rem',
                       fontFamily: 'var(--font-sans)',
-                      color: 'var(--text-muted)',
+                      color: previewProxyError ? 'var(--status-failed-fg, #ef4444)' : 'var(--text-muted)',
                       letterSpacing: '0.03em',
                     }}
                   >
-                    Preview (Identification Only — Playback unavailable)
+                    {previewProxyError 
+                      ? previewProxyError.message 
+                      : 'Preview (Identification Only)'}
                   </span>
                 </div>
 
@@ -760,6 +884,7 @@ export function MonitorSurface({
 
         {/* ============================================ */}
         {/* STATE: JOB_RUNNING — Progress overlay */}
+        {/* Reuses preview proxy as background if available */}
         {/* ============================================ */}
         {state === 'job-running' && (
           <div
@@ -767,33 +892,58 @@ export function MonitorSurface({
             style={{
               position: 'absolute',
               inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
             }}
           >
+            {/* Background: Preview proxy video (paused) if available */}
+            {jobProgress?.previewUrl && (
+              <video
+                src={jobProgress.previewUrl}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  background: '#000',
+                  opacity: 0.4,  // Dim to make overlay readable
+                  filter: 'blur(2px)',  // Slight blur for visual separation
+                }}
+                muted
+                playsInline
+              />
+            )}
+            
             {/* Center encoding indicator */}
             <div
               style={{
+                position: 'absolute',
+                inset: 0,
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                gap: '1rem',
+                justifyContent: 'center',
               }}
             >
-              {/* Encoding badge with pulse */}
               <div
                 style={{
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '0.75rem',
-                  padding: '0.75rem 1.25rem',
-                  background: 'rgba(14, 116, 144, 0.2)',
-                  border: '1px solid rgba(34, 211, 238, 0.35)',
-                  borderRadius: '6px',
-                  animation: 'monitorPulse 2.5s ease-in-out infinite',
+                  gap: '1rem',
                 }}
               >
+                {/* Encoding badge with pulse */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.75rem 1.25rem',
+                    background: 'rgba(14, 116, 144, 0.2)',
+                    border: '1px solid rgba(34, 211, 238, 0.35)',
+                    borderRadius: '6px',
+                    animation: 'monitorPulse 2.5s ease-in-out infinite',
+                  }}
+                >
                 {/* Spinner */}
                 <span
                   style={{
@@ -861,6 +1011,7 @@ export function MonitorSurface({
               >
                 Playback disabled while encoding is in progress
               </span>
+              </div>
             </div>
 
             {/* Bottom-left: current source filename */}

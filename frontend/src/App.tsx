@@ -29,7 +29,16 @@ import { QueueFilterBar } from './components/QueueFilterBar'
 import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { AttachProxiesInfoPanel } from './components/AttachProxiesInfoPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
-import { MonitorSurface, MonitorState, SourceMetadata, JobProgress, JobResult } from './components/MonitorSurface'
+import { 
+  MonitorSurface, 
+  MonitorState, 
+  SourceMetadata, 
+  JobProgress, 
+  JobResult,
+  PreviewProxyState,
+  PreviewProxyInfo,
+  PreviewProxyError,
+} from './components/MonitorSurface'
 import { WorkspaceLayout, RightPanelTab } from './components/WorkspaceLayout'
 import { PresetEditorHeader } from './components/PresetEditorHeader'
 import { AppFooter } from './components/AppFooter'
@@ -62,6 +71,8 @@ import { V2ResultPanel } from './components/V2ResultPanel'
 // import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
+// Preview Proxy System: Deterministic, browser-safe preview generation
+import { usePreviewProxy } from './hooks/usePreviewProxy'
 
 /**
  * Awaire Proxy Operator Control - Grouped Queue View
@@ -300,6 +311,38 @@ function App() {
   const selectedFiles = ingestion.pendingPaths
   const setSelectedFiles = ingestion.setPendingPaths
   
+  // ============================================
+  // PREVIEW PROXY SYSTEM
+  // ============================================
+  // Deterministic, browser-safe preview generation.
+  // See: docs/PREVIEW_PROXY_PIPELINE.md
+  const previewProxy = usePreviewProxy(BACKEND_URL)
+  
+  // Auto-trigger preview generation when source files change
+  // Only generate for single file selection in source-loaded state
+  const currentPreviewSource = useRef<string | null>(null)
+  
+  useEffect(() => {
+    // Only trigger preview generation for single file selection
+    if (selectedFiles.length === 1) {
+      const sourcePath = selectedFiles[0]
+      
+      // Avoid duplicate generation for same source
+      if (currentPreviewSource.current !== sourcePath) {
+        currentPreviewSource.current = sourcePath
+        previewProxy.generatePreview(sourcePath)
+      }
+    } else if (selectedFiles.length === 0) {
+      // Reset when no files selected
+      currentPreviewSource.current = null
+      previewProxy.reset()
+    } else {
+      // Multiple files - reset preview (no preview for multi-select)
+      currentPreviewSource.current = null
+      previewProxy.reset()
+    }
+  }, [selectedFiles, previewProxy])
+  
   const [selectedEngine, setSelectedEngine] = useState<string>('ffmpeg') // Phase 16: Engine selection
   // Output directory - single source of truth, persisted to localStorage
   const [outputDirectory, setOutputDirectory] = useState<string>(() => {
@@ -479,6 +522,7 @@ function App() {
           fps: task.frame_rate || undefined,
           duration: task.duration || undefined,
           audioChannels: task.audio_channels || undefined,
+          filePath: task.source_path || undefined,  // For preview generation
         }
       }
     }
@@ -487,6 +531,7 @@ function App() {
     if (selectedFiles.length > 0) {
       return {
         filename: selectedFiles[0].split('/').pop(),
+        filePath: selectedFiles[0],  // For preview generation
       }
     }
     return undefined
@@ -510,8 +555,10 @@ function App() {
       elapsedSeconds: elapsed,
       sourceFilename: runningTask?.source_path?.split('/').pop(),
       outputCodec: deliverSettings.video?.codec?.toUpperCase(),
+      // Preview proxy URL for encoding overlay (reuse existing preview if available)
+      previewUrl: previewProxy.proxyInfo?.previewUrl,
     }
-  }, [monitorState, selectedJobId, jobs, jobDetails, deliverSettings.video?.codec])
+  }, [monitorState, selectedJobId, jobs, jobDetails, deliverSettings.video?.codec, previewProxy.proxyInfo?.previewUrl])
 
   // Derive job result for monitor
   const monitorJobResult = useMemo((): JobResult | undefined => {
@@ -2029,11 +2076,15 @@ function App() {
           }
           centerZone={
             /* CENTER ZONE: MonitorSurface — Full-bleed state-driven display */
+            /* Preview Proxy System: All playback comes from HTTP-served proxies */
             <MonitorSurface
               state={monitorState}
               sourceMetadata={monitorSourceMetadata}
               jobProgress={monitorJobProgress}
               jobResult={monitorJobResult}
+              previewProxyState={previewProxy.state}
+              previewProxyInfo={previewProxy.proxyInfo}
+              previewProxyError={previewProxy.error}
             />
           }
           rightZoneSettings={
