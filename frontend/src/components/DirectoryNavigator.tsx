@@ -18,6 +18,12 @@
  * - Risky paths (/Volumes, network mounts) get shorter timeouts
  * - Warnings displayed for slow/unavailable volumes
  * - Explicit timeout feedback instead of indefinite spinners
+ * 
+ * INC-004: REQUEST SEQUENCING INVARIANT
+ * - Every browse request has a unique, monotonically increasing requestId
+ * - Only the LATEST requestId may mutate UI state
+ * - Stale responses are logged and discarded silently
+ * - loading MUST be false after any request settles (success, error, timeout)
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
@@ -53,6 +59,10 @@ interface DirectoryEntry {
  * After any fetch completes (success, error, or timeout), `loading` MUST be false.
  * The UI must never show "Loading..." indefinitely after a response is received.
  * 
+ * INC-004: REQUEST SEQUENCING INVARIANT
+ * Only the response matching the current requestId may update this state.
+ * Stale responses must be discarded.
+ * 
  * Valid states:
  * - idle: entries=[], loading=false, error=null (initial state)
  * - loading: entries=[], loading=true, error=null (fetch in progress)
@@ -77,6 +87,8 @@ interface DirectoryState {
   timedOut?: boolean
   /** INC-002: Warning message to display (e.g., "Some volumes may be slow") */
   warning?: string | null
+  /** INC-004: The requestId that set this state. Used for staleness verification. */
+  requestId?: number
 }
 
 interface DirectoryNavigatorProps {
@@ -189,6 +201,17 @@ function DirectoryNode({
   const isFavorite = favorites.includes(entry.path)
   const isFileSelected = selectedFiles.has(entry.path)
   const isFolderSelected = selectedFolder === entry.path
+  
+  // INC-004 DEBUG: Log only /Volumes to diagnose issue
+  if (isDir && dirState && entry.path === '/Volumes') {
+    console.log('[DirectoryNode] /Volumes state:', {
+      loading: dirState.loading,
+      error: dirState.error,
+      expanded: isExpanded,
+      entriesLength: dirState.entries?.length ?? 0,
+      entriesArray: dirState.entries,
+    })
+  }
   
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -441,6 +464,18 @@ export function DirectoryNavigator({
   // INC-002: Track active fetch controllers for cleanup
   const activeControllersRef = useRef<Map<string, AbortController>>(new Map())
   
+  // INC-004: REQUEST SEQUENCING - Monotonically increasing counter per path
+  // Only responses matching the current request ID may update state
+  const requestCounterRef = useRef<number>(0)
+  const currentRequestIdsRef = useRef<Map<string, number>>(new Map())
+  
+  // INC-004: Ref to access current expandedDirs without adding to useCallback dependencies
+  // This prevents infinite re-render loops when expandedDirs changes
+  const expandedDirsRef = useRef(expandedDirs)
+  useEffect(() => {
+    expandedDirsRef.current = expandedDirs
+  }, [expandedDirs])
+  
   // INC-002: Helper to fetch with dynamic timeout based on path risk
   const fetchWithTimeout = useCallback(async (url: string, timeoutMs?: number): Promise<Response> => {
     const controller = new AbortController()
@@ -484,34 +519,64 @@ export function DirectoryNavigator({
   }, [backendUrl, fetchWithTimeout])
   
   // Toggle directory expansion
+  // INC-004 REFACTOR: Moved fetch OUTSIDE state updater to fix React anti-pattern.
+  // State updaters must be pure functions - no side effects allowed.
+  // Previous code started fetch() inside setExpandedDirs(), which caused
+  // nested state updates to fail silently in some React versions.
+  // INC-004b: Use expandedDirsRef to avoid adding expandedDirs to dependencies
+  // which was causing infinite re-render loops.
+  // INC-004c: REQUEST SEQUENCING - Only the latest request may update state.
   const handleToggleExpand = useCallback(async (path: string) => {
     // V1 OBSERVABILITY: Log browse click
     recordBrowseClicked(path)
     
-    setExpandedDirs(prev => {
-      const existing = prev.get(path)
-      
-      if (existing?.expanded) {
-        // Collapse
+    // Step 1: Read current state via ref (avoids dependency on expandedDirs)
+    const existing = expandedDirsRef.current.get(path)
+    
+    if (existing?.expanded) {
+      // INC-004: STATE TRANSITION: loaded/error -> collapsed (no loading change needed)
+      // Just collapse - no fetch needed
+      setExpandedDirs(prev => {
         const updated = new Map(prev)
-        updated.set(path, { ...existing, expanded: false })
+        const current = prev.get(path)
+        if (current) {
+          updated.set(path, { ...current, expanded: false })
+        }
         return updated
-      }
-      
-      // Expand - need to fetch if not loaded
+      })
+      return
+    }
+    
+    // Already loaded successfully? Just expand, no fetch
+    if (existing && existing.entries.length > 0 && !existing.error) {
+      // INC-004: STATE TRANSITION: collapsed -> expanded (no loading needed, already have data)
+      setExpandedDirs(prev => {
+        const updated = new Map(prev)
+        const current = prev.get(path)
+        if (current) {
+          updated.set(path, { ...current, expanded: true })
+        }
+        return updated
+      })
+      return
+    }
+    
+    // INC-004: REQUEST SEQUENCING - Issue new request ID BEFORE any state updates
+    // This ID uniquely identifies this request. Only responses matching this ID
+    // may update state for this path.
+    requestCounterRef.current++
+    const requestId = requestCounterRef.current
+    currentRequestIdsRef.current.set(path, requestId)
+    // TEMP: Debug log for request ID issuance
+    console.log(`[TEMP][INC-004] Request ID ${requestId} issued for path: ${path}`)
+    
+    // Step 2: Set loading state FIRST (pure state update)
+    // INC-004: STATE TRANSITION: idle/error -> loading
+    const risky = isRiskyPath(path)
+    const warning = risky ? getRiskyPathWarning(path) : null
+    
+    setExpandedDirs(prev => {
       const updated = new Map(prev)
-      
-      if (existing && existing.entries.length > 0 && !existing.error) {
-        // Already loaded successfully, just expand
-        updated.set(path, { ...existing, expanded: true })
-        return updated
-      }
-      
-      // Need to fetch (or retry after error)
-      // INC-002: Check if path is risky and get appropriate warning
-      const risky = isRiskyPath(path)
-      const warning = risky ? getRiskyPathWarning(path) : null
-      
       updated.set(path, {
         path,
         parent: null,
@@ -521,129 +586,142 @@ export function DirectoryNavigator({
         expanded: true,
         isRiskyPath: risky,
         warning,
+        requestId,  // INC-004: Track which request set this state
       })
-      
-      // V1 OBSERVABILITY: Log browse request start
-      recordBrowseRequestStart(path)
-      
-      // V1 DOGFOOD FIX: Robust error handling for folder listing.
-      // Ensures loading spinner always resolves with either data or error.
-      // Never silently swallows errors.
-      // INC-002: Use dynamic timeout based on path risk level
-      const controller = new AbortController()
-      const dynamicTimeout = getTimeoutForPath(path)
-      const timeoutId = setTimeout(() => controller.abort(), dynamicTimeout)
-      
-      // INC-002: Track controller for potential cleanup
-      activeControllersRef.current.set(path, controller)
-      
-      fetch(`${backendUrl}/filesystem/browse?path=${encodeURIComponent(path)}`, {
-        signal: controller.signal,
-      })
-        .then(res => {
-          if (!res.ok) {
-            // V1 FIX: Handle HTTP errors explicitly
-            throw new Error(`HTTP ${res.status}: ${res.statusText || 'Access denied'}`)
-          }
-          return res.json()
-        })
-        .then(data => {
-          clearTimeout(timeoutId)
-          activeControllersRef.current.delete(path)
-          const entries = data.entries || []
-          const errorFromBackend = data.error || null
-          // INC-002: Capture new response fields
-          const backendTimedOut = data.timed_out || false
-          const backendRisky = data.is_risky_path || risky
-          const backendWarning = data.warning || warning
-          
-          // V1 OBSERVABILITY: Log browse result
-          if (errorFromBackend) {
-            recordBrowseError(path, errorFromBackend)
-          } else {
-            recordBrowseSuccess(path, entries.length)
-          }
-          
-          // INC-003 STATE INVARIANT:
-          // After successful fetch, loading MUST be false.
-          // This ensures "Loading..." never persists after a response.
-          // Note: Even if is_risky_path is true, we still render entries normally.
-          // The risky flag only affects warning messaging, not state lifecycle.
-          setExpandedDirs(curr => {
-            const newMap = new Map(curr)
-            newMap.set(path, {
-              path: data.path || path,
-              parent: data.parent,
-              entries: entries,
-              // INVARIANT: loading=false after success (never leave stuck)
-              loading: false,
-              // V1 FIX: Backend may return error field for permission issues
-              error: errorFromBackend,
-              expanded: true,
-              // INC-002: Include hardening fields (affect messaging only)
-              isRiskyPath: backendRisky,
-              timedOut: backendTimedOut,
-              warning: backendWarning,
-            })
-            return newMap
-          })
-        })
-        .catch(err => {
-          clearTimeout(timeoutId)
-          activeControllersRef.current.delete(path)
-          // V1 DOGFOOD FIX INC-001: Surface all errors clearly, never leave spinner stuck.
-          // Ensure human-readable errors for common failure modes.
-          // INC-002: Enhanced timeout messages for risky paths
-          // INC-003 STATE INVARIANT: loading=false after ANY fetch completion (including errors)
-          let errorMessage: string
-          let timedOut = false
-          if (err.name === 'AbortError') {
-            // INC-002: Better message for risky paths that timed out
-            timedOut = true
-            if (risky) {
-              errorMessage = 'Volume may be slow, disconnected, or unavailable'
-            } else {
-              errorMessage = 'Unable to list this folder (timed out)'
-            }
-          } else if (err.message?.includes('HTTP 403') || err.message?.includes('403')) {
-            errorMessage = 'Access denied (permissions)'
-          } else if (err.message?.includes('HTTP 404') || err.message?.includes('404')) {
-            errorMessage = 'Folder not found'
-          } else if (err.message?.includes('HTTP')) {
-            errorMessage = err.message
-          } else if (err.message?.includes('NetworkError') || err.message?.includes('fetch')) {
-            errorMessage = 'Network error. Backend offline?'
-          } else {
-            errorMessage = err.message || 'Unknown error. Click to retry.'
-          }
-          
-          // V1 OBSERVABILITY: Log browse error
-          recordBrowseError(path, errorMessage)
-          
-          // INC-003 STATE INVARIANT: loading=false after error/timeout
-          // Never leave UI in "Loading..." state after fetch completes
-          setExpandedDirs(curr => {
-            const newMap = new Map(curr)
-            newMap.set(path, {
-              path,
-              parent: null,
-              entries: [],
-              // INVARIANT: loading=false after error (never leave stuck)
-              loading: false,
-              error: errorMessage,
-              expanded: true,
-              // INC-002: Include hardening fields (affect messaging only)
-              isRiskyPath: risky,
-              timedOut,
-              warning: risky ? 'Some volumes may be slow or unavailable' : null,
-            })
-            return newMap
-          })
-        })
-      
       return updated
     })
-  }, [backendUrl])
+    
+    // V1 OBSERVABILITY: Log browse request start
+    recordBrowseRequestStart(path)
+    
+    // Step 3: Perform fetch OUTSIDE state updater (side effect separated)
+    const controller = new AbortController()
+    const dynamicTimeout = getTimeoutForPath(path)
+    const timeoutId = setTimeout(() => controller.abort(), dynamicTimeout)
+    
+    // INC-002: Track controller for potential cleanup
+    activeControllersRef.current.set(path, controller)
+    
+    try {
+      const res = await fetch(`${backendUrl}/filesystem/browse?path=${encodeURIComponent(path)}`, {
+        signal: controller.signal,
+      })
+      
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText || 'Access denied'}`)
+      }
+      
+      const data = await res.json()
+      clearTimeout(timeoutId)
+      activeControllersRef.current.delete(path)
+      
+      // INC-004: STALENESS CHECK - Verify this is still the current request
+      const currentRequestId = currentRequestIdsRef.current.get(path)
+      if (requestId !== currentRequestId) {
+        // TEMP: Debug log for stale response
+        console.log(`[TEMP][INC-004] STALE response ignored: requestId=${requestId}, currentRequestId=${currentRequestId}, path=${path}`)
+        return  // INC-004: Discard stale response silently
+      }
+      // TEMP: Debug log for valid response
+      console.log(`[TEMP][INC-004] Valid response: requestId=${requestId}, path=${path}`)
+      
+      const entries = data.entries || []
+      const errorFromBackend = data.error || null
+      const backendTimedOut = data.timed_out || false
+      const backendRisky = data.is_risky_path || risky
+      const backendWarning = data.warning || warning
+      
+      // V1 OBSERVABILITY: Log browse result
+      if (errorFromBackend) {
+        recordBrowseError(path, errorFromBackend)
+      } else {
+        recordBrowseSuccess(path, entries.length)
+      }
+      
+      // TEMP: Debug log for state update
+      console.log(`[TEMP][INC-004] Updating state for path: ${path}, entries: ${entries.length}, requestId: ${requestId}`)
+      
+      // Step 4: Update state with results (pure state update)
+      // INC-004: STATE TRANSITION: loading -> loaded (or loading -> error if backend error)
+      // INC-004: UI must never remain in loading state after a request settles.
+      setExpandedDirs(curr => {
+        const newMap = new Map(curr)
+        newMap.set(path, {
+          path: data.path || path,
+          parent: data.parent,
+          entries: entries,
+          loading: false,  // INC-004: CRITICAL - Must always be false after settle
+          error: errorFromBackend,
+          expanded: true,
+          isRiskyPath: backendRisky,
+          timedOut: backendTimedOut,
+          warning: backendWarning,
+          requestId,  // INC-004: Track which request produced this state
+        })
+        return newMap
+      })
+      
+    } catch (err: any) {
+      clearTimeout(timeoutId)
+      activeControllersRef.current.delete(path)
+      
+      // INC-004: STALENESS CHECK - Verify this is still the current request
+      const currentRequestId = currentRequestIdsRef.current.get(path)
+      if (requestId !== currentRequestId) {
+        // TEMP: Debug log for stale error response
+        console.log(`[TEMP][INC-004] STALE error ignored: requestId=${requestId}, currentRequestId=${currentRequestId}, path=${path}`)
+        return  // INC-004: Discard stale error silently
+      }
+      
+      let errorMessage: string
+      let timedOut = false
+      
+      if (err.name === 'AbortError') {
+        timedOut = true
+        if (risky) {
+          errorMessage = 'Volume may be slow, disconnected, or unavailable'
+        } else {
+          errorMessage = 'Unable to list this folder (timed out)'
+        }
+      } else if (err.message?.includes('HTTP 403') || err.message?.includes('403')) {
+        errorMessage = 'Access denied (permissions)'
+      } else if (err.message?.includes('HTTP 404') || err.message?.includes('404')) {
+        errorMessage = 'Folder not found'
+      } else if (err.message?.includes('HTTP')) {
+        errorMessage = err.message
+      } else if (err.message?.includes('NetworkError') || err.message?.includes('fetch')) {
+        errorMessage = 'Network error. Backend offline?'
+      } else {
+        errorMessage = err.message || 'Unknown error. Click to retry.'
+      }
+      
+      // V1 OBSERVABILITY: Log browse error
+      recordBrowseError(path, errorMessage)
+      
+      // TEMP: Debug log for error state transition
+      console.log(`[TEMP][INC-004] Error state transition for path: ${path}, error: ${errorMessage}, requestId: ${requestId}`)
+      
+      // Step 5: Update state with error (pure state update)
+      // INC-004: STATE TRANSITION: loading -> error/timeout
+      // INC-004: UI must never remain in loading state after a request settles.
+      setExpandedDirs(curr => {
+        const newMap = new Map(curr)
+        newMap.set(path, {
+          path,
+          parent: null,
+          entries: [],
+          loading: false,  // INC-004: CRITICAL - Must always be false after settle
+          error: errorMessage,
+          expanded: true,
+          isRiskyPath: risky,
+          timedOut,
+          warning: risky ? 'Some volumes may be slow or unavailable' : null,
+          requestId,  // INC-004: Track which request produced this state
+        })
+        return newMap
+      })
+    }
+  }, [backendUrl])  // INC-004b: removed expandedDirs, using ref instead
   
   // File selection handler
   const handleSelectFile = useCallback((path: string, isSelected: boolean) => {
