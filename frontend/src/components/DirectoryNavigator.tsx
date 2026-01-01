@@ -202,17 +202,6 @@ function DirectoryNode({
   const isFileSelected = selectedFiles.has(entry.path)
   const isFolderSelected = selectedFolder === entry.path
   
-  // INC-004 DEBUG: Log only /Volumes to diagnose issue
-  if (isDir && dirState && entry.path === '/Volumes') {
-    console.log('[DirectoryNode] /Volumes state:', {
-      loading: dirState.loading,
-      error: dirState.error,
-      expanded: isExpanded,
-      entriesLength: dirState.entries?.length ?? 0,
-      entriesArray: dirState.entries,
-    })
-  }
-  
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     
