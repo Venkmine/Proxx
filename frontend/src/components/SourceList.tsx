@@ -59,7 +59,7 @@ export function SourceList({
       }}>
         No sources selected.
         <br />
-        Use the Browse tab to select files or folders.
+        Use Select Files or Select Folder to add media.
       </div>
     )
   }

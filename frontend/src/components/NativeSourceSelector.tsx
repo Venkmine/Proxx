@@ -127,7 +127,17 @@ export function NativeSourceSelector({
 
       if (!response.ok) {
         const error = await response.json()
-        setValidationError(error.detail || 'Invalid path')
+        // UX TRUTHFULNESS: Explicit error messages instead of generic "Invalid path"
+        const errorDetail = error.detail || 'Path validation failed'
+        if (errorDetail.includes('not exist') || errorDetail.includes('not found')) {
+          setValidationError('Path does not exist')
+        } else if (errorDetail.includes('permission') || errorDetail.includes('access')) {
+          setValidationError('Cannot access this path (permission denied)')
+        } else if (errorDetail.includes('system') || errorDetail.includes('protected')) {
+          setValidationError('System directories are not valid sources')
+        } else {
+          setValidationError(errorDetail)
+        }
         return
       }
 
@@ -142,7 +152,17 @@ export function NativeSourceSelector({
         setManualPath('')
         setValidationError(null)
       } else {
-        setValidationError(data.error || 'Invalid path')
+        // UX TRUTHFULNESS: Explicit error messages
+        const errorMsg = data.error || 'Path validation failed'
+        if (errorMsg.includes('not exist') || errorMsg.includes('not found')) {
+          setValidationError('Path does not exist')
+        } else if (errorMsg.includes('no media') || errorMsg.includes('no supported')) {
+          setValidationError('Path contains no supported media files')
+        } else if (errorMsg.includes('system') || errorMsg.includes('protected')) {
+          setValidationError('System directories are not valid sources')
+        } else {
+          setValidationError(errorMsg)
+        }
       }
     } catch (err) {
       console.error('Path validation error:', err)

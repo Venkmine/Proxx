@@ -1,30 +1,40 @@
 /**
- * MonitorSurface — Full-Bleed Monitor Abstraction
+ * MonitorSurface — Full-Bleed Monitor with Dual-Mode Playback
  * 
  * ============================================================================
- * DESIGN PHILOSOPHY
+ * DESIGN PHILOSOPHY — UX TRUTHFULNESS PASS
  * ============================================================================
- * This component implements a "Monitor" abstraction — a passive display surface
- * that visualizes application state, NOT a media player.
+ * This component implements a "Monitor" abstraction with TWO distinct modes:
+ * 
+ * MODE A — IDENTIFICATION MODE (no playback)
+ * Used when:
+ * - Source is loaded but not playback-compatible
+ * - Preflight has NOT completed
+ * - Media is unsupported for browser playback
+ * 
+ * MODE B — PLAYBACK MODE (working HTML5 video)
+ * Used ONLY when:
+ * - Source is a supported format (H.264, ProRes, DNx in compatible containers)
+ * - Local playback is possible via <video> element
+ * - Playback is actually functional
  * 
  * Key principles:
  * - Full-bleed: No card borders, padding, or nested panels
  * - Edge-to-edge with centered 16:9 content area
- * - State-driven: Visual appearance is derived from app/job state
- * - Overlay-driven UI: All text/controls are positioned absolutely
- * - No playback: This is a state indicator, not a video decoder
+ * - NO fake controls — if playback doesn't work, controls don't appear
+ * - Real HTML5 video playback when supported
  * 
  * VISUAL STATES:
  * 1. IDLE        - Dark neutral background + logo at ~12% opacity
- * 2. SOURCE_LOADED - Black 16:9 matte + metadata overlay + disabled scrub bar
- * 3. JOB_RUNNING   - Same matte + encoding progress overlay
+ * 2. SOURCE_LOADED - Either Identification Mode OR Playback Mode
+ * 3. JOB_RUNNING   - Playback disabled, encoding progress overlay
  * 4. JOB_COMPLETE  - Same matte + output summary overlay
  * 
  * See: docs/MONITOR_SURFACE.md
  * ============================================================================
  */
 
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 
 // ============================================================================
 // TYPES
@@ -36,7 +46,7 @@ import { useRef, useEffect, useState } from 'react'
  */
 export type MonitorState = 
   | 'idle'           // No source, show branding
-  | 'source-loaded'  // Source ready, show metadata
+  | 'source-loaded'  // Source ready, show metadata (or playback if supported)
   | 'job-running'    // Job executing, show progress
   | 'job-complete'   // Job finished, show summary
 
@@ -46,7 +56,11 @@ export interface SourceMetadata {
   resolution?: string
   fps?: string
   duration?: string
+  durationSeconds?: number
   audioChannels?: number | string
+  fileSize?: string
+  /** Absolute path for local file:// playback */
+  filePath?: string
 }
 
 export interface JobProgress {
@@ -77,6 +91,54 @@ interface MonitorSurfaceProps {
 }
 
 // ============================================================================
+// PLAYBACK SUPPORT DETECTION
+// ============================================================================
+
+/**
+ * Codecs that can be played back in HTML5 <video> in most browsers.
+ * Note: ProRes and DNx typically cannot play in browsers without transcoding.
+ */
+const PLAYBACK_SUPPORTED_CODECS = new Set([
+  'h.264', 'h264', 'avc', 'avc1',
+  'h.265', 'h265', 'hevc',  // Safari supports HEVC
+  'vp8', 'vp9',
+  'av1',
+])
+
+/**
+ * File extensions that typically contain playback-compatible content.
+ */
+const PLAYBACK_SUPPORTED_EXTENSIONS = new Set([
+  '.mp4', '.m4v', '.mov', '.webm', '.ogg', '.ogv',
+])
+
+/**
+ * Check if a source is likely playable in an HTML5 video element.
+ */
+function isPlaybackSupported(metadata?: SourceMetadata): boolean {
+  if (!metadata?.filename) return false
+  
+  // Check file extension first
+  const filename = metadata.filename.toLowerCase()
+  const hasPlayableExtension = Array.from(PLAYBACK_SUPPORTED_EXTENSIONS).some(ext => 
+    filename.endsWith(ext)
+  )
+  
+  // If we have codec info, check that too
+  if (metadata.codec) {
+    const codecLower = metadata.codec.toLowerCase()
+    const hasPlayableCodec = Array.from(PLAYBACK_SUPPORTED_CODECS).some(codec => 
+      codecLower.includes(codec)
+    )
+    // Need BOTH extension and codec to be compatible
+    return hasPlayableExtension && hasPlayableCodec
+  }
+  
+  // Without codec info, trust extension for common formats
+  return hasPlayableExtension
+}
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 
@@ -87,9 +149,176 @@ function formatElapsedTime(seconds: number): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
+function formatTimecode(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  const f = Math.floor((seconds % 1) * 24) // Assume 24fps for timecode display
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}:${f.toString().padStart(2, '0')}`
+}
+
 function truncatePath(path: string, maxLength: number = 50): string {
   if (!path || path.length <= maxLength) return path || ''
   return '...' + path.slice(-maxLength + 3)
+}
+
+// ============================================================================
+// PLAYBACK CONTROLS COMPONENT (Only shown when playback is supported)
+// ============================================================================
+
+interface PlaybackControlsProps {
+  videoRef: React.RefObject<HTMLVideoElement | null>
+  isPlaying: boolean
+  currentTime: number
+  duration: number
+  isMuted: boolean
+  onPlayPause: () => void
+  onSeek: (time: number) => void
+  onMuteToggle: () => void
+}
+
+function PlaybackControls({
+  isPlaying,
+  currentTime,
+  duration,
+  isMuted,
+  onPlayPause,
+  onSeek,
+  onMuteToggle,
+}: PlaybackControlsProps) {
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
+
+  return (
+    <div
+      data-testid="playback-controls"
+      style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'linear-gradient(transparent, rgba(0, 0, 0, 0.85))',
+        padding: '2rem 1rem 0.75rem',
+      }}
+    >
+      {/* Scrub Bar */}
+      <div
+        style={{
+          position: 'relative',
+          height: '4px',
+          background: 'rgba(255, 255, 255, 0.2)',
+          borderRadius: '2px',
+          cursor: 'pointer',
+          marginBottom: '0.75rem',
+        }}
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          const x = e.clientX - rect.left
+          const percent = x / rect.width
+          onSeek(percent * duration)
+        }}
+      >
+        {/* Progress fill */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            height: '100%',
+            width: `${progressPercent}%`,
+            background: 'var(--accent-primary, #3b82f6)',
+            borderRadius: '2px',
+            transition: 'width 0.1s linear',
+          }}
+        />
+        {/* Playhead */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: `${progressPercent}%`,
+            transform: 'translate(-50%, -50%)',
+            width: '12px',
+            height: '12px',
+            borderRadius: '50%',
+            background: '#fff',
+            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.3)',
+          }}
+        />
+      </div>
+
+      {/* Controls row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+        }}
+      >
+        {/* Play/Pause button */}
+        <button
+          data-testid="play-pause-button"
+          onClick={onPlayPause}
+          style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '50%',
+            border: 'none',
+            background: 'rgba(255, 255, 255, 0.1)',
+            color: '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1rem',
+          }}
+          title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+        >
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+
+        {/* Timecode display */}
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.75rem',
+            color: '#fff',
+            minWidth: '180px',
+          }}
+        >
+          <span>{formatTimecode(currentTime)}</span>
+          <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
+          <span style={{ color: 'var(--text-muted)' }}>{formatTimecode(duration)}</span>
+        </div>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Mute toggle */}
+        <button
+          data-testid="mute-button"
+          onClick={onMuteToggle}
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '4px',
+            border: 'none',
+            background: 'rgba(255, 255, 255, 0.1)',
+            color: '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.875rem',
+          }}
+          title={isMuted ? 'Unmute' : 'Mute'}
+        >
+          {isMuted ? '🔇' : '🔊'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // ============================================================================
@@ -103,15 +332,137 @@ export function MonitorSurface({
   jobResult,
 }: MonitorSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [logoError, setLogoError] = useState(false)
   
-  // Reset logo error when state changes
+  // Playback state
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isMuted, setIsMuted] = useState(false)
+  const [videoError, setVideoError] = useState(false)
+  const [videoLoaded, setVideoLoaded] = useState(false)
+  
+  // Determine if playback is supported for current source
+  const canPlayback = state === 'source-loaded' && 
+    isPlaybackSupported(sourceMetadata) && 
+    !videoError &&
+    sourceMetadata?.filePath // Need file path for local playback
+
+  // Reset states when source changes
   useEffect(() => {
     setLogoError(false)
+    setVideoError(false)
+    setVideoLoaded(false)
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setDuration(0)
+    
+    // Pause and reset video element
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }, [sourceMetadata?.filePath, sourceMetadata?.filename])
+
+  // Pause playback when job starts running
+  useEffect(() => {
+    if (state === 'job-running' && videoRef.current) {
+      videoRef.current.pause()
+      setIsPlaying(false)
+    }
   }, [state])
+
+  // Video event handlers
+  const handleLoadedMetadata = useCallback(() => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration)
+      setVideoLoaded(true)
+    }
+  }, [])
+
+  const handleTimeUpdate = useCallback(() => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime)
+    }
+  }, [])
+
+  const handleVideoError = useCallback(() => {
+    setVideoError(true)
+    setVideoLoaded(false)
+    setIsPlaying(false)
+  }, [])
+
+  const handleVideoEnded = useCallback(() => {
+    setIsPlaying(false)
+  }, [])
+
+  // Playback controls
+  const handlePlayPause = useCallback(() => {
+    if (!videoRef.current) return
+    
+    if (isPlaying) {
+      videoRef.current.pause()
+      setIsPlaying(false)
+    } else {
+      videoRef.current.play().catch(() => {
+        setVideoError(true)
+      })
+      setIsPlaying(true)
+    }
+  }, [isPlaying])
+
+  const handleSeek = useCallback((time: number) => {
+    if (!videoRef.current) return
+    videoRef.current.currentTime = Math.max(0, Math.min(time, duration))
+    setCurrentTime(videoRef.current.currentTime)
+  }, [duration])
+
+  const handleMuteToggle = useCallback(() => {
+    if (!videoRef.current) return
+    videoRef.current.muted = !isMuted
+    setIsMuted(!isMuted)
+  }, [isMuted])
+
+  // Keyboard shortcuts for playback
+  useEffect(() => {
+    if (state !== 'source-loaded' || !canPlayback) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle if focus is in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault()
+          handlePlayPause()
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          handleSeek(currentTime - 5)
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          handleSeek(currentTime + 5)
+          break
+        case 'KeyM':
+          e.preventDefault()
+          handleMuteToggle()
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [state, canPlayback, handlePlayPause, handleSeek, handleMuteToggle, currentTime])
 
   // Determine if we're in a "content" state (not idle)
   const hasContent = state !== 'idle'
+  
+  // Build video source URL (file:// protocol for local files in Electron)
+  const videoSrc = sourceMetadata?.filePath 
+    ? `file://${sourceMetadata.filePath}`
+    : undefined
 
   return (
     <div
@@ -195,7 +546,9 @@ export function MonitorSurface({
         )}
 
         {/* ============================================ */}
-        {/* STATE: SOURCE_LOADED — Metadata overlay */}
+        {/* STATE: SOURCE_LOADED — Dual Mode Display */}
+        {/* MODE A: Identification Mode (no playback) */}
+        {/* MODE B: Playback Mode (working HTML5 video) */}
         {/* ============================================ */}
         {state === 'source-loaded' && sourceMetadata && (
           <div
@@ -205,74 +558,203 @@ export function MonitorSurface({
               inset: 0,
             }}
           >
-            {/* Bottom-left metadata overlay */}
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '1rem',
-                left: '1rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.375rem',
-                padding: '0.625rem 0.75rem',
-                background: 'rgba(0, 0, 0, 0.75)',
-                borderRadius: '4px',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-              }}
-            >
-              {/* Filename */}
-              <span
-                style={{
-                  fontSize: '0.8125rem',
-                  fontFamily: 'var(--font-mono)',
-                  color: 'var(--text-primary)',
-                  fontWeight: 500,
-                }}
-              >
-                {sourceMetadata.filename || 'Unknown source'}
-              </span>
-              
-              {/* Metadata row */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '0.5rem 1rem',
-                  fontSize: '0.6875rem',
-                  fontFamily: 'var(--font-mono)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {sourceMetadata.codec && <span>{sourceMetadata.codec}</span>}
-                {sourceMetadata.resolution && <span>{sourceMetadata.resolution}</span>}
-                {sourceMetadata.fps && <span>{sourceMetadata.fps}</span>}
-                {sourceMetadata.duration && <span>{sourceMetadata.duration}</span>}
-                {sourceMetadata.audioChannels && (
-                  <span>{sourceMetadata.audioChannels}ch</span>
+            {/* MODE B: Playback Mode — Show video if playback is supported */}
+            {canPlayback && videoSrc && (
+              <>
+                <video
+                  ref={videoRef}
+                  src={videoSrc}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    background: '#000',
+                  }}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  onTimeUpdate={handleTimeUpdate}
+                  onError={handleVideoError}
+                  onEnded={handleVideoEnded}
+                  muted={isMuted}
+                  playsInline
+                />
+                {/* Playback controls — only shown when video is loaded */}
+                {videoLoaded && (
+                  <PlaybackControls
+                    videoRef={videoRef}
+                    isPlaying={isPlaying}
+                    currentTime={currentTime}
+                    duration={duration}
+                    isMuted={isMuted}
+                    onPlayPause={handlePlayPause}
+                    onSeek={handleSeek}
+                    onMuteToggle={handleMuteToggle}
+                  />
                 )}
-              </div>
-            </div>
+              </>
+            )}
 
-            {/* Disabled scrub bar (visual affordance) */}
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: '3px',
-                background: 'rgba(255, 255, 255, 0.08)',
-              }}
-            >
+            {/* MODE A: Identification Mode — Show metadata overlay when playback not supported */}
+            {!canPlayback && (
+              <>
+                {/* Mode label at top */}
+                <div
+                  data-testid="identification-mode-label"
+                  style={{
+                    position: 'absolute',
+                    top: '1rem',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    padding: '0.375rem 0.75rem',
+                    background: 'rgba(100, 116, 139, 0.3)',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(100, 116, 139, 0.4)',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontFamily: 'var(--font-sans)',
+                      color: 'var(--text-muted)',
+                      letterSpacing: '0.03em',
+                    }}
+                  >
+                    Preview (Identification Only — Playback unavailable)
+                  </span>
+                </div>
+
+                {/* Center metadata display */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '1.5rem',
+                      padding: '2rem',
+                      background: 'rgba(0, 0, 0, 0.6)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      maxWidth: '80%',
+                    }}
+                  >
+                    {/* Filename */}
+                    <span
+                      style={{
+                        fontSize: '1.125rem',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-primary)',
+                        fontWeight: 500,
+                        textAlign: 'center',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {sourceMetadata.filename || 'Unknown source'}
+                    </span>
+
+                    {/* Metadata grid */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, auto)',
+                        gap: '0.5rem 2rem',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      {sourceMetadata.codec && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>Codec</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.codec}</span>
+                        </>
+                      )}
+                      {sourceMetadata.resolution && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>Resolution</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.resolution}</span>
+                        </>
+                      )}
+                      {sourceMetadata.fps && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>Frame Rate</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.fps}</span>
+                        </>
+                      )}
+                      {sourceMetadata.duration && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>Duration</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.duration}</span>
+                        </>
+                      )}
+                      {sourceMetadata.audioChannels && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>Audio</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.audioChannels}ch</span>
+                        </>
+                      )}
+                      {sourceMetadata.fileSize && (
+                        <>
+                          <span style={{ color: 'var(--text-dim)' }}>Size</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.fileSize}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Bottom-left metadata overlay — shown for both modes */}
+            {canPlayback && (
               <div
                 style={{
-                  width: '0%',
-                  height: '100%',
-                  background: 'var(--text-dim)',
+                  position: 'absolute',
+                  bottom: '4.5rem', // Above controls
+                  left: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  padding: '0.5rem 0.625rem',
+                  background: 'rgba(0, 0, 0, 0.65)',
+                  borderRadius: '4px',
+                  backdropFilter: 'blur(8px)',
+                  opacity: 0.9,
                 }}
-              />
-            </div>
+              >
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-primary)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {sourceMetadata.filename || 'Unknown source'}
+                </span>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '0.75rem',
+                    fontSize: '0.625rem',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  {sourceMetadata.codec && <span>{sourceMetadata.codec}</span>}
+                  {sourceMetadata.resolution && <span>{sourceMetadata.resolution}</span>}
+                  {sourceMetadata.fps && <span>{sourceMetadata.fps}</span>}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -365,6 +847,19 @@ export function MonitorSurface({
                 }}
               >
                 {formatElapsedTime(jobProgress?.elapsedSeconds || 0)}
+              </span>
+
+              {/* Playback disabled notice */}
+              <span
+                style={{
+                  fontSize: '0.6875rem',
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--text-dim)',
+                  fontStyle: 'italic',
+                  marginTop: '0.5rem',
+                }}
+              >
+                Playback disabled while encoding is in progress
               </span>
             </div>
 

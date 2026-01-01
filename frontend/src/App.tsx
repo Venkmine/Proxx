@@ -271,7 +271,7 @@ function App() {
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set())
 
   // Phase 4B: Track single selected clip for preview (distinct from multi-select for future batch ops)
-  const [previewClipId, setPreviewClipId] = useState<string | null>(null)
+  const [_previewClipId, setPreviewClipId] = useState<string | null>(null)
 
   // Phase REBUILD: Controlled right panel tab for auto-switch after job creation
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('settings')
@@ -445,26 +445,6 @@ function App() {
   
   // Phase 8B: Queue diagnostics clarity - is any job currently running?
   const hasAnyJobRunning = jobs.some(job => job.status.toUpperCase() === 'RUNNING')
-
-  // Phase 4B: Compute preview source path based on selected clip or fallback to first clip/file
-  const previewSourcePath = useMemo(() => {
-    if (selectedJobId) {
-      const detail = jobDetails.get(selectedJobId)
-      if (!detail?.tasks) return undefined
-      
-      // If a specific clip is selected for preview, use it
-      if (previewClipId) {
-        const clip = detail.tasks.find(t => t.id === previewClipId)
-        if (clip) return clip.source_path
-      }
-      
-      // Fallback to first clip
-      return detail.tasks[0]?.source_path
-    }
-    
-    // No job selected, fall back to pending files
-    return selectedFiles.length > 0 ? selectedFiles[0] : undefined
-  }, [selectedJobId, jobDetails, previewClipId, selectedFiles])
 
   // ============================================
   // Monitor Surface State Derivation
@@ -1280,37 +1260,7 @@ function App() {
   // File/Folder Selection (Electron)
   // ============================================
 
-  /**
-   * INC-003: Select files AND/OR folders via native OS dialog.
-   * 
-   * Uses the combined openFilesOrFolders dialog that allows selecting
-   * both files and directories in a single operation.
-   * 
-   * IMPORTANT: Selected directories are NOT auto-expanded here.
-   * The backend enumerates folder contents during preflight/job creation.
-   * This avoids scanning slow network volumes at selection time.
-   */
-  const selectFilesOrFolders = async () => {
-    console.log('[App] selectFilesOrFolders called, hasElectron:', hasElectron)
-    if (!hasElectron) {
-      alert('File picker requires Electron runtime')
-      return
-    }
-    try {
-      // INC-003: Use combined file+folder dialog
-      const paths = await window.electron!.openFilesOrFolders()
-      console.log('[App] openFilesOrFolders returned:', paths)
-      if (paths.length > 0) {
-        setSelectedFiles(paths)
-        console.log('[App] Sources selected (files and/or folders):', paths)
-      }
-    } catch (err) {
-      console.error('[App] Source selection error:', err)
-      setError(`Source selection failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
-    }
-  }
-
-  // Legacy: Select files only (kept for backwards compatibility)
+  // Select files via native OS dialog
   const selectFiles = async () => {
     console.log('[App] selectFiles called, hasElectron:', hasElectron)
     console.log('[App] window.electron:', window.electron)
@@ -1390,113 +1340,6 @@ function App() {
     const updated = folderFavorites.filter(p => p !== path)
     setFolderFavorites(updated)
     localStorage.setItem('awaire_proxy_folder_favorites', JSON.stringify(updated))
-  }
-
-  // ============================================
-  // Directory Navigator Actions — Phase 4A
-  // ============================================
-
-  // Create job from selected files (DirectoryNavigator)
-  const createJobFromFiles = async (filePaths: string[]) => {
-    if (filePaths.length === 0) {
-      setError('No files selected')
-      return
-    }
-    
-    // Determine effective output directory
-    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
-    
-    if (!effectiveOutputDir) {
-      setError('Output directory required. Please set an output directory first.')
-      return
-    }
-    
-    // Use canonical ingestion pipeline
-    const result = await ingestion.ingest({
-      sourcePaths: filePaths,
-      outputDir: effectiveOutputDir,
-      deliverSettings: deliverSettings,
-      engine: selectedEngine,
-      presetId: presetManager.selectedPresetId,
-    })
-    
-    if (!result.success) {
-      setError(`Failed to create job: ${result.error}`)
-      return
-    }
-    
-    // Success: fetch jobs and select the newly created one
-    await fetchJobs()
-    setSelectedJobId(result.jobId)
-    addStatusLogEntry(statusMessages.jobQueued(result.jobId, result.taskCount))
-  }
-
-  // Create job from folder (DirectoryNavigator) — enumerates folder first
-  const createJobFromFolder = async (folderPath: string) => {
-    if (!folderPath) {
-      setError('No folder selected')
-      return
-    }
-    
-    // Determine effective output directory
-    const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
-    
-    if (!effectiveOutputDir) {
-      setError('Output directory required. Please set an output directory first.')
-      return
-    }
-    
-    setLoading(true)
-    
-    try {
-      // Enumerate folder for supported media files
-      const enumerateResponse = await fetch(
-        `${BACKEND_URL}/filesystem/enumerate?path=${encodeURIComponent(folderPath)}&recursive=true`
-      )
-      
-      if (!enumerateResponse.ok) {
-        const errData = await enumerateResponse.json().catch(() => ({}))
-        throw new Error(errData.detail || `HTTP ${enumerateResponse.status}`)
-      }
-      
-      const enumData = await enumerateResponse.json()
-      
-      if (enumData.error) {
-        setError(`Failed to scan folder: ${enumData.error}`)
-        setLoading(false)
-        return
-      }
-      
-      if (enumData.count === 0) {
-        setError(`No supported media files found in folder: ${folderPath}`)
-        setLoading(false)
-        return
-      }
-      
-      // Use canonical ingestion pipeline with enumerated files
-      const result = await ingestion.ingest({
-        sourcePaths: enumData.files,
-        outputDir: effectiveOutputDir,
-        deliverSettings: deliverSettings,
-        engine: selectedEngine,
-        presetId: presetManager.selectedPresetId,
-      })
-      
-      if (!result.success) {
-        setError(`Failed to create job: ${result.error}`)
-        return
-      }
-      
-      // Success: fetch jobs and select the newly created one
-      await fetchJobs()
-      setSelectedJobId(result.jobId)
-      addStatusLogEntry(statusMessages.jobQueued(result.jobId, result.taskCount))
-      
-    } catch (err) {
-      setError(`Failed to create job from folder: ${err instanceof Error ? err.message : 'Unknown error'}`)
-    } finally {
-      setLoading(false)
-    }
   }
 
   // ============================================
@@ -2174,17 +2017,13 @@ function App() {
               onAddFolderFavorite={addFolderFavorite}
               onRemoveFolderFavorite={removeFolderFavorite}
               onCreateJob={createManualJob}
-              onCreateJobFromFiles={createJobFromFiles}
-              onCreateJobFromFolder={createJobFromFolder}
               onClear={() => {
                 ingestion.clearPendingPaths()
                 setOutputDirectory('')
               }}
               loading={loading || ingestion.isIngesting}
               hasElectron={hasElectron}
-              backendUrl={BACKEND_URL}
               workspaceMode={workspaceMode}
-              previewSourcePath={previewSourcePath}
               v2JobSpecSubmitted={v2JobSpecSubmitted}
             />
           }

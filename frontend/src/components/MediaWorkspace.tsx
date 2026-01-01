@@ -1,11 +1,10 @@
 /**
- * MediaWorkspace — Tabbed Left Sidebar for Browse/Loaded Media
+ * MediaWorkspace — Unified Left Sidebar for Source Selection
  * 
- * PHASE: OS-NATIVE SOURCE SELECTION
- * - Replaced DirectoryNavigator with OS-native file picker
- * - No recursive filesystem traversal
- * - No custom directory tree
- * - Eliminates UI hangs on /Volumes and network mounts
+ * UX TRUTHFULNESS PASS:
+ * - Removed misleading Browse tab (was just another path to OS dialogs)
+ * - Single-purpose panel: Source selection via OS-native dialogs
+ * - Shows selected sources, preflight summary, and Create Job
  * 
  * RATIONALE:
  * - macOS system volumes are not safely enumerable
@@ -13,25 +12,19 @@
  * - Matches industry-standard NLE behavior (Premiere, Resolve, etc.)
  * 
  * Structure:
- * - Browse: OS-native file/folder selection (NativeSourceSelector)
- * - Loaded Media: Current job sources (CreateJobPanel)
- * 
- * Enforces proper scrolling with flex layout:
- * - Container: display: flex, flex-direction: column, min-height: 0
- * - Active tab content: flex: 1, overflow-y: auto
+ * - Source selection buttons (Files / Folder via OS dialogs)
+ * - Selected sources list
+ * - Preflight summary
+ * - Create Job button
  * 
  * NO nested scroll traps. NO fixed heights.
  */
 
-import { useState } from 'react'
 import { CreateJobPanel } from './CreateJobPanel'
-import { NativeSourceSelector } from './NativeSourceSelector'
 import { SourceMetadataPanel } from './SourceMetadataPanel'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import type { DeliverSettings } from './DeliverControlPanel'
 import { SourceSelectionState } from '../stores/sourceSelectionStore'
-
-type MediaTab = 'loaded' | 'browse'
 
 // Phase 16: Engine info
 interface EngineInfo {
@@ -85,18 +78,12 @@ interface MediaWorkspaceProps {
   
   // Actions
   onCreateJob: () => void
-  onCreateJobFromFiles: (paths: string[]) => Promise<void>
-  onCreateJobFromFolder: (path: string) => Promise<void>
   onClear: () => void
   
   // State
   loading: boolean
   hasElectron: boolean
-  backendUrl: string
   workspaceMode: WorkspaceMode
-  
-  // Preview source
-  previewSourcePath?: string
   
   // V2 Thin Client: Lock inputs when JobSpec is submitted
   v2JobSpecSubmitted?: boolean
@@ -118,22 +105,13 @@ export function MediaWorkspace({
   pathFavorites,
   onAddFavorite,
   onRemoveFavorite,
-  folderFavorites,
-  onAddFolderFavorite,
-  onRemoveFolderFavorite,
   onCreateJob,
-  onCreateJobFromFiles,
-  onCreateJobFromFolder,
   onClear,
   loading,
   hasElectron,
-  backendUrl,
   workspaceMode,
-  previewSourcePath,
   v2JobSpecSubmitted = false,
 }: MediaWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<MediaTab>('loaded')
-
   return (
     <div
       style={{
@@ -144,130 +122,67 @@ export function MediaWorkspace({
         overflow: 'hidden',
       }}
     >
-      {/* Tab Header */}
+      {/* Panel Header — Sources */}
       <div
         style={{
-          display: 'flex',
+          padding: '0.75rem 1rem',
           borderBottom: '1px solid var(--border-primary)',
           backgroundColor: 'var(--bg-secondary)',
         }}
       >
-        <button
-          onClick={() => setActiveTab('loaded')}
+        <h2
           style={{
-            flex: 1,
-            padding: '8px 12px',
-            border: 'none',
-            backgroundColor: activeTab === 'loaded' ? 'var(--bg-primary)' : 'transparent',
-            color: activeTab === 'loaded' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontWeight: activeTab === 'loaded' ? 600 : 400,
-            fontSize: '13px',
-            borderBottom: activeTab === 'loaded' ? '2px solid var(--accent-primary)' : 'none',
-            transition: 'all 0.15s ease',
+            margin: 0,
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.02em',
           }}
         >
-          Loaded Media
-        </button>
-        <button
-          onClick={() => setActiveTab('browse')}
-          style={{
-            flex: 1,
-            padding: '8px 12px',
-            border: 'none',
-            backgroundColor: activeTab === 'browse' ? 'var(--bg-primary)' : 'transparent',
-            color: activeTab === 'browse' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontWeight: activeTab === 'browse' ? 600 : 400,
-            fontSize: '13px',
-            borderBottom: activeTab === 'browse' ? '2px solid var(--accent-primary)' : 'none',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          Browse
-        </button>
+          Sources
+        </h2>
       </div>
 
-      {/* Tab Content — Always scrollable */}
+      {/* Content — CreateJobPanel */}
       <div
         style={{
           flex: 1,
           minHeight: 0,
-          overflow: 'hidden',
+          overflow: 'auto',
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        {activeTab === 'loaded' && (
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflow: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <CreateJobPanel
-              isVisible={true}
-              onToggleVisibility={() => {}}
-              selectedFiles={selectedFiles}
-              onFilesChange={onFilesChange}
-              onSelectFilesClick={onSelectFilesClick}
-              engines={engines}
-              selectedEngine={selectedEngine}
-              onEngineChange={onEngineChange}
-              settingsPresets={settingsPresets}
-              selectedSettingsPresetId={selectedSettingsPresetId}
-              onSettingsPresetChange={onSettingsPresetChange}
-              outputDirectory={outputDirectory}
-              onOutputDirectoryChange={onOutputDirectoryChange}
-              onSelectFolderClick={onSelectFolderClick}
-              pathFavorites={pathFavorites}
-              onAddFavorite={onAddFavorite}
-              onRemoveFavorite={onRemoveFavorite}
-              onCreateJob={onCreateJob}
-              onClear={onClear}
-              loading={loading}
-              hasElectron={hasElectron}
-              workspaceMode={workspaceMode}
-              // V2 Thin Client: Lock inputs when JobSpec is submitted
-              v2JobSpecSubmitted={v2JobSpecSubmitted}
-            />
-          </div>
-        )}
-
-        {activeTab === 'browse' && (
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <NativeSourceSelector
-              onFilesSelected={async (paths) => {
-                // Add files to current selection
-                await onCreateJobFromFiles(paths)
-              }}
-              onFolderSelected={async (path) => {
-                // Create job from folder
-                await onCreateJobFromFolder(path)
-              }}
-              backendUrl={backendUrl}
-              recentPaths={pathFavorites}
-              favorites={folderFavorites}
-              onAddFavorite={onAddFolderFavorite}
-              onRemoveFavorite={onRemoveFolderFavorite}
-              hasElectron={hasElectron}
-            />
-          </div>
-        )}
+        <CreateJobPanel
+          isVisible={true}
+          onToggleVisibility={() => {}}
+          selectedFiles={selectedFiles}
+          onFilesChange={onFilesChange}
+          onSelectFilesClick={onSelectFilesClick}
+          engines={engines}
+          selectedEngine={selectedEngine}
+          onEngineChange={onEngineChange}
+          settingsPresets={settingsPresets}
+          selectedSettingsPresetId={selectedSettingsPresetId}
+          onSettingsPresetChange={onSettingsPresetChange}
+          outputDirectory={outputDirectory}
+          onOutputDirectoryChange={onOutputDirectoryChange}
+          onSelectFolderClick={onSelectFolderClick}
+          pathFavorites={pathFavorites}
+          onAddFavorite={onAddFavorite}
+          onRemoveFavorite={onRemoveFavorite}
+          onCreateJob={onCreateJob}
+          onClear={onClear}
+          loading={loading}
+          hasElectron={hasElectron}
+          workspaceMode={workspaceMode}
+          // V2 Thin Client: Lock inputs when JobSpec is submitted
+          v2JobSpecSubmitted={v2JobSpecSubmitted}
+        />
       </div>
 
-      {/* Metadata Panel — Always visible below tabs */}
+      {/* Metadata Panel — Always visible below content */}
       <SourceMetadataPanel
         selectionState={selectedFiles.length > 0 ? SourceSelectionState.SELECTED_UNVALIDATED : SourceSelectionState.EMPTY}
         preflightMetadata={null}

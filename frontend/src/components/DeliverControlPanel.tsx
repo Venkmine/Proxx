@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from './Button'
 import { Select } from './Select'
 import { TokenPalette } from './TokenPalette'
-import { OverlayLayerStack } from './OverlayLayerStack'
+// OverlayLayerStack removed - Overlays section is locked in current version
 // Phase 23: Watermark panels moved to VisualPreviewModal
 // Imports kept for backwards compatibility but components no longer rendered inline
 import type { TimecodeOverlay } from './PreviewViewport16x9'
@@ -1499,30 +1499,46 @@ export function DeliverControlPanel({
           </div>
         </Section>
         
-        {/* Overlays Section — UI Honesty Freeze: Entire section disabled */}
+        {/* Overlays Section — LOCKED: Feature not available in this version */}
         <Section
           title="Overlays"
           isOpen={openSections.has('overlay')}
           onToggle={() => toggleSection('overlay')}
-          badge="DISABLED"
+          badge="LOCKED"
           data-testid="overlays-section"
         >
-          {/* UI Honesty Freeze: Overlays not rendered to output — all controls disabled */}
+          {/* UX Truthfulness: Overlays are not implemented — static locked explanation */}
           <div style={{
-            padding: '0.75rem',
-            background: 'rgba(100, 116, 139, 0.1)',
-            border: '1px solid rgba(100, 116, 139, 0.2)',
+            padding: '1rem',
+            background: 'rgba(100, 116, 139, 0.08)',
+            border: '1px solid rgba(100, 116, 139, 0.15)',
             borderRadius: 'var(--radius-sm)',
           }}>
+            {/* Lock icon */}
             <div style={{
-              fontSize: '0.6875rem',
-              color: 'var(--text-dim)',
-              textAlign: 'center',
-              fontStyle: 'italic',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '0.75rem',
             }}>
-              Visual overlays are not yet rendered into output.
-              <br />
-              This feature is disabled in the current version.
+              <span style={{ fontSize: '1.5rem', opacity: 0.5 }}>🔒</span>
+            </div>
+            
+            {/* Explanation text */}
+            <div style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-secondary)',
+              textAlign: 'center',
+              lineHeight: 1.5,
+            }}>
+              <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '0.5rem' }}>
+                Overlays are not available in this version.
+              </strong>
+              <span style={{ color: 'var(--text-muted)' }}>
+                This feature requires frame-accurate preview and output verification.
+                <br />
+                Planned for a future release.
+              </span>
             </div>
           </div>
         </Section>

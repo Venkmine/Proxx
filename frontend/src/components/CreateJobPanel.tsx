@@ -272,6 +272,10 @@ export function CreateJobPanel({
   const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
   const [showPathPrompt, setShowPathPrompt] = useState(false)
   const [pathPromptValue, setPathPromptValue] = useState('')
+  
+  // UX TRUTHFULNESS: Output directory validation only shown on Create Job click
+  const [outputDirValidationTriggered, setOutputDirValidationTriggered] = useState(false)
+  const [outputDirError, setOutputDirError] = useState<string | null>(null)
 
   const isDesignMode = workspaceMode === 'design'
   const favoriteOptions = pathFavorites.map(p => ({ value: p, label: p }))
@@ -320,23 +324,34 @@ export function CreateJobPanel({
       })
     }
 
-    // Output validation
-    if (!outputDirectory) {
-      checks.push({
-        id: 'output-required',
-        label: 'Output Directory',
-        status: 'fail',
-        message: 'Output directory is required',
-      })
-    } else if (!isAbsolutePath(outputDirectory)) {
-      checks.push({
-        id: 'output-absolute',
-        label: 'Output Directory',
-        status: 'fail',
-        message: 'Output directory must be an absolute path',
-        detail: outputDirectory,
-      })
-    } else {
+    // Output validation — UX TRUTHFULNESS: Only validate after user attempts to create job
+    // This prevents showing "Output directory required" on app load or during browsing
+    if (outputDirValidationTriggered) {
+      if (!outputDirectory) {
+        checks.push({
+          id: 'output-required',
+          label: 'Output Directory',
+          status: 'fail',
+          message: 'Output directory is required',
+        })
+      } else if (!isAbsolutePath(outputDirectory)) {
+        checks.push({
+          id: 'output-absolute',
+          label: 'Output Directory',
+          status: 'fail',
+          message: 'Output directory must be an absolute path',
+          detail: outputDirectory,
+        })
+      } else {
+        checks.push({
+          id: 'output-valid',
+          label: 'Output Directory',
+          status: 'pass',
+          message: outputDirectory,
+        })
+      }
+    } else if (outputDirectory && isAbsolutePath(outputDirectory)) {
+      // Show pass status only if output is already set and valid
       checks.push({
         id: 'output-valid',
         label: 'Output Directory',
@@ -344,6 +359,7 @@ export function CreateJobPanel({
         message: outputDirectory,
       })
     }
+    // If not triggered and no output dir, don't show any output validation error
 
     // Engine availability
     const selectedEngineInfo = engines.find(e => e.type === selectedEngine)
@@ -394,6 +410,7 @@ export function CreateJobPanel({
   }, [
     selectedFiles,
     outputDirectory,
+    outputDirValidationTriggered,
     engines,
     selectedEngine,
     fileDiscovery,
@@ -745,7 +762,7 @@ export function CreateJobPanel({
               display: 'block',
               fontSize: '0.6875rem',
               fontWeight: 500,
-              color: 'var(--text-muted)',
+              color: outputDirError ? 'var(--status-error-fg, #ef4444)' : 'var(--text-muted)',
               marginBottom: '0.25rem',
               fontFamily: 'var(--font-sans)',
               textTransform: 'uppercase',
@@ -758,7 +775,13 @@ export function CreateJobPanel({
             <input
               type="text"
               value={outputDirectory}
-              onChange={(e) => onOutputDirectoryChange(e.target.value)}
+              onChange={(e) => {
+                onOutputDirectoryChange(e.target.value)
+                // Clear error when user starts typing
+                if (outputDirError) {
+                  setOutputDirError(null)
+                }
+              }}
               placeholder="/Users/yourname/OUTPUT"
               disabled={loading}
               data-testid="output-directory-input"
@@ -768,7 +791,9 @@ export function CreateJobPanel({
                 fontSize: '0.75rem',
                 fontFamily: 'var(--font-mono)',
                 backgroundColor: 'var(--input-bg)',
-                border: '1px solid var(--border-primary)',
+                border: outputDirError 
+                  ? '1px solid var(--status-error-fg, #ef4444)' 
+                  : '1px solid var(--border-primary)',
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-primary)',
                 outline: 'none',
@@ -785,6 +810,28 @@ export function CreateJobPanel({
               </Button>
             )}
           </div>
+
+          {/* Inline error message for output directory */}
+          {outputDirError && (
+            <div
+              data-testid="output-dir-error"
+              style={{
+                marginTop: '0.375rem',
+                padding: '0.375rem 0.5rem',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.6875rem',
+                color: 'var(--status-error-fg, #ef4444)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+              }}
+            >
+              <span>✕</span>
+              {outputDirError}
+            </div>
+          )}
 
           {/* Favorites */}
           {pathFavorites.length > 0 && (
@@ -983,6 +1030,18 @@ export function CreateJobPanel({
           onSubmit={onCreateJob}
           loading={loading}
           disabled={isDesignMode || v2JobSpecSubmitted}
+          onValidationTrigger={() => {
+            // UX TRUTHFULNESS: Trigger output directory validation only on submit attempt
+            setOutputDirValidationTriggered(true)
+            // Check for output directory error
+            if (!outputDirectory) {
+              setOutputDirError('Output directory is required')
+            } else if (!isAbsolutePath(outputDirectory)) {
+              setOutputDirError('Output directory must be an absolute path')
+            } else {
+              setOutputDirError(null)
+            }
+          }}
         />
       </div>
     </div>

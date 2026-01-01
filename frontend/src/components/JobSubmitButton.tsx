@@ -13,7 +13,7 @@
  * - No optimistic submission
  */
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Button } from './Button'
 import type { PreflightCheck } from './PreflightSummary'
 
@@ -49,6 +49,8 @@ export interface JobSubmitButtonProps {
   loading?: boolean
   /** Additional disabled state (external conditions) */
   disabled?: boolean
+  /** Called when user clicks submit to trigger deferred validation (e.g., output directory) */
+  onValidationTrigger?: () => void
 }
 
 // =============================================================================
@@ -61,6 +63,7 @@ export function JobSubmitButton({
   onSubmit,
   loading = false,
   disabled = false,
+  onValidationTrigger,
 }: JobSubmitButtonProps) {
   const [showConfirmation, setShowConfirmation] = useState(false)
 
@@ -80,6 +83,19 @@ export function JobSubmitButton({
 
   const handleCancel = () => {
     setShowConfirmation(false)
+  }
+  
+  // Handle submit button click - trigger validation first
+  const handleSubmitClick = () => {
+    // Trigger deferred validation (e.g., output directory)
+    if (onValidationTrigger) {
+      onValidationTrigger()
+    }
+    // Show confirmation if no blocking failures
+    // Note: The parent component will re-render with updated checks after validation trigger
+    if (!hasBlockingFailures) {
+      setShowConfirmation(true)
+    }
   }
 
   // If there are blocking failures, show the blocker message instead of button
@@ -270,7 +286,7 @@ export function JobSubmitButton({
           data-testid="job-submit-button"
           variant={hasWarnings ? 'warning' : 'primary'}
           size="md"
-          onClick={() => setShowConfirmation(true)}
+          onClick={handleSubmitClick}
           disabled={!canSubmit}
           loading={loading}
         >
