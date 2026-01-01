@@ -30,7 +30,7 @@ import { DeliverControlPanel, DeliverSettings, SelectionContext } from './compon
 import { AttachProxiesInfoPanel } from './components/AttachProxiesInfoPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
 import { VisualPreviewWorkspace } from './components/VisualPreviewWorkspace'
-import { WorkspaceLayout } from './components/WorkspaceLayout'
+import { WorkspaceLayout, RightPanelTab } from './components/WorkspaceLayout'
 import { PresetEditorHeader } from './components/PresetEditorHeader'
 import { AppFooter } from './components/AppFooter'
 import { SplashScreen } from './components/SplashScreen'
@@ -112,6 +112,8 @@ declare global {
       /** INC-003: Select files AND/OR folders together. Does NOT auto-expand directories. */
       openFilesOrFolders: () => Promise<string[]>
       showItemInFolder: (filePath: string) => Promise<void>
+      /** Open a path in the default application (for AttachProxiesInfoPanel) */
+      openPath?: (path: string) => void
     }
   }
 }
@@ -270,6 +272,21 @@ function App() {
 
   // Phase 4B: Track single selected clip for preview (distinct from multi-select for future batch ops)
   const [previewClipId, setPreviewClipId] = useState<string | null>(null)
+
+  // Phase REBUILD: Controlled right panel tab for auto-switch after job creation
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('settings')
+  
+  // Phase REBUILD: Highlighted job ID (for brief highlight after creation)
+  const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
+  
+  // Phase REBUILD: Auto-switch to Queue tab when jobs exist on initial load
+  const hasInitializedTab = useRef(false)
+  useEffect(() => {
+    if (!hasInitializedTab.current && jobs.length > 0) {
+      hasInitializedTab.current = true
+      setRightPanelTab('queue')
+    }
+  }, [jobs.length])
 
   // ============================================
   // CANONICAL INGESTION PIPELINE
@@ -1017,6 +1034,12 @@ function App() {
     // Fetch jobs and select the newly created one
     await fetchJobs()
     setSelectedJobId(result.jobId)
+    
+    // Phase REBUILD: Switch to Queue tab and highlight the new job
+    setRightPanelTab('queue')
+    setHighlightedJobId(result.jobId)
+    // Clear highlight after 500ms
+    setTimeout(() => setHighlightedJobId(null), 500)
   }
   
   // ============================================
@@ -1050,8 +1073,8 @@ function App() {
       setSelectedFiles([])
       addStatusLogEntry({
         id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        type: 'success',
+        timestamp: new Date(),
+        level: 'success',
         message: 'V2 execution completed successfully',
       })
     }
@@ -2032,6 +2055,9 @@ function App() {
         
         {/* 3-Zone Rigid Layout */}
         <WorkspaceLayout
+          jobCount={jobs.length}
+          activeTab={rightPanelTab}
+          onTabChange={setRightPanelTab}
           leftZone={
             /* LEFT ZONE: MediaWorkspace - Sources */
             <MediaWorkspace
@@ -2045,7 +2071,7 @@ function App() {
                 id: p.id,
                 name: p.name,
                 description: p.description || undefined,
-                fingerprint: p.fingerprint,
+                fingerprint: p.id, // Use preset ID as fingerprint
                 settings_snapshot: p.settings,
               }))}
               selectedSettingsPresetId={presetManager.selectedPresetId}
@@ -2276,6 +2302,7 @@ function App() {
                         settingsSummary={settingsSummary}
                         isSelected={selectedJobId === job.id}
                         isExpanded={isJobExpanded(job.id, job.total_tasks, job.status)}
+                        isHighlighted={highlightedJobId === job.id}
                         onToggleExpand={() => toggleJobExpanded(job.id)}
                         onSelect={() => {
                           const isDeselecting = job.id === selectedJobId

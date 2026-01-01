@@ -1,8 +1,9 @@
 /**
  * Awaire Proxy UI Components
  * 
- * Reusable component library for the Awaire Proxy Operator Control interface.
- * Implements operator-first design inspired by DaVinci Resolve's Render Queue.
+ * RATIONALE:
+ * Forge is a deterministic proxy engine, not a media browser.
+ * Component exports reflect the state-driven, deterministic UI model.
  */
 
 // Core UI primitives
@@ -21,7 +22,23 @@ export { ClipRow } from './ClipRow'
 export { JobGroup } from './JobGroup'
 export { CreateJobPanel } from './CreateJobPanel'
 
-// Preflight Validation (Job Creation Hardening)
+// ============================================================================
+// SOURCE SELECTION (OS-Native, State-Driven)
+// ============================================================================
+// These components implement the SourceSelectionState model.
+// All behavior derives from the state enum, not ad-hoc boolean flags.
+
+export { SourceSelectionPanel } from './SourceSelectionPanel'
+export { NativeSourceSelector } from './NativeSourceSelector'
+export { SourceList } from './SourceList'
+export { SourceMetadataPanel } from './SourceMetadataPanel'
+export { PreflightErrorBanner } from './PreflightErrorBanner'
+
+// ============================================================================
+// PREFLIGHT VALIDATION
+// ============================================================================
+// Preflight is the ONLY transition from SELECTED_UNVALIDATED to READY.
+
 export { PreflightSummary, canSubmitWithPreflight, getBlockingFailures } from './PreflightSummary'
 export type { PreflightCheck, PreflightStatus, PreflightSummaryProps } from './PreflightSummary'
 export { JobSubmitButton } from './JobSubmitButton'

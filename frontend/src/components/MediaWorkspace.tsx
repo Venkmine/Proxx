@@ -1,8 +1,19 @@
 /**
  * MediaWorkspace — Tabbed Left Sidebar for Browse/Loaded Media
  * 
- * Replaces the stacked left sidebar with a clean tabbed interface:
- * - Browse: Filesystem browser (DirectoryNavigator)
+ * PHASE: OS-NATIVE SOURCE SELECTION
+ * - Replaced DirectoryNavigator with OS-native file picker
+ * - No recursive filesystem traversal
+ * - No custom directory tree
+ * - Eliminates UI hangs on /Volumes and network mounts
+ * 
+ * RATIONALE:
+ * - macOS system volumes are not safely enumerable
+ * - Native dialogs are the only correct solution
+ * - Matches industry-standard NLE behavior (Premiere, Resolve, etc.)
+ * 
+ * Structure:
+ * - Browse: OS-native file/folder selection (NativeSourceSelector)
  * - Loaded Media: Current job sources (CreateJobPanel)
  * 
  * Enforces proper scrolling with flex layout:
@@ -14,10 +25,11 @@
 
 import { useState } from 'react'
 import { CreateJobPanel } from './CreateJobPanel'
-import { DirectoryNavigator } from './DirectoryNavigator'
+import { NativeSourceSelector } from './NativeSourceSelector'
 import { SourceMetadataPanel } from './SourceMetadataPanel'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import type { DeliverSettings } from './DeliverControlPanel'
+import { SourceSelectionState } from '../stores/sourceSelectionStore'
 
 type MediaTab = 'loaded' | 'browse'
 
@@ -219,9 +231,6 @@ export function MediaWorkspace({
               loading={loading}
               hasElectron={hasElectron}
               workspaceMode={workspaceMode}
-              showDirectoryNavigator={false}
-              // V1 DOGFOOD FIX: Browse button now switches to Browse tab
-              onToggleDirectoryNavigator={() => setActiveTab('browse')}
               // V2 Thin Client: Lock inputs when JobSpec is submitted
               v2JobSpecSubmitted={v2JobSpecSubmitted}
             />
@@ -238,27 +247,31 @@ export function MediaWorkspace({
               flexDirection: 'column',
             }}
           >
-            <DirectoryNavigator
+            <NativeSourceSelector
+              onFilesSelected={async (paths) => {
+                // Add files to current selection
+                await onCreateJobFromFiles(paths)
+              }}
+              onFolderSelected={async (path) => {
+                // Create job from folder
+                await onCreateJobFromFolder(path)
+              }}
               backendUrl={backendUrl}
+              recentPaths={pathFavorites}
               favorites={folderFavorites}
               onAddFavorite={onAddFolderFavorite}
               onRemoveFavorite={onRemoveFolderFavorite}
-              onCreateJobFromFiles={onCreateJobFromFiles}
-              onCreateJobFromFolder={onCreateJobFromFolder}
-              disabled={loading || workspaceMode === 'design'}
+              hasElectron={hasElectron}
             />
           </div>
         )}
       </div>
 
       {/* Metadata Panel — Always visible below tabs */}
-      <div style={{ borderTop: '1px solid var(--border-primary)' }}>
-        <SourceMetadataPanel
-          sourceFilePath={previewSourcePath}
-          backendUrl={backendUrl}
-          isVisible={selectedFiles.length > 0}
-        />
-      </div>
+      <SourceMetadataPanel
+        selectionState={selectedFiles.length > 0 ? SourceSelectionState.SELECTED_UNVALIDATED : SourceSelectionState.EMPTY}
+        preflightMetadata={null}
+      />
     </div>
   )
 }

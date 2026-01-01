@@ -31,7 +31,7 @@
  * Desktop-only layout. Minimum supported width: 1280px.
  */
 
-import { useState, ReactNode } from 'react'
+import { useState, useEffect, ReactNode } from 'react'
 
 // ============================================================================
 // IMMUTABLE ZONE DIMENSIONS
@@ -47,7 +47,7 @@ const RIGHT_ZONE_WIDTH = 420
 // TYPES
 // ============================================================================
 
-type RightPanelTab = 'settings' | 'queue'
+export type RightPanelTab = 'settings' | 'queue'
 
 interface WorkspaceLayoutProps {
   /** Left zone content (Sources) */
@@ -58,6 +58,12 @@ interface WorkspaceLayoutProps {
   rightZoneSettings: ReactNode
   /** Right zone queue content (Queue panel) */
   rightZoneQueue: ReactNode
+  /** Phase REBUILD: Controlled active tab (optional, for external control) */
+  activeTab?: RightPanelTab
+  /** Phase REBUILD: Tab change callback */
+  onTabChange?: (tab: RightPanelTab) => void
+  /** Phase REBUILD: Job count (to auto-switch to queue when jobs exist) */
+  jobCount?: number
 }
 
 // ============================================================================
@@ -69,8 +75,28 @@ export function WorkspaceLayout({
   centerZone,
   rightZoneSettings,
   rightZoneQueue,
+  activeTab: controlledTab,
+  onTabChange,
+  jobCount = 0,
 }: WorkspaceLayoutProps) {
-  const [activeTab, setActiveTab] = useState<RightPanelTab>('settings')
+  // Use controlled tab if provided, otherwise internal state
+  const [internalTab, setInternalTab] = useState<RightPanelTab>('settings')
+  const activeTab = controlledTab ?? internalTab
+  
+  const handleTabChange = (tab: RightPanelTab) => {
+    if (onTabChange) {
+      onTabChange(tab)
+    } else {
+      setInternalTab(tab)
+    }
+  }
+
+  // Phase REBUILD: Auto-switch to Queue tab when jobs exist (on mount only)
+  useEffect(() => {
+    if (jobCount > 0 && !controlledTab) {
+      setInternalTab('queue')
+    }
+  }, []) // Only on mount
 
   return (
     <div
@@ -143,7 +169,7 @@ export function WorkspaceLayout({
         >
           <button
             data-testid="tab-settings"
-            onClick={() => setActiveTab('settings')}
+            onClick={() => handleTabChange('settings')}
             style={{
               flex: 1,
               padding: '0.625rem 1rem',
@@ -169,7 +195,7 @@ export function WorkspaceLayout({
           </button>
           <button
             data-testid="tab-queue"
-            onClick={() => setActiveTab('queue')}
+            onClick={() => handleTabChange('queue')}
             style={{
               flex: 1,
               padding: '0.625rem 1rem',

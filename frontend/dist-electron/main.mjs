@@ -323,6 +323,32 @@ function setupIpcHandlers() {
         });
         return result.filePaths[0] || null;
     });
+    /**
+     * INC-003: Combined file+folder selection dialog.
+     *
+     * Allows users to select BOTH files AND folders in a single dialog.
+     * Returns an array of selected paths (may include both files and directories).
+     *
+     * IMPORTANT: The frontend does NOT auto-expand selected directories.
+     * Directory contents are enumerated only during preflight/job creation,
+     * not at selection time. This keeps selection fast and avoids
+     * scanning slow/unavailable network volumes.
+     *
+     * Why 'openDirectory' + 'openFile' together?
+     * - macOS supports this combination natively
+     * - Enables selecting mixed files and folders
+     * - Users can add /Volumes/MyDrive as a source directly
+     */
+    ipcMain.handle('dialog:openFilesOrFolders', async () => {
+        const result = await dialog.showOpenDialog({
+            properties: ['openFile', 'openDirectory', 'multiSelections'],
+            filters: [
+                { name: 'Media Files', extensions: ['mov', 'mxf', 'mp4', 'avi', 'mkv', 'r3d', 'braw', 'ari', 'dpx', 'exr', 'tiff', 'tif'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+        return result.filePaths;
+    });
     ipcMain.handle('shell:showItemInFolder', async (_event, filePath) => {
         shell.showItemInFolder(filePath);
     });

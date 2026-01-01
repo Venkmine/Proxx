@@ -300,12 +300,3 @@ const footerNoteStyles: React.CSSProperties = {
   color: 'var(--text-tertiary)',
   fontStyle: 'italic',
 }
-
-// Type declaration for electron bridge
-declare global {
-  interface Window {
-    electron?: {
-      openPath?: (path: string) => void
-    }
-  }
-}

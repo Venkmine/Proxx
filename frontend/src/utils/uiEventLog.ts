@@ -1,39 +1,54 @@
 /**
  * UI Event Sourcing for Debug Panel
  * 
- * V1 OBSERVABILITY: Lightweight event logger for debugging UI interactions.
+ * RATIONALE:
+ * Forge is a deterministic proxy engine, not a media browser.
+ * Event logging tracks deterministic state transitions only.
  * 
  * This module:
  * - Stores last 200 UI events in memory (ring buffer)
- * - Records browse, preview, and job events with timestamps
+ * - Records source selection and job events with timestamps
  * - Does NOT persist to disk (debug only, session-scoped)
- * - No styling polish - plain text is fine
  * 
- * Events captured:
- * - UI_BROWSE_CLICKED: User initiated browse action
- * - UI_BROWSE_RESPONSE: Browse completed (success or error)
- * - UI_PREVIEW_REQUESTED: Preview generation requested
- * - UI_PREVIEW_LOADED: Preview loaded in UI
+ * Events captured (deterministic transitions only):
+ * - UI_SOURCE_ADDED: Source path added via OS dialog or drag-drop
+ * - UI_SOURCE_REMOVED: Source path removed
+ * - UI_PREFLIGHT_STARTED: Preflight validation started
+ * - UI_PREFLIGHT_SUCCESS: Preflight completed successfully
+ * - UI_PREFLIGHT_FAILED: Preflight failed with error
  * - UI_JOB_CREATED: Job created via API
  * - UI_JOB_STARTED: Job execution started
+ * - UI_JOB_COMPLETED: Job finished
+ * - UI_JOB_FAILED: Job failed
+ * - UI_ERROR: General error
+ * 
+ * REMOVED (speculative):
+ * - UI_PREVIEW_REQUESTED: No preview before preflight
+ * - UI_PREVIEW_LOADED: No thumbnail/preview support
+ * - UI_PREVIEW_ZOOM: No zoom functionality
+ * - UI_BROWSE_*: Replaced with UI_SOURCE_* (OS-native)
  * 
  * Access via hidden debug panel (Cmd+Alt+D in DEV mode)
  */
 
 export type UIEventType =
-  | 'UI_BROWSE_CLICKED'
-  | 'UI_BROWSE_REQUEST_START'
-  | 'UI_BROWSE_RESPONSE'
-  | 'UI_BROWSE_SUCCESS'
-  | 'UI_BROWSE_ERROR'
-  | 'UI_PREVIEW_REQUESTED'
-  | 'UI_PREVIEW_LOADED'
-  | 'UI_PREVIEW_ZOOM'
+  | 'UI_SOURCE_ADDED'
+  | 'UI_SOURCE_REMOVED'
+  | 'UI_SOURCE_CLEARED'
+  | 'UI_PREFLIGHT_STARTED'
+  | 'UI_PREFLIGHT_SUCCESS'
+  | 'UI_PREFLIGHT_FAILED'
   | 'UI_JOB_CREATED'
   | 'UI_JOB_STARTED'
   | 'UI_JOB_COMPLETED'
   | 'UI_JOB_FAILED'
   | 'UI_ERROR'
+  // Legacy types kept for backward compatibility (deprecated)
+  | 'UI_BROWSE_CLICKED'
+  | 'UI_BROWSE_REQUEST_START'
+  | 'UI_BROWSE_RESPONSE'
+  | 'UI_BROWSE_SUCCESS'
+  | 'UI_BROWSE_ERROR'
 
 export interface UIEvent {
   id: number
@@ -149,6 +164,7 @@ export function recordBrowseError(path: string, error: string): void {
 
 /**
  * Record browse response event (legacy, calls success/error internally).
+ * @deprecated Use recordSourceAdded instead
  */
 export function recordBrowseResponse(
   path: string,
@@ -171,35 +187,63 @@ export function recordBrowseResponse(
   }
 }
 
+// ============================================================================
+// Source Selection Events (New deterministic model)
+// ============================================================================
+
 /**
- * Record preview requested event.
+ * Record source path(s) added via OS dialog or drag-drop.
  */
-export function recordPreviewRequested(sourcePath: string): void {
-  recordUIEvent('UI_PREVIEW_REQUESTED', `Preview requested: ${sourcePath}`, { sourcePath })
+export function recordSourceAdded(paths: string[]): void {
+  recordUIEvent('UI_SOURCE_ADDED', `Added ${paths.length} source path(s)`, { paths })
 }
 
 /**
- * Record preview loaded event.
+ * Record source path removed.
  */
-export function recordPreviewLoaded(sourcePath: string, previewUrl: string): void {
-  recordUIEvent('UI_PREVIEW_LOADED', `Preview loaded: ${sourcePath}`, { sourcePath, previewUrl })
+export function recordSourceRemoved(path: string): void {
+  recordUIEvent('UI_SOURCE_REMOVED', `Removed source: ${path}`, { path })
 }
 
 /**
- * Record preview zoom event.
+ * Record all sources cleared.
  */
-export function recordPreviewZoom(
-  scale: number,
-  mouseX: number,
-  mouseY: number,
-  sourcePath?: string
-): void {
-  recordUIEvent('UI_PREVIEW_ZOOM', `Preview zoom: ${scale.toFixed(2)}x at (${mouseX}, ${mouseY})`, {
-    scale,
-    mouseX,
-    mouseY,
-    sourcePath,
+export function recordSourceCleared(): void {
+  recordUIEvent('UI_SOURCE_CLEARED', 'All sources cleared', {})
+}
+
+/**
+ * Record preflight started.
+ */
+export function recordPreflightStarted(pathCount: number): void {
+  recordUIEvent('UI_PREFLIGHT_STARTED', `Preflight started for ${pathCount} path(s)`, { pathCount })
+}
+
+/**
+ * Record preflight success.
+ */
+export function recordPreflightSuccess(validFiles: number, totalFiles: number): void {
+  recordUIEvent('UI_PREFLIGHT_SUCCESS', `Preflight passed: ${validFiles}/${totalFiles} files valid`, {
+    validFiles,
+    totalFiles,
   })
+}
+
+/**
+ * Record preflight failed.
+ */
+export function recordPreflightFailed(error: string, invalidPaths?: string[]): void {
+  recordUIEvent('UI_PREFLIGHT_FAILED', `Preflight failed: ${error}`, { error, invalidPaths })
+}
+
+// ============================================================================
+// REMOVED: Preview events (speculative, not supported)
+// ============================================================================
+// recordPreviewRequested - REMOVED
+// recordPreviewLoaded - REMOVED  
+// recordPreviewZoom - Kept as no-op for backward compatibility
+export function recordPreviewZoom(zoom: number, x: number, y: number, sourcePath?: string): void {
+  // No-op: Preview zoom events removed in refactor but function kept for compatibility
 }
 
 /**

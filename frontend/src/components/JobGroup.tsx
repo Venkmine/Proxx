@@ -79,6 +79,8 @@ interface JobGroupProps {
   onToggleExpand?: () => void  // Phase 4B: Toggle expand/collapse
   onSelect?: () => void
   onRevealClip?: (path: string) => void
+  /** Phase REBUILD: Brief highlight animation after job creation */
+  isHighlighted?: boolean
   
   // Actions (Phase 16: Full operator control)
   onStart?: () => void
@@ -139,6 +141,7 @@ export function JobGroup({
   onToggleExpand,
   onSelect,
   onRevealClip,
+  isHighlighted = false,
   onStart,
   onPause,
   onResume,
@@ -167,6 +170,15 @@ export function JobGroup({
   const containerRef = useRef<HTMLDivElement>(null)
   const runningClipRef = useRef<HTMLDivElement>(null)
 
+  // Phase REBUILD: Elapsed time tracking for running jobs
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const elapsedIntervalRef = useRef<number | null>(null)
+  
+  // Phase REBUILD: Stalled job detection (no clip progress for 60s)
+  const [isStalled, setIsStalled] = useState(false)
+  const lastCompletedCountRef = useRef(completedCount)
+  const stalledTimerRef = useRef<number | null>(null)
+
   // Normalize status to uppercase for comparison
   const normalizedStatus = status.toUpperCase()
   const isJobRunning = normalizedStatus === 'RUNNING'
@@ -175,6 +187,81 @@ export function JobGroup({
   // V1: COMPLETED_WITH_WARNINGS removed - only COMPLETED, FAILED, CANCELLED are terminal
   const isTerminalState = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
   const isCompleted = normalizedStatus === 'COMPLETED'
+
+  // Phase REBUILD: Elapsed time counter for RUNNING jobs
+  useEffect(() => {
+    if (isJobRunning && startedAt) {
+      // Initialize elapsed time from startedAt
+      const started = new Date(startedAt).getTime()
+      const updateElapsed = () => {
+        const now = Date.now()
+        setElapsedSeconds(Math.floor((now - started) / 1000))
+      }
+      updateElapsed()
+      
+      // Update every second
+      elapsedIntervalRef.current = window.setInterval(updateElapsed, 1000)
+      
+      return () => {
+        if (elapsedIntervalRef.current) {
+          clearInterval(elapsedIntervalRef.current)
+          elapsedIntervalRef.current = null
+        }
+      }
+    } else {
+      // Job not running, clear interval
+      if (elapsedIntervalRef.current) {
+        clearInterval(elapsedIntervalRef.current)
+        elapsedIntervalRef.current = null
+      }
+      // Reset elapsed if job becomes terminal
+      if (isTerminalState) {
+        setElapsedSeconds(0)
+      }
+    }
+  }, [isJobRunning, startedAt, isTerminalState])
+
+  // Phase REBUILD: Stalled job detection
+  useEffect(() => {
+    if (isJobRunning) {
+      // Check if completed count changed
+      if (completedCount !== lastCompletedCountRef.current) {
+        // Progress detected, reset stalled state
+        lastCompletedCountRef.current = completedCount
+        setIsStalled(false)
+        
+        // Reset stalled timer
+        if (stalledTimerRef.current) {
+          clearTimeout(stalledTimerRef.current)
+        }
+        
+        // Start new 60s timer
+        stalledTimerRef.current = window.setTimeout(() => {
+          setIsStalled(true)
+        }, 60000)
+      } else if (!stalledTimerRef.current) {
+        // No timer running, start one
+        stalledTimerRef.current = window.setTimeout(() => {
+          setIsStalled(true)
+        }, 60000)
+      }
+      
+      return () => {
+        if (stalledTimerRef.current) {
+          clearTimeout(stalledTimerRef.current)
+          stalledTimerRef.current = null
+        }
+      }
+    } else {
+      // Job not running, reset
+      setIsStalled(false)
+      lastCompletedCountRef.current = completedCount
+      if (stalledTimerRef.current) {
+        clearTimeout(stalledTimerRef.current)
+        stalledTimerRef.current = null
+      }
+    }
+  }, [isJobRunning, completedCount])
 
   // Phase 4B: Auto-expand when job starts running (call parent's toggle if collapsed)
   useEffect(() => {
@@ -227,17 +314,25 @@ export function JobGroup({
         borderRadius: 'var(--radius)',
         border: isSelected 
           ? '1px solid var(--button-primary-bg)' 
-          : isTerminalState
-            ? '1px solid var(--border-secondary)'
-            : '1px solid var(--border-primary)',
-        backgroundColor: isTerminalState && !isSelected ? 'var(--bg-secondary)' : 'var(--card-bg)',
+          : isHighlighted
+            ? '1px solid var(--button-primary-bg)'
+            : isTerminalState
+              ? '1px solid var(--border-secondary)'
+              : '1px solid var(--border-primary)',
+        backgroundColor: isHighlighted 
+          ? 'rgba(59, 130, 246, 0.08)' 
+          : isTerminalState && !isSelected 
+            ? 'var(--bg-secondary)' 
+            : 'var(--card-bg)',
         opacity: isDragging ? 0.5 : isTerminalState && !isSelected ? 0.7 : 1,
         transition: 'all 0.15s ease',
-        boxShadow: isSelected 
-          ? '0 0 0 1px var(--button-primary-bg), 0 4px 12px rgba(0,0,0,0.2)' 
-          : isHovered && !isTerminalState
-            ? '0 4px 12px rgba(0,0,0,0.15)' 
-            : 'none',
+        boxShadow: isHighlighted
+          ? '0 0 0 2px var(--button-primary-bg), 0 4px 16px rgba(59, 130, 246, 0.3)'
+          : isSelected 
+            ? '0 0 0 1px var(--button-primary-bg), 0 4px 12px rgba(0,0,0,0.2)' 
+            : isHovered && !isTerminalState
+              ? '0 4px 12px rgba(0,0,0,0.15)' 
+              : 'none',
       }}
     >
       {/* Job Header */}
@@ -330,7 +425,19 @@ export function JobGroup({
             fontFamily: 'var(--font-mono)',
           }}
         >
-          {completedCount > 0 && (
+          {/* Phase REBUILD: Clip completion counter for running jobs */}
+          {isJobRunning && (
+            <span 
+              style={{ 
+                color: 'var(--text-primary)',
+                fontWeight: 500,
+              }}
+              title="Clips completed"
+            >
+              {completedCount} / {totalTasks} clips
+            </span>
+          )}
+          {completedCount > 0 && !isJobRunning && (
             <span style={{ color: 'var(--stat-completed)' }}>
               ✓ {completedCount}
             </span>
@@ -345,12 +452,31 @@ export function JobGroup({
               ● {runningCount}
             </span>
           )}
-          {queuedCount > 0 && (
+          {queuedCount > 0 && !isJobRunning && (
             <span style={{ color: 'var(--text-muted)' }}>
               ○ {queuedCount}
             </span>
           )}
         </div>
+
+        {/* Phase REBUILD: Elapsed time display for running jobs */}
+        {isJobRunning && elapsedSeconds > 0 && (
+          <div
+            style={{
+              fontSize: '0.6875rem',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-secondary)',
+              padding: '0.125rem 0.375rem',
+              background: 'rgba(59, 130, 246, 0.1)',
+              borderRadius: '3px',
+            }}
+            title="Elapsed time since job started"
+          >
+            {Math.floor(elapsedSeconds / 3600).toString().padStart(2, '0')}:
+            {Math.floor((elapsedSeconds % 3600) / 60).toString().padStart(2, '0')}:
+            {(elapsedSeconds % 60).toString().padStart(2, '0')}
+          </div>
+        )}
 
         {/* Trust Stabilisation: Settings Summary - Shows export intent (what will be produced) */}
         {/* Format: Preset name or "Manual" · Codec Container · Resolution */}
@@ -484,6 +610,26 @@ export function JobGroup({
           )}
         </div>
       </div>
+
+      {/* Phase REBUILD: Stalled job warning */}
+      {isJobRunning && isStalled && (
+        <div
+          style={{
+            padding: '0.5rem 1rem',
+            background: 'rgba(251, 191, 36, 0.1)',
+            borderBottom: '1px solid rgba(251, 191, 36, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '0.6875rem',
+            color: 'rgb(251, 191, 36)',
+          }}
+          data-testid="stalled-warning"
+        >
+          <span style={{ fontSize: '0.875rem' }}>⚠️</span>
+          <span>No progress detected — job may be stalled</span>
+        </div>
+      )}
 
       {/* Collapsible Content */}
       {!isCollapsed && (

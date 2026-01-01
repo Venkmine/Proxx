@@ -148,10 +148,6 @@ interface CreateJobPanelProps {
   preflightChecks?: PreflightCheck[]
   preflightLoading?: boolean
   
-  // Directory navigator toggle
-  showDirectoryNavigator?: boolean
-  onToggleDirectoryNavigator?: () => void
-  
   // V2 lock state
   v2JobSpecSubmitted?: boolean
   
@@ -267,8 +263,6 @@ export function CreateJobPanel({
   workspaceMode = 'configure',
   preflightChecks = [],
   preflightLoading = false,
-  showDirectoryNavigator = false,
-  onToggleDirectoryNavigator,
   v2JobSpecSubmitted = false,
 }: CreateJobPanelProps) {
   // Section collapse states
@@ -557,36 +551,6 @@ export function CreateJobPanel({
         </h2>
         
         <div style={{ display: 'flex', gap: '0.375rem' }}>
-          {onToggleDirectoryNavigator && (
-            <button
-              onClick={onToggleDirectoryNavigator}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.25rem',
-                padding: '0.25rem 0.5rem',
-                background: showDirectoryNavigator 
-                  ? 'rgba(59, 130, 246, 0.15)' 
-                  : 'rgba(51, 65, 85, 0.3)',
-                border: showDirectoryNavigator
-                  ? '1px solid var(--button-primary-bg)'
-                  : '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-                color: showDirectoryNavigator 
-                  ? 'var(--button-primary-bg)' 
-                  : 'var(--text-muted)',
-                fontSize: '0.6875rem',
-                fontWeight: 500,
-                transition: 'all 0.15s',
-              }}
-              title={showDirectoryNavigator ? 'Hide directory browser' : 'Browse folders'}
-            >
-              <span style={{ fontSize: '0.75rem' }}>📁</span>
-              Browse
-            </button>
-          )}
           <Button
             variant="ghost"
             size="sm"

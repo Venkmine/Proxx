@@ -1,7 +1,20 @@
 """
-Filesystem browsing API for directory navigator.
+Filesystem API for path validation and enumeration.
 
-Phase 4A: Provides safe directory listing for Sources panel.
+⚠️ DEPRECATION NOTICE:
+The /browse endpoint is DEPRECATED and maintained only for legacy/debugging purposes.
+The UI no longer uses custom directory tree navigation.
+
+RATIONALE FOR REMOVAL:
+- macOS system volumes (/Volumes) and network mounts are not safely enumerable
+- Custom directory trees cause UI hangs on system paths and network shares
+- OS-native dialogs (Electron showOpenDialog) are the ONLY correct solution
+- This matches industry-standard NLE behavior (Premiere, Resolve, etc.)
+
+CURRENT ARCHITECTURE:
+- Frontend: Uses OS-native file/folder pickers (Electron dialogs)
+- Backend: Validates paths via /validate-path
+- Enumeration: Happens ONLY during job preflight (headless_execute.py)
 
 Security constraints:
 - Path normalization to prevent traversal attacks
@@ -13,14 +26,10 @@ Image Sequence Detection:
 - Groups sequences into single logical clip
 - Returns pattern-based path (e.g., /path/to/clip.%06d.exr)
 
-INC-001 Fix: All directory enumeration is async with timeout protection.
-Network volumes (/Volumes) can hang indefinitely - we now enforce a 3-second
-timeout on all iterdir() operations.
-
 ============================================================================
 V1 OBSERVABILITY HARDENING
 ============================================================================
-All browse operations are now logged to the browse event log.
+All browse operations are logged to the browse event log.
 Each request is logged with:
 - Path being browsed
 - Success/failure status
@@ -480,6 +489,22 @@ async def browse_directory(
     media_only: bool = Query(True, description="Only show supported media files"),
 ):
     """
+    ⚠️ DEPRECATED: This endpoint is maintained for legacy/debugging purposes only.
+    
+    The UI no longer uses custom directory tree navigation.
+    
+    RATIONALE:
+    - macOS system volumes and network mounts are not safely enumerable
+    - Custom directory trees cause UI hangs on /Volumes, system roots, and network mounts
+    - OS-native dialogs are the ONLY correct solution
+    - This matches industry-standard NLE behavior (Premiere, Resolve, etc.)
+    
+    REPLACEMENT:
+    - Frontend uses Electron showOpenDialog for file/folder selection
+    - No recursive directory enumeration in UI
+    - Backend validates paths via /validate-path
+    - Enumeration happens ONLY during job preflight
+    
     Browse a directory and return its contents.
     
     INC-001 Fix: Uses timeout-protected enumeration to prevent hangs
