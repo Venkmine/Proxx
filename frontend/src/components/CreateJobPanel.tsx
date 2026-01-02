@@ -1021,6 +1021,44 @@ export function CreateJobPanel({
       {/* SECTION 4: PREFLIGHT SUMMARY (mandatory, always visible) */}
       {/* Rendering is gated by appMode — no red errors on initial launch */}
       {/* ================================================================= */}
+      
+      {/* Phase E3: Welcoming idle state - show when no sources selected */}
+      {appMode === 'idle' && selectedFiles.length === 0 && (
+        <div
+          data-testid="idle-welcome-message"
+          style={{
+            marginTop: '0.75rem',
+            padding: '1.5rem 1.25rem',
+            background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            borderRadius: 'var(--radius)',
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '0.875rem',
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+              marginBottom: '0.375rem',
+            }}
+          >
+            Welcome to Proxx
+          </div>
+          <div
+            style={{
+              fontSize: '0.75rem',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.5,
+            }}
+          >
+            Select files or folders to begin
+          </div>
+        </div>
+      )}
+      
       <PreflightSummary 
         checks={computedPreflightChecks} 
         loading={preflightLoading}

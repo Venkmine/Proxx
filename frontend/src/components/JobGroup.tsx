@@ -4,6 +4,7 @@ import { StatBox } from './StatBox'
 import { ClipRow } from './ClipRow'
 import { Button } from './Button'
 import { JobDiagnosticsPanel } from './JobDiagnosticsPanel'
+import { ContextMenu, type ContextMenuItem } from './ContextMenu'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import type { DeliverSettings } from './DeliverControlPanel'
 
@@ -299,58 +300,95 @@ export function JobGroup({
   const showDelete = ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'].includes(normalizedStatus)
   const showRebind = normalizedStatus === 'PENDING' || normalizedStatus === 'RECOVERY_REQUIRED'
 
+  // Phase E: Context menu items for completed jobs
+  const hasOutputPath = isCompleted && tasks.some(t => t.output_path)
+  const contextMenuItems: ContextMenuItem[] = [
+    {
+      label: 'Copy Job ID',
+      icon: '📋',
+      onClick: () => {
+        navigator.clipboard.writeText(_jobId)
+      },
+    },
+    {
+      label: 'Copy Output Path',
+      icon: '📂',
+      disabled: !hasOutputPath,
+      onClick: () => {
+        const firstOutputPath = tasks.find(t => t.output_path)?.output_path
+        if (firstOutputPath) {
+          // Extract directory from file path
+          const directory = firstOutputPath.substring(0, firstOutputPath.lastIndexOf('/'))
+          navigator.clipboard.writeText(directory)
+        }
+      },
+    },
+    {
+      label: 'Reveal in Finder',
+      icon: '👁',
+      disabled: !hasOutputPath,
+      onClick: () => {
+        const firstOutputPath = tasks.find(t => t.output_path)?.output_path
+        if (firstOutputPath && window.electron?.showItemInFolder) {
+          window.electron.showItemInFolder(firstOutputPath)
+        }
+      },
+    },
+  ]
+
   return (
-    <div
-      ref={containerRef}
-      data-testid="job-group"
-      data-job-id={_jobId}
-      data-job-status={normalizedStatus}
-      draggable={!!onDragStart}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        marginBottom: '1rem',
-        borderRadius: 'var(--radius)',
-        border: isSelected 
-          ? '1px solid var(--button-primary-bg)' 
-          : isHighlighted
-            ? '1px solid var(--button-primary-bg)'
-            : isTerminalState
-              ? '1px solid var(--border-secondary)'
-              : '1px solid var(--border-primary)',
-        backgroundColor: isHighlighted 
-          ? 'rgba(59, 130, 246, 0.08)' 
-          : isTerminalState && !isSelected 
-            ? 'var(--bg-secondary)' 
-            : 'var(--card-bg)',
-        opacity: isDragging ? 0.5 : isTerminalState && !isSelected ? 0.7 : 1,
-        transition: 'all 0.15s ease',
-        boxShadow: isHighlighted
-          ? '0 0 0 2px var(--button-primary-bg), 0 4px 16px rgba(59, 130, 246, 0.3)'
-          : isSelected 
-            ? '0 0 0 1px var(--button-primary-bg), 0 4px 12px rgba(0,0,0,0.2)' 
-            : isHovered && !isTerminalState
-              ? '0 4px 12px rgba(0,0,0,0.15)' 
-              : 'none',
-      }}
-    >
-      {/* Job Header */}
+    <ContextMenu items={contextMenuItems} testId="job-group-context">
       <div
-        onClick={onSelect}
+        ref={containerRef}
+        data-testid="job-group"
+        data-job-id={_jobId}
+        data-job-status={normalizedStatus}
+        draggable={!!onDragStart}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-          padding: '0.875rem 1rem',
-          cursor: 'pointer',
-          borderBottom: isCollapsed ? 'none' : '1px solid var(--border-secondary)',
-          backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-          borderRadius: isCollapsed ? 'var(--radius)' : 'var(--radius) var(--radius) 0 0',
+          marginBottom: '1rem',
+          borderRadius: 'var(--radius)',
+          border: isSelected 
+            ? '1px solid var(--button-primary-bg)' 
+            : isHighlighted
+              ? '1px solid var(--button-primary-bg)'
+              : isTerminalState
+                ? '1px solid var(--border-secondary)'
+                : '1px solid var(--border-primary)',
+          backgroundColor: isHighlighted 
+            ? 'rgba(59, 130, 246, 0.08)' 
+            : isTerminalState && !isSelected 
+              ? 'var(--bg-secondary)' 
+              : 'var(--card-bg)',
+          opacity: isDragging ? 0.5 : isTerminalState && !isSelected ? 0.7 : 1,
+          transition: 'all 0.15s ease',
+          boxShadow: isHighlighted
+            ? '0 0 0 2px var(--button-primary-bg), 0 4px 16px rgba(59, 130, 246, 0.3)'
+            : isSelected 
+              ? '0 0 0 1px var(--button-primary-bg), 0 4px 12px rgba(0,0,0,0.2)' 
+              : isHovered && !isTerminalState
+                ? '0 4px 12px rgba(0,0,0,0.15)' 
+                : 'none',
         }}
       >
+        {/* Job Header */}
+        <div
+          onClick={onSelect}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0.875rem 1rem',
+            cursor: 'pointer',
+            borderBottom: isCollapsed ? 'none' : '1px solid var(--border-secondary)',
+            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+            borderRadius: isCollapsed ? 'var(--radius)' : 'var(--radius) var(--radius) 0 0',
+          }}
+        >
         {/* Drag Handle */}
         {onDragStart && (
           <div
@@ -910,8 +948,11 @@ export function JobGroup({
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </ContextMenu>
   )
 }
+
+export default JobGroup
 
 export default JobGroup

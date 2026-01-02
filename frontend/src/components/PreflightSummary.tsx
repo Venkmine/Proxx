@@ -193,6 +193,9 @@ export function PreflightSummary({ checks, loading = false, appMode = 'ready' }:
         }`,
         borderRadius: 'var(--radius)',
         marginTop: '0.75rem',
+        // Phase E2: Ensure proper layout
+        position: 'relative',
+        overflow: 'visible',
       }}
     >
       {/* Header */}
@@ -342,6 +345,9 @@ export function PreflightSummary({ checks, loading = false, appMode = 'ready' }:
                         color: check.status === 'pass' ? 'var(--text-muted)' : 'var(--text-secondary)',
                         marginTop: '0.125rem',
                         lineHeight: 1.4,
+                        // Phase E2: Ensure proper text wrapping
+                        wordWrap: 'break-word',
+                        overflowWrap: 'break-word',
                       }}
                     >
                       {check.message}
@@ -356,10 +362,13 @@ export function PreflightSummary({ checks, loading = false, appMode = 'ready' }:
                         fontFamily: 'var(--font-mono)',
                         color: 'var(--text-dim)',
                         marginTop: '0.25rem',
-                        padding: '0.25rem 0.5rem',
+                        padding: '0.375rem',
                         background: 'rgba(0, 0, 0, 0.2)',
                         borderRadius: 'var(--radius-sm)',
-                        wordBreak: 'break-all',
+                        // Phase E2: Ensure proper text wrapping
+                        wordWrap: 'break-word',
+                        overflowWrap: 'break-word',
+                        whiteSpace: 'pre-wrap',
                       }}
                     >
                       {check.detail}

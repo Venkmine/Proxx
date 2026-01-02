@@ -17,6 +17,10 @@ export type { StatusType } from './StatusBadge'
 
 export { StatBox } from './StatBox'
 
+// Phase E: Queue UX improvements
+export { ContextMenu } from './ContextMenu'
+export type { ContextMenuItem } from './ContextMenu'
+
 // Domain components
 export { ClipRow } from './ClipRow'
 export { JobGroup } from './JobGroup'

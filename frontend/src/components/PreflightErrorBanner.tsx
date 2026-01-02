@@ -55,6 +55,9 @@ export function PreflightErrorBanner({
         border: '1px solid rgba(239, 68, 68, 0.4)',
         borderRadius: 'var(--radius-md)',
         marginBottom: '1rem',
+        // Phase E2: Ensure proper layout
+        position: 'relative',
+        overflow: 'visible',
       }}
     >
       {/* Error header */}
@@ -85,6 +88,9 @@ export function PreflightErrorBanner({
         fontSize: '0.8125rem',
         marginBottom: error.invalidPaths?.length ? '0.75rem' : '1rem',
         lineHeight: 1.5,
+        // Phase E2: Ensure text wraps properly
+        wordWrap: 'break-word',
+        overflowWrap: 'break-word',
       }}>
         {error.message}
       </div>
