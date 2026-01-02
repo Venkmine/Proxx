@@ -41,12 +41,10 @@ import { BurstStrip } from './BurstStrip'
 import { PreviewMenu, PreviewModeBadge, PreviewDisclaimer } from './PreviewMenu'
 import type { UseTieredPreviewReturn } from '../hooks/useTieredPreview'
 import {
-  detectSourceType,
-  getPreviewCapabilities,
-  canPlayback as routerCanPlayback,
-  areTransportControlsEnabled as routerTransportEnabled,
-  getPlaybackStatusMessage as routerStatusMessage,
-} from '../utils/previewRouter'
+  areTransportControlsEnabled as probeTransportEnabled,
+  getTransportStatusMessage as probeStatusMessage,
+  type PlaybackCapability,
+} from '../utils/playbackCapability'
 
 // ============================================================================
 // TYPES
@@ -255,25 +253,29 @@ export function MonitorSurface({
   // Derive preview mode from tiered preview state
   const previewMode = tieredPreview?.mode || 'none'
   
-  // CENTRALIZED PREVIEW ROUTING:
-  // Use deterministic preview router to decide playback capabilities
-  const sourceType = useMemo(() => detectSourceType({
-    rawType: sourceMetadata?.rawType,
-    filePath: sourceMetadata?.filePath,
-    codec: sourceMetadata?.codec,
-  }), [sourceMetadata?.rawType, sourceMetadata?.filePath, sourceMetadata?.codec])
+  // ============================================================================
+  // DETERMINISTIC PLAYBACK CAPABILITY (from FFmpeg probe)
+  // ============================================================================
+  // This is THE SINGLE SOURCE OF TRUTH for playback decisions.
+  // We do NOT guess based on codec names, extensions, or allowlists.
+  // We use the actual probe result from the backend.
   
-  const previewCapabilities = useMemo(() => 
-    getPreviewCapabilities(sourceType), 
-    [sourceType]
-  )
+  const playbackCapability: PlaybackCapability | null = tieredPreview?.playbackCapability ?? null
+  const playbackUIState = tieredPreview?.playbackUIState ?? null
   
-  // NON-RAW NATIVE PLAYBACK:
-  // Non-RAW files (mp4/mov/prores/dnx) can play directly via native HTML5 video.
-  const isNativePlayback = previewCapabilities.canPlayNative
+  // Trigger playback probe when source changes
+  useEffect(() => {
+    if (state === 'source-loaded' && sourceMetadata?.filePath && tieredPreview?.probePlayback) {
+      tieredPreview.probePlayback(sourceMetadata.filePath)
+    }
+  }, [state, sourceMetadata?.filePath, tieredPreview?.probePlayback])
   
-  // Check if source is RAW format (for UI hints)
-  const isRaw = sourceType === 'raw-folder'
+  // Check if source is RAW format (from probe result)
+  const isRaw = playbackUIState?.isRawFormat ?? false
+  
+  // NATIVE PLAYBACK (probe says PLAYABLE):
+  // Only files that FFmpeg can actually decode get native playback
+  const isNativePlayback = playbackCapability === 'PLAYABLE'
   
   // Compute native video source URL (served via backend)
   const nativeVideoSrc = useMemo(() => {
@@ -284,34 +286,33 @@ export function MonitorSurface({
   }, [isNativePlayback, sourceMetadata?.filePath, backendUrl])
   
   // PLAYBACK LOGIC:
-  // Use centralized router to determine if playback is available
+  // Use probe result to determine if playback is available
   const hasVideoProxy = !!(previewMode === 'video' && tieredPreview?.video?.previewUrl)
-  const canPlaybackNow = state === 'source-loaded' && !videoError && 
-    routerCanPlayback(sourceType, hasVideoProxy)
   
-  // INC-CTRL-002: Transport controls MUST be visible when source is loaded.
-  // Controls visibility is based on "can play", not preview tier.
-  const canShowTransportControls = state === 'source-loaded' && (
-    previewCapabilities.canPlayNative || 
-    previewCapabilities.canGenerateVideoProxy ||
-    !!tieredPreview?.poster?.posterUrl ||
-    !!tieredPreview?.video?.previewUrl ||
-    !!(tieredPreview?.burst?.thumbnails && tieredPreview.burst.thumbnails.length > 0)
+  // Can play NOW if:
+  // - Probe says PLAYABLE (native decode works), OR
+  // - We have a video proxy that should be playable
+  const canPlaybackNow = state === 'source-loaded' && !videoError && (
+    playbackCapability === 'PLAYABLE' || hasVideoProxy
   )
   
+  // INC-CTRL-002: Transport controls MUST be visible when source is loaded.
+  // Controls are ALWAYS visible once source is loaded (but may be disabled).
+  const canShowTransportControls = state === 'source-loaded'
+  
   // Transport controls are ENABLED when video can actually play
-  const transportEnabled = routerTransportEnabled(sourceType, hasVideoProxy, videoLoaded)
+  const transportEnabled = canPlaybackNow && videoLoaded
   
   // Determine playback status label for disabled controls
   const playbackStatusLabel = useMemo(() => {
-    return routerStatusMessage(
-      sourceType,
-      hasVideoProxy,
-      videoLoaded,
-      tieredPreview?.videoLoading || false,
+    // Use probe-based status message
+    const capability = playbackCapability || 'ERROR'
+    return probeStatusMessage(
+      capability,
+      tieredPreview?.videoLoading || tieredPreview?.playbackProbing || false,
       tieredPreview?.videoError || null
     )
-  }, [sourceType, hasVideoProxy, videoLoaded, tieredPreview?.videoLoading, tieredPreview?.videoError])
+  }, [playbackCapability, tieredPreview?.videoLoading, tieredPreview?.playbackProbing, tieredPreview?.videoError])
   
   // Show poster frame as default visual
   // For non-RAW files with native playback, poster is only shown while video loads
@@ -320,9 +321,9 @@ export function MonitorSurface({
     (previewMode === 'poster' || previewMode === 'none') && 
     tieredPreview?.poster?.posterUrl
   
-  // Show burst thumbnails when in burst mode (RAW only)
+  // Show burst thumbnails when in burst mode (non-playable sources only)
   const showBurst = state === 'source-loaded' && 
-    !isNativePlayback &&  // Non-RAW doesn't need burst
+    !isNativePlayback &&  // Playable sources don't need burst
     previewMode === 'burst' && 
     tieredPreview?.burst?.thumbnails && 
     tieredPreview.burst.thumbnails.length > 0
@@ -1220,11 +1221,21 @@ export function MonitorSurface({
             zIndex: 100,
           }}
         >
+          <div>Probe: <span style={{ 
+            color: tieredPreview?.playbackProbing ? '#eab308' :
+                   playbackCapability === 'PLAYABLE' ? '#22c55e' : 
+                   playbackCapability === 'METADATA_ONLY' ? '#f97316' : '#ef4444' 
+          }}>
+            {tieredPreview?.playbackProbing ? 'PROBING...' : (playbackCapability || 'NONE')}
+          </span></div>
           <div>Transport: <span style={{ color: canShowTransportControls ? '#22c55e' : '#ef4444' }}>{canShowTransportControls ? 'VISIBLE' : 'HIDDEN'}</span></div>
           <div>Preview: <span style={{ color: previewMode === 'video' ? '#22c55e' : '#eab308' }}>{previewMode.toUpperCase()}</span></div>
           <div>Source: <span style={{ color: isRaw ? '#eab308' : '#22c55e' }}>{isRaw ? 'RAW' : 'NON-RAW'}</span></div>
           <div>Playback: <span style={{ color: transportEnabled ? '#22c55e' : '#ef4444' }}>{transportEnabled ? 'ENABLED' : 'DISABLED'}</span></div>
           <div>VideoLoaded: <span style={{ color: videoLoaded ? '#22c55e' : '#6b7280' }}>{videoLoaded ? 'YES' : 'NO'}</span></div>
+          {tieredPreview?.playbackProbeResult?.probe_ms && (
+            <div>ProbeTime: <span style={{ color: '#6b7280' }}>{tieredPreview.playbackProbeResult.probe_ms}ms</span></div>
+          )}
         </div>
       )}
 
