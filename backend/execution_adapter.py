@@ -262,6 +262,11 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # -----------------------------------
     # Engine choice based ONLY on source formats.
     # NO user override, NO heuristics, NO fallback.
+    # 
+    # ENGINE CAPABILITY GATING:
+    # - FFmpeg can only process standard codecs (H.264, ProRes, DNxHR)
+    # - FFmpeg CANNOT process RAW formats (Sony Venice, RED, ARRI, etc.)
+    # - If RAW sources are detected, job MUST route to Resolve or FAIL
     logger.info(f"[EXECUTION ADAPTER] Determining execution engine...")
     engine_name, engine_error = _determine_job_engine(jobspec)
     
@@ -271,7 +276,8 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     if engine_error:
         # Engine routing failed (mixed job or unsupported format)
         # This is a validation-level failure: don't execute
-        logger.error(f"[EXECUTION ADAPTER] Engine routing failed: {engine_error}")
+        logger.error(f"[EXECUTION ADAPTER] Engine routing FAILED: {engine_error}")
+        logger.error(f"[EXECUTION ADAPTER] Job will be rejected - no execution will occur")
         return JobExecutionResult(
             job_id=jobspec.job_id,
             clips=[],

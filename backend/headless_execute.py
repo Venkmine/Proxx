@@ -224,6 +224,11 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
     - Standard formats → "ffmpeg"
     - Unknown/rejected formats → validation error
     
+    ENGINE CAPABILITY GATING:
+    - FFmpeg can only process standard codecs (H.264, ProRes, DNxHR, etc.)
+    - FFmpeg CANNOT process RAW formats (Sony Venice, RED, ARRI, etc.)
+    - RAW sources routed to FFmpeg will FAIL with explicit error
+    
     Args:
         job_spec: JobSpec to analyze
         
@@ -255,19 +260,26 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
         # For now, use container-based heuristics for common RAW formats
         codec = _infer_codec_from_path(source)
         
+        logger.info(f"[ENGINE ROUTING] Source: {source.name}, container={container}, codec={codec}")
+        
         engine = get_execution_engine(container, codec)
         
         if engine == ExecutionEngine.FFMPEG:
+            logger.info(f"[ENGINE ROUTING] {source.name} → FFmpeg (standard format)")
             engines_required["ffmpeg"].append(source_path)
         elif engine == ExecutionEngine.RESOLVE:
+            logger.info(f"[ENGINE ROUTING] {source.name} → Resolve (RAW format: {codec})")
             engines_required["resolve"].append(source_path)
         else:
+            logger.warning(f"[ENGINE ROUTING] {source.name} → UNKNOWN (unsupported format)")
             engines_required["unknown"].append(source_path)
     
     # Check for unknown formats
     if engines_required["unknown"]:
         unknown_files = ", ".join(Path(p).name for p in engines_required["unknown"][:3])
-        return (None, f"Unknown source format for: {unknown_files}")
+        error_msg = f"Unsupported source format: {unknown_files}. Verify the source or transcode to ProRes/H.264."
+        logger.error(f"[ENGINE ROUTING] {error_msg}")
+        return (None, error_msg)
     
     # Check for mixed engine requirements
     has_ffmpeg = len(engines_required["ffmpeg"]) > 0
@@ -276,15 +288,18 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
     if has_ffmpeg and has_resolve:
         ffmpeg_files = ", ".join(Path(p).name for p in engines_required["ffmpeg"][:2])
         resolve_files = ", ".join(Path(p).name for p in engines_required["resolve"][:2])
-        return (
-            None,
+        error_msg = (
             f"Mixed job not allowed: FFmpeg sources ({ffmpeg_files}) and Resolve sources ({resolve_files}) "
             f"cannot be processed in the same job. Split into separate jobs by format type."
         )
+        logger.error(f"[ENGINE ROUTING] {error_msg}")
+        return (None, error_msg)
     
     if has_resolve:
+        logger.info(f"[ENGINE ROUTING] Job routes to Resolve engine ({len(engines_required['resolve'])} RAW sources)")
         return ("resolve", None)
     
+    logger.info(f"[ENGINE ROUTING] Job routes to FFmpeg engine ({len(engines_required['ffmpeg'])} standard sources)")
     return ("ffmpeg", None)
 
 
@@ -358,8 +373,11 @@ def _infer_codec_from_path(source_path: Path) -> str:
             # If ffprobe returns "unknown", this indicates a proprietary RAW codec
             # that FFmpeg cannot decode - route to Resolve
             if probed_codec == "unknown":
-                # For MXF with unknown codec, assume ARRI RAW (most common case)
-                return "arriraw"
+                logger.info(f"[CODEC PROBE] MXF with 'unknown' codec detected: {source_path.name} → assuming RAW format")
+                # For MXF with unknown codec, this is likely Sony Venice, ARRI, or other RAW
+                # The 'unknown' codec will be caught by RAW_CODECS_RESOLVE and routed to Resolve
+                return "unknown"
+            logger.info(f"[CODEC PROBE] MXF probed: {source_path.name} → codec={probed_codec}")
             return probed_codec
     
     # For standard containers, assume FFmpeg-compatible codecs
