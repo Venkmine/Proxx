@@ -47,6 +47,8 @@ export interface JobSubmitButtonProps {
   loading?: boolean
   /** Additional disabled state (external conditions) */
   disabled?: boolean
+  /** Whether user has attempted to submit (enables blocking error display) */
+  hasSubmitIntent?: boolean
   /** Called when user clicks submit to trigger deferred validation (e.g., output directory) */
   onValidationTrigger?: () => void
 }
@@ -61,6 +63,7 @@ export function JobSubmitButton({
   onSubmit,
   loading = false,
   disabled = false,
+  hasSubmitIntent = false,
   onValidationTrigger,
 }: JobSubmitButtonProps) {
   // Evaluate preflight status
@@ -83,8 +86,8 @@ export function JobSubmitButton({
     }
   }
 
-  // If there are blocking failures, show the blocker message instead of button
-  if (hasBlockingFailures) {
+  // If there are blocking failures AND user has submit intent, show the blocker message
+  if (hasBlockingFailures && hasSubmitIntent) {
     return (
       <div
         data-testid="job-submit-blocked"

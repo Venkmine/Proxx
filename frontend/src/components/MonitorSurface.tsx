@@ -414,14 +414,36 @@ export function MonitorSurface({
     }
   }, [])
   
-  // Double-click to toggle zoom
+  // Double-click to toggle zoom with proper centering
   const handleVideoDoubleClick = useCallback((e: React.MouseEvent) => {
     // Ignore if clicking on controls
     const target = e.target as HTMLElement
     if (target.closest('[data-testid="transport-bar"]')) return
     
-    setZoomMode(prev => prev === 'fit' ? 'actual' : 'fit')
-  }, [])
+    // Calculate click position relative to viewport for centering
+    if (viewportRef.current && videoRef.current) {
+      const rect = viewportRef.current.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      
+      // Convert to percentages for transform-origin
+      const xPercent = (x / rect.width) * 100
+      const yPercent = (y / rect.height) * 100
+      
+      if (zoomMode === 'fit') {
+        // Zoom to actual size, centered on click point
+        videoRef.current.style.transformOrigin = `${xPercent}% ${yPercent}%`
+        setZoomMode('actual')
+      } else {
+        // Reset to fit mode
+        videoRef.current.style.transformOrigin = 'center center'
+        setZoomMode('fit')
+      }
+    } else {
+      // Fallback if refs not available
+      setZoomMode(prev => prev === 'fit' ? 'actual' : 'fit')
+    }
+  }, [zoomMode])
   
   // Preview menu handlers
   const handleRequestVideo = useCallback((duration: number) => {

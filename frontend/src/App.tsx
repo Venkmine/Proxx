@@ -572,6 +572,26 @@ function App() {
     })
   }, [jobs])
   
+  // Track whether user has attempted to submit a job (for error gating)
+  const [hasSubmitIntent, setHasSubmitIntent] = useState<boolean>(false)
+  
+  // Reset submit intent and job selection when sources change
+  useEffect(() => {
+    setHasSubmitIntent(false)
+    
+    // Job lifecycle reset: Clear completed job selection from monitor
+    if (selectedFiles.length > 0 && selectedJobId) {
+      const job = jobs.find(j => j.id === selectedJobId)
+      const isTerminal = job && isJobTerminal(job.status)
+      if (isTerminal) {
+        // Clear terminal job selection, load new source into monitor
+        setSelectedJobId(null)
+        setSelectedClipIds(new Set())
+        setMonitorClipIndex(0)
+      }
+    }
+  }, [selectedFiles, selectedJobId, jobs])
+  
   // Derive AppMode centrally — single source of truth
   const appMode: AppMode = useMemo(() => {
     return deriveAppMode(
@@ -1456,6 +1476,9 @@ function App() {
   // - No playback checks are involved
 
   const createManualJob = async () => {
+    // Mark that user has attempted to submit (enables blocking error display)
+    setHasSubmitIntent(true)
+    
     // Determine effective output directory
     const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
     
@@ -2418,6 +2441,7 @@ function App() {
               onAddFolderFavorite={addFolderFavorite}
               onRemoveFolderFavorite={removeFolderFavorite}
               onCreateJob={createManualJob}
+              hasSubmitIntent={hasSubmitIntent}
               onClear={() => {
                 ingestion.clearPendingPaths()
                 setOutputDirectory('')

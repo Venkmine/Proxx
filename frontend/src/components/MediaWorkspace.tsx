@@ -87,6 +87,9 @@ interface MediaWorkspaceProps {
   workspaceMode: WorkspaceMode
   appMode?: AppMode
   
+  // Submit intent tracking for error gating
+  hasSubmitIntent?: boolean
+  
   // V2 Thin Client: Lock inputs when JobSpec is submitted
   v2JobSpecSubmitted?: boolean
 }
@@ -113,6 +116,7 @@ export function MediaWorkspace({
   hasElectron,
   workspaceMode,
   appMode = 'idle',
+  hasSubmitIntent = false,
   v2JobSpecSubmitted = false,
 }: MediaWorkspaceProps) {
   return (
@@ -181,6 +185,7 @@ export function MediaWorkspace({
           hasElectron={hasElectron}
           workspaceMode={workspaceMode}
           appMode={appMode}
+          hasSubmitIntent={hasSubmitIntent}
           // V2 Thin Client: Lock inputs when JobSpec is submitted
           v2JobSpecSubmitted={v2JobSpecSubmitted}
         />

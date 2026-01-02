@@ -517,10 +517,12 @@ export function JobGroup({
               style={{ 
                 color: 'var(--text-primary)',
                 fontWeight: 500,
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.6875rem',
               }}
               title="Clips completed"
             >
-              {completedCount} / {totalTasks} clips
+              {completedCount} / {totalTasks} \u00b7 {Math.round((completedCount / totalTasks) * 100)}%
             </span>
           )}
           {completedCount > 0 && !isJobRunning && (

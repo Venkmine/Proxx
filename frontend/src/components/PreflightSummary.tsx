@@ -54,6 +54,8 @@ export interface PreflightSummaryProps {
   loading?: boolean
   /** App mode — controls rendering behavior */
   appMode?: AppMode
+  /** Whether user has attempted to submit (enables blocking error display) */
+  hasSubmitIntent?: boolean
 }
 
 // =============================================================================
@@ -104,12 +106,13 @@ const NEUTRAL_STATUS_ICONS: Record<PreflightStatus, { icon: string; color: strin
 // Component
 // =============================================================================
 
-export function PreflightSummary({ checks, loading = false, appMode = 'ready' }: PreflightSummaryProps) {
+export function PreflightSummary({ checks, loading = false, appMode = 'ready', hasSubmitIntent = false }: PreflightSummaryProps) {
   // =========================================================================
-  // APP MODE GATING
+  // APP MODE GATING + SUBMIT INTENT GATING
   // =========================================================================
   // - idle: PreflightSummary is NOT rendered at all
   // - configuring: Render with neutral/soft styling (no red errors)
+  //   UNLESS hasSubmitIntent is true (user clicked submit)
   // - ready: Render normally (green/amber/red)
   // - running/completed: Render collapsed summary (1-line status only)
   
@@ -126,8 +129,8 @@ export function PreflightSummary({ checks, loading = false, appMode = 'ready' }:
   // Determine header status
   const hasBlockingFailures = failCount > 0
   
-  // Use neutral styling in configuring mode (no red errors by default)
-  const isConfiguringMode = appMode === 'configuring'
+  // Use neutral styling in configuring mode UNLESS user has submit intent
+  const isConfiguringMode = appMode === 'configuring' && !hasSubmitIntent
   const isCollapsedMode = appMode === 'running' || appMode === 'completed'
   
   // In configuring mode, use neutral header style

@@ -91,7 +91,7 @@ const styles = {
     borderRadius: '6px',
     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4)',
     overflow: 'visible',
-    zIndex: 9999,  // Ensure menu floats above ALL panels
+    zIndex: 1000,  // Ensure menu floats above panels and monitor
   },
   
   menuHeader: {

@@ -41,10 +41,10 @@ import { ReactNode } from 'react'
 // ============================================================================
 
 /** LEFT zone width - IMMUTABLE, do not change */
-const LEFT_ZONE_WIDTH = 352
+const LEFT_ZONE_WIDTH = 400
 
 /** RIGHT zone width - IMMUTABLE, do not change */
-const RIGHT_ZONE_WIDTH = 420
+const RIGHT_ZONE_WIDTH = 480
 
 // ============================================================================
 // TYPES

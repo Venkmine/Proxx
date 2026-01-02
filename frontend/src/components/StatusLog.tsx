@@ -168,6 +168,8 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
           display: 'flex',
           flexDirection: 'column',
           gap: '3px',
+          minHeight: '100px',
+          maxHeight: '160px',
         }}
       >
         {entries.length === 0 ? (

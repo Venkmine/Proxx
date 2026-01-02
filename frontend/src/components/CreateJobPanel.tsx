@@ -152,6 +152,9 @@ interface CreateJobPanelProps {
   // App mode for preflight rendering
   appMode?: AppMode
   
+  // Submit intent tracking for error gating
+  hasSubmitIntent?: boolean
+  
   // V2 lock state
   v2JobSpecSubmitted?: boolean
   
@@ -268,11 +271,9 @@ export function CreateJobPanel({
   preflightChecks = [],
   preflightLoading = false,
   appMode = 'idle',
+  hasSubmitIntent = false,
   v2JobSpecSubmitted = false,
 }: CreateJobPanelProps) {
-  // Section collapse states
-  const [processingCollapsed, setProcessingCollapsed] = useState(true)
-  
   // Web mode path prompt
   const [droppedFileNames, setDroppedFileNames] = useState<string[]>([])
   const [showPathPrompt, setShowPathPrompt] = useState(false)
@@ -866,153 +867,40 @@ export function CreateJobPanel({
       </Section>
 
       {/* ================================================================= */}
-      {/* SECTION 3: PROCESSING (collapsed by default) */}
+      {/* SECTION 3: ENGINE (read-only display) */}
+      {/* Processing settings (codec/container/audio) are in Settings panel */}
       {/* ================================================================= */}
       <Section
-        title="Processing"
-        testId="section-processing"
-        collapsible
-        collapsed={processingCollapsed}
-        onToggle={() => setProcessingCollapsed(!processingCollapsed)}
-        badge={
-          <span
-            style={{
-              fontSize: '0.5625rem',
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-dim)',
-              textTransform: 'none',
-              fontWeight: 400,
-            }}
-          >
-            {processingCollapsed ? '(click to expand)' : ''}
-          </span>
-        }
+        title="Execution Engine"
+        testId="engine-section"
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {/* Proxy Profile */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '0.6875rem',
-                fontWeight: 500,
-                color: 'var(--text-muted)',
-                marginBottom: '0.25rem',
-                fontFamily: 'var(--font-sans)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
-              }}
-            >
-              Proxy Profile
-            </label>
-            <Select
-              value={selectedProxyProfileId || ''}
-              onChange={(val) => onProxyProfileChange?.(val || null)}
-              options={[
-                { value: '', label: 'Default' },
-                ...proxyProfiles.map(p => ({
-                  value: p.id,
-                  label: `${p.name}${p.description ? ` — ${p.description}` : ''}`,
-                })),
-              ]}
-              disabled={loading}
-              size="sm"
-            />
-          </div>
-
-          {/* Burn-in Recipe */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '0.6875rem',
-                fontWeight: 500,
-                color: 'var(--text-muted)',
-                marginBottom: '0.25rem',
-                fontFamily: 'var(--font-sans)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
-              }}
-            >
-              Burn-in Recipe
-            </label>
-            <Select
-              value={selectedBurnInRecipeId || ''}
-              onChange={(val) => onBurnInRecipeChange?.(val || null)}
-              options={[
-                { value: '', label: 'None' },
-                ...burnInRecipes.map(r => ({
-                  value: r.id,
-                  label: r.name,
-                })),
-              ]}
-              disabled={loading}
-              size="sm"
-            />
-          </div>
-
-          {/* LUT */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '0.6875rem',
-                fontWeight: 500,
-                color: 'var(--text-muted)',
-                marginBottom: '0.25rem',
-                fontFamily: 'var(--font-sans)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
-              }}
-            >
-              LUT
-            </label>
-            <Select
-              value={selectedLutId || ''}
-              onChange={(val) => onLutChange?.(val || null)}
-              options={[
-                { value: '', label: 'None' },
-                ...luts.map(l => ({
-                  value: l.id,
-                  label: l.name,
-                })),
-              ]}
-              disabled={loading}
-              size="sm"
-            />
-          </div>
-
-          {/* Engine Summary (read-only) */}
+        <div
+          style={{
+            padding: '0.5rem 0.75rem',
+            background: 'rgba(0, 0, 0, 0.15)',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-secondary)',
+          }}
+        >
           <div
             style={{
-              padding: '0.5rem 0.75rem',
-              background: 'rgba(0, 0, 0, 0.15)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border-secondary)',
+              fontSize: '0.75rem',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text-primary)',
+              fontWeight: 500,
             }}
           >
-            <div
-              style={{
-                fontSize: '0.625rem',
-                fontFamily: 'var(--font-sans)',
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
-                marginBottom: '0.25rem',
-              }}
-            >
-              Execution Engine
-            </div>
-            <div
-              style={{
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-sans)',
-                color: 'var(--text-primary)',
-                fontWeight: 500,
-              }}
-            >
-              {engines.find(e => e.type === selectedEngine)?.name || selectedEngine || 'FFmpeg'}
-            </div>
+            {engines.find(e => e.type === selectedEngine)?.name || selectedEngine || 'FFmpeg'}
+          </div>
+          <div
+            style={{
+              fontSize: '0.625rem',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text-dim)',
+              marginTop: '0.25rem',
+            }}
+          >
+            Configure codec & container in Settings \u2192
           </div>
         </div>
       </Section>
@@ -1063,6 +951,7 @@ export function CreateJobPanel({
         checks={computedPreflightChecks} 
         loading={preflightLoading}
         appMode={appMode}
+        hasSubmitIntent={hasSubmitIntent}
       />
 
       {/* ================================================================= */}
@@ -1075,6 +964,7 @@ export function CreateJobPanel({
           onSubmit={onCreateJob}
           loading={loading}
           disabled={isDesignMode || v2JobSpecSubmitted}
+          hasSubmitIntent={hasSubmitIntent}
           onValidationTrigger={() => {
             // UX TRUTHFULNESS: Trigger output directory validation only on submit attempt
             setOutputDirValidationTriggered(true)
