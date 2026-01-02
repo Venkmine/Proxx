@@ -23,10 +23,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import json
+import logging
 import os
 import shutil
 import subprocess
 import sys
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 from job_spec import JobSpec, JobSpecValidationError, FpsMode, JOBSPEC_VERSION
 from execution_results import ClipExecutionResult, JobExecutionResult
@@ -715,15 +719,20 @@ def execute_job_spec(
     """
     started_at = datetime.now(timezone.utc)
     
+    logger.info(f"[EXECUTE] Starting clip execution: job_id={job_spec.job_id}, source_index={index}")
+    
     # Get source path
     if index >= len(job_spec.sources):
         raise IndexError(f"Source index {index} out of range (job has {len(job_spec.sources)} sources)")
     
     source_path = Path(job_spec.sources[index])
     
+    logger.info(f"[EXECUTE] Processing source: {source_path.name}")
+    
     # Find FFmpeg
     ffmpeg_path = _find_ffmpeg()
     if not ffmpeg_path:
+        logger.error(f"[EXECUTE] FFmpeg not found in PATH")
         return ClipExecutionResult(
             source_path=str(source_path),
             resolved_output_path="",
@@ -741,8 +750,12 @@ def execute_job_spec(
             completed_at=datetime.now(timezone.utc),
         )
     
+    logger.info(f"[EXECUTE] FFmpeg found at: {ffmpeg_path}")
+    
     # Resolve output path
     output_path = _resolve_output_path(source_path, job_spec, index=index)
+    
+    logger.info(f"[EXECUTE] Output path resolved: {output_path}")
     
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -835,7 +848,11 @@ def execute_job_spec(
         source_audio_props=source_audio_props,
     )
     
+    logger.info(f"[EXECUTE] FFmpeg command built: {' '.join(ffmpeg_command[:10])}...")
+    logger.info(f"[EXECUTE] Full command: {' '.join(ffmpeg_command)}")
+    
     # Execute synchronously
+    logger.info(f"[EXECUTE] Starting FFmpeg process...")
     try:
         process = subprocess.run(
             ffmpeg_command,
@@ -845,17 +862,22 @@ def execute_job_spec(
         )
         exit_code = process.returncode
         stderr = process.stderr
+        logger.info(f"[EXECUTE] FFmpeg completed with exit code: {exit_code}")
     except subprocess.TimeoutExpired:
         exit_code = -1
         stderr = "Execution timed out after 3600 seconds"
+        logger.error(f"[EXECUTE] FFmpeg timed out after 3600 seconds")
     except Exception as e:
         exit_code = -1
         stderr = f"Execution failed: {e}"
+        logger.error(f"[EXECUTE] FFmpeg execution failed: {e}")
     
     completed_at = datetime.now(timezone.utc)
     
     # Verify output
+    logger.info(f"[EXECUTE] Verifying output file...")
     output_exists, output_size = _verify_output(output_path)
+    logger.info(f"[EXECUTE] Output exists: {output_exists}, size: {output_size} bytes")
     
     # Verify audio parity if source was probed
     audio_parity_passed = True
@@ -1061,11 +1083,20 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
     """
     started_at = datetime.now(timezone.utc)
     
+    logger.info(f"[JOB EXECUTION] Starting multi-source job execution")
+    logger.info(f"[JOB EXECUTION] Job ID: {job_spec.job_id}")
+    logger.info(f"[JOB EXECUTION] Sources: {len(job_spec.sources)}")
+    logger.info(f"[JOB EXECUTION] Proxy profile: {job_spec.proxy_profile}")
+    logger.info(f"[JOB EXECUTION] Output directory: {job_spec.output_directory}")
+    
     # Step 1: Validate the entire JobSpec once
+    logger.info(f"[JOB EXECUTION] Validating JobSpec...")
     try:
         job_spec.validate(check_paths=True)
+        logger.info(f"[JOB EXECUTION] JobSpec validation passed")
     except JobSpecValidationError as e:
         # Return FAILED status with validation error captured
+        logger.error(f"[JOB EXECUTION] JobSpec validation failed: {e}")
         return JobExecutionResult(
             job_id=job_spec.job_id,
             clips=[],
@@ -1092,10 +1123,15 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
         )
     
     # Step 2: Determine which engine to use based on source capabilities
+    logger.info(f"[JOB EXECUTION] Determining execution engine...")
     engine_name, engine_error = _determine_job_engine(job_spec)
+    
+    if engine_name:
+        logger.info(f"[JOB EXECUTION] Engine selected: {engine_name}")
     
     if engine_error:
         # Engine routing failed (mixed job or unsupported format)
+        logger.error(f"[JOB EXECUTION] Engine routing failed: {engine_error}")
         return JobExecutionResult(
             job_id=job_spec.job_id,
             clips=[],
@@ -1143,6 +1179,7 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
         )
     
     # Step 3: Execute with the selected engine
+    logger.info(f"[JOB EXECUTION] Dispatching to {engine_name} engine...")
     if engine_name == "resolve":
         result = _execute_with_resolve(job_spec, started_at)
     else:
@@ -1150,6 +1187,7 @@ def execute_multi_job_spec(job_spec: JobSpec) -> JobExecutionResult:
         result = _execute_with_ffmpeg(job_spec, started_at)
     
     # Step 4: Set engine metadata in result
+    logger.info(f"[JOB EXECUTION] Execution complete: final_status={result.final_status}")
     result.engine_used = engine_name
     result.proxy_profile_used = job_spec.proxy_profile
     
@@ -1162,9 +1200,13 @@ def _execute_with_ffmpeg(job_spec: JobSpec, started_at: datetime) -> JobExecutio
     
     This is the original execution path for standard video formats.
     """
+    logger.info(f"[FFMPEG ENGINE] Starting FFmpeg execution for job: {job_spec.job_id}")
+    logger.info(f"[FFMPEG ENGINE] Processing {len(job_spec.sources)} source(s)")
+    
     clips: List[ClipExecutionResult] = []
     
     for index in range(len(job_spec.sources)):
+        logger.info(f"[FFMPEG ENGINE] Executing clip {index + 1}/{len(job_spec.sources)}")
         # Execute this clip with FFmpeg
         clip_result = execute_job_spec(
             job_spec, 
@@ -1175,8 +1217,11 @@ def _execute_with_ffmpeg(job_spec: JobSpec, started_at: datetime) -> JobExecutio
         )
         clips.append(clip_result)
         
+        logger.info(f"[FFMPEG ENGINE] Clip {index + 1} result: {clip_result.status}")
+        
         # FAIL-FAST: Stop on first failure
         if clip_result.status == "FAILED":
+            logger.warning(f"[FFMPEG ENGINE] Clip {index + 1} failed, stopping execution: {clip_result.failure_reason}")
             break
     
     completed_at = datetime.now(timezone.utc)
@@ -1190,6 +1235,8 @@ def _execute_with_ffmpeg(job_spec: JobSpec, started_at: datetime) -> JobExecutio
         final_status = "COMPLETED"
     else:
         final_status = "FAILED"
+    
+    logger.info(f"[FFMPEG ENGINE] Job execution completed: status={final_status}, clips_executed={len(clips)}/{len(job_spec.sources)}")
     
     return JobExecutionResult(
         job_id=job_spec.job_id,

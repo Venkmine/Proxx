@@ -66,6 +66,9 @@ class JobSpecRequest(BaseModel):
     naming_template: str
     """Template string for output file naming."""
     
+    proxy_profile: str
+    """Proxy profile ID (e.g., 'h264_1080p', 'prores_proxy_720p')."""
+    
     job_id: Optional[str] = None
     """Optional job ID (auto-generated if not provided)."""
     
@@ -149,6 +152,7 @@ async def execute_jobspec(request: JobSpecRequest):
         "container": request.container,
         "resolution": request.resolution,
         "naming_template": request.naming_template,
+        "proxy_profile": request.proxy_profile,
         "fps_mode": fps_mode,
         "fps_explicit": request.fps_explicit,
     }

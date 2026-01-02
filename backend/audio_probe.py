@@ -166,15 +166,22 @@ def verify_audio_parity(source_path: Path, proxy_path: Path) -> tuple[bool, Opti
         source_audio = probe_audio(source_path)
         proxy_audio = probe_audio(proxy_path)
         
-        if not source_audio.matches(proxy_audio):
-            errors = []
-            if source_audio.channels != proxy_audio.channels:
-                errors.append(f"Channel mismatch: source={source_audio.channels}, proxy={proxy_audio.channels}")
-            if source_audio.sample_rate != proxy_audio.sample_rate:
-                errors.append(f"Sample rate mismatch: source={source_audio.sample_rate}, proxy={proxy_audio.sample_rate}")
+        # Check critical properties
+        errors = []
+        if source_audio.channels != proxy_audio.channels:
+            errors.append(f"Channel mismatch: source={source_audio.channels}, proxy={proxy_audio.channels}")
+        if source_audio.sample_rate != proxy_audio.sample_rate:
+            errors.append(f"Sample rate mismatch: source={source_audio.sample_rate}, proxy={proxy_audio.sample_rate}")
+        
+        # Channel layout check is lenient: allow if both have same channel count
+        # Some codecs (like PCM in MP4) may not report channel_layout metadata
+        if source_audio.channel_layout and proxy_audio.channel_layout:
+            # Both have layout info, they should match
             if source_audio.channel_layout != proxy_audio.channel_layout:
                 errors.append(f"Channel layout mismatch: source={source_audio.channel_layout}, proxy={proxy_audio.channel_layout}")
-            
+        # If one or both lack layout info, rely on channel count match
+        
+        if errors:
             return False, "; ".join(errors)
         
         return True, None

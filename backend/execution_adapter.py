@@ -154,7 +154,10 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
         >>>     print(f"Job failed: {result.validation_error}")
     """
     started_at = datetime.now(timezone.utc)
-    logger.info(f"Starting job execution: job_id={jobspec.job_id}, sources={len(jobspec.sources)}")
+    logger.info(f"[EXECUTION ADAPTER] Job received: job_id={jobspec.job_id}")
+    logger.info(f"[EXECUTION ADAPTER] Sources: {len(jobspec.sources)}")
+    logger.info(f"[EXECUTION ADAPTER] Proxy profile: {jobspec.proxy_profile}")
+    logger.info(f"[EXECUTION ADAPTER] Output directory: {jobspec.output_directory}")
     
     # V2 IMPLEMENTATION SLICE 7: Phase-1 Lock Enforcement
     # ----------------------------------------------------
@@ -172,10 +175,13 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # -------------------------
     # Validation must run BEFORE engine selection.
     # Invalid JobSpecs NEVER reach execution engines.
+    logger.info(f"[EXECUTION ADAPTER] Validating JobSpec...")
     try:
         jobspec.validate(check_paths=True)
+        logger.info(f"[EXECUTION ADAPTER] JobSpec validation passed")
     except JobSpecValidationError as e:
         # Validation failure: return FAILED with no clips executed
+        logger.error(f"[EXECUTION ADAPTER] JobSpec validation failed: {e}")
         return JobExecutionResult(
             job_id=jobspec.job_id,
             clips=[],
@@ -256,14 +262,16 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # -----------------------------------
     # Engine choice based ONLY on source formats.
     # NO user override, NO heuristics, NO fallback.
+    logger.info(f"[EXECUTION ADAPTER] Determining execution engine...")
     engine_name, engine_error = _determine_job_engine(jobspec)
     
     if engine_name:
-        logger.info(f"Engine selected: job_id={jobspec.job_id}, engine={engine_name}")
+        logger.info(f"[EXECUTION ADAPTER] Engine selected: {engine_name}")
     
     if engine_error:
         # Engine routing failed (mixed job or unsupported format)
         # This is a validation-level failure: don't execute
+        logger.error(f"[EXECUTION ADAPTER] Engine routing failed: {engine_error}")
         return JobExecutionResult(
             job_id=jobspec.job_id,
             clips=[],
@@ -320,7 +328,8 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # STEP 5: Execute with Selected Engine
     # -------------------------------------
     # Dispatch to FFmpeg or Resolve engine based on routing decision.
-    logger.info(f"Starting execution: job_id={jobspec.job_id}, engine={engine_name}, proxy_profile={jobspec.proxy_profile}")
+    logger.info(f"[EXECUTION ADAPTER] Starting execution with {engine_name} engine")
+    logger.info(f"[EXECUTION ADAPTER] Proxy profile: {jobspec.proxy_profile}")
     # All execution failures are captured in JobExecutionResult.
     # NO exceptions escape this layer.
     if engine_name == "resolve":
@@ -332,7 +341,7 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # STEP 6: Populate Metadata
     # -------------------------
     # Record engine selection and proxy profile for auditability.
-    logger.info(f"Execution completed: job_id={jobspec.job_id}, status={result.final_status}, clips={len(result.clips)}")
+    logger.info(f"[EXECUTION ADAPTER] Execution completed: status={result.final_status}, clips={len(result.clips)}")
     result.engine_used = engine_name
     result.proxy_profile_used = jobspec.proxy_profile
     
