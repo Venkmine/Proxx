@@ -40,6 +40,13 @@ import { TransportBar, ClipInfo } from './TransportBar'
 import { BurstStrip } from './BurstStrip'
 import { PreviewMenu, PreviewModeBadge, PreviewDisclaimer } from './PreviewMenu'
 import type { UseTieredPreviewReturn } from '../hooks/useTieredPreview'
+import {
+  detectSourceType,
+  getPreviewCapabilities,
+  canPlayback as routerCanPlayback,
+  areTransportControlsEnabled as routerTransportEnabled,
+  getPlaybackStatusMessage as routerStatusMessage,
+} from '../utils/previewRouter'
 
 // ============================================================================
 // TYPES
@@ -80,6 +87,8 @@ export interface SourceMetadata {
   sourceTimecodeStart?: string | number
   /** Whether source timecode was found in metadata */
   hasSourceTimecode?: boolean
+  /** RAW folder type (for folder sources) */
+  rawType?: string | null
 }
 
 export interface PreviewProxyInfo {
@@ -246,23 +255,25 @@ export function MonitorSurface({
   // Derive preview mode from tiered preview state
   const previewMode = tieredPreview?.mode || 'none'
   
-  // Check if source is RAW format
-  const isRaw = useMemo(() => {
-    if (!sourceMetadata?.codec) return false
-    const codec = sourceMetadata.codec.toLowerCase()
-    return ['arriraw', 'redcode', 'braw', 'r3d', 'prores_raw', 'prores raw'].some(
-      raw => codec.includes(raw)
-    )
-  }, [sourceMetadata?.codec])
+  // CENTRALIZED PREVIEW ROUTING:
+  // Use deterministic preview router to decide playback capabilities
+  const sourceType = useMemo(() => detectSourceType({
+    rawType: sourceMetadata?.rawType,
+    filePath: sourceMetadata?.filePath,
+    codec: sourceMetadata?.codec,
+  }), [sourceMetadata?.rawType, sourceMetadata?.filePath, sourceMetadata?.codec])
+  
+  const previewCapabilities = useMemo(() => 
+    getPreviewCapabilities(sourceType), 
+    [sourceType]
+  )
   
   // NON-RAW NATIVE PLAYBACK:
-  // Non-RAW files (mp4/mov/prores) can play directly via native HTML5 video.
-  // No preview pipeline required. Video src is served via backend static route.
-  const isNativePlayback = useMemo(() => {
-    if (!sourceMetadata?.filePath) return false
-    // Non-RAW files can use native playback
-    return !isRaw
-  }, [sourceMetadata?.filePath, isRaw])
+  // Non-RAW files (mp4/mov/prores/dnx) can play directly via native HTML5 video.
+  const isNativePlayback = previewCapabilities.canPlayNative
+  
+  // Check if source is RAW format (for UI hints)
+  const isRaw = sourceType === 'raw-folder'
   
   // Compute native video source URL (served via backend)
   const nativeVideoSrc = useMemo(() => {
@@ -273,52 +284,34 @@ export function MonitorSurface({
   }, [isNativePlayback, sourceMetadata?.filePath, backendUrl])
   
   // PLAYBACK LOGIC:
-  // Video playback is allowed when:
-  // A) Non-RAW: Native HTML5 video (no preview required)
-  // B) RAW: Video preview proxy ready (user explicitly generated it)
-  const canPlayback = state === 'source-loaded' && !videoError && (
-    // Non-RAW: Native playback (file served via backend)
-    isNativePlayback ||
-    // RAW: Preview proxy ready
-    !!(previewMode === 'video' && tieredPreview?.video?.previewUrl)
-  )
+  // Use centralized router to determine if playback is available
+  const hasVideoProxy = !!(previewMode === 'video' && tieredPreview?.video?.previewUrl)
+  const canPlaybackNow = state === 'source-loaded' && !videoError && 
+    routerCanPlayback(sourceType, hasVideoProxy)
   
   // INC-CTRL-002: Transport controls MUST be visible when source is loaded.
   // Controls visibility is based on "can play", not preview tier.
-  // Rules:
-  // - Non-RAW: Controls always visible and enabled (native HTML5 video)
-  // - RAW: Controls visible but disabled until preview proxy exists
-  // Controls NEVER hidden when a source is selected.
   const canShowTransportControls = state === 'source-loaded' && (
-    // Non-RAW files: Always show controls (native playback)
-    isNativePlayback ||
-    // RAW files: Always show controls (may be disabled)
-    isRaw ||
-    // Fallback: Any preview tier available
+    previewCapabilities.canPlayNative || 
+    previewCapabilities.canGenerateVideoProxy ||
     !!tieredPreview?.poster?.posterUrl ||
     !!tieredPreview?.video?.previewUrl ||
     !!(tieredPreview?.burst?.thumbnails && tieredPreview.burst.thumbnails.length > 0)
   )
   
-  // Transport controls are ENABLED when video can actually play:
-  // - Non-RAW: Enabled when native video is loaded
-  // - RAW: Enabled when proxy video is loaded
-  const transportEnabled = canPlayback && videoLoaded
+  // Transport controls are ENABLED when video can actually play
+  const transportEnabled = routerTransportEnabled(sourceType, hasVideoProxy, videoLoaded)
   
   // Determine playback status label for disabled controls
-  // Clear status labels per the contract:
-  // - "RAW – Preview Required" for RAW without proxy
-  // - "Playback Ready" when playable
-  // - "Loading..." during load
   const playbackStatusLabel = useMemo(() => {
-    if (canPlayback && videoLoaded) return null // No label needed when playback available
-    if (isNativePlayback && !videoLoaded) return 'Loading video…'
-    if (tieredPreview?.videoLoading) return 'Generating preview proxy…'
-    if (tieredPreview?.videoError) return `Preview error: ${tieredPreview.videoError}`
-    if (isRaw && !tieredPreview?.video?.previewUrl) return 'Generate preview to enable playback'
-    if (!videoLoaded && canPlayback) return 'Loading video…'
-    return null
-  }, [canPlayback, videoLoaded, isNativePlayback, tieredPreview?.videoLoading, tieredPreview?.videoError, tieredPreview?.video?.previewUrl, isRaw])
+    return routerStatusMessage(
+      sourceType,
+      hasVideoProxy,
+      videoLoaded,
+      tieredPreview?.videoLoading || false,
+      tieredPreview?.videoError || null
+    )
+  }, [sourceType, hasVideoProxy, videoLoaded, tieredPreview?.videoLoading, tieredPreview?.videoError])
   
   // Show poster frame as default visual
   // For non-RAW files with native playback, poster is only shown while video loads
@@ -489,8 +482,8 @@ export function MonitorSurface({
       <div
         ref={viewportRef}
         data-testid="monitor-viewport"
-        onClick={canPlayback ? handleVideoClick : undefined}
-        onDoubleClick={canPlayback ? handleVideoDoubleClick : undefined}
+        onClick={canPlaybackNow ? handleVideoClick : undefined}
+        onDoubleClick={canPlaybackNow ? handleVideoDoubleClick : undefined}
         onMouseEnter={() => setIsVideoHovered(true)}
         onMouseLeave={() => setIsVideoHovered(false)}
         style={{
@@ -507,7 +500,7 @@ export function MonitorSurface({
           /* Subtle shadow for content states to separate from background */
           boxShadow: hasContent ? '0 0 60px rgba(0, 0, 0, 0.5)' : 'none',
           /* Cursor changes to indicate click-to-play when video is loaded */
-          cursor: canPlayback && isVideoHovered 
+          cursor: canPlaybackNow && isVideoHovered 
             ? (isPlaying ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Crect x=\'6\' y=\'5\' width=\'4\' height=\'14\' rx=\'1\' fill=\'white\' opacity=\'0.8\'/%3E%3Crect x=\'14\' y=\'5\' width=\'4\' height=\'14\' rx=\'1\' fill=\'white\' opacity=\'0.8\'/%3E%3C/svg%3E") 12 12, pointer' 
               : 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M8 5v14l11-7L8 5z\' fill=\'white\' opacity=\'0.8\'/%3E%3C/svg%3E") 12 12, pointer')
             : 'default',
@@ -602,7 +595,7 @@ export function MonitorSurface({
               />
               
               {/* Zoom indicator (only in video mode) */}
-              {canPlayback && zoomMode === 'actual' && (
+              {canPlaybackNow && zoomMode === 'actual' && (
                 <div
                   style={{
                     padding: '0.375rem 0.625rem',
@@ -769,7 +762,7 @@ export function MonitorSurface({
             )}
 
             {/* VIDEO MODE — Full playback (user-initiated only) */}
-            {canPlayback && videoSrc && (
+            {canPlaybackNow && videoSrc && (
               <video
                 ref={videoRef}
                 src={videoSrc}
@@ -791,7 +784,7 @@ export function MonitorSurface({
             )}
 
             {/* FALLBACK — Show metadata when no visual is available */}
-            {!showPoster && !showBurst && !canPlayback && (
+            {!showPoster && !showBurst && !canPlaybackNow && (
               <div
                 data-testid="metadata-fallback"
                 style={{
@@ -866,7 +859,7 @@ export function MonitorSurface({
             )}
 
             {/* Bottom-left metadata overlay — shown in video playback mode */}
-            {canPlayback && (
+            {canPlaybackNow && (
               <div
                 style={{
                   position: 'absolute',
