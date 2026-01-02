@@ -104,28 +104,41 @@ test.describe('RAW Proxy Encoding E2E', () => {
     // In test mode, we'll call the backend API directly
     // This simulates what the UI would do when clicking "Create Job"
     const jobPayload = {
-      sources: [rawFile],
-      output_dir: tempOutputDir,
-      proxy_profile: 'standard',
-      resolve_preset: 'ProRes 422 Proxy', // Required for Resolve routing
+      source_paths: [rawFile],  // Note: API expects source_paths, not sources
+      engine: 'ffmpeg',  // Will be overridden to 'resolve' by engine routing
+      deliver_settings: {
+        output_dir: tempOutputDir,
+        video: { codec: 'prores_proxy' },
+        audio: { codec: 'pcm_s16le' },
+        file: {
+          container: 'mov',
+          naming_template: '{source_name}__proxx'
+        }
+      }
     }
 
     // Inject job via Electron IPC or direct API call
     // Since we're in E2E_TEST mode, backend should be accessible
     const jobResponse = await page.evaluate(async (payload) => {
       try {
-        const response = await fetch('http://127.0.0.1:8085/api/v2/jobs', {
+        const response = await fetch('http://127.0.0.1:8085/control/jobs/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
+        
+        if (!response.ok) {
+          return { error: await response.text(), status: response.status }
+        }
+        
         return await response.json()
       } catch (error) {
         // Backend not running - this is expected in pure Electron test mode
         // Return mock response
         return {
+          success: true,
           job_id: `test-job-${Date.now()}`,
-          status: 'QUEUED',
+          message: 'Mock job (backend not running)',
           mock: true,
         }
       }
@@ -257,15 +270,19 @@ test.describe('RAW Proxy Encoding E2E', () => {
     console.log('[TEST] Testing preset validation...')
     
     const jobPayload = {
-      sources: [rawFile],
-      output_dir: tempOutputDir,
-      proxy_profile: 'standard',
-      // MISSING: resolve_preset
+      source_paths: [rawFile],
+      engine: 'ffmpeg',  // Will fail because BRAW requires Resolve
+      deliver_settings: {
+        output_dir: tempOutputDir,
+        video: { codec: 'h264' },  // Invalid for RAW
+        audio: { codec: 'aac' },
+        file: { container: 'mp4', naming_template: '{source_name}_test' }
+      }
     }
 
     const jobResponse = await page.evaluate(async (payload) => {
       try {
-        const response = await fetch('http://127.0.0.1:8085/api/v2/jobs', {
+        const response = await fetch('http://127.0.0.1:8085/control/jobs/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
