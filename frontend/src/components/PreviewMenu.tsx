@@ -370,7 +370,7 @@ export function PreviewMenu({
 // ============================================================================
 
 interface PreviewModeBadgeProps {
-  mode: 'poster' | 'burst' | 'video' | 'native' | 'raw-pending' | 'none'
+  mode: 'poster' | 'burst' | 'video' | 'native' | 'raw-pending' | 'generating' | 'failed' | 'none'
   onClick?: () => void
 }
 
@@ -381,6 +381,8 @@ export function PreviewModeBadge({ mode, onClick }: PreviewModeBadgeProps) {
     video: 'Preview Proxy',
     native: 'Playback Ready',
     'raw-pending': 'RAW – Preview Required',
+    generating: 'Generating Preview…',
+    failed: 'Preview Failed',
     none: 'No Preview',
   }
   
@@ -409,6 +411,16 @@ export function PreviewModeBadge({ mode, onClick }: PreviewModeBadgeProps) {
       bg: 'rgba(234, 179, 8, 0.15)',
       border: 'rgba(234, 179, 8, 0.35)',
       text: '#eab308',
+    },
+    generating: {
+      bg: 'rgba(59, 130, 246, 0.15)',
+      border: 'rgba(59, 130, 246, 0.35)',
+      text: 'var(--accent-primary, #3b82f6)',
+    },
+    failed: {
+      bg: 'rgba(239, 68, 68, 0.15)',
+      border: 'rgba(239, 68, 68, 0.35)',
+      text: 'var(--status-failed-fg, #ef4444)',
     },
     none: {
       bg: 'rgba(100, 116, 139, 0.1)',

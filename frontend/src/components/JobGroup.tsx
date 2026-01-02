@@ -33,6 +33,8 @@ interface ClipTask {
   duration?: string | null
   audio_channels?: string | null
   color_space?: string | null
+  // RAW folder metadata
+  raw_type?: string | null
   // Phase 16.1: Output path for reveal
   output_path?: string | null
   // Phase 16.4: Progress tracking

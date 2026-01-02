@@ -40,6 +40,8 @@ import { TransportBar, ClipInfo } from './TransportBar'
 import { BurstStrip } from './BurstStrip'
 import { PreviewMenu, PreviewModeBadge, PreviewDisclaimer } from './PreviewMenu'
 import type { UseTieredPreviewReturn } from '../hooks/useTieredPreview'
+import type { PreviewIntent } from '../types/previewIntent'
+import { getPreviewStatusMessage } from '../types/previewIntent'
 import {
   areTransportControlsEnabled as probeTransportEnabled,
   getTransportStatusMessage as probeStatusMessage,
@@ -497,11 +499,16 @@ export function MonitorSurface({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <PreviewModeBadge 
               mode={
-                isNativePlayback 
-                  ? 'native' 
-                  : (isRaw && !tieredPreview?.video?.previewUrl)
-                    ? 'raw-pending'
-                    : previewMode
+                // Phase D2: PreviewIntent-based badge mode
+                tieredPreview?.previewIntent === 'generating' || tieredPreview?.previewIntent === 'requested'
+                  ? 'generating'
+                  : tieredPreview?.previewIntent === 'failed'
+                    ? 'failed'
+                    : isNativePlayback 
+                      ? 'native' 
+                      : (isRaw && !tieredPreview?.video?.previewUrl)
+                        ? 'raw-pending'
+                        : previewMode
               } 
             />
             {canPlaybackNow && zoomMode === 'actual' && (
@@ -715,8 +722,110 @@ export function MonitorSurface({
               </div>
             )}
 
-            {/* RAW PLAYBACK UNAVAILABLE BANNER — Shown for RAW files without proxy */}
-            {isRaw && !hasVideoProxy && !tieredPreview?.videoLoading && (
+            {/* ============================================ */}
+            {/* PHASE D2: PreviewIntent-Based UI States */}
+            {/* ============================================ */}
+            
+            {/* PREVIEW GENERATING — Spinner + "Generating preview…" */}
+            {(tieredPreview?.previewIntent === 'requested' || tieredPreview?.previewIntent === 'generating') && (
+              <div
+                data-testid="preview-generating-overlay"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  padding: '1.5rem 2rem',
+                  background: 'rgba(0, 0, 0, 0.85)',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '12px',
+                  backdropFilter: 'blur(8px)',
+                  zIndex: 25,
+                }}
+              >
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    border: '3px solid rgba(59, 130, 246, 0.3)',
+                    borderTopColor: 'var(--accent-primary, #3b82f6)',
+                    animation: 'monitorSpin 1s linear infinite',
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '0.875rem',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--text-primary, #e5e7eb)',
+                  }}
+                >
+                  Generating preview…
+                </span>
+              </div>
+            )}
+            
+            {/* PREVIEW FAILED — Non-blocking warning (does NOT block proxy job creation) */}
+            {tieredPreview?.previewIntent === 'failed' && tieredPreview?.videoError && (
+              <div
+                data-testid="preview-failed-banner"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  bottom: canShowTransportControls ? '5rem' : '1rem',
+                  transform: 'translateX(-50%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '1rem 1.5rem',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '8px',
+                  backdropFilter: 'blur(8px)',
+                  zIndex: 20,
+                  maxWidth: '90%',
+                  textAlign: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '0.875rem',
+                    fontFamily: 'var(--font-sans)',
+                    fontWeight: 600,
+                    color: '#ef4444',
+                  }}
+                >
+                  Preview unavailable
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'rgba(239, 68, 68, 0.8)',
+                  }}
+                >
+                  {tieredPreview.videoError}
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.625rem',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-muted)',
+                    marginTop: '0.25rem',
+                  }}
+                >
+                  Proxy generation still available
+                </span>
+              </div>
+            )}
+
+            {/* RAW PLAYBACK UNAVAILABLE BANNER — Shown for RAW files without proxy (previewIntent=none) */}
+            {isRaw && !hasVideoProxy && tieredPreview?.previewIntent === 'none' && (
               <div
                 data-testid="raw-playback-unavailable-banner"
                 style={{

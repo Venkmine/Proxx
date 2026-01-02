@@ -602,12 +602,54 @@ function App() {
   // ============================================
   // Monitor Surface State Derivation
   // ============================================
+  // Phase D4: UI smoothing for fast jobs
+  // If a job finishes too fast (<300ms), we still show "Encoding…" for at least 500ms
+  // to avoid instant jump to Completed state
+  const [forceRunningState, setForceRunningState] = useState(false)
+  const runningStateStartTime = useRef<number | null>(null)
+  const MIN_ENCODING_DISPLAY_MS = 500
+  
+  // Track when we enter running state
+  useEffect(() => {
+    if (selectedJobId) {
+      const job = jobs.find(j => j.id === selectedJobId)
+      if (job?.status.toUpperCase() === 'RUNNING' || job?.status.toUpperCase() === 'PAUSED') {
+        if (runningStateStartTime.current === null) {
+          runningStateStartTime.current = Date.now()
+          setForceRunningState(false)
+        }
+      } else if (job?.status.toUpperCase() === 'COMPLETED' || job?.status.toUpperCase() === 'FAILED') {
+        // Job completed - check if we need to show extended running state
+        if (runningStateStartTime.current !== null) {
+          const elapsed = Date.now() - runningStateStartTime.current
+          if (elapsed < MIN_ENCODING_DISPLAY_MS) {
+            setForceRunningState(true)
+            const remaining = MIN_ENCODING_DISPLAY_MS - elapsed
+            setTimeout(() => {
+              setForceRunningState(false)
+              runningStateStartTime.current = null
+            }, remaining)
+          } else {
+            runningStateStartTime.current = null
+          }
+        }
+      }
+    } else {
+      runningStateStartTime.current = null
+      setForceRunningState(false)
+    }
+  }, [selectedJobId, jobs])
+  
   // Derive MonitorSurface state from app/job state
   const monitorState = useMemo((): MonitorState => {
     if (selectedJobId) {
       const job = jobs.find(j => j.id === selectedJobId)
       if (!job) return 'idle'
       const status = job.status.toUpperCase()
+      
+      // Phase D4: Force running state for UI smoothing
+      if (forceRunningState) return 'job-running'
+      
       if (status === 'RUNNING' || status === 'PAUSED') return 'job-running'
       if (status === 'COMPLETED' || status === 'FAILED') return 'job-complete'
       // PENDING job with source = source-loaded
@@ -615,7 +657,7 @@ function App() {
     }
     if (selectedFiles.length > 0) return 'source-loaded'
     return 'idle'
-  }, [selectedJobId, jobs, selectedFiles])
+  }, [selectedJobId, jobs, selectedFiles, forceRunningState])
   
   // ============================================
   // Derive Unified PreviewState — Single source of truth
@@ -1423,12 +1465,19 @@ function App() {
   // ============================================
   // Create Job — Canonical Ingestion Pipeline
   // ============================================
+  // PHASE D3: Job creation is INDEPENDENT of preview state.
+  // - Preview availability does NOT block job creation
+  // - Preview errors are NOT treated as fatal
+  // - Clicking "Generate Proxies" creates a Job regardless of preview state
+  // - No preview generation is triggered implicitly
+  // - No playback checks are involved
 
   const createManualJob = async () => {
     // Determine effective output directory
     const effectiveOutputDir = outputDirectory || deliverSettings.output_dir || ''
     
     // Use canonical ingestion pipeline
+    // NOTE: This does NOT check or require preview state
     const result = await ingestion.ingest({
       sourcePaths: selectedFiles,
       outputDir: effectiveOutputDir,

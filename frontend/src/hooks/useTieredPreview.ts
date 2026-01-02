@@ -26,6 +26,13 @@
  *   - METADATA_ONLY → poster/burst only, controls disabled
  *   - NO_VIDEO / ERROR → no playback, explicit message
  * 
+ * PREVIEW INTENT (Phase D1 Refactor):
+ *   - PreviewIntent is a per-source state tracking preview generation
+ *   - Preview generation is EXPLICIT, NON-QUEUED, and NON-BLOCKING
+ *   - Preview does NOT create a Job, does NOT appear in Queue
+ *   - Preview does NOT affect AppMode
+ *   - Preview failures are non-blocking warnings, not errors
+ * 
  * CORE PRINCIPLES:
  * 1. Preview must NEVER block job creation, preflight, or encoding
  * 2. Preview generation must NEVER auto-generate video for RAW media
@@ -46,6 +53,7 @@ import {
   type PlaybackProbeResult,
   type PlaybackUIState,
 } from '../utils/playbackCapability'
+import type { PreviewIntent } from '../types/previewIntent'
 
 // ============================================================================
 // TYPES
@@ -105,6 +113,13 @@ export interface VideoPreviewInfo {
 export interface TieredPreviewState {
   mode: PreviewMode
   
+  /**
+   * PreviewIntent — Explicit state for video preview generation.
+   * This is DECOUPLED from proxy job creation.
+   * Preview failures are non-blocking warnings.
+   */
+  previewIntent: PreviewIntent
+  
   // Playback Capability (deterministic probe)
   playbackProbing: boolean
   playbackCapability: PlaybackCapability | null
@@ -138,7 +153,16 @@ export interface UseTieredPreviewReturn extends TieredPreviewState {
   /** Request burst thumbnails (optional, user-initiated) */
   requestBurst: (sourcePath: string) => Promise<void>
   
-  /** Request video preview (optional, user-initiated) */
+  /**
+   * Request video preview (optional, user-initiated ONLY).
+   * 
+   * PHASE D1 DECOUPLING:
+   * - This does NOT create a Job
+   * - This does NOT appear in Queue
+   * - This does NOT affect AppMode
+   * - Preview failures are non-blocking warnings
+   * - Proxy job creation is INDEPENDENT of preview state
+   */
   requestVideo: (sourcePath: string, duration?: number, confirmRaw?: boolean) => Promise<void>
   
   /** Cancel any ongoing video generation */
@@ -161,6 +185,7 @@ export interface UseTieredPreviewReturn extends TieredPreviewState {
 
 const initialState: TieredPreviewState = {
   mode: 'none',
+  previewIntent: 'none',
   playbackProbing: false,
   playbackCapability: null,
   playbackProbeResult: null,
@@ -402,6 +427,9 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
   // ============================================
   // TIER 3: VIDEO PREVIEW
   // ============================================
+  // Phase D1: Video preview is EXPLICIT, NON-QUEUED, and NON-BLOCKING.
+  // It does NOT create a Job, does NOT appear in Queue, does NOT affect AppMode.
+  // Preview failures are non-blocking warnings.
   const requestVideo = useCallback(async (
     sourcePath: string, 
     duration?: number,
@@ -414,11 +442,22 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
     
     abortControllerRef.current = new AbortController()
     
+    // Phase D1: Update previewIntent to 'requested'
     setState(prev => ({
       ...prev,
+      previewIntent: 'requested',
       videoLoading: true,
       videoError: null,
       videoRequiresConfirmation: false,
+    }))
+    
+    // Brief delay to show "requested" state before transitioning to "generating"
+    await new Promise(resolve => setTimeout(resolve, 50))
+    
+    // Transition to generating
+    setState(prev => ({
+      ...prev,
+      previewIntent: 'generating',
     }))
     
     try {
@@ -440,8 +479,10 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
       }
       
       if (data.error) {
+        // Phase D1: Preview failure is a non-blocking warning
         setState(prev => ({
           ...prev,
+          previewIntent: 'failed',
           videoLoading: false,
           videoError: data.error,
           videoRequiresConfirmation: data.requires_confirmation || false,
@@ -449,8 +490,10 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
         return
       }
       
+      // Phase D1: Preview available
       setState(prev => ({
         ...prev,
+        previewIntent: 'available',
         videoLoading: false,
         mode: 'video',
         video: {
@@ -463,7 +506,12 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
       
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        // Cancelled, don't update state
+        // Cancelled, reset to none
+        setState(prev => ({
+          ...prev,
+          previewIntent: 'none',
+          videoLoading: false,
+        }))
         return
       }
       
@@ -471,8 +519,10 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
         return
       }
       
+      // Phase D1: Preview failure is a non-blocking warning
       setState(prev => ({
         ...prev,
+        previewIntent: 'failed',
         videoLoading: false,
         videoError: err instanceof Error ? err.message : 'Video request failed',
       }))
@@ -485,8 +535,10 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
       abortControllerRef.current = null
     }
     
+    // Phase D1: Reset previewIntent to none on cancel
     setState(prev => ({
       ...prev,
+      previewIntent: 'none',
       videoLoading: false,
     }))
   }, [])

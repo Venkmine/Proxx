@@ -130,6 +130,8 @@ reelscan_env/
 *.exr
 
 # Video container formats (delivery/edit)
+# Note: *.ts is MPEG Transport Stream, but conflicts with TypeScript files
+# So we specifically exclude media directories instead of blanket *.ts
 *.mov
 *.mp4
 *.avi
@@ -138,9 +140,13 @@ reelscan_env/
 *.m4v
 *.mpg
 *.mpeg
-*.ts
 *.m2ts
 *.mts
+# Transport streams - use more specific patterns to avoid TypeScript conflicts
+**/test_media/**/*.ts
+**/forge-tests/**/*.ts
+**/samples/**/*.ts
+**/output/**/*.ts
 
 # Audio formats
 *.wav
