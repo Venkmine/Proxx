@@ -136,17 +136,103 @@ The timecode display (HH:MM:SS:FF) is derived from:
 
 The timecode is updated at ~60Hz via `requestAnimationFrame` for smooth visual feedback, but the underlying precision is limited by the video element.
 
+### Timecode Modes
+
+The transport bar provides three timecode display modes, selectable via the TC mode button:
+
+| Mode | Label | Description |
+|------|-------|-------------|
+| **Source TC** | SRC | Timecode from source media metadata. Only available when source contains embedded timecode. May not align exactly with proxy playback position due to proxy generation. |
+| **Preview TC** | PREV | Timecode derived from preview proxy playback position. This is the default mode. Represents approximate position in the media. |
+| **Counter** | CTR | Simple elapsed counter from 00:00:00:00. Counts playback time from the start of the clip. |
+
+**Mode Selection Notes:**
+- Source TC mode is disabled (greyed out) when source metadata doesn't contain embedded timecode
+- Mode selection persists for the session (stored in sessionStorage)
+- Modes do NOT auto-switch — the user's selection is respected
+- Click the timecode display to copy the current timecode to clipboard
+
 ### Transport Controls
 
-| Control | Action | Keyboard |
-|---------|--------|----------|
-| Play/Pause | Toggle playback | Space |
-| Step Back | Move back ~1 frame | ← |
-| Step Forward | Move forward ~1 frame | → |
-| Jump Back | Move back 1 second | Shift + ← |
-| Jump Forward | Move forward 1 second | Shift + → |
-| Mute Toggle | Mute/unmute audio | M |
-| Scrubber | Seek to position | Drag |
+| Control | Visual | Action | Keyboard |
+|---------|--------|--------|----------|
+| Frame Back | ‹F | Step back ~1 frame | ← |
+| Second Back | ‹1s | Jump back 1 second | Shift+← or J |
+| Play/Pause | ▶/⏸ | Toggle playback | Space or K (pause) or L (play) |
+| Second Forward | 1s› | Jump forward 1 second | Shift+→ |
+| Frame Forward | F› | Step forward ~1 frame | → |
+| Mute Toggle | 🔊/🔇 | Mute/unmute audio | M |
+| Timeline Scrubber | — | Seek to position | Drag |
+| TC Mode | SRC/PREV/CTR | Select timecode mode | Click dropdown |
+
+### J/K/L Shuttle Controls
+
+Professional NLE-style shuttle controls are supported:
+
+| Key | Action |
+|-----|--------|
+| **J** | Reverse/Jump back (HTML5 video doesn't support true reverse playback) |
+| **K** | Pause (always pauses immediately) |
+| **L** | Play forward. Press again for 2× speed. |
+
+### Click-to-Play Behavior
+
+- **Single click** on the video canvas toggles play/pause
+- **Double-click** toggles between Fit and 100% zoom modes
+- Cursor changes to a subtle play/pause indicator on hover
+- Clicks on the transport bar controls are not intercepted
+
+### Zoom Modes
+
+| Mode | Description |
+|------|-------------|
+| **Fit** | Video scales to fit within viewport, maintaining aspect ratio (default) |
+| **100%** | Video displays at actual pixel resolution, scrollable if larger than viewport |
+
+Toggle between modes by double-clicking the video canvas. A "100%" badge appears when in actual-size mode.
+
+## Preview Playback Limitations
+
+This section explicitly documents what preview playback **can and cannot do**.
+
+### What Preview Playback IS
+
+- A browser-based HTML5 video player for reviewing source media
+- Playback of a transcoded H.264 proxy (not original source)
+- Best-effort approximation of frame stepping and timecode
+- Suitable for quick review, not frame-accurate work
+
+### What Preview Playback IS NOT
+
+- Frame-accurate playback (use Resolve, Premiere, or RV for that)
+- Source-quality display (proxies are lower resolution/bitrate)
+- A replacement for professional NLE software
+- Capable of playing original codecs (ProRes RAW, BRAW, R3D, etc.)
+
+### Specific Limitations
+
+| Feature | Limitation |
+|---------|------------|
+| **Frame stepping** | Approximate. HTML5 `currentTime` is not frame-aligned. Precision depends on browser and codec. |
+| **Timecode accuracy** | Derived from playback position × FPS. May drift from source TC. |
+| **Source TC mode** | Requires embedded timecode in source. Offset is applied mathematically, not frame-aligned. |
+| **Reverse playback** | Not supported by HTML5 video. J key jumps back instead. |
+| **Audio** | Multi-channel mixed to stereo in proxy. |
+| **Color accuracy** | sRGB browser rendering. Not color-managed. |
+
+### When to Use Preview Playback
+
+✅ Quick review of source content  
+✅ Verifying audio sync  
+✅ Rough position reference  
+✅ Checking clip duration  
+
+### When NOT to Use Preview Playback
+
+❌ Frame-accurate QC  
+❌ Critical color evaluation  
+❌ Final approval workflows  
+❌ Timecode-critical operations
 
 ## Files Modified
 

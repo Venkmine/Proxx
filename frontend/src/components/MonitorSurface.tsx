@@ -5,7 +5,7 @@
  * DESIGN PHILOSOPHY — PREVIEW PROXY SYSTEM
  * ============================================================================
  * This component implements a "Monitor" abstraction with deterministic,
- * honest preview proxy playback.
+ * honest preview proxy playback. Modeled after Resolve/RV-class NLE monitors.
  * 
  * ARCHITECTURAL PRINCIPLES:
  * 1. UI NEVER attempts playback from original sources
@@ -21,6 +21,11 @@
  * - IDENTIFICATION_ONLY: Preview failed, metadata-only display
  * - JOB_RUNNING: Encoding progress overlay
  * - JOB_COMPLETE: Output summary overlay
+ * 
+ * INTERACTION:
+ * - Click on video canvas: Toggle play/pause
+ * - Double-click: Toggle Fit/100% zoom
+ * - Hover: Subtle play/pause cursor indicator
  * 
  * Key principles:
  * - Full-bleed: No card borders, padding, or nested panels
@@ -69,6 +74,10 @@ export interface SourceMetadata {
   fileSize?: string
   /** Absolute path for source file (used for preview generation, NOT playback) */
   filePath?: string
+  /** Source timecode start (SMPTE format or seconds) */
+  sourceTimecodeStart?: string | number
+  /** Whether source timecode was found in metadata */
+  hasSourceTimecode?: boolean
 }
 
 export interface PreviewProxyInfo {
@@ -174,12 +183,22 @@ export function MonitorSurface({
 }: MonitorSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const [logoError, setLogoError] = useState(false)
   
   // Video loading state
   const [videoError, setVideoError] = useState(false)
   const [videoLoaded, setVideoLoaded] = useState(false)
   const [duration, setDuration] = useState(0)
+  
+  // Playback state for click-to-play UI
+  const [isPlaying, setIsPlaying] = useState(false)
+  
+  // Zoom state: 'fit' (default) or '100%'
+  const [zoomMode, setZoomMode] = useState<'fit' | 'actual'>('fit')
+  
+  // Hover state for video canvas
+  const [isVideoHovered, setIsVideoHovered] = useState(false)
   
   // Parse FPS from source metadata (fallback to 24fps, never assume 30fps)
   const fps = useMemo(() => parseFps(sourceMetadata?.fps), [sourceMetadata?.fps])
@@ -210,6 +229,8 @@ export function MonitorSurface({
     setVideoError(false)
     setVideoLoaded(false)
     setDuration(0)
+    setIsPlaying(false)
+    setZoomMode('fit')
     
     // Pause and reset video element
     if (videoRef.current) {
@@ -222,8 +243,29 @@ export function MonitorSurface({
   useEffect(() => {
     if (state === 'job-running' && videoRef.current) {
       videoRef.current.pause()
+      setIsPlaying(false)
     }
   }, [state])
+
+  // Sync isPlaying state with video element
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
+    const handleEnded = () => setIsPlaying(false)
+    
+    video.addEventListener('play', handlePlay)
+    video.addEventListener('pause', handlePause)
+    video.addEventListener('ended', handleEnded)
+    
+    return () => {
+      video.removeEventListener('play', handlePlay)
+      video.removeEventListener('pause', handlePause)
+      video.removeEventListener('ended', handleEnded)
+    }
+  }, [videoLoaded])
 
   // Video event handlers
   const handleLoadedMetadata = useCallback(() => {
@@ -236,6 +278,33 @@ export function MonitorSurface({
   const handleVideoError = useCallback(() => {
     setVideoError(true)
     setVideoLoaded(false)
+  }, [])
+  
+  // Click-to-play handler
+  const handleVideoClick = useCallback((e: React.MouseEvent) => {
+    // Ignore if clicking on controls (transport bar)
+    const target = e.target as HTMLElement
+    if (target.closest('[data-testid="transport-bar"]')) return
+    
+    const video = videoRef.current
+    if (!video) return
+    
+    if (video.paused) {
+      video.play().catch(() => {
+        // Ignore autoplay restrictions
+      })
+    } else {
+      video.pause()
+    }
+  }, [])
+  
+  // Double-click to toggle zoom
+  const handleVideoDoubleClick = useCallback((e: React.MouseEvent) => {
+    // Ignore if clicking on controls
+    const target = e.target as HTMLElement
+    if (target.closest('[data-testid="transport-bar"]')) return
+    
+    setZoomMode(prev => prev === 'fit' ? 'actual' : 'fit')
   }, [])
 
   // Determine if we're in a "content" state (not idle)
@@ -266,18 +335,30 @@ export function MonitorSurface({
     >
       {/* 16:9 Content Area — centered matte */}
       <div
+        ref={viewportRef}
         data-testid="monitor-viewport"
+        onClick={canPlayback ? handleVideoClick : undefined}
+        onDoubleClick={canPlayback ? handleVideoDoubleClick : undefined}
+        onMouseEnter={() => setIsVideoHovered(true)}
+        onMouseLeave={() => setIsVideoHovered(false)}
         style={{
           position: 'relative',
           flex: '1 1 auto',
           width: '100%',
-          maxWidth: 'calc((100vh - 120px) * 16 / 9)', // Maintain 16:9, account for header/footer
-          aspectRatio: '16 / 9',
+          maxWidth: zoomMode === 'fit' 
+            ? 'calc((100vh - 120px) * 16 / 9)' 
+            : 'none', // Allow overflow in 100% mode
+          aspectRatio: zoomMode === 'fit' ? '16 / 9' : undefined,
           background: hasContent ? '#000000' : 'transparent',
           borderRadius: hasContent ? '2px' : 0,
-          overflow: 'hidden',
+          overflow: zoomMode === 'fit' ? 'hidden' : 'auto',
           /* Subtle shadow for content states to separate from background */
           boxShadow: hasContent ? '0 0 60px rgba(0, 0, 0, 0.5)' : 'none',
+          /* Cursor changes to indicate click-to-play when video is loaded */
+          cursor: canPlayback && isVideoHovered 
+            ? (isPlaying ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Crect x=\'6\' y=\'5\' width=\'4\' height=\'14\' rx=\'1\' fill=\'white\' opacity=\'0.8\'/%3E%3Crect x=\'14\' y=\'5\' width=\'4\' height=\'14\' rx=\'1\' fill=\'white\' opacity=\'0.8\'/%3E%3C/svg%3E") 12 12, pointer' 
+              : 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M8 5v14l11-7L8 5z\' fill=\'white\' opacity=\'0.8\'/%3E%3C/svg%3E") 12 12, pointer')
+            : 'default',
         }}
       >
         {/* ============================================ */}
@@ -420,43 +501,77 @@ export function MonitorSurface({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.5rem',
-                    padding: '0.375rem 0.625rem',
-                    background: 'rgba(16, 185, 129, 0.15)',
-                    border: '1px solid rgba(16, 185, 129, 0.35)',
-                    borderRadius: '4px',
                   }}
                 >
-                  <span
+                  <div
                     style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: 'var(--status-completed-fg, #10b981)',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      fontFamily: 'var(--font-sans)',
-                      color: 'var(--status-completed-fg, #10b981)',
-                      fontWeight: 500,
-                      letterSpacing: '0.02em',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.375rem 0.625rem',
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      borderRadius: '4px',
                     }}
                   >
-                    Playback Mode
-                  </span>
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: 'var(--status-completed-fg, #10b981)',
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: '0.6875rem',
+                        fontFamily: 'var(--font-sans)',
+                        color: 'var(--status-completed-fg, #10b981)',
+                        fontWeight: 500,
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      Playback Mode
+                    </span>
+                  </div>
+                  
+                  {/* Zoom indicator */}
+                  {zoomMode === 'actual' && (
+                    <div
+                      style={{
+                        padding: '0.375rem 0.625rem',
+                        background: 'rgba(59, 130, 246, 0.15)',
+                        border: '1px solid rgba(59, 130, 246, 0.35)',
+                        borderRadius: '4px',
+                      }}
+                      title="Double-click to toggle Fit/100% zoom"
+                    >
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--accent-primary, #3b82f6)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        100%
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <video
                   ref={videoRef}
                   src={videoSrc}
                   style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
+                    position: zoomMode === 'fit' ? 'absolute' : 'relative',
+                    inset: zoomMode === 'fit' ? 0 : undefined,
+                    width: zoomMode === 'fit' ? '100%' : 'auto',
+                    height: zoomMode === 'fit' ? '100%' : 'auto',
+                    objectFit: zoomMode === 'fit' ? 'contain' : undefined,
                     background: '#000',
+                    margin: zoomMode === 'actual' ? 'auto' : undefined,
+                    display: 'block',
                   }}
                   onLoadedMetadata={handleLoadedMetadata}
                   onError={handleVideoError}
@@ -914,6 +1029,8 @@ export function MonitorSurface({
           fps={fps}
           duration={duration}
           enabled={true}
+          sourceTimecodeStart={sourceMetadata?.sourceTimecodeStart}
+          hasSourceTimecode={sourceMetadata?.hasSourceTimecode}
         />
       )}
 
