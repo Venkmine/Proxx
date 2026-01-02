@@ -128,6 +128,32 @@ This prevents any interference between playback and encoding operations.
 
 ## Implementation Notes
 
+### Transport Control Visibility (INC-CTRL-001)
+
+**Transport controls are ALWAYS VISIBLE when a source is loaded.**
+
+Controls may be disabled (greyed out) but should never disappear while media is loaded. This hardened invariant ensures:
+
+1. **Predictability**: Controls always appear in the same location
+2. **Clarity**: Disabled state + label explains why playback isn't available
+3. **Stability**: No visual flicker during preview tier transitions
+
+**Visibility Logic:**
+```typescript
+const canShowTransportControls = 
+  state === 'source-loaded' && (
+    (previewMode === 'video' && tieredPreview?.video?.previewUrl) ||
+    tieredPreview?.videoLoading ||
+    tieredPreview?.poster?.posterUrl ||
+    (tieredPreview?.burst?.thumbnails?.length > 0)
+  )
+```
+
+**Playback Status Labels:**
+- "Preparing preview proxy…" — when video is loading
+- "Playback requires preview proxy" — when only poster/burst available
+- No label — when ready to play
+
 ### No Fake Controls
 
 This component follows the principle of **no fake affordances**:

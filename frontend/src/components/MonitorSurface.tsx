@@ -36,7 +36,7 @@
  */
 
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
-import { TransportBar } from './TransportBar'
+import { TransportBar, ClipInfo } from './TransportBar'
 import { BurstStrip } from './BurstStrip'
 import { PreviewMenu, PreviewModeBadge, PreviewDisclaimer } from './PreviewMenu'
 import type { UseTieredPreviewReturn } from '../hooks/useTieredPreview'
@@ -130,6 +130,20 @@ interface MonitorSurfaceProps {
   /** Current source path for preview requests */
   currentSourcePath?: string | null
   
+  // Clip Navigation (v3)
+  /** Current clip info for display and navigation */
+  currentClip?: ClipInfo | null
+  /** Total clips in current job */
+  totalClips?: number
+  /** Navigate to previous clip in job */
+  onPreviousClip?: () => void
+  /** Navigate to next clip in job */
+  onNextClip?: () => void
+  /** Whether at first clip (disables previous button) */
+  isFirstClip?: boolean
+  /** Whether at last clip (disables next button) */
+  isLastClip?: boolean
+  
   // Legacy props for backward compatibility
   /** @deprecated Use tieredPreview instead */
   previewProxyState?: PreviewProxyState
@@ -187,6 +201,13 @@ export function MonitorSurface({
   jobResult,
   tieredPreview,
   currentSourcePath,
+  // Clip navigation (v3)
+  currentClip,
+  totalClips,
+  onPreviousClip,
+  onNextClip,
+  isFirstClip = true,
+  isLastClip = true,
   // Legacy props - ignored if tieredPreview is provided
   previewProxyState: _legacyState,
   previewProxyInfo: _legacyInfo,
@@ -239,6 +260,35 @@ export function MonitorSurface({
     previewMode === 'video' && 
     tieredPreview?.video?.previewUrl &&
     !videoError
+  
+  // INC-CTRL-001: Transport controls must never disappear once preview is available
+  // Controls are VISIBLE whenever any preview tier is available.
+  // Controls may be DISABLED (e.g., RAW without video proxy), but never hidden.
+  const canShowTransportControls = 
+    state === 'source-loaded' && (
+      // Video proxy ready (ready, playing, or paused states)
+      (previewMode === 'video' && tieredPreview?.video?.previewUrl) ||
+      // Video is being generated
+      tieredPreview?.videoLoading ||
+      // Poster is available (show disabled controls)
+      tieredPreview?.poster?.posterUrl ||
+      // Burst is available (show disabled controls)
+      (tieredPreview?.burst?.thumbnails && tieredPreview.burst.thumbnails.length > 0)
+    )
+  
+  // Transport controls are ENABLED only when video can actually play
+  const transportEnabled = canPlayback && videoLoaded
+  
+  // Determine playback status label for disabled controls
+  const playbackStatusLabel = useMemo(() => {
+    if (canPlayback && videoLoaded) return null // No label needed when playback available
+    if (tieredPreview?.videoLoading) return 'Preparing preview proxy…'
+    if (tieredPreview?.videoError) return `Preview error: ${tieredPreview.videoError}`
+    if (isRaw && !tieredPreview?.video?.previewUrl) return 'Playback requires preview proxy'
+    if (previewMode !== 'video') return 'Playback requires preview proxy'
+    if (!videoLoaded) return 'Loading preview…'
+    return null
+  }, [canPlayback, videoLoaded, tieredPreview?.videoLoading, tieredPreview?.videoError, tieredPreview?.video?.previewUrl, isRaw, previewMode])
   
   // Show poster frame as default visual
   const showPoster = state === 'source-loaded' && 
@@ -1089,15 +1139,53 @@ export function MonitorSurface({
       </div>
 
       {/* TransportBar — Professional transport controls below the monitor */}
-      {canPlayback && videoLoaded && (
+      {/* INC-CTRL-001: Transport controls must never disappear once preview is available */}
+      {/* Controls may be disabled, but must always be VISIBLE when any preview tier exists */}
+      {canShowTransportControls && (
         <TransportBar
           videoRef={videoRef}
           fps={fps}
           duration={duration}
-          enabled={true}
+          enabled={transportEnabled}
           sourceTimecodeStart={sourceMetadata?.sourceTimecodeStart}
           hasSourceTimecode={sourceMetadata?.hasSourceTimecode}
+          // Clip navigation (v3)
+          currentClip={currentClip}
+          totalClips={totalClips}
+          onPreviousClip={onPreviousClip}
+          onNextClip={onNextClip}
+          isFirstClip={isFirstClip}
+          isLastClip={isLastClip}
+          // Playback status label (v3 hardening)
+          playbackDisabledLabel={playbackStatusLabel}
         />
+      )}
+
+      {/* Debug Overlay — DEV ONLY (FORGE_DEBUG_UI=true) */}
+      {import.meta.env.DEV && import.meta.env.VITE_FORGE_DEBUG_UI === 'true' && state === 'source-loaded' && (
+        <div
+          data-testid="monitor-debug-overlay"
+          style={{
+            position: 'absolute',
+            bottom: canShowTransportControls ? '4.5rem' : '0.5rem',
+            left: '0.5rem',
+            padding: '0.5rem',
+            background: 'rgba(0, 0, 0, 0.85)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '4px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.625rem',
+            color: 'var(--text-muted)',
+            lineHeight: 1.6,
+            zIndex: 100,
+          }}
+        >
+          <div>Transport: <span style={{ color: canShowTransportControls ? '#22c55e' : '#ef4444' }}>{canShowTransportControls ? 'VISIBLE' : 'HIDDEN'}</span></div>
+          <div>Preview: <span style={{ color: previewMode === 'video' ? '#22c55e' : '#eab308' }}>{previewMode.toUpperCase()}</span></div>
+          <div>Source: <span style={{ color: isRaw ? '#eab308' : '#22c55e' }}>{isRaw ? 'RAW' : 'NON-RAW'}</span></div>
+          <div>Playback: <span style={{ color: transportEnabled ? '#22c55e' : '#ef4444' }}>{transportEnabled ? 'ENABLED' : 'DISABLED'}</span></div>
+          <div>VideoLoaded: <span style={{ color: videoLoaded ? '#22c55e' : '#6b7280' }}>{videoLoaded ? 'YES' : 'NO'}</span></div>
+        </div>
       )}
 
       {/* CSS Keyframes for animations */}

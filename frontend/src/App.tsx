@@ -280,6 +280,10 @@ function App() {
 
   // Phase 4B: Track single selected clip for preview (distinct from multi-select for future batch ops)
   const [_previewClipId, setPreviewClipId] = useState<string | null>(null)
+  
+  // Phase v3: Active clip index for monitor navigation (within current job)
+  // This is the clip currently loaded in MonitorSurface
+  const [monitorClipIndex, setMonitorClipIndex] = useState<number>(0)
 
   // Phase REBUILD: Controlled right panel tab for auto-switch after job creation
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('settings')
@@ -514,7 +518,9 @@ function App() {
     
     if (selectedJobId) {
       const detail = jobDetails.get(selectedJobId)
-      const task = detail?.tasks?.[0]
+      // Use the active clip index for navigation, defaulting to 0
+      const clipIndex = Math.min(monitorClipIndex, (detail?.tasks?.length || 1) - 1)
+      const task = detail?.tasks?.[clipIndex]
       if (task) {
         return {
           filename: task.source_path?.split('/').pop(),
@@ -536,7 +542,7 @@ function App() {
       }
     }
     return undefined
-  }, [monitorState, selectedJobId, jobDetails, selectedFiles])
+  }, [monitorState, selectedJobId, jobDetails, selectedFiles, monitorClipIndex])
 
   // Derive job progress for monitor
   const monitorJobProgress = useMemo((): JobProgress | undefined => {
@@ -581,6 +587,88 @@ function App() {
       totalClips: detail.completed_count,
     }
   }, [monitorState, selectedJobId, jobDetails, deliverSettings.video?.codec])
+
+  // ============================================
+  // Clip Navigation (v3 Transport Controls)
+  // ============================================
+  
+  // Derive clip navigation info for MonitorSurface
+  const clipNavigationInfo = useMemo(() => {
+    if (!selectedJobId) return null
+    
+    const detail = jobDetails.get(selectedJobId)
+    if (!detail?.tasks?.length) return null
+    
+    // Filter to valid clips (skip failed/missing if desired)
+    const validTasks = detail.tasks.filter(t => 
+      t.status.toUpperCase() !== 'FAILED' || t.source_path
+    )
+    
+    if (validTasks.length === 0) return null
+    
+    // Clamp index to valid range
+    const clampedIndex = Math.max(0, Math.min(monitorClipIndex, validTasks.length - 1))
+    const currentTask = validTasks[clampedIndex]
+    
+    return {
+      currentClip: {
+        id: currentTask.id,
+        sourcePath: currentTask.source_path,
+        index: clampedIndex,
+      },
+      totalClips: validTasks.length,
+      isFirstClip: clampedIndex === 0,
+      isLastClip: clampedIndex >= validTasks.length - 1,
+      allTasks: validTasks,
+    }
+  }, [selectedJobId, jobDetails, monitorClipIndex])
+  
+  // Handler: Navigate to previous clip
+  const handlePreviousClip = useCallback(() => {
+    if (!clipNavigationInfo || clipNavigationInfo.isFirstClip) return
+    
+    const newIndex = Math.max(0, monitorClipIndex - 1)
+    setMonitorClipIndex(newIndex)
+    
+    // Update queue selection to match
+    const newClip = clipNavigationInfo.allTasks[newIndex]
+    if (newClip) {
+      setSelectedClipIds(new Set([newClip.id]))
+      setPreviewClipId(newClip.id)
+    }
+    
+    // Reset preview for new clip
+    tieredPreview.reset()
+    if (newClip?.source_path) {
+      tieredPreview.requestPoster(newClip.source_path)
+    }
+  }, [clipNavigationInfo, monitorClipIndex, tieredPreview])
+  
+  // Handler: Navigate to next clip
+  const handleNextClip = useCallback(() => {
+    if (!clipNavigationInfo || clipNavigationInfo.isLastClip) return
+    
+    const newIndex = Math.min(clipNavigationInfo.totalClips - 1, monitorClipIndex + 1)
+    setMonitorClipIndex(newIndex)
+    
+    // Update queue selection to match
+    const newClip = clipNavigationInfo.allTasks[newIndex]
+    if (newClip) {
+      setSelectedClipIds(new Set([newClip.id]))
+      setPreviewClipId(newClip.id)
+    }
+    
+    // Reset preview for new clip
+    tieredPreview.reset()
+    if (newClip?.source_path) {
+      tieredPreview.requestPoster(newClip.source_path)
+    }
+  }, [clipNavigationInfo, monitorClipIndex, tieredPreview])
+  
+  // Reset clip index when job changes
+  useEffect(() => {
+    setMonitorClipIndex(0)
+  }, [selectedJobId])
 
   // ============================================
   // Data Fetching
@@ -1603,6 +1691,19 @@ function App() {
 
     // Phase 4B: Always update preview to clicked clip
     setPreviewClipId(clipId)
+    
+    // v3: Sync monitor clip index with clicked clip
+    const clipIndex = detail.tasks.findIndex(t => t.id === clipId)
+    if (clipIndex !== -1) {
+      setMonitorClipIndex(clipIndex)
+      
+      // Reset preview for the new clip
+      const task = detail.tasks[clipIndex]
+      if (task?.source_path) {
+        tieredPreview.reset()
+        tieredPreview.requestPoster(task.source_path)
+      }
+    }
 
     if (event.shiftKey && selectedClipIds.size > 0) {
       // Range select
@@ -1630,7 +1731,7 @@ function App() {
       // Single select
       setSelectedClipIds(new Set([clipId]))
     }
-  }, [selectedJobId, jobDetails, selectedClipIds])
+  }, [selectedJobId, jobDetails, selectedClipIds, tieredPreview])
 
   // ============================================
   // Phase 19: Keyboard Shortcuts (Finder-style)
@@ -2085,6 +2186,13 @@ function App() {
               jobResult={monitorJobResult}
               tieredPreview={tieredPreview}
               currentSourcePath={currentPreviewSource.current}
+              // Clip navigation (v3)
+              currentClip={clipNavigationInfo?.currentClip}
+              totalClips={clipNavigationInfo?.totalClips}
+              onPreviousClip={handlePreviousClip}
+              onNextClip={handleNextClip}
+              isFirstClip={clipNavigationInfo?.isFirstClip ?? true}
+              isLastClip={clipNavigationInfo?.isLastClip ?? true}
             />
           }
           rightZoneSettings={

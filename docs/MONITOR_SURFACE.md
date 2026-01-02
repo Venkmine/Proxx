@@ -152,18 +152,129 @@ The transport bar provides three timecode display modes, selectable via the TC m
 - Modes do NOT auto-switch — the user's selection is respected
 - Click the timecode display to copy the current timecode to clipboard
 
-### Transport Controls
+### Transport Controls (v3)
+
+Transport controls are organized into clip-level and time-level navigation, matching professional NLE behavior (Resolve, Avid, RV).
 
 | Control | Visual | Action | Keyboard |
 |---------|--------|--------|----------|
-| Frame Back | ‹F | Step back ~1 frame | ← |
-| Second Back | ‹1s | Jump back 1 second | Shift+← or J |
-| Play/Pause | ▶/⏸ | Toggle playback | Space or K (pause) or L (play) |
-| Second Forward | 1s› | Jump forward 1 second | Shift+→ |
-| Frame Forward | F› | Step forward ~1 frame | → |
+| Previous Clip | ⏮\| | Load previous clip in current job | Cmd+← |
+| Frame Back | ⏮ | Step back ~1 frame | ← |
+| Jump Back | < | Jump back by selected interval | Shift+← |
+| Play/Pause | ⏯ | Toggle playback | Space or K (pause) or L (play) |
+| Jump Forward | > | Jump forward by selected interval | Shift+→ |
+| Frame Forward | ⏭ | Step forward ~1 frame | → |
+| Next Clip | \|⏭ | Load next clip in current job | Cmd+→ |
 | Mute Toggle | 🔊/🔇 | Mute/unmute audio | M |
 | Timeline Scrubber | — | Seek to position | Drag |
 | TC Mode | SRC/PREV/CTR | Select timecode mode | Click dropdown |
+| Jump Interval | Jump: [5s ▼] | Select jump interval for </> buttons | Click dropdown |
+
+### Transport Control Visibility Rules (INC-CTRL-001)
+
+**Transport controls are ALWAYS VISIBLE when a source is loaded.**
+
+This is a hardened invariant. Transport controls may be disabled (greyed out, non-interactive) but should never disappear while media is being displayed or prepared.
+
+#### Visibility Logic
+
+```typescript
+// canShowTransportControls - deterministic, not gated on transient state
+const canShowTransportControls = 
+  state === 'source-loaded' && (
+    // Video proxy loaded
+    (previewMode === 'video' && tieredPreview?.video?.previewUrl) ||
+    // Video loading (shows disabled state)
+    tieredPreview?.videoLoading ||
+    // Poster available (shows disabled state, waiting for video)
+    tieredPreview?.poster?.posterUrl ||
+    // Burst thumbnails available
+    (tieredPreview?.burst?.thumbnails?.length > 0)
+  )
+```
+
+#### Enabled vs Disabled
+
+| State | Controls Visible | Controls Enabled | User Message |
+|-------|-----------------|------------------|--------------|
+| Video proxy ready | ✓ | ✓ | None (ready to play) |
+| Video loading | ✓ | ✗ | "Preparing preview proxy…" |
+| Poster only (no proxy) | ✓ | ✗ | "Playback requires preview proxy" |
+| RAW without proxy | ✓ | ✗ | "RAW format — proxy not yet available" |
+| No preview at all | ✗ | — | N/A (waiting for tiered preview) |
+
+#### Why This Matters
+
+Previously, transport controls were gated on `canPlayback && videoLoaded`, which caused them to disappear during preview tier transitions or when waiting for proxy generation. This was confusing — users saw controls appear and disappear seemingly at random.
+
+The new design ensures:
+1. **Predictability**: Controls are always in the same location
+2. **Clarity**: Disabled state + message explains why playback isn't available
+3. **Stability**: No visual flicker during state transitions
+
+#### Debug Overlay
+
+In development mode, set `VITE_FORGE_DEBUG_UI=true` to show a debug overlay with:
+- `canShowTransportControls` state
+- `transportEnabled` state
+- Current `previewMode`
+- Video loaded status
+
+### Jump Interval Selector
+
+The jump interval selector controls how far the `<` and `>` buttons move through time:
+
+| Interval | Description |
+|----------|-------------|
+| 1 frame | Single frame step |
+| 5 frames | 5-frame jump |
+| 10 frames | 10-frame jump |
+| 1 second | 1s time jump |
+| **5 seconds** | Default setting |
+| 10 seconds | 10s time jump |
+| 30 seconds | 30s time jump |
+| 60 seconds | 1 minute jump |
+| 5 minutes | 5 minute jump |
+
+The selected interval persists for the session (stored in `sessionStorage` as `monitor.jumpInterval`).
+
+### Clip Navigation
+
+Clip navigation buttons (`|<<` and `>>|`) move between clips within the current job:
+
+- **Previous Clip (`|<<`)**: Load the previous clip in job order
+- **Next Clip (`>>|`)**: Load the next clip in job order
+
+**Clip Navigation Rules:**
+1. Navigation uses job clip order (as defined by backend)
+2. Failed or missing clips are skipped
+3. Navigation clamps at first/last valid clip
+4. On clip change:
+   - Playback stops
+   - Playhead resets to start
+   - Monitor metadata updates
+   - Queue highlight updates to match
+
+**Disabled States:**
+- `|<<` is disabled when at the first clip
+- `>>|` is disabled when at the last clip
+- Tooltips explain why buttons are disabled
+
+### Queue ↔ Monitor Synchronization
+
+The monitor and job queue are always synchronized:
+
+**Queue → Monitor:**
+- Clicking a clip row loads it into MonitorSurface
+- The loaded clip is visually highlighted in the queue
+
+**Monitor → Queue:**
+- Using `|<<` / `>>|` updates:
+  - The selected clip
+  - The highlighted row in the queue
+  - Status badge focus
+
+There is one source of truth — no state duplication.
 
 ### J/K/L Shuttle Controls
 
@@ -174,6 +285,17 @@ Professional NLE-style shuttle controls are supported:
 | **J** | Reverse/Jump back (HTML5 video doesn't support true reverse playback) |
 | **K** | Pause (always pauses immediately) |
 | **L** | Play forward. Press again for 2× speed. |
+
+### Keyboard Shortcuts Summary
+
+| Shortcut | Action |
+|----------|--------|
+| `Space` | Play / Pause |
+| `J / K / L` | Shuttle reverse / pause / forward |
+| `← / →` | ±1 frame |
+| `Shift + ← / →` | Jump using selected interval |
+| `Cmd + ← / →` | Previous / Next clip |
+| `M` | Mute toggle |
 
 ### Click-to-Play Behavior
 
@@ -241,6 +363,7 @@ This section explicitly documents what preview playback **can and cannot do**.
 - `frontend/src/hooks/usePlaybackClock.ts` — High-frequency timecode hook
 - `frontend/src/components/WorkspaceLayout.tsx` — Updated center zone styling
 - `frontend/src/App.tsx` — State derivation and component integration
+- `frontend/tests/monitor_surface.spec.ts` — Playwright tests for transport control visibility (INC-CTRL-001)
 
 ## Related Documentation
 

@@ -16,8 +16,16 @@
  * 6. Timeline scrubber positioned above audio controls (NLE-style)
  * 7. Timecode mode selector with clear limitations
  * 
- * Transport Button Groups (left to right):
- * [ ‹F ] [ ‹1s ] [ Play/Pause ] [ 1s› ] [ F› ]
+ * Transport Control Layout (v3):
+ * [ |<< ] [ ⏮ ] [ < ] [ ⏯ ] [ > ] [ ⏭ ] [ >>| ] [ Jump: 5s ▼ ]
+ * 
+ * Button Semantics (Non-Negotiable):
+ * - |<<  : Load PREVIOUS CLIP in current job
+ * - >>|  : Load NEXT CLIP in current job
+ * - <    : Jump BACKWARD by selected interval
+ * - >    : Jump FORWARD by selected interval
+ * - ⏯    : Play / Pause
+ * - ⏮ ⏭  : ±1 frame
  * 
  * Timecode Modes:
  * - SRC TC: Source timecode from metadata (if available)
@@ -26,8 +34,9 @@
  * 
  * Keyboard shortcuts:
  * - Space: Play/Pause
- * - ←/→: Frame step
- * - Shift+←/→: ±1 second
+ * - ←/→: Frame step (±1 frame)
+ * - Shift+←/→: Jump using selected interval
+ * - Cmd/Ctrl+←/→: Previous/Next clip
  * - J: Reverse playback (2× optional)
  * - K: Pause
  * - L: Forward playback (2× optional)
@@ -49,6 +58,23 @@ import { usePlaybackClock } from '../hooks/usePlaybackClock'
  */
 export type TimecodeMode = 'source' | 'preview' | 'counter'
 
+/**
+ * Jump interval for < and > buttons.
+ * Can be frame-based or time-based.
+ */
+export type JumpInterval =
+  | { type: 'frames'; value: number }
+  | { type: 'seconds'; value: number }
+
+/**
+ * Clip info for navigation
+ */
+export interface ClipInfo {
+  id: string
+  sourcePath: string
+  index: number
+}
+
 interface TransportBarProps {
   /** Video element ref */
   videoRef: React.RefObject<HTMLVideoElement | null>
@@ -62,6 +88,23 @@ interface TransportBarProps {
   sourceTimecodeStart?: string | number | null
   /** Whether source timecode is available from metadata */
   hasSourceTimecode?: boolean
+  
+  // Clip Navigation (v3)
+  /** Current clip info */
+  currentClip?: ClipInfo | null
+  /** Total clips in current job */
+  totalClips?: number
+  /** Navigate to previous clip in job */
+  onPreviousClip?: () => void
+  /** Navigate to next clip in job */
+  onNextClip?: () => void
+  /** Whether at first clip (disables previous button) */
+  isFirstClip?: boolean
+  /** Whether at last clip (disables next button) */
+  isLastClip?: boolean
+  
+  /** Status label when playback is disabled (shows why controls are disabled) */
+  playbackDisabledLabel?: string | null
 }
 
 // ============================================================================
@@ -99,6 +142,20 @@ const MutedIcon = () => (
 const ChevronDownIcon = () => (
   <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
     <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </svg>
+)
+
+const PrevClipIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <rect x="2" y="3" width="2" height="10" rx="0.5" />
+    <path d="M12 3v10L6 8l6-5z" />
+  </svg>
+)
+
+const NextClipIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <rect x="12" y="3" width="2" height="10" rx="0.5" />
+    <path d="M4 3v10l6-5-6-5z" />
   </svg>
 )
 
@@ -324,6 +381,88 @@ const styles = {
     textTransform: 'uppercase',
   } as React.CSSProperties,
   
+  jumpIntervalSelector: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.25rem',
+    padding: '0.25rem 0.5rem',
+    background: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    border: 'none',
+    fontSize: '0.6875rem',
+    fontFamily: 'var(--font-sans, system-ui)',
+    color: 'var(--text-secondary, #9ca3af)',
+    letterSpacing: '0.02em',
+    transition: 'background 0.15s',
+    minWidth: '80px',
+    justifyContent: 'space-between',
+  } as React.CSSProperties,
+  
+  jumpIntervalDropdown: {
+    position: 'absolute',
+    bottom: '100%',
+    left: '0',
+    marginBottom: '4px',
+    background: 'rgba(20, 20, 22, 0.98)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '6px',
+    padding: '0.25rem',
+    minWidth: '130px',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+    zIndex: 100,
+  } as React.CSSProperties,
+  
+  jumpIntervalOption: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0.5rem 0.625rem',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    border: 'none',
+    background: 'transparent',
+    width: '100%',
+    textAlign: 'left',
+    fontSize: '0.75rem',
+    fontFamily: 'var(--font-sans, system-ui)',
+    color: 'var(--text-primary, #e5e7eb)',
+    transition: 'background 0.15s',
+  } as React.CSSProperties,
+  
+  jumpIntervalOptionActive: {
+    background: 'rgba(59, 130, 246, 0.15)',
+    color: 'var(--accent-primary, #3b82f6)',
+  } as React.CSSProperties,
+  
+  clipNavButton: {
+    minWidth: '36px',
+    height: '32px',
+    borderRadius: '4px',
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--text-primary, #e5e7eb)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background 0.15s, color 0.15s, opacity 0.15s',
+    padding: '0 0.5rem',
+  } as React.CSSProperties,
+  
+  clipNavButtonDisabled: {
+    opacity: 0.35,
+    cursor: 'not-allowed',
+  } as React.CSSProperties,
+  
+  clipIndicator: {
+    fontSize: '0.625rem',
+    fontFamily: 'var(--font-mono, "SF Mono", monospace)',
+    color: 'var(--text-muted, #9ca3af)',
+    padding: '0 0.5rem',
+    whiteSpace: 'nowrap',
+  } as React.CSSProperties,
+  
   copiedToast: {
     position: 'fixed',
     bottom: '80px',
@@ -374,6 +513,32 @@ const TIMECODE_MODES: {
 // Session storage key for timecode mode persistence
 const TC_MODE_STORAGE_KEY = 'forge-timecode-mode'
 
+// Session storage key for jump interval persistence
+const JUMP_INTERVAL_STORAGE_KEY = 'monitor.jumpInterval'
+
+// ============================================================================
+// JUMP INTERVAL CONFIGURATION
+// ============================================================================
+
+const JUMP_INTERVALS: {
+  id: string
+  label: string
+  interval: JumpInterval
+}[] = [
+  { id: 'frame-1', label: '1 frame', interval: { type: 'frames', value: 1 } },
+  { id: 'frame-5', label: '5 frames', interval: { type: 'frames', value: 5 } },
+  { id: 'frame-10', label: '10 frames', interval: { type: 'frames', value: 10 } },
+  { id: 'sec-1', label: '1 second', interval: { type: 'seconds', value: 1 } },
+  { id: 'sec-5', label: '5 seconds', interval: { type: 'seconds', value: 5 } },
+  { id: 'sec-10', label: '10 seconds', interval: { type: 'seconds', value: 10 } },
+  { id: 'sec-30', label: '30 seconds', interval: { type: 'seconds', value: 30 } },
+  { id: 'sec-60', label: '60 seconds', interval: { type: 'seconds', value: 60 } },
+  { id: 'min-5', label: '5 minutes', interval: { type: 'seconds', value: 300 } },
+]
+
+// Default jump interval: 5 seconds
+const DEFAULT_JUMP_INTERVAL = JUMP_INTERVALS.find(j => j.id === 'sec-5')!
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -417,6 +582,15 @@ export function TransportBar({
   enabled = true,
   sourceTimecodeStart,
   hasSourceTimecode = false,
+  // Clip navigation (v3)
+  currentClip,
+  totalClips,
+  onPreviousClip,
+  onNextClip,
+  isFirstClip = true,
+  isLastClip = true,
+  // Playback status (v3 hardening)
+  playbackDisabledLabel,
 }: TransportBarProps) {
   // Use the playback clock for smooth timecode updates
   const clock = usePlaybackClock({
@@ -448,6 +622,23 @@ export function TransportBar({
   // Timecode mode dropdown state
   const [showTimecodeDropdown, setShowTimecodeDropdown] = useState(false)
   
+  // Jump interval state - persist to session storage
+  const [jumpInterval, setJumpInterval] = useState<typeof JUMP_INTERVALS[0]>(() => {
+    try {
+      const stored = sessionStorage.getItem(JUMP_INTERVAL_STORAGE_KEY)
+      if (stored) {
+        const found = JUMP_INTERVALS.find(j => j.id === stored)
+        if (found) return found
+      }
+    } catch {
+      // Session storage not available
+    }
+    return DEFAULT_JUMP_INTERVAL
+  })
+  
+  // Jump interval dropdown state
+  const [showJumpIntervalDropdown, setShowJumpIntervalDropdown] = useState(false)
+  
   // Copy feedback state
   const [showCopiedToast, setShowCopiedToast] = useState(false)
   
@@ -471,6 +662,15 @@ export function TransportBar({
       // Session storage not available
     }
   }, [timecodeMode])
+  
+  // Persist jump interval to session storage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(JUMP_INTERVAL_STORAGE_KEY, jumpInterval.id)
+    } catch {
+      // Session storage not available
+    }
+  }, [jumpInterval])
   
   // Sync mute state with video element
   useEffect(() => {
@@ -554,15 +754,23 @@ export function TransportBar({
     const video = videoRef.current
     if (!video) return
     
-    video.currentTime = Math.max(0, video.currentTime - 1.0)
-  }, [videoRef])
+    const jumpAmount = jumpInterval.interval.type === 'frames'
+      ? jumpInterval.interval.value / fps
+      : jumpInterval.interval.value
+    
+    video.currentTime = Math.max(0, video.currentTime - jumpAmount)
+  }, [videoRef, jumpInterval, fps])
   
   const handleJumpForward = useCallback(() => {
     const video = videoRef.current
     if (!video) return
     
-    video.currentTime = Math.min(duration, video.currentTime + 1.0)
-  }, [videoRef, duration])
+    const jumpAmount = jumpInterval.interval.type === 'frames'
+      ? jumpInterval.interval.value / fps
+      : jumpInterval.interval.value
+    
+    video.currentTime = Math.min(duration, video.currentTime + jumpAmount)
+  }, [videoRef, jumpInterval, fps, duration])
   
   const handleScrub = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const video = videoRef.current
@@ -630,11 +838,20 @@ export function TransportBar({
     setShowTimecodeDropdown(false)
   }, [hasSourceTimecode])
   
+  // Handle jump interval change
+  const handleJumpIntervalChange = useCallback((interval: typeof JUMP_INTERVALS[0]) => {
+    setJumpInterval(interval)
+    setShowJumpIntervalDropdown(false)
+  }, [])
+  
   // Close dropdown when clicking outside
   useEffect(() => {
-    if (!showTimecodeDropdown) return
+    if (!showTimecodeDropdown && !showJumpIntervalDropdown) return
     
-    const handleClickOutside = () => setShowTimecodeDropdown(false)
+    const handleClickOutside = () => {
+      setShowTimecodeDropdown(false)
+      setShowJumpIntervalDropdown(false)
+    }
     const timer = setTimeout(() => {
       window.addEventListener('click', handleClickOutside)
     }, 0)
@@ -643,7 +860,7 @@ export function TransportBar({
       clearTimeout(timer)
       window.removeEventListener('click', handleClickOutside)
     }
-  }, [showTimecodeDropdown])
+  }, [showTimecodeDropdown, showJumpIntervalDropdown])
   
   // Keyboard shortcuts
   useEffect(() => {
@@ -665,17 +882,27 @@ export function TransportBar({
           break
         case 'ArrowLeft':
           e.preventDefault()
-          if (e.shiftKey) {
+          if (e.metaKey || e.ctrlKey) {
+            // Cmd/Ctrl + ← = Previous clip
+            if (!isFirstClip && onPreviousClip) onPreviousClip()
+          } else if (e.shiftKey) {
+            // Shift + ← = Jump back using selected interval
             handleJumpBack()
           } else {
+            // ← = Step back 1 frame
             handleStepBack()
           }
           break
         case 'ArrowRight':
           e.preventDefault()
-          if (e.shiftKey) {
+          if (e.metaKey || e.ctrlKey) {
+            // Cmd/Ctrl + → = Next clip
+            if (!isLastClip && onNextClip) onNextClip()
+          } else if (e.shiftKey) {
+            // Shift + → = Jump forward using selected interval
             handleJumpForward()
           } else {
+            // → = Step forward 1 frame
             handleStepForward()
           }
           break
@@ -711,11 +938,24 @@ export function TransportBar({
     handleShuttleReverse,
     handleShuttlePause,
     handleShuttleForward,
+    isFirstClip,
+    isLastClip,
+    onPreviousClip,
+    onNextClip,
   ])
   
-  if (!enabled) return null
+  // INC-CTRL-001: Transport controls must never disappear once preview is available
+  // Controls are always rendered, but may be disabled
+  // REMOVED: if (!enabled) return null
   
   const currentModeConfig = TIMECODE_MODES.find(m => m.id === timecodeMode) || TIMECODE_MODES[1]
+  
+  // Styles for disabled state
+  const disabledButtonStyle = !enabled ? {
+    opacity: 0.4,
+    cursor: 'not-allowed',
+    pointerEvents: 'none' as const,
+  } : {}
   
   return (
     <div style={styles.wrapper} data-testid="transport-bar">
@@ -746,9 +986,13 @@ export function TransportBar({
             max={duration || 0}
             step="any"
             value={clock.currentTimeSeconds}
-            onChange={handleScrub}
-            style={styles.scrubber}
-            title="Scrub timeline (drag to seek)"
+            onChange={enabled ? handleScrub : undefined}
+            disabled={!enabled}
+            style={{
+              ...styles.scrubber,
+              ...(enabled ? {} : { opacity: 0.4, cursor: 'not-allowed' }),
+            }}
+            title={enabled ? "Scrub timeline (drag to seek)" : "Scrubbing unavailable"}
             data-testid="transport-scrubber"
           />
         </div>
@@ -756,31 +1000,60 @@ export function TransportBar({
       
       {/* Main Controls Row */}
       <div style={styles.container}>
-        {/* Transport Button Group: [ ‹F ] [ ‹1s ] [ Play ] [ 1s› ] [ F› ] */}
+        {/* Clip Navigation: [ |<< ] */}
+        {(onPreviousClip || onNextClip) && (
+          <div style={styles.controlGroup}>
+            <button
+              onClick={onPreviousClip}
+              disabled={isFirstClip}
+              style={{
+                ...styles.clipNavButton,
+                ...(isFirstClip ? styles.clipNavButtonDisabled : {}),
+              }}
+              title={isFirstClip 
+                ? 'At first clip in job' 
+                : 'Previous clip (Cmd+←)'}
+              data-testid="transport-prev-clip"
+            >
+              <PrevClipIcon />
+            </button>
+          </div>
+        )}
+        
+        {/* Frame Step and Jump Controls: [ ⏮ ] [ < ] [ Play ] [ > ] [ ⏭ ] */}
         <div style={styles.controlGroup}>
           <button
-            onClick={handleStepBack}
-            style={styles.button}
-            title={"Step back 1 frame (←)\nFrame stepping uses preview proxy decode resolution"}
+            onClick={enabled ? handleStepBack : undefined}
+            disabled={!enabled}
+            style={{ ...styles.button, ...disabledButtonStyle }}
+            title={"±1 frame (←)\nFrame stepping uses preview proxy decode resolution"}
             data-testid="transport-step-back"
           >
-            ‹F
+            ⏮
           </button>
           <button
-            onClick={handleJumpBack}
-            style={styles.button}
-            title="Jump back 1 second (Shift+← or J)"
+            onClick={enabled ? handleJumpBack : undefined}
+            disabled={!enabled}
+            style={{ ...styles.button, ...disabledButtonStyle }}
+            title={`Jump back (${jumpInterval.label}) — Shift+←`}
             data-testid="transport-jump-back"
           >
-            ‹1s
+            &lt;
           </button>
         </div>
         
         {/* Play/Pause */}
         <button
-          onClick={handlePlayPause}
-          style={{ ...styles.button, ...styles.playButton }}
-          title={clock.isPlaying ? 'Pause (Space or K)' : 'Play (Space or L)'}
+          onClick={enabled ? handlePlayPause : undefined}
+          disabled={!enabled}
+          style={{ 
+            ...styles.button, 
+            ...styles.playButton,
+            ...disabledButtonStyle,
+          }}
+          title={!enabled 
+            ? (playbackDisabledLabel || 'Playback unavailable')
+            : clock.isPlaying ? 'Pause (Space or K)' : 'Play (Space or L)'}
           data-testid="transport-play-pause"
         >
           {clock.isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -788,21 +1061,86 @@ export function TransportBar({
         
         <div style={styles.controlGroup}>
           <button
-            onClick={handleJumpForward}
-            style={styles.button}
-            title="Jump forward 1 second (Shift+→)"
+            onClick={enabled ? handleJumpForward : undefined}
+            disabled={!enabled}
+            style={{ ...styles.button, ...disabledButtonStyle }}
+            title={`Jump forward (${jumpInterval.label}) — Shift+→`}
             data-testid="transport-jump-forward"
           >
-            1s›
+            &gt;
           </button>
           <button
-            onClick={handleStepForward}
-            style={styles.button}
-            title={"Step forward 1 frame (→)\nFrame stepping uses preview proxy decode resolution"}
+            onClick={enabled ? handleStepForward : undefined}
+            disabled={!enabled}
+            style={{ ...styles.button, ...disabledButtonStyle }}
+            title={"±1 frame (→)\nFrame stepping uses preview proxy decode resolution"}
             data-testid="transport-step-forward"
           >
-            F›
+            ⏭
           </button>
+        </div>
+        
+        {/* Clip Navigation: [ >>| ] */}
+        {(onPreviousClip || onNextClip) && (
+          <div style={styles.controlGroup}>
+            <button
+              onClick={onNextClip}
+              disabled={isLastClip}
+              style={{
+                ...styles.clipNavButton,
+                ...(isLastClip ? styles.clipNavButtonDisabled : {}),
+              }}
+              title={isLastClip 
+                ? 'At last clip in job' 
+                : 'Next clip (Cmd+→)'}
+              data-testid="transport-next-clip"
+            >
+              <NextClipIcon />
+            </button>
+          </div>
+        )}
+        
+        {/* Spacer */}
+        <div style={{ width: '0.5rem' }} />
+        
+        {/* Jump Interval Selector */}
+        <div style={{ position: 'relative' }}>
+          <button
+            style={styles.jumpIntervalSelector}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowJumpIntervalDropdown(!showJumpIntervalDropdown)
+            }}
+            title="Select jump interval for < and > buttons"
+            data-testid="transport-jump-interval-selector"
+          >
+            <span>Jump:</span>
+            <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+              {jumpInterval.label}
+            </span>
+            <ChevronDownIcon />
+          </button>
+          
+          {showJumpIntervalDropdown && (
+            <div style={styles.jumpIntervalDropdown} onClick={(e) => e.stopPropagation()}>
+              {JUMP_INTERVALS.map((interval) => {
+                const isActive = interval.id === jumpInterval.id
+                return (
+                  <button
+                    key={interval.id}
+                    style={{
+                      ...styles.jumpIntervalOption,
+                      ...(isActive ? styles.jumpIntervalOptionActive : {}),
+                    }}
+                    onClick={() => handleJumpIntervalChange(interval)}
+                  >
+                    <span>{interval.label}</span>
+                    {isActive && <span>✓</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
         
         {/* Spacer */}
@@ -897,10 +1235,38 @@ export function TransportBar({
           {isMuted ? <MutedIcon /> : <SpeakerIcon />}
         </button>
         
-        {/* Proxy Label */}
-        <span style={styles.proxyLabel} title="You are viewing a preview proxy, not source media">
-          Preview Proxy
-        </span>
+        {/* Clip Indicator (X of Y) - only show when in multi-clip job */}
+        {currentClip && totalClips && totalClips > 1 && (
+          <span 
+            style={styles.clipIndicator}
+            title={`Clip ${currentClip.index + 1} of ${totalClips}`}
+          >
+            {currentClip.index + 1} / {totalClips}
+          </span>
+        )}
+        
+        {/* Playback Disabled Label - shown when controls are visible but playback unavailable */}
+        {playbackDisabledLabel && (
+          <span 
+            style={{
+              ...styles.proxyLabel,
+              background: 'rgba(234, 179, 8, 0.15)',
+              color: 'var(--text-warning, #eab308)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+            }}
+            title={playbackDisabledLabel}
+            data-testid="transport-playback-disabled-label"
+          >
+            {playbackDisabledLabel}
+          </span>
+        )}
+        
+        {/* Proxy Label - only show when playback is enabled */}
+        {!playbackDisabledLabel && (
+          <span style={styles.proxyLabel} title="You are viewing a preview proxy, not source media">
+            Preview Proxy
+          </span>
+        )}
       </div>
       
       {/* Copied Toast */}
