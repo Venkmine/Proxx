@@ -55,9 +55,10 @@ export function PreflightErrorBanner({
         border: '1px solid rgba(239, 68, 68, 0.4)',
         borderRadius: 'var(--radius-md)',
         marginBottom: '1rem',
-        // Phase E2: Ensure proper layout
         position: 'relative',
         overflow: 'visible',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
       }}
     >
       {/* Error header */}

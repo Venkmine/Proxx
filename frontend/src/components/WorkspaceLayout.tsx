@@ -1,5 +1,5 @@
 /**
- * WorkspaceLayout — 3-Zone IMMUTABLE Rigid Layout
+ * WorkspaceLayout — 3-Zone IMMUTABLE Rigid Layout (Phase F: LOCKED FOR V1)
  * 
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │                           HEADER                                     │
@@ -8,15 +8,16 @@
  * │   LEFT       │    CENTER (MONITOR SURFACE)    │     RIGHT          │
  * │   352px      │    Full-bleed visual anchor    │     420px          │
  * │   IMMUTABLE  │    Fills remaining space       │   IMMUTABLE        │
- * │   Sources    │    No card/panel borders       │  Settings/Queue    │
- * │              │                                 │     [tabbed]       │
- * │              │                                 │                    │
+ * │   Sources    │    No card/panel borders       │     Queue          │
+ * │   Output     │                                 │   (no tabs)        │
+ * │   Processing │                                 │                    │
+ * │   Create Job │                                 │                    │
  * ├──────────────┴─────────────────────────────────┴────────────────────┤
  * │                           FOOTER                                     │
  * └─────────────────────────────────────────────────────────────────────┘
  * 
  * ╔═══════════════════════════════════════════════════════════════════════╗
- * ║                         IMMUTABLE INVARIANTS                          ║
+ * ║                    PHASE F: V1 LOCKED INVARIANTS                      ║
  * ╠═══════════════════════════════════════════════════════════════════════╣
  * ║  1. LEFT zone is EXACTLY 352px — never resizes                        ║
  * ║  2. RIGHT zone is EXACTLY 420px — never resizes                       ║
@@ -26,12 +27,14 @@
  * ║  6. NO animations on layout zones                                     ║
  * ║  7. NO dynamic resizing — zones are rigid                             ║
  * ║  8. StatusLog floats independently (fixed position, not in layout)    ║
+ * ║  9. RIGHT panel is Queue ONLY — no tabs, no settings                  ║
+ * ║ 10. Settings moved to left panel (Sources/Output/Processing)          ║
  * ╚═══════════════════════════════════════════════════════════════════════╝
  * 
- * Desktop-only layout. Minimum supported width: 1280px.
+ * Desktop-only layout. Minimum supported width: 1280px (13" laptop).
  */
 
-import { useState, useEffect, ReactNode } from 'react'
+import { ReactNode } from 'react'
 
 // ============================================================================
 // IMMUTABLE ZONE DIMENSIONS
@@ -47,23 +50,13 @@ const RIGHT_ZONE_WIDTH = 420
 // TYPES
 // ============================================================================
 
-export type RightPanelTab = 'settings' | 'queue'
-
 interface WorkspaceLayoutProps {
-  /** Left zone content (Sources) */
+  /** Left zone content (Sources + Output + Processing + Create Job) */
   leftZone: ReactNode
-  /** Center zone content (Preview ONLY) */
+  /** Center zone content (MonitorSurface ONLY - no settings, no forms) */
   centerZone: ReactNode
-  /** Right zone settings content (DeliverControlPanel) */
-  rightZoneSettings: ReactNode
-  /** Right zone queue content (Queue panel) */
-  rightZoneQueue: ReactNode
-  /** Phase REBUILD: Controlled active tab (optional, for external control) */
-  activeTab?: RightPanelTab
-  /** Phase REBUILD: Tab change callback */
-  onTabChange?: (tab: RightPanelTab) => void
-  /** Phase REBUILD: Job count (to auto-switch to queue when jobs exist) */
-  jobCount?: number
+  /** Right zone content (Queue ONLY - no settings tab) */
+  rightZone: ReactNode
 }
 
 // ============================================================================
@@ -73,30 +66,9 @@ interface WorkspaceLayoutProps {
 export function WorkspaceLayout({
   leftZone,
   centerZone,
-  rightZoneSettings,
-  rightZoneQueue,
-  activeTab: controlledTab,
-  onTabChange,
-  jobCount = 0,
+  rightZone,
 }: WorkspaceLayoutProps) {
-  // Use controlled tab if provided, otherwise internal state
-  const [internalTab, setInternalTab] = useState<RightPanelTab>('settings')
-  const activeTab = controlledTab ?? internalTab
-  
-  const handleTabChange = (tab: RightPanelTab) => {
-    if (onTabChange) {
-      onTabChange(tab)
-    } else {
-      setInternalTab(tab)
-    }
-  }
-
-  // Phase REBUILD: Auto-switch to Queue tab when jobs exist (on mount only)
-  useEffect(() => {
-    if (jobCount > 0 && !controlledTab) {
-      setInternalTab('queue')
-    }
-  }, []) // Only on mount
+  // Phase F: Simplified to queue-only right panel - no tabs needed
 
   return (
     <div
@@ -147,7 +119,7 @@ export function WorkspaceLayout({
         {centerZone}
       </main>
 
-      {/* RIGHT ZONE — IMMUTABLE 420px, Tabbed (Settings / Queue) */}
+      {/* RIGHT ZONE — IMMUTABLE 420px, Queue ONLY (Phase F: No tabs) */}
       <aside
         data-testid="right-zone"
         style={{
@@ -163,90 +135,8 @@ export function WorkspaceLayout({
           background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.95) 0%, rgba(20, 24, 32, 0.95) 100%)',
         }}
       >
-        {/* Tab Bar */}
-        <div
-          data-testid="right-zone-tabs"
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--border-primary)',
-            background: 'rgba(20, 24, 32, 0.8)',
-          }}
-        >
-          <button
-            data-testid="tab-settings"
-            onClick={() => handleTabChange('settings')}
-            style={{
-              flex: 1,
-              padding: '0.625rem 1rem',
-              border: 'none',
-              background: activeTab === 'settings' 
-                ? 'rgba(59, 130, 246, 0.1)' 
-                : 'transparent',
-              color: activeTab === 'settings' 
-                ? 'var(--text-primary)' 
-                : 'var(--text-muted)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              borderBottom: activeTab === 'settings' 
-                ? '2px solid var(--button-primary-bg)' 
-                : '2px solid transparent',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-            }}
-          >
-            Settings
-          </button>
-          <button
-            data-testid="tab-queue"
-            onClick={() => handleTabChange('queue')}
-            style={{
-              flex: 1,
-              padding: '0.625rem 1rem',
-              border: 'none',
-              background: activeTab === 'queue' 
-                ? 'rgba(59, 130, 246, 0.1)' 
-                : 'transparent',
-              color: activeTab === 'queue' 
-                ? 'var(--text-primary)' 
-                : 'var(--text-muted)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              borderBottom: activeTab === 'queue' 
-                ? '2px solid var(--button-primary-bg)' 
-                : '2px solid transparent',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-            }}
-          >
-            Queue
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        <div
-          data-testid="right-zone-content"
-          style={{
-            flex: 1,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {activeTab === 'settings' && (
-            <div style={{ flex: 1, overflow: 'auto' }}>
-              {rightZoneSettings}
-            </div>
-          )}
-          {activeTab === 'queue' && (
-            <div style={{ flex: 1, overflow: 'auto' }}>
-              {rightZoneQueue}
-            </div>
-          )}
-        </div>
+        {/* Phase F: Queue always visible, no tabs */}
+        {rightZone}
       </aside>
     </div>
   )

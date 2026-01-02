@@ -26,8 +26,6 @@ import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
 import { MediaWorkspace } from './components/MediaWorkspace'
 import { QueueFilterBar } from './components/QueueFilterBar'
-import { DeliverControlPanel, DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
-import { AttachProxiesInfoPanel } from './components/AttachProxiesInfoPanel'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
 import { 
   MonitorSurface, 
@@ -36,20 +34,16 @@ import {
   JobProgress, 
   JobResult,
 } from './components/MonitorSurface'
-import { WorkspaceLayout, RightPanelTab } from './components/WorkspaceLayout'
-import { PresetEditorHeader } from './components/PresetEditorHeader'
+import { WorkspaceLayout } from './components/WorkspaceLayout'
 import { AppFooter } from './components/AppFooter'
 import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
 import { PresetPositionConflictDialog } from './components/PresetPositionConflictDialog'
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { StatusLog, StatusLogEntry } from './components/StatusLog'
-// REMOVED: All drag & drop completely removed from UI for honesty
-// import { GlobalDropZone } from './components/GlobalDropZone'
 import { InvariantBanner } from './components/InvariantBanner'
-// REMOVED: DropConfirmationDialog - drag & drop removed from UI
-// import { DropConfirmationDialog } from './components/DropConfirmationDialog'
 import { assertJobPendingForRender, assertNoSilentPresetOverwrite } from './utils/invariants'
+import type { DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
 import * as statusMessages from './utils/statusMessages'
@@ -311,20 +305,9 @@ function App() {
   // This is the clip currently loaded in MonitorSurface
   const [monitorClipIndex, setMonitorClipIndex] = useState<number>(0)
 
-  // Phase REBUILD: Controlled right panel tab for auto-switch after job creation
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('settings')
-  
-  // Phase REBUILD: Highlighted job ID (for brief highlight after creation)
+  // Phase F: Removed rightPanelTab - Queue is always visible (no tabs)
+  // Highlighted job ID (for brief highlight after creation)
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null)
-  
-  // Phase REBUILD: Auto-switch to Queue tab when jobs exist on initial load
-  const hasInitializedTab = useRef(false)
-  useEffect(() => {
-    if (!hasInitializedTab.current && jobs.length > 0) {
-      hasInitializedTab.current = true
-      setRightPanelTab('queue')
-    }
-  }, [jobs.length])
 
   // ============================================
   // CANONICAL INGESTION PIPELINE
@@ -1502,8 +1485,7 @@ function App() {
     await fetchJobs()
     setSelectedJobId(result.jobId)
     
-    // Phase REBUILD: Switch to Queue tab and highlight the new job
-    setRightPanelTab('queue')
+    // Phase F: Queue is always visible, just highlight the new job
     setHighlightedJobId(result.jobId)
     // Clear highlight after 500ms
     setTimeout(() => setHighlightedJobId(null), 500)
@@ -2341,11 +2323,21 @@ function App() {
             fontSize: '0.875rem',
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center',
+            alignItems: 'flex-start',
+            gap: '1rem',
+            minHeight: 'fit-content',
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+            overflow: 'visible',
           }}
         >
-          <span>{error}</span>
-          <Button variant="ghost" size="sm" onClick={() => setError('')}>
+          <span style={{ flex: 1, lineHeight: 1.5 }}>{error}</span>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setError('')}
+            style={{ flexShrink: 0 }}
+          >
             Dismiss
           </Button>
         </div>
@@ -2398,11 +2390,8 @@ function App() {
         
         {/* 3-Zone Rigid Layout */}
         <WorkspaceLayout
-          jobCount={jobs.length}
-          activeTab={rightPanelTab}
-          onTabChange={setRightPanelTab}
           leftZone={
-            /* LEFT ZONE: MediaWorkspace - Sources */
+            /* LEFT ZONE: MediaWorkspace - Sources + Output + Processing + Create Job */
             <MediaWorkspace
               selectedFiles={selectedFiles}
               onFilesChange={setSelectedFiles}
@@ -2459,54 +2448,8 @@ function App() {
               isLastClip={clipNavigationInfo?.isLastClip ?? true}
             />
           }
-          rightZoneSettings={
-            /* RIGHT ZONE SETTINGS TAB: DeliverControlPanel + Presets */
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              {/* Preset Editor Header */}
-              <PresetEditorHeader
-                presets={presetManager.presets}
-                selectedPresetId={presetManager.selectedPresetId}
-                isDirty={presetManager.isDirty}
-                onSelectPreset={(id) => {
-                  if (id) {
-                    const preset = presetManager.getPreset(id)
-                    if (preset) {
-                      applyPresetSettings(preset.settings)
-                    }
-                  }
-                  presetManager.selectPreset(id)
-                }}
-                onRenamePreset={presetManager.renamePreset}
-                onSavePreset={handleSavePreset}
-                onSaveAsPreset={handleSaveAsPreset}
-                onDeletePreset={presetManager.deletePreset}
-                onDuplicatePreset={handleDuplicatePreset}
-                onExportPresets={handleExportPresets}
-                onImportPresets={handleImportPresets}
-                onConfirmDiscardChanges={handleConfirmDiscardChanges}
-                disabled={isDeliverReadOnly}
-              />
-              
-              {/* DeliverControlPanel */}
-              <DeliverControlPanel
-                context={deliverContext}
-                settings={deliverSettings}
-                onSettingsChange={handleDeliverSettingsChange}
-                isReadOnly={isDeliverReadOnly || workspaceMode === 'execute'}
-                backendUrl={BACKEND_URL}
-                appliedPresetName={appliedPresetName}
-                onOpenVisualEditor={openVisualPreviewModal}
-                hasQueuedJobSelected={!!selectedJobId && jobs.some(j => j.id === selectedJobId)}
-              />
-              
-              {/* Attach Proxies Info Panel — read-only guidance */}
-              <div style={{ padding: '0.75rem', borderTop: '1px solid var(--border-primary)' }}>
-                <AttachProxiesInfoPanel />
-              </div>
-            </div>
-          }
-          rightZoneQueue={
-            /* RIGHT ZONE QUEUE TAB: Queue Panel */
+          rightZone={
+            /* RIGHT ZONE: Queue ONLY (Phase F: Settings moved to left panel) */
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               {/* Queue Filter Bar */}
               <QueueFilterBar

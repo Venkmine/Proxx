@@ -954,5 +954,3 @@ export function JobGroup({
 }
 
 export default JobGroup
-
-export default JobGroup
