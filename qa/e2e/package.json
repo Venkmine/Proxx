@@ -1,0 +1,18 @@
+{
+  "name": "@proxx/e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "E2E_TEST=true playwright test",
+    "test:ui": "E2E_TEST=true playwright test --ui",
+    "test:debug": "E2E_TEST=true playwright test --debug",
+    "test:headed": "E2E_TEST=true playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^20.0.0",
+    "electron": "^33.2.0",
+    "playwright": "^1.57.0"
+  }
+}

@@ -16,6 +16,10 @@ import { test, expect } from './helpers'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 test.describe('RAW Proxy Encoding E2E', () => {
   let tempOutputDir: string
@@ -100,7 +104,7 @@ test.describe('RAW Proxy Encoding E2E', () => {
     // In test mode, we'll call the backend API directly
     // This simulates what the UI would do when clicking "Create Job"
     const jobPayload = {
-      sources: [mockRawFile],
+      sources: [rawFile],
       output_dir: tempOutputDir,
       proxy_profile: 'standard',
       resolve_preset: 'ProRes 422 Proxy', // Required for Resolve routing

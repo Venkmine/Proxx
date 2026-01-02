@@ -37,8 +37,12 @@ export const test = base.extend<ElectronFixtures>({
       )
     }
 
+    // Use Electron from frontend/node_modules
+    const electronPath = path.join(projectRoot, 'frontend/node_modules/.bin/electron')
+
     // Launch Electron with test mode enabled
     const app = await electron.launch({
+      executablePath: electronPath,
       args: [electronMain],
       env: {
         ...process.env,
