@@ -37,6 +37,7 @@ import { PreflightSummary, type PreflightCheck } from './PreflightSummary'
 import { JobSubmitButton, type JobSummary } from './JobSubmitButton'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import type { DeliverSettings } from './DeliverControlPanel'
+import type { AppMode } from '../types/appMode'
 
 // =============================================================================
 // Path Validation
@@ -147,6 +148,9 @@ interface CreateJobPanelProps {
   // Preflight data (computed externally)
   preflightChecks?: PreflightCheck[]
   preflightLoading?: boolean
+  
+  // App mode for preflight rendering
+  appMode?: AppMode
   
   // V2 lock state
   v2JobSpecSubmitted?: boolean
@@ -263,6 +267,7 @@ export function CreateJobPanel({
   workspaceMode = 'configure',
   preflightChecks = [],
   preflightLoading = false,
+  appMode = 'idle',
   v2JobSpecSubmitted = false,
 }: CreateJobPanelProps) {
   // Section collapse states
@@ -1014,10 +1019,12 @@ export function CreateJobPanel({
 
       {/* ================================================================= */}
       {/* SECTION 4: PREFLIGHT SUMMARY (mandatory, always visible) */}
+      {/* Rendering is gated by appMode — no red errors on initial launch */}
       {/* ================================================================= */}
       <PreflightSummary 
         checks={computedPreflightChecks} 
-        loading={preflightLoading} 
+        loading={preflightLoading}
+        appMode={appMode}
       />
 
       {/* ================================================================= */}

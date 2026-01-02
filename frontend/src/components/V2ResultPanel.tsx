@@ -42,7 +42,7 @@ export function V2ResultPanel({ onClose }: V2ResultPanelProps) {
     onClose?.()
   }
   
-  // Encoding state — just show spinner
+  // Encoding state — show honest spinner with no fake progress
   if (v2ExecutionStatus === 'encoding') {
     return (
       <div style={panelStyles}>
@@ -56,13 +56,13 @@ export function V2ResultPanel({ onClose }: V2ResultPanelProps) {
         <div style={encodingContentStyles}>
           <div style={spinnerStyles} />
           <span style={{ color: 'var(--text-secondary)', marginLeft: '0.75rem' }}>
-            Encoding...
+            Waiting for encoder…
           </span>
         </div>
         
         <div style={footerNoteStyles}>
           <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-            V2 execution is headless. Results are authoritative.
+            V2 execution is headless. No progress percentage available.
           </span>
         </div>
       </div>

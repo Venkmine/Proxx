@@ -25,6 +25,7 @@ import { SourceMetadataPanel } from './SourceMetadataPanel'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import type { DeliverSettings } from './DeliverControlPanel'
 import { SourceSelectionState } from '../stores/sourceSelectionStore'
+import type { AppMode } from '../types/appMode'
 
 // Phase 16: Engine info
 interface EngineInfo {
@@ -84,6 +85,7 @@ interface MediaWorkspaceProps {
   loading: boolean
   hasElectron: boolean
   workspaceMode: WorkspaceMode
+  appMode?: AppMode
   
   // V2 Thin Client: Lock inputs when JobSpec is submitted
   v2JobSpecSubmitted?: boolean
@@ -110,6 +112,7 @@ export function MediaWorkspace({
   loading,
   hasElectron,
   workspaceMode,
+  appMode = 'idle',
   v2JobSpecSubmitted = false,
 }: MediaWorkspaceProps) {
   return (
@@ -177,6 +180,7 @@ export function MediaWorkspace({
           loading={loading}
           hasElectron={hasElectron}
           workspaceMode={workspaceMode}
+          appMode={appMode}
           // V2 Thin Client: Lock inputs when JobSpec is submitted
           v2JobSpecSubmitted={v2JobSpecSubmitted}
         />

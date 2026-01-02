@@ -466,20 +466,127 @@ export function MonitorSurface({
       data-testid="monitor-surface"
       style={{
         /* Full-bleed container — fills entire center zone */
+        /* LAYOUT HARDENING: Strict vertical zones to prevent overlap */
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
         height: '100%',
         width: '100%',
-        /* NOTE: overflow visible to allow preview menu to float above adjacent panels */
-        overflow: 'visible',
+        overflow: 'hidden',
         position: 'relative',
         /* Dark neutral background for idle, true black for content states */
         background: hasContent ? '#000000' : '#0a0b0d',
       }}
     >
-      {/* 16:9 Content Area — centered matte */}
+      {/* ============================================ */}
+      {/* TOP ZONE (fixed height): Status badges, banners */}
+      {/* ============================================ */}
+      {state === 'source-loaded' && (
+        <div
+          data-testid="monitor-top-zone"
+          style={{
+            flexShrink: 0,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0.5rem 0.75rem',
+            minHeight: '2.5rem',
+            zIndex: 10,
+          }}
+        >
+          {/* Left: Preview Mode Badge + Zoom Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <PreviewModeBadge 
+              mode={
+                isNativePlayback 
+                  ? 'native' 
+                  : (isRaw && !tieredPreview?.video?.previewUrl)
+                    ? 'raw-pending'
+                    : previewMode
+              } 
+            />
+            {canPlaybackNow && zoomMode === 'actual' && (
+              <div
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.35)',
+                  borderRadius: '4px',
+                  fontSize: '0.625rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--accent-primary, #3b82f6)',
+                  fontWeight: 500,
+                }}
+                title="Double-click to toggle Fit/100% zoom"
+              >
+                100%
+              </div>
+            )}
+          </div>
+
+          {/* Right: Preview Menu Button */}
+          <div data-testid="preview-menu-container" style={{ position: 'relative', zIndex: 9999 }}>
+            <button
+              onClick={() => setShowPreviewMenu(prev => !prev)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                padding: '0.375rem 0.625rem',
+                background: showPreviewMenu 
+                  ? 'rgba(59, 130, 246, 0.2)' 
+                  : 'rgba(255, 255, 255, 0.06)',
+                border: showPreviewMenu 
+                  ? '1px solid rgba(59, 130, 246, 0.4)' 
+                  : '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '4px',
+                color: showPreviewMenu 
+                  ? 'var(--accent-primary, #3b82f6)' 
+                  : 'var(--text-secondary, #9ca3af)',
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-sans)',
+                cursor: 'pointer',
+                transition: 'all 150ms ease',
+              }}
+            >
+              {tieredPreview?.videoLoading ? (
+                <>
+                  <span
+                    style={{
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      border: '2px solid var(--text-dim)',
+                      borderTopColor: 'var(--accent-primary, #3b82f6)',
+                      animation: 'monitorSpin 1s linear infinite',
+                    }}
+                  />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: '0.875rem' }}>▶</span>
+                  Preview
+                </>
+              )}
+            </button>
+            <PreviewMenu
+              visible={showPreviewMenu}
+              onClose={() => setShowPreviewMenu(false)}
+              onRequestVideo={handleRequestVideo}
+              isGenerating={tieredPreview?.videoLoading || false}
+              onCancel={() => tieredPreview?.cancelVideo()}
+              isRaw={isRaw}
+              error={tieredPreview?.videoError}
+              requiresConfirmation={pendingRawConfirmation !== null}
+              onConfirmRaw={handleConfirmRaw}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* MIDDLE ZONE (flex, fills remaining space): Preview canvas OR placeholder */}
+      {/* ============================================ */}
       <div
         ref={viewportRef}
         data-testid="monitor-viewport"
@@ -488,18 +595,15 @@ export function MonitorSurface({
         onMouseEnter={() => setIsVideoHovered(true)}
         onMouseLeave={() => setIsVideoHovered(false)}
         style={{
-          position: 'relative',
           flex: '1 1 auto',
+          minHeight: 0,  /* Critical for flex shrink */
           width: '100%',
-          maxWidth: zoomMode === 'fit' 
-            ? 'calc((100vh - 120px) * 16 / 9)' 
-            : 'none', // Allow overflow in 100% mode
-          aspectRatio: zoomMode === 'fit' ? '16 / 9' : undefined,
-          background: hasContent ? '#000000' : 'transparent',
-          borderRadius: hasContent ? '2px' : 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
           overflow: zoomMode === 'fit' ? 'hidden' : 'auto',
-          /* Subtle shadow for content states to separate from background */
-          boxShadow: hasContent ? '0 0 60px rgba(0, 0, 0, 0.5)' : 'none',
+          background: hasContent ? '#000000' : 'transparent',
           /* Cursor changes to indicate click-to-play when video is loaded */
           cursor: canPlaybackNow && isVideoHovered 
             ? (isPlaying ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Crect x=\'6\' y=\'5\' width=\'4\' height=\'14\' rx=\'1\' fill=\'white\' opacity=\'0.8\'/%3E%3Crect x=\'14\' y=\'5\' width=\'4\' height=\'14\' rx=\'1\' fill=\'white\' opacity=\'0.8\'/%3E%3C/svg%3E") 12 12, pointer' 
@@ -507,6 +611,20 @@ export function MonitorSurface({
             : 'default',
         }}
       >
+        {/* 16:9 Viewport Container */}
+        <div
+          style={{
+            maxWidth: zoomMode === 'fit' 
+              ? 'calc((100% - 2rem) * 1)'  /* Fill available space with margin */
+              : 'none',
+            maxHeight: '100%',
+            width: zoomMode === 'fit' ? '100%' : 'auto',
+            aspectRatio: zoomMode === 'fit' ? '16 / 9' : undefined,
+            position: 'relative',
+            borderRadius: hasContent ? '2px' : 0,
+            boxShadow: hasContent ? '0 0 60px rgba(0, 0, 0, 0.5)' : 'none',
+          }}
+        >
         {/* ============================================ */}
         {/* STATE: IDLE — Logo branding */}
         {/* ============================================ */}
@@ -562,6 +680,7 @@ export function MonitorSurface({
         {/* 2. BURST: Thumbnail strip (optional) */}
         {/* 3. VIDEO: Full playback (user-initiated only) */}
         {/* 4. NATIVE: Non-RAW direct playback */}
+        {/* NOTE: TOP-LEFT and TOP-RIGHT badges moved to TOP ZONE */}
         {/* ============================================ */}
         {state === 'source-loaded' && sourceMetadata && (
           <div
@@ -571,126 +690,6 @@ export function MonitorSurface({
               inset: 0,
             }}
           >
-            {/* TOP-LEFT: Preview Mode Badge + Zoom Indicator */}
-            <div
-              data-testid="preview-mode-header"
-              style={{
-                position: 'absolute',
-                top: '0.75rem',
-                left: '0.75rem',
-                zIndex: 10,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              {/* Badge mode: native (non-RAW), raw-pending (RAW without proxy), or preview tier */}
-              <PreviewModeBadge 
-                mode={
-                  isNativePlayback 
-                    ? 'native' 
-                    : (isRaw && !tieredPreview?.video?.previewUrl)
-                      ? 'raw-pending'
-                      : previewMode
-                } 
-              />
-              
-              {/* Zoom indicator (only in video mode) */}
-              {canPlaybackNow && zoomMode === 'actual' && (
-                <div
-                  style={{
-                    padding: '0.375rem 0.625rem',
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                    borderRadius: '4px',
-                  }}
-                  title="Double-click to toggle Fit/100% zoom"
-                >
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      fontFamily: 'var(--font-mono)',
-                      color: 'var(--accent-primary, #3b82f6)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    100%
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* TOP-RIGHT: Preview Menu Button + Dropdown */}
-            {/* NOTE: z-index 1000 ensures menu floats above adjacent panels */}
-            <div
-              data-testid="preview-menu-container"
-              style={{
-                position: 'absolute',
-                top: '0.75rem',
-                right: '0.75rem',
-                zIndex: 1000,
-              }}
-            >
-              {/* Menu trigger button */}
-              <button
-                onClick={() => setShowPreviewMenu(prev => !prev)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                  padding: '0.375rem 0.625rem',
-                  background: showPreviewMenu 
-                    ? 'rgba(59, 130, 246, 0.2)' 
-                    : 'rgba(255, 255, 255, 0.06)',
-                  border: showPreviewMenu 
-                    ? '1px solid rgba(59, 130, 246, 0.4)' 
-                    : '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: '4px',
-                  color: showPreviewMenu 
-                    ? 'var(--accent-primary, #3b82f6)' 
-                    : 'var(--text-secondary, #9ca3af)',
-                  fontSize: '0.75rem',
-                  fontFamily: 'var(--font-sans)',
-                  cursor: 'pointer',
-                  transition: 'all 150ms ease',
-                }}
-              >
-                {tieredPreview?.videoLoading ? (
-                  <>
-                    <span
-                      style={{
-                        width: '10px',
-                        height: '10px',
-                        borderRadius: '50%',
-                        border: '2px solid var(--text-dim)',
-                        borderTopColor: 'var(--accent-primary, #3b82f6)',
-                        animation: 'monitorSpin 1s linear infinite',
-                      }}
-                    />
-                    Generating…
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: '0.875rem' }}>▶</span>
-                    Preview
-                  </>
-                )}
-              </button>
-
-              {/* Dropdown menu */}
-              <PreviewMenu
-                visible={showPreviewMenu}
-                onClose={() => setShowPreviewMenu(false)}
-                onRequestVideo={handleRequestVideo}
-                isGenerating={tieredPreview?.videoLoading || false}
-                onCancel={() => tieredPreview?.cancelVideo()}
-                isRaw={isRaw}
-                error={tieredPreview?.videoError}
-                requiresConfirmation={pendingRawConfirmation !== null}
-                onConfirmRaw={handleConfirmRaw}
-              />
-            </div>
-
             {/* POSTER MODE — Single frame (default, appears instantly) */}
             {showPoster && tieredPreview?.poster?.posterUrl && (
               <div
@@ -713,6 +712,51 @@ export function MonitorSurface({
                   }}
                   draggable={false}
                 />
+              </div>
+            )}
+
+            {/* RAW PLAYBACK UNAVAILABLE BANNER — Shown for RAW files without proxy */}
+            {isRaw && !hasVideoProxy && !tieredPreview?.videoLoading && (
+              <div
+                data-testid="raw-playback-unavailable-banner"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  bottom: canShowTransportControls ? '5rem' : '1rem',
+                  transform: 'translateX(-50%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '1rem 1.5rem',
+                  background: 'rgba(234, 179, 8, 0.15)',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  borderRadius: '8px',
+                  backdropFilter: 'blur(8px)',
+                  zIndex: 20,
+                  maxWidth: '90%',
+                  textAlign: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '0.875rem',
+                    fontFamily: 'var(--font-sans)',
+                    fontWeight: 600,
+                    color: '#eab308',
+                  }}
+                >
+                  Playback unavailable — requires Resolve
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'rgba(234, 179, 8, 0.8)',
+                  }}
+                >
+                  Generate preview proxy to enable playback
+                </span>
               </div>
             )}
 
@@ -1177,29 +1221,42 @@ export function MonitorSurface({
             )}
           </div>
         )}
-      </div>
+        </div> {/* Close 16:9 Viewport Container */}
+      </div> {/* Close MIDDLE ZONE */}
 
-      {/* TransportBar — Professional transport controls below the monitor */}
-      {/* INC-CTRL-001: Transport controls must never disappear once preview is available */}
-      {/* Controls may be disabled, but must always be VISIBLE when any preview tier exists */}
+      {/* ============================================ */}
+      {/* BOTTOM ZONE (fixed height): Transport controls */}
+      {/* RULE: Transport controls must NEVER be obscured */}
+      {/* RULE: Error messages must NEVER overlay playback controls */}
+      {/* ============================================ */}
       {canShowTransportControls && (
-        <TransportBar
-          videoRef={videoRef}
-          fps={fps}
-          duration={duration}
-          enabled={transportEnabled}
-          sourceTimecodeStart={sourceMetadata?.sourceTimecodeStart}
-          hasSourceTimecode={sourceMetadata?.hasSourceTimecode}
-          // Clip navigation (v3)
-          currentClip={currentClip}
-          totalClips={totalClips}
-          onPreviousClip={onPreviousClip}
-          onNextClip={onNextClip}
-          isFirstClip={isFirstClip}
-          isLastClip={isLastClip}
-          // Playback status label (v3 hardening)
-          playbackDisabledLabel={playbackStatusLabel}
-        />
+        <div
+          data-testid="monitor-bottom-zone"
+          style={{
+            flexShrink: 0,
+            width: '100%',
+            background: 'rgba(0, 0, 0, 0.9)',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          }}
+        >
+          <TransportBar
+            videoRef={videoRef}
+            fps={fps}
+            duration={duration}
+            enabled={transportEnabled}
+            sourceTimecodeStart={sourceMetadata?.sourceTimecodeStart}
+            hasSourceTimecode={sourceMetadata?.hasSourceTimecode}
+            // Clip navigation (v3)
+            currentClip={currentClip}
+            totalClips={totalClips}
+            onPreviousClip={onPreviousClip}
+            onNextClip={onNextClip}
+            isFirstClip={isFirstClip}
+            isLastClip={isLastClip}
+            // Playback status label (v3 hardening)
+            playbackDisabledLabel={playbackStatusLabel}
+          />
+        </div>
       )}
 
       {/* Debug Overlay — DEV ONLY (FORGE_DEBUG_UI=true) */}

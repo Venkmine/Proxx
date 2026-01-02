@@ -510,11 +510,11 @@ const TIMECODE_MODES: {
   },
 ]
 
-// Session storage key for timecode mode persistence
-const TC_MODE_STORAGE_KEY = 'forge-timecode-mode'
+// V1 Hardening: localStorage key for timecode mode persistence (persists across sessions)
+const TC_MODE_STORAGE_KEY = 'proxx.timecodeMode'
 
-// Session storage key for jump interval persistence
-const JUMP_INTERVAL_STORAGE_KEY = 'monitor.jumpInterval'
+// V1 Hardening: localStorage key for jump interval persistence (persists across sessions)
+const JUMP_INTERVAL_STORAGE_KEY = 'proxx.jumpInterval'
 
 // ============================================================================
 // JUMP INTERVAL CONFIGURATION
@@ -602,10 +602,27 @@ export function TransportBar({
   // Track mute state locally (not in clock)
   const [isMuted, setIsMuted] = useState(false)
   
-  // Timecode mode state - persist to session storage
+  // Volume level (0-100), persisted to localStorage
+  const [volume, setVolume] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('proxx.volume')
+      if (stored) {
+        const val = parseInt(stored, 10)
+        if (!isNaN(val) && val >= 0 && val <= 100) return val
+      }
+    } catch {
+      // localStorage not available
+    }
+    return 100
+  })
+  
+  // Previous volume (before mute) for restore
+  const [previousVolume, setPreviousVolume] = useState<number>(100)
+  
+  // Timecode mode state - persist to localStorage (V1 Hardening)
   const [timecodeMode, setTimecodeMode] = useState<TimecodeMode>(() => {
     try {
-      const stored = sessionStorage.getItem(TC_MODE_STORAGE_KEY)
+      const stored = localStorage.getItem(TC_MODE_STORAGE_KEY)
       if (stored && ['source', 'preview', 'counter'].includes(stored)) {
         // If stored mode is 'source' but source TC not available, default to 'preview'
         if (stored === 'source' && !hasSourceTimecode) {
@@ -614,7 +631,7 @@ export function TransportBar({
         return stored as TimecodeMode
       }
     } catch {
-      // Session storage not available
+      // localStorage not available
     }
     return 'preview'
   })
@@ -622,16 +639,16 @@ export function TransportBar({
   // Timecode mode dropdown state
   const [showTimecodeDropdown, setShowTimecodeDropdown] = useState(false)
   
-  // Jump interval state - persist to session storage
+  // Jump interval state - persist to localStorage (V1 Hardening: persist across sessions)
   const [jumpInterval, setJumpInterval] = useState<typeof JUMP_INTERVALS[0]>(() => {
     try {
-      const stored = sessionStorage.getItem(JUMP_INTERVAL_STORAGE_KEY)
+      const stored = localStorage.getItem(JUMP_INTERVAL_STORAGE_KEY)
       if (stored) {
         const found = JUMP_INTERVALS.find(j => j.id === stored)
         if (found) return found
       }
     } catch {
-      // Session storage not available
+      // localStorage not available
     }
     return DEFAULT_JUMP_INTERVAL
   })
@@ -654,23 +671,41 @@ export function TransportBar({
     [sourceTimecodeStart, fps]
   )
   
-  // Persist timecode mode to session storage
+  // Persist timecode mode to localStorage (V1 Hardening)
   useEffect(() => {
     try {
-      sessionStorage.setItem(TC_MODE_STORAGE_KEY, timecodeMode)
+      localStorage.setItem(TC_MODE_STORAGE_KEY, timecodeMode)
     } catch {
-      // Session storage not available
+      // localStorage not available
     }
   }, [timecodeMode])
   
-  // Persist jump interval to session storage
+  // Persist jump interval to localStorage (V1 Hardening)
   useEffect(() => {
     try {
-      sessionStorage.setItem(JUMP_INTERVAL_STORAGE_KEY, jumpInterval.id)
+      localStorage.setItem(JUMP_INTERVAL_STORAGE_KEY, jumpInterval.id)
     } catch {
-      // Session storage not available
+      // localStorage not available
     }
   }, [jumpInterval])
+  
+  // Persist volume to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('proxx.volume', String(volume))
+    } catch {
+      // localStorage not available
+    }
+  }, [volume])
+  
+  // Sync volume with video element
+  useEffect(() => {
+    const video = videoRef.current
+    if (video) {
+      video.volume = volume / 100
+      video.muted = isMuted || volume === 0
+    }
+  }, [videoRef, volume, isMuted])
   
   // Sync mute state with video element
   useEffect(() => {
@@ -783,9 +818,36 @@ export function TransportBar({
     const video = videoRef.current
     if (!video) return
     
-    video.muted = !video.muted
-    setIsMuted(video.muted)
-  }, [videoRef])
+    if (isMuted || volume === 0) {
+      // Unmute: restore previous volume (or 100 if was 0)
+      const restoreVolume = previousVolume > 0 ? previousVolume : 100
+      setVolume(restoreVolume)
+      setIsMuted(false)
+      video.volume = restoreVolume / 100
+      video.muted = false
+    } else {
+      // Mute: save current volume and set to 0
+      setPreviousVolume(volume)
+      setIsMuted(true)
+      video.muted = true
+    }
+  }, [videoRef, isMuted, volume, previousVolume])
+  
+  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const video = videoRef.current
+    const newVolume = parseInt(e.target.value, 10)
+    
+    setVolume(newVolume)
+    
+    if (video) {
+      video.volume = newVolume / 100
+      // Auto-unmute when adjusting volume from 0
+      if (newVolume > 0 && (isMuted || video.muted)) {
+        setIsMuted(false)
+        video.muted = false
+      }
+    }
+  }, [videoRef, isMuted])
   
   // J/K/L shuttle controls
   const handleShuttleReverse = useCallback(() => {
@@ -1221,19 +1283,48 @@ export function TransportBar({
           </span>
         </div>
         
-        {/* Mute Toggle */}
-        <button
-          onClick={handleMuteToggle}
+        {/* Volume Control — Speaker icon + horizontal slider */}
+        <div
+          data-testid="transport-volume-control"
           style={{
-            ...styles.button,
-            ...styles.muteButton,
-            ...(isMuted ? styles.mutedState : {}),
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            padding: '0 0.375rem',
           }}
-          title={isMuted ? 'Unmute (M) — Audio is muted' : 'Mute (M)'}
-          data-testid="transport-mute"
         >
-          {isMuted ? <MutedIcon /> : <SpeakerIcon />}
-        </button>
+          <button
+            onClick={handleMuteToggle}
+            style={{
+              ...styles.button,
+              ...styles.muteButton,
+              ...((isMuted || volume === 0) ? styles.mutedState : {}),
+            }}
+            title={(isMuted || volume === 0) ? 'Unmute (M) — Audio is muted' : 'Mute (M)'}
+            data-testid="transport-mute"
+          >
+            {(isMuted || volume === 0) ? <MutedIcon /> : <SpeakerIcon />}
+          </button>
+          
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={isMuted ? 0 : volume}
+            onChange={handleVolumeChange}
+            data-testid="transport-volume-slider"
+            title={`Volume: ${isMuted ? 0 : volume}%`}
+            style={{
+              width: '60px',
+              height: '4px',
+              appearance: 'none',
+              background: `linear-gradient(to right, var(--text-secondary) 0%, var(--text-secondary) ${isMuted ? 0 : volume}%, rgba(255, 255, 255, 0.15) ${isMuted ? 0 : volume}%, rgba(255, 255, 255, 0.15) 100%)`,
+              borderRadius: '2px',
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          />
+        </div>
         
         {/* Clip Indicator (X of Y) - only show when in multi-clip job */}
         {currentClip && totalClips && totalClips > 1 && (

@@ -84,13 +84,14 @@ const styles = {
     position: 'absolute' as const,
     top: 'calc(100% + 4px)',
     left: 0,
-    minWidth: '180px',
+    minWidth: '240px',
+    maxWidth: '320px',
     background: 'rgba(20, 22, 28, 0.98)',
     border: '1px solid rgba(255, 255, 255, 0.15)',
     borderRadius: '6px',
-    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
-    overflow: 'hidden',
-    zIndex: 100,
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4)',
+    overflow: 'visible',
+    zIndex: 9999,  // Ensure menu floats above ALL panels
   },
   
   menuHeader: {

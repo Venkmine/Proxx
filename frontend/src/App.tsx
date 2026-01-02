@@ -70,6 +70,9 @@ import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'
+// App State Machine: Explicit centralized state derivation
+import { type AppMode, deriveAppMode } from './types/appMode'
+import { canSubmitWithPreflight, type PreflightCheck } from './components/PreflightSummary'
 
 /**
  * Awaire Proxy Operator Control - Grouped Queue View
@@ -516,6 +519,85 @@ function App() {
   
   // Phase 8B: Queue diagnostics clarity - is any job currently running?
   const hasAnyJobRunning = jobs.some(job => job.status.toUpperCase() === 'RUNNING')
+
+  // ============================================
+  // APP MODE — Centralized State Machine
+  // ============================================
+  // AppMode is THE SINGLE SOURCE OF TRUTH for app-wide state.
+  // All components must receive appMode as a prop — never derive it locally.
+  // See: types/appMode.ts for derivation rules and principles.
+  
+  // Compute preflight checks for appMode derivation
+  // These are the basic preflight checks computed at the app level
+  const appLevelPreflightChecks = useMemo((): PreflightCheck[] => {
+    const checks: PreflightCheck[] = []
+    
+    // Source check
+    if (selectedFiles.length === 0) {
+      checks.push({
+        id: 'sources',
+        label: 'Source Files',
+        status: 'fail',
+        message: 'Select at least one source to continue',
+      })
+    } else {
+      checks.push({
+        id: 'sources',
+        label: 'Source Files',
+        status: 'pass',
+        message: `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected`,
+      })
+    }
+    
+    // Output directory check
+    if (!outputDirectory) {
+      checks.push({
+        id: 'output',
+        label: 'Output Directory',
+        status: 'fail',
+        message: 'Set an output directory to continue',
+      })
+    } else if (!outputDirectory.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(outputDirectory)) {
+      checks.push({
+        id: 'output',
+        label: 'Output Directory',
+        status: 'fail',
+        message: 'Output directory must be an absolute path',
+      })
+    } else {
+      checks.push({
+        id: 'output',
+        label: 'Output Directory',
+        status: 'pass',
+        message: outputDirectory,
+      })
+    }
+    
+    return checks
+  }, [selectedFiles, outputDirectory])
+  
+  // Derive isPreflightValid from checks
+  const isPreflightValid = useMemo(() => {
+    return canSubmitWithPreflight(appLevelPreflightChecks)
+  }, [appLevelPreflightChecks])
+  
+  // Check for completed jobs
+  const hasCompletedJobs = useMemo(() => {
+    return jobs.some(job => {
+      const status = job.status.toUpperCase()
+      return status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED'
+    })
+  }, [jobs])
+  
+  // Derive AppMode centrally — single source of truth
+  const appMode: AppMode = useMemo(() => {
+    return deriveAppMode(
+      selectedFiles.length > 0,
+      isPreflightValid,
+      hasAnyJobRunning,
+      hasCompletedJobs
+    )
+  }, [selectedFiles.length, isPreflightValid, hasAnyJobRunning, hasCompletedJobs])
 
   // ============================================
   // Monitor Surface State Derivation
@@ -1269,6 +1351,42 @@ function App() {
       })
     } catch (err) {
       setError(createJobError('delete', jobId, err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // V1 Hardening: Clear all completed/failed jobs in one action
+  const clearCompletedJobs = async () => {
+    const completedStatuses = ['COMPLETED', 'FAILED', 'PARTIAL']
+    const completedJobs = jobs.filter(j => completedStatuses.includes(j.status.toUpperCase()))
+    if (completedJobs.length === 0) return
+    
+    try {
+      setLoading(true)
+      let deletedCount = 0
+      for (const job of completedJobs) {
+        const response = await fetch(`${BACKEND_URL}/control/jobs/${job.id}`, { method: 'DELETE' })
+        if (response.ok) {
+          deletedCount++
+          // Clear selection if deleted job was selected
+          if (selectedJobId === job.id) {
+            setSelectedJobId(null)
+            setSelectedClipIds(new Set())
+          }
+        }
+      }
+      if (deletedCount > 0) {
+        addStatusLogEntry({
+          id: crypto.randomUUID(),
+          timestamp: new Date(),
+          level: 'info',
+          message: `Cleared ${deletedCount} completed job(s)`,
+        })
+        await fetchJobs()
+      }
+    } catch (err) {
+      setError(`Failed to clear completed jobs: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
@@ -2269,6 +2387,7 @@ function App() {
               loading={loading || ingestion.isIngesting}
               hasElectron={hasElectron}
               workspaceMode={workspaceMode}
+              appMode={appMode}
               v2JobSpecSubmitted={v2JobSpecSubmitted}
             />
           }
@@ -2397,6 +2516,19 @@ function App() {
                       data-testid="render-jobs-btn"
                     >
                       ▶ Render Jobs ({jobs.filter(j => j.status.toUpperCase() === 'PENDING').length})
+                    </Button>
+                  )}
+                  {/* V1 Hardening: Clear completed jobs button */}
+                  {jobs.filter(j => ['COMPLETED', 'FAILED', 'PARTIAL'].includes(j.status.toUpperCase())).length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearCompletedJobs}
+                      disabled={loading}
+                      data-testid="clear-completed-btn"
+                      title="Remove completed, failed, and partial jobs from queue"
+                    >
+                      Clear Completed
                     </Button>
                   )}
                 </div>

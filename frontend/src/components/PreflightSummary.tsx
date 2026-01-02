@@ -44,11 +44,16 @@ export interface PreflightCheck {
   detail?: string
 }
 
+// Import AppMode type for conditional rendering
+import type { AppMode } from '../types/appMode'
+
 export interface PreflightSummaryProps {
   /** Array of all preflight checks */
   checks: PreflightCheck[]
   /** Whether the panel is loading/computing */
   loading?: boolean
+  /** App mode — controls rendering behavior */
+  appMode?: AppMode
 }
 
 // =============================================================================
@@ -74,10 +79,45 @@ const STATUS_ICONS: Record<PreflightStatus, { icon: string; color: string; bg: s
 }
 
 // =============================================================================
+// Neutral/Soft Styling for Configuring Mode
+// =============================================================================
+
+const NEUTRAL_STATUS_ICONS: Record<PreflightStatus, { icon: string; color: string; bg: string }> = {
+  pass: {
+    icon: '✔',
+    color: 'var(--status-success-fg, #22c55e)',
+    bg: 'rgba(34, 197, 94, 0.1)',
+  },
+  warning: {
+    icon: '○',
+    color: 'var(--text-muted, #6b7280)',
+    bg: 'transparent',
+  },
+  fail: {
+    icon: '○',
+    color: 'var(--text-muted, #6b7280)',
+    bg: 'transparent',
+  },
+}
+
+// =============================================================================
 // Component
 // =============================================================================
 
-export function PreflightSummary({ checks, loading = false }: PreflightSummaryProps) {
+export function PreflightSummary({ checks, loading = false, appMode = 'ready' }: PreflightSummaryProps) {
+  // =========================================================================
+  // APP MODE GATING
+  // =========================================================================
+  // - idle: PreflightSummary is NOT rendered at all
+  // - configuring: Render with neutral/soft styling (no red errors)
+  // - ready: Render normally (green/amber/red)
+  // - running/completed: Render collapsed summary (1-line status only)
+  
+  // In idle mode, don't render anything
+  if (appMode === 'idle') {
+    return null
+  }
+  
   // Count statuses
   const failCount = checks.filter(c => c.status === 'fail').length
   const warningCount = checks.filter(c => c.status === 'warning').length
@@ -85,22 +125,72 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
 
   // Determine header status
   const hasBlockingFailures = failCount > 0
-  const headerStatus: PreflightStatus = hasBlockingFailures ? 'fail' : warningCount > 0 ? 'warning' : 'pass'
-  const headerStyle = STATUS_ICONS[headerStatus]
+  
+  // Use neutral styling in configuring mode (no red errors by default)
+  const isConfiguringMode = appMode === 'configuring'
+  const isCollapsedMode = appMode === 'running' || appMode === 'completed'
+  
+  // In configuring mode, use neutral header style
+  const headerStatus: PreflightStatus = isConfiguringMode 
+    ? 'warning'  // Neutral appearance
+    : hasBlockingFailures ? 'fail' : warningCount > 0 ? 'warning' : 'pass'
+  const statusIcons = isConfiguringMode ? NEUTRAL_STATUS_ICONS : STATUS_ICONS
+  const headerStyle = statusIcons[headerStatus]
 
   // Sort checks: failures first, then warnings, then passes
   const sortedChecks = [...checks].sort((a, b) => {
     const order: Record<PreflightStatus, number> = { fail: 0, warning: 1, pass: 2 }
     return order[a.status] - order[b.status]
   })
+  
+  // =========================================================================
+  // COLLAPSED MODE (running/completed)
+  // =========================================================================
+  if (isCollapsedMode) {
+    return (
+      <div
+        data-testid="preflight-summary"
+        data-mode="collapsed"
+        style={{
+          padding: '0.5rem 0.75rem',
+          background: 'rgba(26, 32, 44, 0.6)',
+          border: '1px solid var(--border-secondary)',
+          borderRadius: 'var(--radius-sm)',
+          marginTop: '0.5rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+      >
+        <span style={{ fontSize: '0.75rem', color: 'var(--status-success-fg, #22c55e)' }}>
+          ✔
+        </span>
+        <span style={{
+          fontSize: '0.6875rem',
+          fontFamily: 'var(--font-sans)',
+          color: 'var(--text-secondary)',
+        }}>
+          Preflight: {passCount} pass · {warningCount} warn · {failCount} fail
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div
       data-testid="preflight-summary"
+      data-mode={appMode}
       style={{
         padding: '1rem 1.25rem',
         background: 'linear-gradient(180deg, rgba(26, 32, 44, 0.98) 0%, rgba(17, 24, 39, 0.98) 100%)',
-        border: `1px solid ${hasBlockingFailures ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-primary)'}`,
+        // In configuring mode, use neutral border (no red)
+        border: `1px solid ${
+          isConfiguringMode 
+            ? 'var(--border-primary)' 
+            : hasBlockingFailures 
+              ? 'rgba(239, 68, 68, 0.4)' 
+              : 'var(--border-primary)'
+        }`,
         borderRadius: 'var(--radius)',
         marginTop: '0.75rem',
       }}
@@ -122,7 +212,7 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
             color: headerStyle.color,
           }}
         >
-          {loading ? '◌' : headerStyle.icon}
+          {loading ? '◌' : (isConfiguringMode ? '○' : headerStyle.icon)}
         </span>
         <h3
           style={{
@@ -134,7 +224,7 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
             letterSpacing: '-0.01em',
           }}
         >
-          Preflight Summary
+          {isConfiguringMode ? 'Setup Required' : 'Preflight Summary'}
         </h3>
         <span
           style={{
@@ -181,7 +271,22 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
       {!loading && checks.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
           {sortedChecks.map((check) => {
-            const { icon, color, bg } = STATUS_ICONS[check.status]
+            // Use neutral icons in configuring mode
+            const icons = isConfiguringMode ? NEUTRAL_STATUS_ICONS : STATUS_ICONS
+            const { icon, color, bg } = icons[check.status]
+            
+            // In configuring mode, use subtle borders
+            const getBorder = () => {
+              if (isConfiguringMode) {
+                return check.status === 'pass' 
+                  ? '1px solid transparent' 
+                  : '1px solid var(--border-secondary)'
+              }
+              if (check.status === 'fail') return '1px solid rgba(239, 68, 68, 0.3)'
+              if (check.status === 'warning') return '1px solid rgba(245, 158, 11, 0.3)'
+              return '1px solid transparent'
+            }
+            
             return (
               <div
                 key={check.id}
@@ -192,13 +297,9 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
                   alignItems: 'flex-start',
                   gap: '0.5rem',
                   padding: '0.5rem 0.625rem',
-                  background: check.status === 'pass' ? 'transparent' : bg,
+                  background: check.status === 'pass' ? 'transparent' : (isConfiguringMode ? 'transparent' : bg),
                   borderRadius: 'var(--radius-sm)',
-                  border: check.status === 'fail' 
-                    ? '1px solid rgba(239, 68, 68, 0.3)' 
-                    : check.status === 'warning'
-                      ? '1px solid rgba(245, 158, 11, 0.3)'
-                      : '1px solid transparent',
+                  border: getBorder(),
                 }}
               >
                 {/* Status Icon */}
@@ -223,7 +324,10 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
                       fontSize: '0.75rem',
                       fontFamily: 'var(--font-sans)',
                       fontWeight: 500,
-                      color: check.status === 'pass' ? 'var(--text-secondary)' : color,
+                      // In configuring mode, use secondary text for all statuses
+                      color: isConfiguringMode 
+                        ? 'var(--text-secondary)' 
+                        : (check.status === 'pass' ? 'var(--text-secondary)' : color),
                     }}
                   >
                     {check.label}
@@ -268,23 +372,33 @@ export function PreflightSummary({ checks, loading = false }: PreflightSummaryPr
         </div>
       )}
 
-      {/* Blocking Failures Summary */}
+      {/* Blocking Failures Summary — neutral in configuring mode, red in ready mode */}
       {!loading && hasBlockingFailures && (
         <div
           style={{
             marginTop: '0.75rem',
             padding: '0.5rem 0.75rem',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
+            // In configuring mode, use neutral styling (not accusatory)
+            background: isConfiguringMode 
+              ? 'rgba(107, 114, 128, 0.1)'  // Neutral gray
+              : 'rgba(239, 68, 68, 0.1)',
+            border: isConfiguringMode
+              ? '1px solid rgba(107, 114, 128, 0.3)'
+              : '1px solid rgba(239, 68, 68, 0.3)',
             borderRadius: 'var(--radius-sm)',
             fontSize: '0.6875rem',
             fontFamily: 'var(--font-sans)',
             fontWeight: 500,
-            color: 'var(--status-error-fg, #ef4444)',
+            color: isConfiguringMode
+              ? 'var(--text-secondary, #9ca3af)'
+              : 'var(--status-error-fg, #ef4444)',
             textAlign: 'center',
           }}
         >
-          {failCount} blocking issue{failCount > 1 ? 's' : ''} must be resolved
+          {isConfiguringMode 
+            ? `Complete ${failCount} item${failCount > 1 ? 's' : ''} to continue`
+            : `${failCount} blocking issue${failCount > 1 ? 's' : ''} must be resolved`
+          }
         </div>
       )}
     </div>

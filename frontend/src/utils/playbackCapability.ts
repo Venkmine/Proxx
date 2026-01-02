@@ -88,9 +88,19 @@ const DEFAULT_BACKEND_URL = 'http://127.0.0.1:8085'
  */
 export const CAPABILITY_MESSAGES: Record<PlaybackCapability, string> = {
   PLAYABLE: 'Playback available',
-  METADATA_ONLY: 'Playback unavailable — requires Resolve',
+  METADATA_ONLY: 'Playback unavailable — requires Resolve. Generate preview proxy to enable playback.',
+  NO_VIDEO: 'No video stream detected in file',
+  ERROR: 'Unable to probe file for playback capability',
+}
+
+/**
+ * Short messages for transport bar badge (space-constrained).
+ */
+export const CAPABILITY_MESSAGES_SHORT: Record<PlaybackCapability, string> = {
+  PLAYABLE: 'Playback available',
+  METADATA_ONLY: 'RAW — Generate proxy to play',
   NO_VIDEO: 'No video stream',
-  ERROR: 'Unable to probe file',
+  ERROR: 'Probe failed',
 }
 
 // ============================================================================
@@ -290,16 +300,19 @@ export function areTransportControlsVisible(hasSource: boolean): boolean {
 
 /**
  * Get the status message for disabled transport controls.
+ * Uses short messages by default for space-constrained UI.
  * 
  * @param capability Playback capability
  * @param videoLoading Whether video is currently loading
  * @param videoError Error message if video failed to load
+ * @param useShortMessage Use abbreviated message for compact UI
  * @returns Status message or null if playback is available
  */
 export function getTransportStatusMessage(
   capability: PlaybackCapability,
   videoLoading: boolean,
-  videoError: string | null
+  videoError: string | null,
+  useShortMessage: boolean = true
 ): string | null {
   // Playback available - no message
   if (capability === 'PLAYABLE' && !videoLoading && !videoError) {
@@ -316,8 +329,9 @@ export function getTransportStatusMessage(
     return `Video error: ${videoError}`
   }
   
-  // Use capability message
-  return CAPABILITY_MESSAGES[capability] || null
+  // Use capability message (short or full)
+  const messages = useShortMessage ? CAPABILITY_MESSAGES_SHORT : CAPABILITY_MESSAGES
+  return messages[capability] || null
 }
 
 /**
