@@ -369,15 +369,17 @@ export function PreviewMenu({
 // ============================================================================
 
 interface PreviewModeBadgeProps {
-  mode: 'poster' | 'burst' | 'video' | 'none'
+  mode: 'poster' | 'burst' | 'video' | 'native' | 'raw-pending' | 'none'
   onClick?: () => void
 }
 
 export function PreviewModeBadge({ mode, onClick }: PreviewModeBadgeProps) {
   const labels: Record<string, string> = {
-    poster: 'Poster',
-    burst: 'Thumbnails',
-    video: 'Preview Video',
+    poster: 'Poster Preview',
+    burst: 'Burst Preview',
+    video: 'Preview Proxy',
+    native: 'Playback Ready',
+    'raw-pending': 'RAW – Preview Required',
     none: 'No Preview',
   }
   
@@ -396,6 +398,16 @@ export function PreviewModeBadge({ mode, onClick }: PreviewModeBadgeProps) {
       bg: 'rgba(16, 185, 129, 0.15)',
       border: 'rgba(16, 185, 129, 0.35)',
       text: 'var(--status-completed-fg, #10b981)',
+    },
+    native: {
+      bg: 'rgba(16, 185, 129, 0.15)',
+      border: 'rgba(16, 185, 129, 0.35)',
+      text: 'var(--status-completed-fg, #10b981)',
+    },
+    'raw-pending': {
+      bg: 'rgba(234, 179, 8, 0.15)',
+      border: 'rgba(234, 179, 8, 0.35)',
+      text: '#eab308',
     },
     none: {
       bg: 'rgba(100, 116, 139, 0.1)',

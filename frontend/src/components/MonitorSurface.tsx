@@ -251,52 +251,81 @@ export function MonitorSurface({
     )
   }, [sourceMetadata?.codec])
   
-  // TIERED PREVIEW SYSTEM:
-  // Video playback is ONLY allowed when:
-  // 1. Source is loaded
-  // 2. Video preview is ready (user explicitly generated it)
-  // 3. No video playback errors
-  const canPlayback = state === 'source-loaded' && 
-    previewMode === 'video' && 
-    tieredPreview?.video?.previewUrl &&
-    !videoError
+  // NON-RAW NATIVE PLAYBACK:
+  // Non-RAW files (mp4/mov/prores) can play directly via native HTML5 video.
+  // No preview pipeline required. Video src is served via backend static route.
+  const isNativePlayback = useMemo(() => {
+    if (!sourceMetadata?.filePath) return false
+    // Non-RAW files can use native playback
+    return !isRaw
+  }, [sourceMetadata?.filePath, isRaw])
   
-  // INC-CTRL-001: Transport controls must never disappear once preview is available
-  // Controls are VISIBLE whenever any preview tier is available.
-  // Controls may be DISABLED (e.g., RAW without video proxy), but never hidden.
-  const canShowTransportControls = 
-    state === 'source-loaded' && (
-      // Video proxy ready (ready, playing, or paused states)
-      (previewMode === 'video' && tieredPreview?.video?.previewUrl) ||
-      // Video is being generated
-      tieredPreview?.videoLoading ||
-      // Poster is available (show disabled controls)
-      tieredPreview?.poster?.posterUrl ||
-      // Burst is available (show disabled controls)
-      (tieredPreview?.burst?.thumbnails && tieredPreview.burst.thumbnails.length > 0)
-    )
+  // Compute native video source URL (served via backend)
+  const nativeVideoSrc = useMemo(() => {
+    if (!isNativePlayback || !sourceMetadata?.filePath) return undefined
+    // Encode the file path for the backend source streaming endpoint
+    const encodedPath = encodeURIComponent(sourceMetadata.filePath)
+    return `http://127.0.0.1:8000/preview/source/${encodedPath}`
+  }, [isNativePlayback, sourceMetadata?.filePath])
   
-  // Transport controls are ENABLED only when video can actually play
+  // PLAYBACK LOGIC:
+  // Video playback is allowed when:
+  // A) Non-RAW: Native HTML5 video (no preview required)
+  // B) RAW: Video preview proxy ready (user explicitly generated it)
+  const canPlayback = state === 'source-loaded' && !videoError && (
+    // Non-RAW: Native playback (file served via backend)
+    isNativePlayback ||
+    // RAW: Preview proxy ready
+    !!(previewMode === 'video' && tieredPreview?.video?.previewUrl)
+  )
+  
+  // INC-CTRL-002: Transport controls MUST be visible when source is loaded.
+  // Controls visibility is based on "can play", not preview tier.
+  // Rules:
+  // - Non-RAW: Controls always visible and enabled (native HTML5 video)
+  // - RAW: Controls visible but disabled until preview proxy exists
+  // Controls NEVER hidden when a source is selected.
+  const canShowTransportControls = state === 'source-loaded' && (
+    // Non-RAW files: Always show controls (native playback)
+    isNativePlayback ||
+    // RAW files: Always show controls (may be disabled)
+    isRaw ||
+    // Fallback: Any preview tier available
+    !!tieredPreview?.poster?.posterUrl ||
+    !!tieredPreview?.video?.previewUrl ||
+    !!(tieredPreview?.burst?.thumbnails && tieredPreview.burst.thumbnails.length > 0)
+  )
+  
+  // Transport controls are ENABLED when video can actually play:
+  // - Non-RAW: Enabled when native video is loaded
+  // - RAW: Enabled when proxy video is loaded
   const transportEnabled = canPlayback && videoLoaded
   
   // Determine playback status label for disabled controls
+  // Clear status labels per the contract:
+  // - "RAW – Preview Required" for RAW without proxy
+  // - "Playback Ready" when playable
+  // - "Loading..." during load
   const playbackStatusLabel = useMemo(() => {
     if (canPlayback && videoLoaded) return null // No label needed when playback available
-    if (tieredPreview?.videoLoading) return 'Preparing preview proxy…'
+    if (isNativePlayback && !videoLoaded) return 'Loading video…'
+    if (tieredPreview?.videoLoading) return 'Generating preview proxy…'
     if (tieredPreview?.videoError) return `Preview error: ${tieredPreview.videoError}`
-    if (isRaw && !tieredPreview?.video?.previewUrl) return 'Playback requires preview proxy'
-    if (previewMode !== 'video') return 'Playback requires preview proxy'
-    if (!videoLoaded) return 'Loading preview…'
+    if (isRaw && !tieredPreview?.video?.previewUrl) return 'Generate preview to enable playback'
+    if (!videoLoaded && canPlayback) return 'Loading video…'
     return null
-  }, [canPlayback, videoLoaded, tieredPreview?.videoLoading, tieredPreview?.videoError, tieredPreview?.video?.previewUrl, isRaw, previewMode])
+  }, [canPlayback, videoLoaded, isNativePlayback, tieredPreview?.videoLoading, tieredPreview?.videoError, tieredPreview?.video?.previewUrl, isRaw])
   
   // Show poster frame as default visual
+  // For non-RAW files with native playback, poster is only shown while video loads
   const showPoster = state === 'source-loaded' && 
+    !isNativePlayback &&  // Non-RAW uses video directly
     (previewMode === 'poster' || previewMode === 'none') && 
     tieredPreview?.poster?.posterUrl
   
-  // Show burst thumbnails when in burst mode
+  // Show burst thumbnails when in burst mode (RAW only)
   const showBurst = state === 'source-loaded' && 
+    !isNativePlayback &&  // Non-RAW doesn't need burst
     previewMode === 'burst' && 
     tieredPreview?.burst?.thumbnails && 
     tieredPreview.burst.thumbnails.length > 0
@@ -416,10 +445,12 @@ export function MonitorSurface({
   // Determine if we're in a "content" state (not idle)
   const hasContent = state !== 'idle'
   
-  // TIERED PREVIEW SYSTEM:
-  // Video source is the preview proxy URL from the backend.
-  // We NEVER use file:// URLs directly — all playback comes from HTTP-served proxies.
-  const videoSrc = tieredPreview?.video?.previewUrl || undefined
+  // VIDEO SOURCE ROUTING:
+  // - Non-RAW files: Use native source URL (served via backend static route)
+  // - RAW files: Use preview proxy URL (user-initiated generation)
+  const videoSrc = isNativePlayback 
+    ? nativeVideoSrc 
+    : tieredPreview?.video?.previewUrl || undefined
   
   // Get metadata from poster extraction or props
   const displayMetadata = tieredPreview?.poster?.sourceInfo || {
@@ -531,6 +562,7 @@ export function MonitorSurface({
         {/* 1. POSTER: Single frame (default, instant) */}
         {/* 2. BURST: Thumbnail strip (optional) */}
         {/* 3. VIDEO: Full playback (user-initiated only) */}
+        {/* 4. NATIVE: Non-RAW direct playback */}
         {/* ============================================ */}
         {state === 'source-loaded' && sourceMetadata && (
           <div
@@ -553,7 +585,16 @@ export function MonitorSurface({
                 gap: '0.5rem',
               }}
             >
-              <PreviewModeBadge mode={previewMode} />
+              {/* Badge mode: native (non-RAW), raw-pending (RAW without proxy), or preview tier */}
+              <PreviewModeBadge 
+                mode={
+                  isNativePlayback 
+                    ? 'native' 
+                    : (isRaw && !tieredPreview?.video?.previewUrl)
+                      ? 'raw-pending'
+                      : previewMode
+                } 
+              />
               
               {/* Zoom indicator (only in video mode) */}
               {canPlayback && zoomMode === 'actual' && (

@@ -734,3 +734,99 @@ async def clear_cache():
         "tier3_video_count": proxy_count,
         "legacy_count": legacy_count,
     }
+
+
+# ============================================================================
+# NATIVE SOURCE STREAMING (Non-RAW direct playback)
+# ============================================================================
+# INC-CTRL-002: Non-RAW files (mp4/mov/prores) should play directly via 
+# native HTML5 video without preview generation.
+# This endpoint serves source media files for native playback.
+# ============================================================================
+
+# Allowed extensions for native playback (non-RAW, HTML5 compatible)
+NATIVE_PLAYBACK_EXTENSIONS = {
+    '.mp4', '.mov', '.m4v', '.webm',
+    '.mxf',  # Some MXF may work with H.264 essence
+}
+
+# Codecs that require transcoding (RAW formats)
+RAW_CODECS = {
+    'arriraw', 'redcode', 'braw', 'r3d', 'prores_raw',
+    'cineform_raw', 'raw',
+}
+
+
+@router.get("/source/{encoded_path:path}")
+async def stream_source_file(encoded_path: str):
+    """
+    Stream a source media file directly for native HTML5 playback.
+    
+    This endpoint enables non-RAW media files to play immediately without
+    requiring preview proxy generation. The file path is URL-encoded.
+    
+    Security:
+    - Only serves files with allowed extensions
+    - Rejects paths with traversal attempts
+    - Logs all access for audit
+    
+    Args:
+        encoded_path: URL-encoded absolute path to the source file
+        
+    Returns:
+        FileResponse for the source media
+    """
+    import urllib.parse
+    
+    # Decode the path
+    try:
+        source_path = urllib.parse.unquote(encoded_path)
+    except Exception as e:
+        logger.warning(f"Invalid encoded path: {encoded_path}")
+        raise HTTPException(status_code=400, detail="Invalid path encoding")
+    
+    source = Path(source_path)
+    
+    # Security: Reject traversal attempts
+    if '..' in source_path:
+        logger.warning(f"Path traversal attempt blocked: {source_path}")
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Verify file exists
+    if not source.exists():
+        logger.warning(f"Source file not found: {source_path}")
+        raise HTTPException(status_code=404, detail="Source file not found")
+    
+    if not source.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+    
+    # Check extension is allowed for native playback
+    ext = source.suffix.lower()
+    if ext not in NATIVE_PLAYBACK_EXTENSIONS:
+        logger.info(f"Extension {ext} not allowed for native playback: {source_path}")
+        raise HTTPException(
+            status_code=415, 
+            detail=f"Format not supported for native playback. Use preview proxy."
+        )
+    
+    # Determine media type
+    media_types = {
+        '.mp4': 'video/mp4',
+        '.mov': 'video/quicktime',
+        '.m4v': 'video/x-m4v',
+        '.webm': 'video/webm',
+        '.mxf': 'video/mxf',
+    }
+    media_type = media_types.get(ext, 'video/mp4')
+    
+    logger.info(f"Serving source for native playback: {source_path}")
+    
+    return FileResponse(
+        path=source,
+        media_type=media_type,
+        filename=source.name,
+        headers={
+            # Enable range requests for seeking
+            "Accept-Ranges": "bytes",
+        }
+    )
