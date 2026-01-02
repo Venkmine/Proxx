@@ -679,6 +679,16 @@ class ResolveEngine:
             immediately. The caller is responsible for error handling.
         """
         # =====================================================================
+        # E2E Test Mode - Mock Execution
+        # =====================================================================
+        # When E2E_TEST=true, bypass Resolve completely and simulate success.
+        # This allows automated tests to verify UI → job creation → completion
+        # without requiring a real Resolve installation or license.
+        # =====================================================================
+        if os.environ.get('E2E_TEST') == 'true':
+            return self._execute_test_mode(job_spec)
+        
+        # =====================================================================
         # Initialize Result Tracking
         # =====================================================================
         started_at = datetime.now(timezone.utc)
@@ -886,6 +896,92 @@ class ResolveEngine:
             })
         
         return result
+    
+    # =========================================================================
+    # Private Methods - Test Mode Execution
+    # =========================================================================
+    
+    def _execute_test_mode(self, job_spec: JobSpec) -> JobExecutionResult:
+        """
+        Execute job in E2E test mode - bypasses Resolve completely.
+        
+        Simulates successful Resolve execution by:
+        - Creating fake proxy output files
+        - Emitting realistic progress/timing
+        - Returning successful JobExecutionResult
+        
+        This enables automated E2E tests without requiring Resolve installation.
+        
+        Args:
+            job_spec: JobSpec to mock execute
+        
+        Returns:
+            JobExecutionResult with COMPLETED status and fake outputs
+        """
+        import time
+        import shutil
+        
+        started_at = datetime.now(timezone.utc)
+        clip_results: List[ClipExecutionResult] = []
+        
+        for index, source_path_str in enumerate(job_spec.sources):
+            source_path = Path(source_path_str)
+            clip_started_at = datetime.now(timezone.utc)
+            
+            # Resolve output path
+            output_path = self._resolve_output_path(
+                source_path=source_path,
+                job_spec=job_spec,
+                index=index,
+            )
+            
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Create fake proxy file (copy from source or create dummy)
+            # For test mode, create a small dummy MOV file
+            with open(output_path, 'wb') as f:
+                # Write minimal MOV header (enough to be recognized as a file)
+                # This is a minimal ftyp + mdat structure
+                f.write(b'\x00\x00\x00\x20ftyp')  # ftyp box
+                f.write(b'qt  ')  # major brand
+                f.write(b'\x00\x00\x02\x00')  # minor version
+                f.write(b'qt  ')  # compatible brand
+                f.write(b'\x00\x00\x00\x08mdat')  # mdat box (minimal)
+            
+            # Simulate realistic processing time (0.5-1.5 seconds per clip)
+            time.sleep(0.1 * (index + 1))
+            
+            # Record success
+            clip_results.append(ClipExecutionResult(
+                source_path=str(source_path),
+                resolved_output_path=str(output_path),
+                ffmpeg_command=["resolve-render", "--test-mode", "--completed"],
+                exit_code=0,
+                output_exists=True,
+                output_size_bytes=output_path.stat().st_size,
+                status="COMPLETED",
+                failure_reason=None,
+                validation_stage=None,
+                engine_used="resolve",
+                proxy_profile_used=job_spec.proxy_profile,
+                resolve_preset_used=job_spec.resolve_preset or "ProRes 422 Proxy (Test)",
+                started_at=clip_started_at,
+                completed_at=datetime.now(timezone.utc),
+            ))
+        
+        completed_at = datetime.now(timezone.utc)
+        
+        return JobExecutionResult(
+            job_id=job_spec.job_id,
+            clips=clip_results,
+            final_status="COMPLETED",
+            jobspec_version=job_spec.to_dict().get("jobspec_version"),
+            engine_used="resolve",
+            resolve_preset_used=job_spec.resolve_preset or "ProRes 422 Proxy (Test)",
+            started_at=started_at,
+            completed_at=completed_at,
+        )
     
     # =========================================================================
     # Private Methods - Connection Management

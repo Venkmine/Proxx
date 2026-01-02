@@ -1,0 +1,19 @@
+# Playwright test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Temporary test output
+temp_output/
+
+# Screenshots and videos
+*.png
+*.mp4
+*.webm
+
+# TypeScript build
+*.js
+*.mjs
+!playwright.config.ts
+!helpers.ts
+!*.spec.ts
