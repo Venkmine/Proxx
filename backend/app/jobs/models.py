@@ -107,6 +107,9 @@ class ClipTask(BaseModel):
     audio_channels: Optional[int] = None
     audio_sample_rate: Optional[int] = None
     
+    # RAW folder metadata (for folder sources)
+    raw_type: Optional[str] = None  # "R3D", "ARRIRAW", "SONY_RAW", "IMAGE_SEQUENCE", or None for files
+    
     # Phase 20: Thumbnail preview (base64 data URI)
     thumbnail: Optional[str] = None  # Base64 data URI for preview image
 

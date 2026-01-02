@@ -83,7 +83,7 @@ export function SourceSelectionPanel({
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const electron = window.electron as any
-      const result = await electron.openFiles()
+      const result = await electron.openFilesOrFolders()
       if (result && result.length > 0) {
         addPaths(result)
       }

@@ -89,6 +89,7 @@ interface ClipMetadata {
   frameRate?: string
   duration?: string
   audioLayout?: string
+  rawType?: string  // "R3D", "ARRIRAW", "SONY_RAW", "IMAGE_SEQUENCE"
 }
 
 interface ClipRowProps {
@@ -246,6 +247,17 @@ export function ClipRow({
               color: 'var(--text-muted)',
             }}
           >
+            {metadata.rawType && (
+              <span 
+                title="RAW Folder Type" 
+                style={{ 
+                  color: 'var(--accent-primary)',
+                  fontWeight: 600,
+                }}
+              >
+                {metadata.rawType}
+              </span>
+            )}
             {metadata.resolution && (
               <span title="Resolution">{metadata.resolution}</span>
             )}

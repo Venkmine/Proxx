@@ -841,6 +841,7 @@ export function JobGroup({
                         frameRate: task.frame_rate || undefined,
                         duration: task.duration || undefined,
                         audioLayout: task.audio_channels || undefined,
+                        rawType: task.raw_type || undefined,
                       }}
                       outputPath={task.output_path || undefined}
                       isSelected={selectedClipIds.has(task.id)}

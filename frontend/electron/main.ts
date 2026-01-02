@@ -475,9 +475,9 @@ function setupApplicationMenu() {
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
             const result = await dialog.showOpenDialog({
-              properties: ['openFile', 'multiSelections'],
+              properties: ['openFile', 'openDirectory', 'multiSelections'],
               filters: [
-                { name: 'Media Files', extensions: ['mov', 'mxf', 'mp4', 'avi', 'mkv'] },
+                { name: 'Media Files', extensions: ['mov', 'mxf', 'mp4', 'avi', 'mkv', 'r3d', 'braw', 'ari', 'dpx', 'exr', 'tiff', 'tif'] },
                 { name: 'All Files', extensions: ['*'] }
               ]
             })

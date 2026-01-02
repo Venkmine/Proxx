@@ -119,33 +119,43 @@ class JobEngine:
         for path in source_paths:
             task = ClipTask(source_path=path)
             
-            # Phase 16.1: Extract metadata at ingest time
-            try:
-                from ..metadata.extractors import extract_metadata
-                metadata = extract_metadata(path)
-                
-                # Populate task with extracted metadata
-                if metadata.image:
-                    task.width = metadata.image.width
-                    task.height = metadata.image.height
-                
-                if metadata.codec:
-                    codec_name = metadata.codec.codec_name or ""
-                    codec_profile = metadata.codec.profile or ""
-                    task.codec = f"{codec_name} {codec_profile}".strip() if codec_name else None
-                
-                if metadata.time:
-                    task.frame_rate = metadata.time.frame_rate
-                    task.duration = metadata.time.duration_seconds
-                
-                if metadata.audio:
-                    task.audio_channels = metadata.audio.channel_count
-                    task.audio_sample_rate = metadata.audio.sample_rate
+            # Detect if this is a RAW folder
+            from pathlib import Path
+            from ..services.ingestion import detect_raw_folder_type
+            path_obj = Path(path)
+            if path_obj.is_dir():
+                raw_type = detect_raw_folder_type(path_obj)
+                task.raw_type = raw_type
+                logger.debug(f"Task for RAW folder: {path} (type={raw_type})")
+            
+            # Phase 16.1: Extract metadata at ingest time (only for files)
+            if not task.raw_type:
+                try:
+                    from ..metadata.extractors import extract_metadata
+                    metadata = extract_metadata(path)
                     
-            except Exception as e:
-                # Metadata extraction failure is non-fatal
-                logger.warning(f"Metadata extraction failed for {path}: {e}")
-                # Leave metadata fields as None (will show "Unknown" in UI)
+                    # Populate task with extracted metadata
+                    if metadata.image:
+                        task.width = metadata.image.width
+                        task.height = metadata.image.height
+                    
+                    if metadata.codec:
+                        codec_name = metadata.codec.codec_name or ""
+                        codec_profile = metadata.codec.profile or ""
+                        task.codec = f"{codec_name} {codec_profile}".strip() if codec_name else None
+                    
+                    if metadata.time:
+                        task.frame_rate = metadata.time.frame_rate
+                        task.duration = metadata.time.duration_seconds
+                    
+                    if metadata.audio:
+                        task.audio_channels = metadata.audio.channel_count
+                        task.audio_sample_rate = metadata.audio.sample_rate
+                        
+                except Exception as e:
+                    # Metadata extraction failure is non-fatal
+                    logger.warning(f"Metadata extraction failed for {path}: {e}")
+                    # Leave metadata fields as None (will show "Unknown" in UI)
             
             # Phase 20: Generate thumbnail at ingest time
             try:

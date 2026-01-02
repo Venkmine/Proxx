@@ -27,7 +27,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import List, Optional, Dict, Any, TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
     from ..jobs.registry import JobRegistry
@@ -42,6 +42,65 @@ from ..deliver.codec_specs import validate_codec_container, CODEC_REGISTRY
 from ..execution.ffmpeg import FFMPEG_CODEC_MAP
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# RAW Folder Detection
+# ============================================================================
+
+def detect_raw_folder_type(folder_path: Path) -> Optional[str]:
+    """
+    Detect RAW folder type by inspecting contents.
+    
+    Returns:
+        - "R3D" if contains *.R3D files
+        - "ARRIRAW" if contains *.ari files
+        - "SONY_RAW" if contains *.mxf + metadata files
+        - "IMAGE_SEQUENCE" if contains numbered image frames
+        - None if not a recognized RAW format
+    """
+    if not folder_path.is_dir():
+        return None
+    
+    try:
+        files = list(folder_path.iterdir())
+        filenames = [f.name.lower() for f in files if f.is_file()]
+        
+        # Check for R3D
+        if any(f.endswith('.r3d') for f in filenames):
+            return "R3D"
+        
+        # Check for ARRIRAW
+        if any(f.endswith('.ari') for f in filenames):
+            return "ARRIRAW"
+        
+        # Check for Sony RAW (MXF + metadata)
+        has_mxf = any(f.endswith('.mxf') for f in filenames)
+        has_xml = any(f.endswith('.xml') for f in filenames)
+        if has_mxf and has_xml:
+            return "SONY_RAW"
+        
+        # Check for image sequences (numbered frames)
+        image_exts = {'.dpx', '.exr', '.tiff', '.tif', '.png', '.jpg', '.jpeg'}
+        image_files = [f for f in filenames if any(f.endswith(ext) for ext in image_exts)]
+        if len(image_files) >= 2:
+            # Check if files are numbered (simple heuristic)
+            import re
+            numbered = [f for f in image_files if re.search(r'\d{3,}', f)]
+            if len(numbered) >= 2:
+                return "IMAGE_SEQUENCE"
+        
+        return None
+    except (OSError, PermissionError) as e:
+        logger.warning(f"Failed to inspect folder {folder_path}: {e}")
+        return None
+
+def get_representative_clip_name(folder_path: Path, raw_type: str) -> str:
+    """
+    Generate a representative clip name for a RAW folder.
+    
+    Uses folder name as the clip name for display purposes.
+    """
+    return folder_path.name
 
 
 class IngestionError(Exception):
@@ -312,9 +371,13 @@ class IngestionService:
             warnings=warnings,
         )
     
-    def _validate_paths(self, paths: List[str]) -> tuple[List[str], List[str]]:
+    def _validate_paths(self, paths: List[str]) -> Tuple[List[str], List[str]]:
         """
-        Validate that paths exist and are files.
+        Validate that paths exist and are either files or RAW folders.
+        
+        Accepts:
+        - Media files (mov, mp4, mxf, etc.)
+        - RAW folders (R3D, ARRIRAW, Sony RAW, image sequences)
         
         Returns:
             Tuple of (valid_paths, invalid_paths)
@@ -327,12 +390,29 @@ class IngestionService:
             
             if not path.exists():
                 invalid_paths.append(f"{path_str} (does not exist)")
-            elif not path.is_file():
-                invalid_paths.append(f"{path_str} (not a file)")
-            elif not os.access(path, os.R_OK):
+                continue
+            
+            if not os.access(path, os.R_OK):
                 invalid_paths.append(f"{path_str} (not readable)")
-            else:
+                continue
+            
+            # Accept files
+            if path.is_file():
                 valid_paths.append(path_str)
+                continue
+            
+            # Accept folders if they are RAW folders
+            if path.is_dir():
+                raw_type = detect_raw_folder_type(path)
+                if raw_type:
+                    logger.debug(f"Detected {raw_type} folder: {path_str}")
+                    valid_paths.append(path_str)
+                else:
+                    invalid_paths.append(f"{path_str} (not a recognized RAW folder or media file)")
+                continue
+            
+            # Neither file nor directory
+            invalid_paths.append(f"{path_str} (unknown path type)")
         
         return valid_paths, invalid_paths
     

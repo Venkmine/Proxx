@@ -160,3 +160,13 @@ reelscan_env/
 
 # Exceptions (synthetic fixtures in specific locations - currently ALL ignored)
 # None - all fixtures are generated at runtime and excluded via qa/fixtures/*
+
+forge-tests/
+test_media/
+artifacts/
+logs/
+*.log
+*.csv
+*.result.json
+backend/__pycache__/
+frontend/node_modules/
