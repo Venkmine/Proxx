@@ -345,6 +345,8 @@ function App() {
         currentPreviewSource.current = sourcePath
         // Request POSTER ONLY — instant, non-blocking
         tieredPreview.requestPoster(sourcePath)
+        // PROBLEM #2 FIX: Probe playback capability to reset transport state
+        tieredPreview.probePlayback(sourcePath)
       }
     } else if (selectedFiles.length === 0) {
       // Reset when no files selected
@@ -578,6 +580,10 @@ function App() {
   // Reset submit intent and job selection when sources change
   useEffect(() => {
     setHasSubmitIntent(false)
+    // PROBLEM #5 FIX: Clear error state when selection changes
+    // This prevents "Multi-clip jobs disabled" error from persisting
+    // when user changes from multi-select to single-select
+    setError('')
     
     // Job lifecycle reset: Clear completed job selection from monitor
     if (selectedFiles.length > 0 && selectedJobId) {
@@ -1497,8 +1503,9 @@ function App() {
       return
     }
     
+    // PROBLEM #6 FIX: DON'T clear selected files - keep monitor source loaded
     // Phase 3: Clear selected files after successful job creation
-    setSelectedFiles([])
+    // setSelectedFiles([])  -- COMMENTED OUT to keep playback after job queued
     
     // Success: clear preset selection, keep output directory
     presetManager.selectPreset(null)
@@ -2443,8 +2450,11 @@ function App() {
               onCreateJob={createManualJob}
               hasSubmitIntent={hasSubmitIntent}
               onClear={() => {
+                // PROBLEM #4 FIX: Clear preview state when clearing sources
                 ingestion.clearPendingPaths()
                 setOutputDirectory('')
+                currentPreviewSource.current = null
+                tieredPreview.reset()
               }}
               loading={loading || ingestion.isIngesting}
               hasElectron={hasElectron}

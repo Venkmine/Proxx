@@ -199,8 +199,8 @@ const styles = {
   } as React.CSSProperties,
   
   button: {
-    minWidth: '36px',
-    height: '32px',
+    minWidth: '40px',
+    height: '40px',
     borderRadius: '4px',
     border: 'none',
     background: 'transparent',
