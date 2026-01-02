@@ -423,8 +423,54 @@ export function JobGroup({
             marginLeft: 'auto',
             fontSize: '0.75rem',
             fontFamily: 'var(--font-mono)',
+            alignItems: 'center',
           }}
         >
+          {/* Aggregate progress bar for running jobs */}
+          {isJobRunning && (() => {
+            // Calculate aggregate progress from all tasks
+            const totalProgress = tasks.reduce((sum, task) => sum + (task.progress_percent || 0), 0)
+            const avgProgress = tasks.length > 0 ? totalProgress / tasks.length : 0
+            
+            return avgProgress > 0 ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <div
+                  style={{
+                    width: '80px',
+                    height: '4px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '2px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.min(100, Math.max(0, avgProgress))}%`,
+                      height: '100%',
+                      backgroundColor: 'var(--button-primary-bg)',
+                      transition: 'width 300ms ease-out',
+                    }}
+                  />
+                </div>
+                <span
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.6875rem',
+                    fontWeight: 500,
+                  }}
+                >
+                  {Math.round(avgProgress)}%
+                </span>
+              </div>
+            ) : null
+          })()}
+          
           {/* Phase REBUILD: Clip completion counter for running jobs */}
           {isJobRunning && (
             <span 
@@ -853,6 +899,7 @@ export function JobGroup({
                           : undefined
                       }
                       thumbnail={task.thumbnail}
+                      progressPercent={task.progress_percent}
                     />
                   </div>
                 )
