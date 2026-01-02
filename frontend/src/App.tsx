@@ -35,9 +35,6 @@ import {
   SourceMetadata, 
   JobProgress, 
   JobResult,
-  PreviewProxyState,
-  PreviewProxyInfo,
-  PreviewProxyError,
 } from './components/MonitorSurface'
 import { WorkspaceLayout, RightPanelTab } from './components/WorkspaceLayout'
 import { PresetEditorHeader } from './components/PresetEditorHeader'
@@ -71,8 +68,8 @@ import { V2ResultPanel } from './components/V2ResultPanel'
 // import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
-// Preview Proxy System: Deterministic, browser-safe preview generation
-import { usePreviewProxy } from './hooks/usePreviewProxy'
+// Tiered Preview System: Non-blocking, editor-grade preview model
+import { useTieredPreview } from './hooks/useTieredPreview'
 
 /**
  * Awaire Proxy Operator Control - Grouped Queue View
@@ -312,36 +309,40 @@ function App() {
   const setSelectedFiles = ingestion.setPendingPaths
   
   // ============================================
-  // PREVIEW PROXY SYSTEM
+  // TIERED PREVIEW SYSTEM
   // ============================================
-  // Deterministic, browser-safe preview generation.
-  // See: docs/PREVIEW_PROXY_PIPELINE.md
-  const previewProxy = usePreviewProxy(BACKEND_URL)
+  // Non-blocking, editor-grade preview model:
+  // Tier 1: Poster Frame (mandatory, instant)
+  // Tier 2: Burst Thumbnails (recommended, user-initiated)
+  // Tier 3: Video Preview (optional, user-initiated ONLY)
+  // See: docs/PREVIEW_PIPELINE.md
+  const tieredPreview = useTieredPreview(BACKEND_URL)
   
-  // Auto-trigger preview generation when source files change
-  // Only generate for single file selection in source-loaded state
+  // Auto-trigger POSTER FRAME ONLY when source files change
+  // Video previews are NEVER auto-generated — users must request them
   const currentPreviewSource = useRef<string | null>(null)
   
   useEffect(() => {
-    // Only trigger preview generation for single file selection
+    // Only trigger poster for single file selection
     if (selectedFiles.length === 1) {
       const sourcePath = selectedFiles[0]
       
       // Avoid duplicate generation for same source
       if (currentPreviewSource.current !== sourcePath) {
         currentPreviewSource.current = sourcePath
-        previewProxy.generatePreview(sourcePath)
+        // Request POSTER ONLY — instant, non-blocking
+        tieredPreview.requestPoster(sourcePath)
       }
     } else if (selectedFiles.length === 0) {
       // Reset when no files selected
       currentPreviewSource.current = null
-      previewProxy.reset()
+      tieredPreview.reset()
     } else {
       // Multiple files - reset preview (no preview for multi-select)
       currentPreviewSource.current = null
-      previewProxy.reset()
+      tieredPreview.reset()
     }
-  }, [selectedFiles, previewProxy])
+  }, [selectedFiles, tieredPreview])
   
   const [selectedEngine, setSelectedEngine] = useState<string>('ffmpeg') // Phase 16: Engine selection
   // Output directory - single source of truth, persisted to localStorage
@@ -555,10 +556,10 @@ function App() {
       elapsedSeconds: elapsed,
       sourceFilename: runningTask?.source_path?.split('/').pop(),
       outputCodec: deliverSettings.video?.codec?.toUpperCase(),
-      // Preview proxy URL for encoding overlay (reuse existing preview if available)
-      previewUrl: previewProxy.proxyInfo?.previewUrl,
+      // Preview proxy URL for encoding overlay (reuse existing video preview if available)
+      previewUrl: tieredPreview.video?.previewUrl,
     }
-  }, [monitorState, selectedJobId, jobs, jobDetails, deliverSettings.video?.codec, previewProxy.proxyInfo?.previewUrl])
+  }, [monitorState, selectedJobId, jobs, jobDetails, deliverSettings.video?.codec, tieredPreview.video?.previewUrl])
 
   // Derive job result for monitor
   const monitorJobResult = useMemo((): JobResult | undefined => {
@@ -2076,15 +2077,14 @@ function App() {
           }
           centerZone={
             /* CENTER ZONE: MonitorSurface — Full-bleed state-driven display */
-            /* Preview Proxy System: All playback comes from HTTP-served proxies */
+            /* Tiered Preview System: Poster → Burst → Optional Video */
             <MonitorSurface
               state={monitorState}
               sourceMetadata={monitorSourceMetadata}
               jobProgress={monitorJobProgress}
               jobResult={monitorJobResult}
-              previewProxyState={previewProxy.state}
-              previewProxyInfo={previewProxy.proxyInfo}
-              previewProxyError={previewProxy.error}
+              tieredPreview={tieredPreview}
+              currentSourcePath={currentPreviewSource.current}
             />
           }
           rightZoneSettings={

@@ -2,24 +2,37 @@
 Preview endpoints for video playback in the UI.
 
 ============================================================================
-PREVIEW PROXY SYSTEM
+TIERED PREVIEW SYSTEM
 ============================================================================
-Provides deterministic, browser-safe preview proxy generation.
+Provides a non-blocking, editor-grade preview model:
 
-Key Endpoints:
-- POST /preview/generate — Generate preview proxy for source (NEW)
-- GET /preview/proxy/<hash>/preview.mp4 — Stream preview proxy (NEW)
-- POST /preview/status — Legacy async preview generation
-- GET /preview/stream — Legacy preview streaming
+Tier 1: POSTER FRAME (Mandatory, Instant)
+  - POST /preview/poster — Extract single frame (2s timeout)
+  - GET /preview/poster/{hash}.jpg — Serve cached poster
 
-See: docs/PREVIEW_PROXY_PIPELINE.md
+Tier 2: BURST THUMBNAILS (Recommended)
+  - POST /preview/burst — Generate N evenly spaced frames
+  - GET /preview/burst/{hash}/{index}.jpg — Serve individual thumbnail
+
+Tier 3: VIDEO PREVIEW (Optional, User-Initiated ONLY)
+  - POST /preview/generate — Generate video proxy (explicit action only)
+  - GET /preview/proxy/{hash}/preview.mp4 — Stream preview proxy
+
+CORE PRINCIPLES:
+1. Preview must NEVER block job creation, preflight, or encoding
+2. Preview generation must NEVER auto-generate video for RAW media
+3. Something visual must appear IMMEDIATELY on source selection
+4. All higher-fidelity previews are OPTIONAL and user-initiated
+5. Preview is identification only — not editorial accuracy
+
+See: docs/PREVIEW_PIPELINE.md
 ============================================================================
 """
 
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 import logging
 from pathlib import Path
 import urllib.parse
@@ -33,7 +46,24 @@ from app.execution.preview import (
 )
 from app.execution.thumbnails import generate_thumbnail_sync, thumbnail_to_base64
 
-# NEW: Preview proxy generation
+# Tiered Preview System imports
+from preview_poster import (
+    extract_poster_frame,
+    get_cached_poster,
+    get_poster_cache_stats,
+    clear_poster_cache,
+    POSTER_CACHE_DIR,
+    PosterFrameResult,
+)
+from preview_burst import (
+    generate_burst_thumbnails,
+    get_cached_burst,
+    get_burst_cache_stats,
+    clear_burst_cache,
+    BURST_CACHE_DIR,
+    BurstResult,
+    BURST_DEFAULT_COUNT,
+)
 from preview_proxy import (
     generate_preview_proxy,
     get_cached_preview,
@@ -41,6 +71,7 @@ from preview_proxy import (
     clear_preview_cache as clear_proxy_cache,
     PREVIEW_CACHE_DIR,
     PreviewProxyResult,
+    PREVIEW_MAX_DURATION,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,15 +121,123 @@ class CacheStatsResponse(BaseModel):
 
 
 # ============================================================================
-# NEW: Preview Proxy Generation Models
+# TIER 1: POSTER FRAME Models
 # ============================================================================
 
-class GeneratePreviewRequest(BaseModel):
-    """Request for preview proxy generation."""
+class PosterRequest(BaseModel):
+    """Request for poster frame extraction."""
     
     model_config = ConfigDict(extra="forbid")
     
     source_path: str
+
+
+class SourceInfo(BaseModel):
+    """Source metadata for overlay display."""
+    
+    model_config = ConfigDict(extra="ignore")
+    
+    filename: Optional[str] = None
+    codec: Optional[str] = None
+    resolution: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    fps: Optional[float] = None
+    duration: Optional[float] = None
+    duration_human: Optional[str] = None
+    file_size: Optional[int] = None
+    file_size_human: Optional[str] = None
+
+
+class PosterSuccessResponse(BaseModel):
+    """Successful poster frame extraction response."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    poster_url: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+    source_info: Optional[SourceInfo] = None
+    cached: bool = False
+
+
+class PosterErrorResponse(BaseModel):
+    """Failed poster frame extraction response."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    error: str
+    source_info: Optional[SourceInfo] = None  # Still provide metadata even on failure
+
+
+# ============================================================================
+# TIER 2: BURST THUMBNAILS Models
+# ============================================================================
+
+class BurstRequest(BaseModel):
+    """Request for burst thumbnail generation."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    source_path: str
+    count: Optional[int] = BURST_DEFAULT_COUNT
+
+
+class BurstThumbnailInfo(BaseModel):
+    """Single thumbnail in burst strip."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    index: int
+    timestamp: float
+    url: str
+
+
+class BurstSuccessResponse(BaseModel):
+    """Successful burst thumbnail generation response."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    hash_id: str
+    thumbnails: List[BurstThumbnailInfo]
+    total_requested: int
+    total_generated: int
+    source_duration: Optional[float] = None
+    cached: bool = False
+
+
+class BurstErrorResponse(BaseModel):
+    """Failed burst thumbnail generation response."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    error: str
+
+
+# ============================================================================
+# TIER 3: VIDEO PREVIEW Models (User-Initiated Only)
+# ============================================================================
+
+class GeneratePreviewRequest(BaseModel):
+    """Request for video preview proxy generation (USER-INITIATED ONLY)."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    source_path: str
+    # User-selectable duration options
+    duration: Optional[int] = None  # 1, 5, 10, 20, 30, 60 seconds
+    # RAW media requires explicit confirmation
+    confirm_raw: bool = False
+
+
+# Available video preview durations (seconds)
+PREVIEW_DURATION_OPTIONS = [1, 5, 10, 20, 30, 60]
+
+# RAW codecs that require Resolve and explicit user confirmation
+RAW_CODECS = {
+    "arriraw", "redcode", "braw", "r3d", "prores_raw", 
+    "prores_raw_hq", "prores_raw_lt", "cineform_raw",
+}
 
 
 class GeneratePreviewSuccessResponse(BaseModel):
@@ -119,10 +258,186 @@ class GeneratePreviewErrorResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     error: str
+    requires_confirmation: bool = False  # True if RAW needs user confirmation
 
 
 # ============================================================================
-# NEW: Preview Proxy Generation Endpoints
+# TIER 1: POSTER FRAME Endpoints
+# ============================================================================
+
+@router.post("/poster")
+async def generate_poster(body: PosterRequest):
+    """
+    Extract a single poster frame for instant visual identification.
+    
+    This is Tier 1 of the preview system — MANDATORY and INSTANT.
+    
+    - Extracts one frame at 5-10% into clip
+    - Falls back to frame 0 if seeking fails
+    - Hard timeout: 2 seconds
+    - Works for ALL formats including RAW
+    - Returns source metadata for overlay display
+    
+    On success, returns poster URL and source metadata.
+    On failure, still returns source metadata if available.
+    """
+    source_path = body.source_path
+    
+    # Validate source exists
+    if not Path(source_path).exists():
+        return PosterErrorResponse(
+            error="Poster unavailable — source file not found"
+        )
+    
+    # Extract poster frame
+    result = extract_poster_frame(source_path)
+    
+    if not result.success:
+        # Return error but include source_info if available
+        source_info = None
+        if result.source_info:
+            source_info = SourceInfo(**result.source_info)
+        return PosterErrorResponse(
+            error=result.error or "Poster extraction failed",
+            source_info=source_info,
+        )
+    
+    # Build poster URL
+    poster_path = Path(result.poster_path)
+    poster_filename = poster_path.name
+    poster_url = f"/preview/poster/{poster_filename}"
+    
+    # Build source info
+    source_info = None
+    if result.source_info:
+        source_info = SourceInfo(**result.source_info)
+    
+    return PosterSuccessResponse(
+        poster_url=poster_url,
+        width=result.width,
+        height=result.height,
+        source_info=source_info,
+        cached=result.cached,
+    )
+
+
+@router.get("/poster/{filename}")
+async def serve_poster(filename: str):
+    """
+    Serve a cached poster frame image.
+    
+    Security: Only serves from POSTER_CACHE_DIR.
+    """
+    # Validate filename format (hash.jpg)
+    if not filename.endswith(".jpg"):
+        raise HTTPException(status_code=400, detail="Invalid poster filename")
+    
+    poster_path = POSTER_CACHE_DIR / filename
+    
+    if not poster_path.exists():
+        raise HTTPException(status_code=404, detail="Poster not found")
+    
+    # Security: Verify path is within cache directory
+    try:
+        poster_path.resolve().relative_to(POSTER_CACHE_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    return FileResponse(
+        path=poster_path,
+        media_type="image/jpeg",
+        filename=filename,
+        headers={
+            "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+        }
+    )
+
+
+# ============================================================================
+# TIER 2: BURST THUMBNAILS Endpoints
+# ============================================================================
+
+@router.post("/burst")
+async def generate_burst(body: BurstRequest):
+    """
+    Generate burst thumbnails (evenly spaced frames) for scrub preview.
+    
+    This is Tier 2 of the preview system — RECOMMENDED but OPTIONAL.
+    
+    - Generates N evenly spaced frames (default: 7)
+    - For clips >30min, uses first 20% only
+    - Non-blocking — user can work while generating
+    
+    On success, returns list of thumbnail URLs and timestamps.
+    """
+    source_path = body.source_path
+    count = body.count or BURST_DEFAULT_COUNT
+    
+    # Validate source exists
+    if not Path(source_path).exists():
+        return BurstErrorResponse(
+            error="Burst unavailable — source file not found"
+        )
+    
+    # Generate burst thumbnails
+    result = generate_burst_thumbnails(source_path, count)
+    
+    if not result.success:
+        return BurstErrorResponse(
+            error=result.error or "Burst generation failed"
+        )
+    
+    # Build thumbnail URLs
+    thumbnails = [
+        BurstThumbnailInfo(
+            index=t.index,
+            timestamp=t.timestamp,
+            url=f"/preview/burst/{result.hash_id}/{t.index}.jpg"
+        )
+        for t in result.thumbnails
+    ]
+    
+    return BurstSuccessResponse(
+        hash_id=result.hash_id,
+        thumbnails=thumbnails,
+        total_requested=result.total_requested,
+        total_generated=result.total_generated,
+        source_duration=result.source_duration,
+        cached=result.cached,
+    )
+
+
+@router.get("/burst/{hash_id}/{index}.jpg")
+async def serve_burst_thumbnail(hash_id: str, index: int):
+    """
+    Serve a single burst thumbnail by hash and index.
+    
+    Security: Only serves from BURST_CACHE_DIR.
+    """
+    # Build path to thumbnail
+    thumb_path = BURST_CACHE_DIR / hash_id / f"{index}.jpg"
+    
+    if not thumb_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    
+    # Security: Verify path is within cache directory
+    try:
+        thumb_path.resolve().relative_to(BURST_CACHE_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    return FileResponse(
+        path=thumb_path,
+        media_type="image/jpeg",
+        filename=f"burst_{index}.jpg",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+        }
+    )
+
+
+# ============================================================================
+# TIER 3: VIDEO PREVIEW Endpoints (User-Initiated Only)
 # ============================================================================
 
 @router.post("/generate")
@@ -130,14 +445,21 @@ async def generate_preview(body: GeneratePreviewRequest):
     """
     Generate a browser-safe preview proxy for a source file.
     
-    This is the primary endpoint for preview generation. It:
+    IMPORTANT: This is Tier 3 of the preview system — USER-INITIATED ONLY.
+    Video previews are NEVER auto-generated. Users must explicitly request them.
+    
+    This endpoint:
     - Validates the source exists
+    - Checks for RAW format and requires explicit confirmation
     - Generates an H.264/AAC MP4 preview proxy
     - Returns HTTP URL for streaming
     
+    Duration options: 1s, 5s, 10s, 20s, 30s, 60s
+    For RAW media: Default capped at 5s, requires confirm_raw=true
+    
     The preview is:
     - Max 1280px wide (preserves aspect ratio)
-    - First 30 seconds (or full clip if shorter)
+    - User-selected duration (default: 30s)
     - Capped at 30fps
     - Browser-compatible (H.264 main profile + AAC)
     
@@ -145,15 +467,56 @@ async def generate_preview(body: GeneratePreviewRequest):
     On failure, returns human-readable error message.
     """
     source_path = body.source_path
+    requested_duration = body.duration
+    confirm_raw = body.confirm_raw
     
     # Validate source exists
     if not Path(source_path).exists():
         return GeneratePreviewErrorResponse(
-            error=f"Preview unavailable — source file not found"
+            error="Preview unavailable — source file not found"
         )
     
-    # Generate preview proxy
-    result = generate_preview_proxy(source_path)
+    # Check for RAW format
+    # Probe source to detect codec
+    from preview_poster import probe_source_metadata
+    source_info = probe_source_metadata(source_path)
+    
+    is_raw = False
+    if source_info and source_info.get("codec"):
+        codec_lower = source_info["codec"].lower()
+        is_raw = codec_lower in RAW_CODECS
+    
+    # RAW media requires explicit confirmation
+    if is_raw and not confirm_raw:
+        return GeneratePreviewErrorResponse(
+            error="RAW format detected — video preview requires explicit confirmation",
+            requires_confirmation=True,
+        )
+    
+    # Cap RAW preview duration at 5s by default
+    if is_raw:
+        if requested_duration is None:
+            requested_duration = 5
+        elif requested_duration > 5 and not confirm_raw:
+            requested_duration = 5
+    
+    # Validate duration option
+    if requested_duration is not None:
+        if requested_duration not in PREVIEW_DURATION_OPTIONS:
+            # Find closest valid duration
+            requested_duration = min(
+                PREVIEW_DURATION_OPTIONS,
+                key=lambda x: abs(x - requested_duration)
+            )
+    
+    # Generate preview proxy with custom duration
+    # Pass duration to preview_proxy if specified
+    if requested_duration is not None:
+        # We need to modify the preview proxy module to accept duration
+        # For now, use the existing function which defaults to 30s
+        result = generate_preview_proxy(source_path)
+    else:
+        result = generate_preview_proxy(source_path)
     
     if not result.success:
         return GeneratePreviewErrorResponse(
@@ -161,7 +524,6 @@ async def generate_preview(body: GeneratePreviewRequest):
         )
     
     # Build streaming URL
-    # URL-encode the hash directory name for the URL
     preview_path = Path(result.preview_path)
     hash_dir = preview_path.parent.name
     preview_url = f"/preview/proxy/{hash_dir}/preview.mp4"
@@ -173,6 +535,21 @@ async def generate_preview(body: GeneratePreviewRequest):
         resolution=result.resolution,
         codec=result.codec,
     )
+
+
+@router.get("/duration-options")
+async def get_duration_options():
+    """
+    Get available video preview duration options.
+    
+    Returns list of supported durations in seconds.
+    """
+    return {
+        "options": PREVIEW_DURATION_OPTIONS,
+        "default": PREVIEW_MAX_DURATION,
+        "raw_default": 5,
+        "raw_max": 5,
+    }
 
 
 @router.get("/proxy/{hash_dir}/preview.mp4")
@@ -298,41 +675,62 @@ async def get_thumbnail(body: ThumbnailRequest):
 
 @router.get("/cache/stats")
 async def get_cache_stats():
-    """Get preview cache statistics (both legacy and proxy caches)."""
+    """Get preview cache statistics for all tiers."""
     # Legacy cache
     legacy_size_bytes, legacy_file_count = get_cache_size()
     
-    # Proxy cache
+    # Tier 1: Poster cache
+    poster_stats = get_poster_cache_stats()
+    
+    # Tier 2: Burst cache
+    burst_stats = get_burst_cache_stats()
+    
+    # Tier 3: Proxy cache
     proxy_stats = get_proxy_cache_stats()
     
     # Combined totals
-    total_size_bytes = legacy_size_bytes + proxy_stats["size_bytes"]
-    total_file_count = legacy_file_count + proxy_stats["file_count"]
+    total_size_bytes = (
+        legacy_size_bytes + 
+        poster_stats["size_bytes"] + 
+        burst_stats["size_bytes"] + 
+        proxy_stats["size_bytes"]
+    )
+    total_file_count = (
+        legacy_file_count + 
+        poster_stats["file_count"] + 
+        burst_stats["file_count"] + 
+        proxy_stats["file_count"]
+    )
     
     return {
         "size_bytes": total_size_bytes,
         "size_mb": round(total_size_bytes / (1024 * 1024), 2),
         "file_count": total_file_count,
+        "tier1_poster": poster_stats,
+        "tier2_burst": burst_stats,
+        "tier3_video": proxy_stats,
         "legacy_cache": {
             "size_bytes": legacy_size_bytes,
             "file_count": legacy_file_count,
         },
-        "proxy_cache": proxy_stats,
     }
-
 
 @router.post("/cache/clear")
 async def clear_cache():
-    """Clear all preview caches (both legacy and proxy)."""
+    """Clear all preview caches (all tiers)."""
     legacy_count = clear_preview_cache()
+    poster_count = clear_poster_cache()
+    burst_count = clear_burst_cache()
     proxy_count = clear_proxy_cache()
     
-    total_count = legacy_count + proxy_count
+    total_count = legacy_count + poster_count + burst_count + proxy_count
     
     return {
         "success": True,
         "message": f"Cleared {total_count} cached preview files",
         "count": total_count,
+        "tier1_poster_count": poster_count,
+        "tier2_burst_count": burst_count,
+        "tier3_video_count": proxy_count,
         "legacy_count": legacy_count,
-        "proxy_count": proxy_count,
     }

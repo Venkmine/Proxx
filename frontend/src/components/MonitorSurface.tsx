@@ -1,44 +1,45 @@
 /**
- * MonitorSurface — Full-Bleed Monitor with Dual-Mode Playback
+ * MonitorSurface — Full-Bleed Monitor with Tiered Preview System
  * 
  * ============================================================================
- * DESIGN PHILOSOPHY — PREVIEW PROXY SYSTEM
+ * DESIGN PHILOSOPHY — TIERED PREVIEW SYSTEM
  * ============================================================================
- * This component implements a "Monitor" abstraction with deterministic,
- * honest preview proxy playback. Modeled after Resolve/RV-class NLE monitors.
+ * This component implements a "Monitor" abstraction with tiered, non-blocking,
+ * editor-grade previews. Modeled after Resolve/RV-class NLE monitors.
+ * 
+ * PREVIEW TIERS:
+ * 1. POSTER (default) — Single frame, appears IMMEDIATELY
+ * 2. BURST (if generated) — Thumbnail strip for scrub preview
+ * 3. VIDEO (if explicitly generated) — Full playback proxy
  * 
  * ARCHITECTURAL PRINCIPLES:
- * 1. UI NEVER attempts playback from original sources
- * 2. ALL playback comes from preview-safe proxy files
- * 3. Preview proxies are temporary, disposable, isolated from output jobs
- * 4. If preview proxy generation fails, UI falls back to Identification Mode
- * 5. No speculative playback. No fake scrubbers. No guessing codec support.
+ * 1. Preview must NEVER block job creation, preflight, or encoding
+ * 2. Preview generation must NEVER auto-generate video for RAW media
+ * 3. Something visual must appear IMMEDIATELY on source selection
+ * 4. All higher-fidelity previews are OPTIONAL and user-initiated
+ * 5. Preview is identification only — not editorial accuracy
  * 
  * STATES:
  * - IDLE: No source, show branding
- * - PREPARING_PREVIEW: Preview proxy being generated
- * - PREVIEW_PROXY_READY: Preview proxy available, Playback Mode active
- * - IDENTIFICATION_ONLY: Preview failed, metadata-only display
+ * - SOURCE_LOADED: Source ready, show poster + metadata
  * - JOB_RUNNING: Encoding progress overlay
  * - JOB_COMPLETE: Output summary overlay
- * 
- * INTERACTION:
- * - Click on video canvas: Toggle play/pause
- * - Double-click: Toggle Fit/100% zoom
- * - Hover: Subtle play/pause cursor indicator
  * 
  * Key principles:
  * - Full-bleed: No card borders, padding, or nested panels
  * - Edge-to-edge with centered 16:9 content area
- * - NO fake controls — if playback doesn't work, controls don't appear
- * - Real HTML5 video playback ONLY from preview proxies
+ * - NO blocking spinners — poster appears instantly
+ * - Video playback ONLY when user explicitly requests it
  * 
- * See: docs/PREVIEW_PROXY_PIPELINE.md, docs/MONITOR_SURFACE.md
+ * See: docs/PREVIEW_PIPELINE.md, docs/MONITOR_SURFACE.md
  * ============================================================================
  */
 
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { TransportBar } from './TransportBar'
+import { BurstStrip } from './BurstStrip'
+import { PreviewMenu, PreviewModeBadge, PreviewDisclaimer } from './PreviewMenu'
+import type { UseTieredPreviewReturn } from '../hooks/useTieredPreview'
 
 // ============================================================================
 // TYPES
@@ -50,12 +51,13 @@ import { TransportBar } from './TransportBar'
  */
 export type MonitorState = 
   | 'idle'           // No source, show branding
-  | 'source-loaded'  // Source ready, show metadata (or playback if supported)
+  | 'source-loaded'  // Source ready, show preview (poster/burst/video)
   | 'job-running'    // Job executing, show progress
   | 'job-complete'   // Job finished, show summary
 
 /**
  * Preview proxy state for playback control.
+ * @deprecated Use tieredPreview.mode instead
  */
 export type PreviewProxyState = 
   | 'idle'           // No preview requested
@@ -123,11 +125,17 @@ interface MonitorSurfaceProps {
   jobProgress?: JobProgress
   /** Job result info (for job-complete state) */
   jobResult?: JobResult
-  /** Preview proxy state */
+  /** Tiered preview system state and controls */
+  tieredPreview?: UseTieredPreviewReturn
+  /** Current source path for preview requests */
+  currentSourcePath?: string | null
+  
+  // Legacy props for backward compatibility
+  /** @deprecated Use tieredPreview instead */
   previewProxyState?: PreviewProxyState
-  /** Preview proxy info (when previewProxyState === 'ready') */
+  /** @deprecated Use tieredPreview instead */
   previewProxyInfo?: PreviewProxyInfo | null
-  /** Preview proxy error (when previewProxyState === 'failed') */
+  /** @deprecated Use tieredPreview instead */
   previewProxyError?: PreviewProxyError | null
 }
 
@@ -177,9 +185,12 @@ export function MonitorSurface({
   sourceMetadata,
   jobProgress,
   jobResult,
-  previewProxyState = 'idle',
-  previewProxyInfo,
-  previewProxyError,
+  tieredPreview,
+  currentSourcePath,
+  // Legacy props - ignored if tieredPreview is provided
+  previewProxyState: _legacyState,
+  previewProxyInfo: _legacyInfo,
+  previewProxyError: _legacyError,
 }: MonitorSurfaceProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -200,28 +211,50 @@ export function MonitorSurface({
   // Hover state for video canvas
   const [isVideoHovered, setIsVideoHovered] = useState(false)
   
+  // Preview menu state
+  const [showPreviewMenu, setShowPreviewMenu] = useState(false)
+  const [pendingRawConfirmation, setPendingRawConfirmation] = useState<number | null>(null)
+  
   // Parse FPS from source metadata (fallback to 24fps, never assume 30fps)
   const fps = useMemo(() => parseFps(sourceMetadata?.fps), [sourceMetadata?.fps])
   
-  // PREVIEW PROXY SYSTEM:
-  // Playback is ONLY allowed when:
-  // 1. Source is loaded
-  // 2. Preview proxy is ready
-  // 3. No video playback errors
-  //
-  // We NEVER attempt to play from the original source.
-  // All playback comes from the preview proxy URL.
-  const canPlayback = state === 'source-loaded' && 
-    previewProxyState === 'ready' && 
-    previewProxyInfo?.previewUrl &&
-    !videoError
-
-  // Is preview currently being prepared?
-  const isPreparingPreview = state === 'source-loaded' && previewProxyState === 'generating'
+  // Derive preview mode from tiered preview state
+  const previewMode = tieredPreview?.mode || 'none'
   
-  // Is preview in identification-only mode (failed or not started)?
-  const isIdentificationOnly = state === 'source-loaded' && 
-    (previewProxyState === 'failed' || previewProxyState === 'idle')
+  // Check if source is RAW format
+  const isRaw = useMemo(() => {
+    if (!sourceMetadata?.codec) return false
+    const codec = sourceMetadata.codec.toLowerCase()
+    return ['arriraw', 'redcode', 'braw', 'r3d', 'prores_raw', 'prores raw'].some(
+      raw => codec.includes(raw)
+    )
+  }, [sourceMetadata?.codec])
+  
+  // TIERED PREVIEW SYSTEM:
+  // Video playback is ONLY allowed when:
+  // 1. Source is loaded
+  // 2. Video preview is ready (user explicitly generated it)
+  // 3. No video playback errors
+  const canPlayback = state === 'source-loaded' && 
+    previewMode === 'video' && 
+    tieredPreview?.video?.previewUrl &&
+    !videoError
+  
+  // Show poster frame as default visual
+  const showPoster = state === 'source-loaded' && 
+    (previewMode === 'poster' || previewMode === 'none') && 
+    tieredPreview?.poster?.posterUrl
+  
+  // Show burst thumbnails when in burst mode
+  const showBurst = state === 'source-loaded' && 
+    previewMode === 'burst' && 
+    tieredPreview?.burst?.thumbnails && 
+    tieredPreview.burst.thumbnails.length > 0
+  
+  // Get current burst frame URL for display
+  const currentBurstUrl = showBurst 
+    ? tieredPreview?.burst?.thumbnails[tieredPreview?.burstIndex || 0]?.url 
+    : null
 
   // Reset states when source changes
   useEffect(() => {
@@ -231,13 +264,15 @@ export function MonitorSurface({
     setDuration(0)
     setIsPlaying(false)
     setZoomMode('fit')
+    setShowPreviewMenu(false)
+    setPendingRawConfirmation(null)
     
     // Pause and reset video element
     if (videoRef.current) {
       videoRef.current.pause()
       videoRef.current.currentTime = 0
     }
-  }, [sourceMetadata?.filePath, sourceMetadata?.filename, previewProxyInfo?.previewUrl])
+  }, [sourceMetadata?.filePath, sourceMetadata?.filename, tieredPreview?.video?.previewUrl])
 
   // Pause playback when job starts running
   useEffect(() => {
@@ -285,6 +320,8 @@ export function MonitorSurface({
     // Ignore if clicking on controls (transport bar)
     const target = e.target as HTMLElement
     if (target.closest('[data-testid="transport-bar"]')) return
+    if (target.closest('[data-testid="preview-menu"]')) return
+    if (target.closest('[data-testid="burst-strip"]')) return
     
     const video = videoRef.current
     if (!video) return
@@ -306,14 +343,43 @@ export function MonitorSurface({
     
     setZoomMode(prev => prev === 'fit' ? 'actual' : 'fit')
   }, [])
+  
+  // Preview menu handlers
+  const handleRequestVideo = useCallback((duration: number) => {
+    if (!currentSourcePath || !tieredPreview) return
+    
+    if (isRaw && pendingRawConfirmation === null) {
+      setPendingRawConfirmation(duration)
+      return
+    }
+    
+    tieredPreview.requestVideo(currentSourcePath, duration, isRaw)
+    setPendingRawConfirmation(null)
+  }, [currentSourcePath, tieredPreview, isRaw, pendingRawConfirmation])
+  
+  const handleConfirmRaw = useCallback(() => {
+    if (!currentSourcePath || !tieredPreview || pendingRawConfirmation === null) return
+    tieredPreview.requestVideo(currentSourcePath, pendingRawConfirmation, true)
+    setPendingRawConfirmation(null)
+  }, [currentSourcePath, tieredPreview, pendingRawConfirmation])
 
   // Determine if we're in a "content" state (not idle)
   const hasContent = state !== 'idle'
   
-  // PREVIEW PROXY SYSTEM:
+  // TIERED PREVIEW SYSTEM:
   // Video source is the preview proxy URL from the backend.
   // We NEVER use file:// URLs directly — all playback comes from HTTP-served proxies.
-  const videoSrc = previewProxyInfo?.previewUrl || undefined
+  const videoSrc = tieredPreview?.video?.previewUrl || undefined
+  
+  // Get metadata from poster extraction or props
+  const displayMetadata = tieredPreview?.poster?.sourceInfo || {
+    filename: sourceMetadata?.filename,
+    codec: sourceMetadata?.codec,
+    resolution: sourceMetadata?.resolution,
+    fps: sourceMetadata?.fps ? parseFloat(sourceMetadata.fps) : undefined,
+    duration_human: sourceMetadata?.duration,
+    file_size_human: sourceMetadata?.fileSize,
+  }
 
   return (
     <div
@@ -411,10 +477,10 @@ export function MonitorSurface({
         )}
 
         {/* ============================================ */}
-        {/* STATE: SOURCE_LOADED — Three Sub-States */}
-        {/* 1. PREPARING_PREVIEW: Generating proxy */}
-        {/* 2. PLAYBACK_MODE: Preview proxy ready */}
-        {/* 3. IDENTIFICATION_ONLY: Preview failed */}
+        {/* STATE: SOURCE_LOADED — Tiered Preview System */}
+        {/* 1. POSTER: Single frame (default, instant) */}
+        {/* 2. BURST: Thumbnail strip (optional) */}
+        {/* 3. VIDEO: Full playback (user-initiated only) */}
         {/* ============================================ */}
         {state === 'source-loaded' && sourceMetadata && (
           <div
@@ -424,202 +490,147 @@ export function MonitorSurface({
               inset: 0,
             }}
           >
-            {/* PREPARING PREVIEW — Show loading overlay */}
-            {isPreparingPreview && (
+            {/* TOP-LEFT: Preview Mode Badge + Zoom Indicator */}
+            <div
+              data-testid="preview-mode-header"
+              style={{
+                position: 'absolute',
+                top: '0.75rem',
+                left: '0.75rem',
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+              }}
+            >
+              <PreviewModeBadge mode={previewMode} />
+              
+              {/* Zoom indicator (only in video mode) */}
+              {canPlayback && zoomMode === 'actual' && (
+                <div
+                  style={{
+                    padding: '0.375rem 0.625rem',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                    borderRadius: '4px',
+                  }}
+                  title="Double-click to toggle Fit/100% zoom"
+                >
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--accent-primary, #3b82f6)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    100%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* TOP-RIGHT: Preview Menu Button + Dropdown */}
+            <div
+              data-testid="preview-menu-container"
+              style={{
+                position: 'absolute',
+                top: '0.75rem',
+                right: '0.75rem',
+                zIndex: 10,
+              }}
+            >
+              {/* Menu trigger button */}
+              <button
+                onClick={() => setShowPreviewMenu(prev => !prev)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '0.375rem 0.625rem',
+                  background: showPreviewMenu 
+                    ? 'rgba(59, 130, 246, 0.2)' 
+                    : 'rgba(255, 255, 255, 0.06)',
+                  border: showPreviewMenu 
+                    ? '1px solid rgba(59, 130, 246, 0.4)' 
+                    : '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '4px',
+                  color: showPreviewMenu 
+                    ? 'var(--accent-primary, #3b82f6)' 
+                    : 'var(--text-secondary, #9ca3af)',
+                  fontSize: '0.75rem',
+                  fontFamily: 'var(--font-sans)',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease',
+                }}
+              >
+                {tieredPreview?.videoLoading ? (
+                  <>
+                    <span
+                      style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        border: '2px solid var(--text-dim)',
+                        borderTopColor: 'var(--accent-primary, #3b82f6)',
+                        animation: 'monitorSpin 1s linear infinite',
+                      }}
+                    />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: '0.875rem' }}>▶</span>
+                    Preview
+                  </>
+                )}
+              </button>
+
+              {/* Dropdown menu */}
+              <PreviewMenu
+                visible={showPreviewMenu}
+                onClose={() => setShowPreviewMenu(false)}
+                onRequestVideo={handleRequestVideo}
+                isGenerating={tieredPreview?.videoLoading || false}
+                onCancel={() => tieredPreview?.cancelVideo()}
+                isRaw={isRaw}
+                error={tieredPreview?.videoError}
+                requiresConfirmation={pendingRawConfirmation !== null}
+                onConfirmRaw={handleConfirmRaw}
+              />
+            </div>
+
+            {/* POSTER MODE — Single frame (default, appears instantly) */}
+            {showPoster && tieredPreview?.poster?.posterUrl && (
               <div
-                data-testid="preparing-preview-overlay"
+                data-testid="poster-frame-container"
                 style={{
                   position: 'absolute',
                   inset: 0,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  flexDirection: 'column',
-                  gap: '1rem',
                 }}
               >
-                {/* Preparing Preview badge */}
-                <div
+                <img
+                  src={tieredPreview.poster.posterUrl}
+                  alt={displayMetadata.filename || 'Preview'}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.75rem 1.25rem',
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                    borderRadius: '6px',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain',
                   }}
-                >
-                  {/* Spinner */}
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: '1rem',
-                      height: '1rem',
-                      borderRadius: '50%',
-                      border: '2px solid var(--text-muted)',
-                      borderTopColor: 'var(--accent-primary, #3b82f6)',
-                      animation: 'monitorSpin 1s linear infinite',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: '0.875rem',
-                      fontFamily: 'var(--font-sans)',
-                      color: 'var(--text-primary)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    Preparing Preview…
-                  </span>
-                </div>
-
-                {/* Source filename */}
-                <span
-                  style={{
-                    fontSize: '0.75rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  {sourceMetadata.filename || 'Unknown source'}
-                </span>
+                  draggable={false}
+                />
               </div>
             )}
 
-            {/* PLAYBACK MODE — Show video when preview proxy is ready */}
-            {canPlayback && videoSrc && (
+            {/* BURST MODE — Show current burst frame + thumbnail strip */}
+            {showBurst && currentBurstUrl && (
               <>
-                {/* Playback Mode badge */}
+                {/* Current burst frame as main display */}
                 <div
-                  data-testid="playback-mode-badge"
-                  style={{
-                    position: 'absolute',
-                    top: '0.75rem',
-                    left: '0.75rem',
-                    zIndex: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      padding: '0.375rem 0.625rem',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      border: '1px solid rgba(16, 185, 129, 0.35)',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        background: 'var(--status-completed-fg, #10b981)',
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: '0.6875rem',
-                        fontFamily: 'var(--font-sans)',
-                        color: 'var(--status-completed-fg, #10b981)',
-                        fontWeight: 500,
-                        letterSpacing: '0.02em',
-                      }}
-                    >
-                      Playback Mode
-                    </span>
-                  </div>
-                  
-                  {/* Zoom indicator */}
-                  {zoomMode === 'actual' && (
-                    <div
-                      style={{
-                        padding: '0.375rem 0.625rem',
-                        background: 'rgba(59, 130, 246, 0.15)',
-                        border: '1px solid rgba(59, 130, 246, 0.35)',
-                        borderRadius: '4px',
-                      }}
-                      title="Double-click to toggle Fit/100% zoom"
-                    >
-                      <span
-                        style={{
-                          fontSize: '0.6875rem',
-                          fontFamily: 'var(--font-mono)',
-                          color: 'var(--accent-primary, #3b82f6)',
-                          fontWeight: 500,
-                        }}
-                      >
-                        100%
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <video
-                  ref={videoRef}
-                  src={videoSrc}
-                  style={{
-                    position: zoomMode === 'fit' ? 'absolute' : 'relative',
-                    inset: zoomMode === 'fit' ? 0 : undefined,
-                    width: zoomMode === 'fit' ? '100%' : 'auto',
-                    height: zoomMode === 'fit' ? '100%' : 'auto',
-                    objectFit: zoomMode === 'fit' ? 'contain' : undefined,
-                    background: '#000',
-                    margin: zoomMode === 'actual' ? 'auto' : undefined,
-                    display: 'block',
-                  }}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onError={handleVideoError}
-                  playsInline
-                  crossOrigin="anonymous"
-                />
-              </>
-            )}
-
-            {/* IDENTIFICATION MODE — Show metadata overlay when preview failed or not available */}
-            {isIdentificationOnly && (
-              <>
-                {/* Mode label at top — include error reason if available */}
-                <div
-                  data-testid="identification-mode-label"
-                  style={{
-                    position: 'absolute',
-                    top: '1rem',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    padding: '0.375rem 0.75rem',
-                    background: previewProxyError 
-                      ? 'rgba(239, 68, 68, 0.15)' 
-                      : 'rgba(100, 116, 139, 0.3)',
-                    borderRadius: '4px',
-                    border: previewProxyError 
-                      ? '1px solid rgba(239, 68, 68, 0.35)' 
-                      : '1px solid rgba(100, 116, 139, 0.4)',
-                    maxWidth: '90%',
-                    textAlign: 'center',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '0.6875rem',
-                      fontFamily: 'var(--font-sans)',
-                      color: previewProxyError ? 'var(--status-failed-fg, #ef4444)' : 'var(--text-muted)',
-                      letterSpacing: '0.03em',
-                    }}
-                  >
-                    {previewProxyError 
-                      ? previewProxyError.message 
-                      : 'Preview (Identification Only)'}
-                  </span>
-                </div>
-
-                {/* Center metadata display */}
-                <div
+                  data-testid="burst-frame-container"
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -628,91 +639,141 @@ export function MonitorSurface({
                     justifyContent: 'center',
                   }}
                 >
-                  <div
+                  <img
+                    src={currentBurstUrl}
+                    alt={`Frame ${(tieredPreview?.burstIndex || 0) + 1}`}
                     style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '1.5rem',
-                      padding: '2rem',
-                      background: 'rgba(0, 0, 0, 0.6)',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      maxWidth: '80%',
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
                     }}
-                  >
-                    {/* Filename */}
-                    <span
-                      style={{
-                        fontSize: '1.125rem',
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-primary)',
-                        fontWeight: 500,
-                        textAlign: 'center',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {sourceMetadata.filename || 'Unknown source'}
-                    </span>
+                    draggable={false}
+                  />
+                </div>
 
-                    {/* Metadata grid */}
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, auto)',
-                        gap: '0.5rem 2rem',
-                        fontSize: '0.8125rem',
-                        fontFamily: 'var(--font-mono)',
-                      }}
-                    >
-                      {sourceMetadata.codec && (
-                        <>
-                          <span style={{ color: 'var(--text-dim)' }}>Codec</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.codec}</span>
-                        </>
-                      )}
-                      {sourceMetadata.resolution && (
-                        <>
-                          <span style={{ color: 'var(--text-dim)' }}>Resolution</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.resolution}</span>
-                        </>
-                      )}
-                      {sourceMetadata.fps && (
-                        <>
-                          <span style={{ color: 'var(--text-dim)' }}>Frame Rate</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.fps}</span>
-                        </>
-                      )}
-                      {sourceMetadata.duration && (
-                        <>
-                          <span style={{ color: 'var(--text-dim)' }}>Duration</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.duration}</span>
-                        </>
-                      )}
-                      {sourceMetadata.audioChannels && (
-                        <>
-                          <span style={{ color: 'var(--text-dim)' }}>Audio</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.audioChannels}ch</span>
-                        </>
-                      )}
-                      {sourceMetadata.fileSize && (
-                        <>
-                          <span style={{ color: 'var(--text-dim)' }}>Size</span>
-                          <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.fileSize}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                {/* Burst thumbnail strip at bottom */}
+                <div
+                  data-testid="burst-strip-container"
+                  style={{
+                    position: 'absolute',
+                    bottom: '4.5rem', // Above transport bar
+                    left: '1rem',
+                    right: '1rem',
+                  }}
+                >
+                  <BurstStrip
+                    thumbnails={tieredPreview?.burst?.thumbnails || []}
+                    selectedIndex={tieredPreview?.burstIndex || 0}
+                    onSelectIndex={(index: number) => tieredPreview?.setBurstIndex?.(index)}
+                    sourceDuration={tieredPreview?.burst?.sourceDuration || null}
+                  />
                 </div>
               </>
             )}
 
-            {/* Bottom-left metadata overlay — shown for both modes */}
+            {/* VIDEO MODE — Full playback (user-initiated only) */}
+            {canPlayback && videoSrc && (
+              <video
+                ref={videoRef}
+                src={videoSrc}
+                style={{
+                  position: zoomMode === 'fit' ? 'absolute' : 'relative',
+                  inset: zoomMode === 'fit' ? 0 : undefined,
+                  width: zoomMode === 'fit' ? '100%' : 'auto',
+                  height: zoomMode === 'fit' ? '100%' : 'auto',
+                  objectFit: zoomMode === 'fit' ? 'contain' : undefined,
+                  background: '#000',
+                  margin: zoomMode === 'actual' ? 'auto' : undefined,
+                  display: 'block',
+                }}
+                onLoadedMetadata={handleLoadedMetadata}
+                onError={handleVideoError}
+                playsInline
+                crossOrigin="anonymous"
+              />
+            )}
+
+            {/* FALLBACK — Show metadata when no visual is available */}
+            {!showPoster && !showBurst && !canPlayback && (
+              <div
+                data-testid="metadata-fallback"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '1.5rem',
+                    padding: '2rem',
+                    background: 'rgba(0, 0, 0, 0.6)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    maxWidth: '80%',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '1.125rem',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--text-primary)',
+                      fontWeight: 500,
+                      textAlign: 'center',
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {sourceMetadata.filename || 'Unknown source'}
+                  </span>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, auto)',
+                      gap: '0.5rem 2rem',
+                      fontSize: '0.8125rem',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    {sourceMetadata.codec && (
+                      <>
+                        <span style={{ color: 'var(--text-dim)' }}>Codec</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.codec}</span>
+                      </>
+                    )}
+                    {sourceMetadata.resolution && (
+                      <>
+                        <span style={{ color: 'var(--text-dim)' }}>Resolution</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.resolution}</span>
+                      </>
+                    )}
+                    {sourceMetadata.fps && (
+                      <>
+                        <span style={{ color: 'var(--text-dim)' }}>Frame Rate</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.fps}</span>
+                      </>
+                    )}
+                    {sourceMetadata.duration && (
+                      <>
+                        <span style={{ color: 'var(--text-dim)' }}>Duration</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{sourceMetadata.duration}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Bottom-left metadata overlay — shown in video playback mode */}
             {canPlayback && (
               <div
                 style={{
                   position: 'absolute',
-                  bottom: '4.5rem', // Above controls
+                  bottom: '4.5rem',
                   left: '1rem',
                   display: 'flex',
                   flexDirection: 'column',
@@ -748,6 +809,11 @@ export function MonitorSurface({
                   {sourceMetadata.fps && <span>{sourceMetadata.fps}</span>}
                 </div>
               </div>
+            )}
+
+            {/* RAW Preview Disclaimer (shown when generating video for RAW) */}
+            {isRaw && tieredPreview?.videoLoading && previewMode === 'video' && (
+              <PreviewDisclaimer />
             )}
           </div>
         )}
