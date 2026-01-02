@@ -1,0 +1,14 @@
+artifacts/
+logs/
+test_media/
+forge-tests/
+qa/
+.vscode/
+.venv/
+*.db
+*.log
+*.csv
+*.json
+*.txt
+uvicorn.pid
+frontend_dev.pid

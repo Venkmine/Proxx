@@ -94,6 +94,27 @@ import { useTieredPreview } from './hooks/useTieredPreview'
 const BACKEND_URL = 'http://127.0.0.1:8085'
 
 // ============================================================================
+// UNIFIED PREVIEW STATE — Single source of truth for preview rendering
+// ============================================================================
+// This type drives ALL preview-related UI decisions:
+// - Whether <video> element exists
+// - Whether transport controls are enabled
+// - Badge text display
+// 
+// Components must render based on this state, not duplicate logic.
+// ============================================================================
+export type PreviewState =
+  | { kind: 'none' }
+  | { kind: 'poster'; posterUrl: string }
+  | { kind: 'burst'; thumbnails: Array<{ url: string; timestamp: number }> }
+  | { kind: 'video-native'; url: string }
+  | { kind: 'video-proxy'; url: string }
+  | { kind: 'raw-needs-preview' }
+  | { kind: 'loading'; message: string }
+  | { kind: 'error'; message: string }
+
+
+// ============================================================================
 // TERMINAL STATE INVARIANT
 // ============================================================================
 // Once a job reaches any of these states, it MUST NOT transition to any other state.
@@ -511,6 +532,79 @@ function App() {
     if (selectedFiles.length > 0) return 'source-loaded'
     return 'idle'
   }, [selectedJobId, jobs, selectedFiles])
+  
+  // ============================================
+  // Derive Unified PreviewState — Single source of truth
+  // ============================================
+  // Helper to check if codec is RAW
+  const isRawCodec = useCallback((codec?: string): boolean => {
+    if (!codec) return false
+    const c = codec.toLowerCase()
+    return ['arriraw', 'redcode', 'braw', 'r3d', 'prores_raw', 'prores raw'].some(
+      raw => c.includes(raw)
+    )
+  }, [])
+  
+  // Unified preview state - single source of truth for all preview rendering decisions
+  // NOTE: Currently derives state for future integration with MonitorSurface refactor
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _previewState = useMemo((): PreviewState => {
+    // No source selected
+    if (monitorState !== 'source-loaded') {
+      return { kind: 'none' }
+    }
+    
+    // Check for errors first
+    if (tieredPreview.videoError) {
+      return { kind: 'error', message: tieredPreview.videoError }
+    }
+    
+    // Check if loading
+    if (tieredPreview.videoLoading) {
+      return { kind: 'loading', message: 'Generating preview…' }
+    }
+    
+    // Get current source info
+    const sourcePath = selectedFiles[0]
+    const codec = tieredPreview.poster?.sourceInfo?.codec
+    const isRaw = isRawCodec(codec)
+    
+    // VIDEO MODE: Either native playback or proxy
+    if (tieredPreview.mode === 'video' && tieredPreview.video?.previewUrl) {
+      return { kind: 'video-proxy', url: tieredPreview.video.previewUrl }
+    }
+    
+    // NON-RAW: Native playback available
+    if (!isRaw && sourcePath) {
+      const encodedPath = encodeURIComponent(sourcePath)
+      const nativeUrl = `${BACKEND_URL}/preview/source/${encodedPath}`
+      return { kind: 'video-native', url: nativeUrl }
+    }
+    
+    // BURST MODE
+    if (tieredPreview.mode === 'burst' && tieredPreview.burst?.thumbnails?.length) {
+      return { 
+        kind: 'burst', 
+        thumbnails: tieredPreview.burst.thumbnails.map(t => ({ url: t.url, timestamp: t.timestamp }))
+      }
+    }
+    
+    // POSTER MODE
+    if (tieredPreview.poster?.posterUrl) {
+      // For RAW without video proxy
+      if (isRaw && !tieredPreview.video?.previewUrl) {
+        return { kind: 'raw-needs-preview' }
+      }
+      return { kind: 'poster', posterUrl: tieredPreview.poster.posterUrl }
+    }
+    
+    // RAW without any preview
+    if (isRaw) {
+      return { kind: 'raw-needs-preview' }
+    }
+    
+    return { kind: 'none' }
+  }, [monitorState, tieredPreview, selectedFiles, isRawCodec])
 
   // Derive source metadata for monitor
   const monitorSourceMetadata = useMemo((): SourceMetadata | undefined => {

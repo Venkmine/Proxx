@@ -224,6 +224,31 @@ async function loadDevWithRetries(win: BrowserWindow, url: string, retries = 12,
   }
 }
 
+// Window bounds persistence path
+const WINDOW_BOUNDS_PATH = path.join(os.homedir(), '.awaire-proxy-window-bounds.json');
+
+function loadWindowBounds(): { x?: number; y?: number; width: number; height: number } | null {
+  try {
+    if (fs.existsSync(WINDOW_BOUNDS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(WINDOW_BOUNDS_PATH, 'utf8'));
+      if (data.width && data.height) {
+        return data;
+      }
+    }
+  } catch {
+    // Ignore errors, use defaults
+  }
+  return null;
+}
+
+function saveWindowBounds(bounds: Electron.Rectangle) {
+  try {
+    fs.writeFileSync(WINDOW_BOUNDS_PATH, JSON.stringify(bounds), 'utf8');
+  } catch {
+    // Ignore errors
+  }
+}
+
 async function createWindow() {
   const preloadPath = path.join(__dirname, 'preload.mjs');
   
@@ -235,9 +260,24 @@ async function createWindow() {
   writeLog('INFO', `VITE_DEV_SERVER_URL: ${process.env.VITE_DEV_SERVER_URL || '(not set)'}`);
   writeLog('INFO', `Platform: ${process.platform}, Arch: ${process.arch}`);
   
+  // Load saved bounds or calculate 90% of primary display
+  const { screen } = await import('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  
+  const savedBounds = loadWindowBounds();
+  const defaultWidth = Math.round(screenWidth * 0.9);
+  const defaultHeight = Math.round(screenHeight * 0.9);
+  const defaultX = Math.round((screenWidth - defaultWidth) / 2);
+  const defaultY = Math.round((screenHeight - defaultHeight) / 2);
+  
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    x: savedBounds?.x ?? defaultX,
+    y: savedBounds?.y ?? defaultY,
+    width: savedBounds?.width ?? defaultWidth,
+    height: savedBounds?.height ?? defaultHeight,
+    minWidth: 1280,
+    minHeight: 800,
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 12, y: 12 },
     webPreferences: {
@@ -247,6 +287,10 @@ async function createWindow() {
       sandbox: false,
     },
   });
+  
+  // Save bounds on resize/move
+  win.on('resize', () => saveWindowBounds(win.getBounds()));
+  win.on('move', () => saveWindowBounds(win.getBounds()));
 
   // Phase 20: Show error fallback UI instead of white screen on load failures
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {

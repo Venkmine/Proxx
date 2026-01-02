@@ -130,6 +130,9 @@ interface MonitorSurfaceProps {
   /** Current source path for preview requests */
   currentSourcePath?: string | null
   
+  /** Backend API URL */
+  backendUrl?: string
+  
   // Clip Navigation (v3)
   /** Current clip info for display and navigation */
   currentClip?: ClipInfo | null
@@ -201,6 +204,7 @@ export function MonitorSurface({
   jobResult,
   tieredPreview,
   currentSourcePath,
+  backendUrl = 'http://127.0.0.1:8085',
   // Clip navigation (v3)
   currentClip,
   totalClips,
@@ -265,8 +269,8 @@ export function MonitorSurface({
     if (!isNativePlayback || !sourceMetadata?.filePath) return undefined
     // Encode the file path for the backend source streaming endpoint
     const encodedPath = encodeURIComponent(sourceMetadata.filePath)
-    return `http://127.0.0.1:8000/preview/source/${encodedPath}`
-  }, [isNativePlayback, sourceMetadata?.filePath])
+    return `${backendUrl}/preview/source/${encodedPath}`
+  }, [isNativePlayback, sourceMetadata?.filePath, backendUrl])
   
   // PLAYBACK LOGIC:
   // Video playback is allowed when:
@@ -474,7 +478,8 @@ export function MonitorSurface({
         justifyContent: 'center',
         height: '100%',
         width: '100%',
-        overflow: 'hidden',
+        /* NOTE: overflow visible to allow preview menu to float above adjacent panels */
+        overflow: 'visible',
         position: 'relative',
         /* Dark neutral background for idle, true black for content states */
         background: hasContent ? '#000000' : '#0a0b0d',
@@ -622,13 +627,14 @@ export function MonitorSurface({
             </div>
 
             {/* TOP-RIGHT: Preview Menu Button + Dropdown */}
+            {/* NOTE: z-index 1000 ensures menu floats above adjacent panels */}
             <div
               data-testid="preview-menu-container"
               style={{
                 position: 'absolute',
                 top: '0.75rem',
                 right: '0.75rem',
-                zIndex: 10,
+                zIndex: 1000,
               }}
             >
               {/* Menu trigger button */}

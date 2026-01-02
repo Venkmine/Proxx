@@ -135,7 +135,9 @@ export function WorkspaceLayout({
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
+          /* NOTE: overflow visible to allow preview menu to float above adjacent panels */
+          overflow: 'visible',
+          position: 'relative',
           /* True black background for monitor surface — no card styling */
           background: '#0a0b0d',
           /* No padding — monitor fills edge-to-edge */
