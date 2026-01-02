@@ -339,7 +339,7 @@ def _infer_codec_from_path(source_path: Path) -> str:
     Infer codec from file path, with optional ffprobe for ambiguous containers.
     
     For well-known RAW extensions (.braw, .r3d, etc.), uses extension-based detection.
-    For ambiguous containers like MXF (which can contain DNxHD, ProRes, or ARRIRAW),
+    For ambiguous containers like MXF and MOV (which can contain standard or RAW codecs),
     probes the file to determine the actual codec.
     
     Args:
@@ -364,27 +364,34 @@ def _infer_codec_from_path(source_path: Path) -> str:
         return raw_extensions[ext]
     
     # Ambiguous containers that need probing (can contain RAW or standard codecs)
-    ambiguous_containers = {"mxf"}
+    # MOV can contain ProRes, H.264, or ProRes RAW
+    # MXF can contain DNxHD, MPEG-2, or ARRIRAW
+    ambiguous_containers = {"mxf", "mov"}
     
     if ext in ambiguous_containers:
         # Probe the actual codec
         probed_codec = _probe_codec_ffprobe(source_path)
         if probed_codec:
+            # Check for ProRes RAW (reported as 'prores_raw' by ffprobe)
+            if 'prores_raw' in probed_codec or 'prores raw' in probed_codec.lower():
+                logger.info(f"[CODEC PROBE] ProRes RAW detected: {source_path.name} → Resolve engine")
+                return "prores_raw"
+            
             # If ffprobe returns "unknown", this indicates a proprietary RAW codec
             # that FFmpeg cannot decode - route to Resolve
             if probed_codec == "unknown":
-                logger.info(f"[CODEC PROBE] MXF with 'unknown' codec detected: {source_path.name} → assuming RAW format")
-                # For MXF with unknown codec, this is likely Sony Venice, ARRI, or other RAW
+                logger.info(f"[CODEC PROBE] {ext.upper()} with 'unknown' codec detected: {source_path.name} → assuming RAW format")
+                # For MXF/MOV with unknown codec, this is likely Sony Venice, ARRI, or other RAW
                 # The 'unknown' codec will be caught by RAW_CODECS_RESOLVE and routed to Resolve
                 return "unknown"
-            logger.info(f"[CODEC PROBE] MXF probed: {source_path.name} → codec={probed_codec}")
+            logger.info(f"[CODEC PROBE] {ext.upper()} probed: {source_path.name} → codec={probed_codec}")
             return probed_codec
     
     # For standard containers, assume FFmpeg-compatible codecs
     # The actual codec doesn't matter for routing - these all go to FFmpeg
     standard_containers = {
         "mp4": "h264",
-        "mov": "prores",  # Assume ProRes for MOV (most common in editorial)
+        "mov": "prores",  # Assume standard ProRes for MOV (if probe failed)
         "mxf": "dnxhd",
         "mkv": "h264",
         "webm": "vp9",
