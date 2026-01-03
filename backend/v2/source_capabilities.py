@@ -481,6 +481,10 @@ RESOLVE_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
     # ---------------------------------------------------------------------
     # RED RAW - Proprietary camera RAW (Resolve has native support)
     # ---------------------------------------------------------------------
+    # .R3D files contain proprietary RED REDCODE RAW data
+    # FFmpeg cannot decode RED RAW (requires RED SDK)
+    # Route via extension when ffprobe fails (common for .r3d files)
+    # ---------------------------------------------------------------------
     ("r3d", "redcode"): SourceCapability(
         container="r3d",
         codec="redcode",
@@ -491,6 +495,19 @@ RESOLVE_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
         container="r3d",
         codec="redraw",
         reason="RED RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
+    ("r3d", "red_raw"): SourceCapability(
+        container="r3d",
+        codec="red_raw",
+        reason="RED RAW format, decoded by DaVinci Resolve.",
+        engine=ExecutionEngine.RESOLVE,
+    ),
+    # Container fallback: if codec probe fails, .r3d extension alone implies RED
+    ("r3d", "r3d"): SourceCapability(
+        container="r3d",
+        codec="r3d",
+        reason="RED RAW (extension-based detection), decoded by DaVinci Resolve.",
         engine=ExecutionEngine.RESOLVE,
     ),
     

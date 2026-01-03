@@ -532,9 +532,10 @@ def _infer_codec_from_path(source_path: Path) -> str:
     
     # RED RAW files - route directly to Resolve without probing
     # RED files often fail ffprobe (require RED SDK) and must not be tested with FFmpeg
+    # Use extension as codec fallback for capability lookup
     if ext == "r3d":
-        logger.info(f"[ROUTING TABLE] {source_path.name} ext=.r3d => engine=resolve reason=RED RAW")
-        return "redcode"
+        logger.info(f"[ROUTING] RED RAW detected (.r3d) → Resolve (SDK required)")
+        return "r3d"  # Use extension as codec - will be caught by RAW_CODECS_RESOLVE
     
     # ARRI RAW files - route directly to Resolve without probing
     # ARRI .arx files often fail ffprobe (require ARRI SDK) and must not be tested with FFmpeg

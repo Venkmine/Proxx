@@ -174,4 +174,55 @@ test.describe('RAW Directory UI Behavior Test', () => {
     expect(unknownFiles).toHaveLength(0)
     console.log(`✓ All ${testInputs.length} files have explicit routing`)
   })
+
+  test('RED files and folders are classified as Resolve-required', () => {
+    // RED .r3d files must be classified as Resolve-required (never FFmpeg)
+    // Note: RED files inside folders may be scanned as folders, not individual files
+    const redFiles = testInputs.filter(i => {
+      if (i.type !== 'file') return false
+      const ext = i.path.split('.').pop()?.toLowerCase()
+      return ext === 'r3d'
+    })
+    
+    // Also check for RED folders (containing .R3D files or named R3D/RED)
+    const redFolders = testInputs.filter(i => {
+      if (i.type !== 'folder') return false
+      const lowerPath = i.path.toLowerCase()
+      const lowerName = i.name.toLowerCase()
+      // Match paths containing .r3d files, /r3d/ directories, or folders named "red"
+      return lowerPath.includes('.r3d') || lowerPath.includes('/r3d/') || 
+             lowerName.includes('red') || lowerName.includes('r3d')
+    })
+    
+    const totalRedInputs = redFiles.length + redFolders.length
+    
+    if (totalRedInputs === 0) {
+      console.log('⚠️  No RED .r3d files or folders found in RAW directory (test skipped)')
+      return
+    }
+    
+    console.log(`\n🎥 Testing RED RAW routing:`)
+    console.log(`   Files: ${redFiles.length}`)
+    console.log(`   Folders: ${redFolders.length}`)
+    console.log(`   Total: ${totalRedInputs}`)
+    
+    // All RED files must route to Resolve
+    for (const file of redFiles) {
+      expect(file.expectedEngine).toBe('resolve')
+      console.log(`   ✓ File: ${file.name} → ${file.expectedEngine}`)
+    }
+    
+    // All RED folders must route to Resolve
+    for (const folder of redFolders) {
+      expect(folder.expectedEngine).toBe('resolve')
+      console.log(`   ✓ Folder: ${folder.name}/ → ${folder.expectedEngine}`)
+    }
+    
+    // Assert NO RED input routes to FFmpeg
+    const redToFFmpeg = [...redFiles, ...redFolders].filter(f => f.expectedEngine === 'ffmpeg')
+    expect(redToFFmpeg).toHaveLength(0)
+    
+    console.log(`\n✅ All ${totalRedInputs} RED inputs correctly routed to Resolve`)
+    console.log(`   ⚠️  No RED media routed to FFmpeg (critical invariant)`)
+  })
 })

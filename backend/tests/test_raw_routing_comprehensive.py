@@ -47,6 +47,12 @@ EXPECTED_ROUTING: Dict[Tuple[str, str], ExecutionEngine] = {
     # ProRes RAW - RAW format requiring Resolve
     ("mov", "prores_raw"): ExecutionEngine.RESOLVE,
     
+    # RED RAW - RED REDCODE requiring Resolve
+    ("r3d", "r3d"): ExecutionEngine.RESOLVE,
+    ("r3d", "redcode"): ExecutionEngine.RESOLVE,
+    ("r3d", "redraw"): ExecutionEngine.RESOLVE,
+    ("r3d", "red_raw"): ExecutionEngine.RESOLVE,
+    
     # Unknown codec - Routes to Resolve (proprietary formats)
     ("mxf", "unknown"): ExecutionEngine.RESOLVE,
     ("mov", "unknown"): ExecutionEngine.RESOLVE,
@@ -258,6 +264,84 @@ def test_prores_raw_a7siii_routing():
     engine = get_execution_engine("mov", "prores_raw")
     assert engine == ExecutionEngine.RESOLVE, (
         "ProRes RAW must route to Resolve (sensor RAW format)"
+    )
+
+
+def test_red_r3d_routing():
+    """
+    RED .R3D files must route to Resolve.
+    
+    RED RAW files contain REDCODE proprietary RAW data.
+    FFmpeg cannot decode RED files - they require RED SDK.
+    
+    Tests:
+    1. Single .r3d file → resolve
+    2. Extension-based codec fallback (when ffprobe fails)
+    3. Explicit codec variants (redcode, redraw, red_raw)
+    """
+    # Extension-based routing (most common case - ffprobe fails on .r3d)
+    engine = get_execution_engine("r3d", "r3d")
+    assert engine == ExecutionEngine.RESOLVE, (
+        "RED .r3d file (extension-based) must route to Resolve"
+    )
+    
+    # Explicit codec variants (if ffprobe succeeds)
+    engine = get_execution_engine("r3d", "redcode")
+    assert engine == ExecutionEngine.RESOLVE, (
+        "RED REDCODE codec must route to Resolve"
+    )
+    
+    engine = get_execution_engine("r3d", "redraw")
+    assert engine == ExecutionEngine.RESOLVE, (
+        "RED RAW codec must route to Resolve"
+    )
+    
+    engine = get_execution_engine("r3d", "red_raw")
+    assert engine == ExecutionEngine.RESOLVE, (
+        "RED red_raw codec must route to Resolve"
+    )
+
+
+def test_red_never_routes_to_ffmpeg():
+    """
+    CRITICAL: RED files must NEVER route to FFmpeg.
+    
+    RED files require RED SDK for decode. FFmpeg cannot handle them.
+    This test ensures RED files are never misrouted to FFmpeg.
+    """
+    red_codec_variants = ["r3d", "redcode", "redraw", "red_raw"]
+    
+    for codec in red_codec_variants:
+        engine = get_execution_engine("r3d", codec)
+        assert engine != ExecutionEngine.FFMPEG, (
+            f"RED codec '{codec}' must NEVER route to FFmpeg (requires RED SDK)"
+        )
+        assert engine == ExecutionEngine.RESOLVE, (
+            f"RED codec '{codec}' must route to Resolve"
+        )
+
+
+def test_red_folder_detection():
+    """
+    RED camera folders must be detected and routed to Resolve.
+    
+    RED cameras create folder structures with .R3D files and sidecars.
+    Folders containing .r3d/.R3D files should route to Resolve.
+    
+    This is tested indirectly via _is_raw_camera_folder in headless_execute.py
+    """
+    # This test validates that RED is in RAW_CODECS_RESOLVE set
+    assert "r3d" in RAW_CODECS_RESOLVE, (
+        "r3d must be in RAW_CODECS_RESOLVE for folder detection"
+    )
+    assert "redcode" in RAW_CODECS_RESOLVE, (
+        "redcode must be in RAW_CODECS_RESOLVE"
+    )
+    assert "redraw" in RAW_CODECS_RESOLVE, (
+        "redraw must be in RAW_CODECS_RESOLVE"
+    )
+    assert "red_raw" in RAW_CODECS_RESOLVE, (
+        "red_raw must be in RAW_CODECS_RESOLVE"
     )
 
 
