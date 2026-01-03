@@ -254,6 +254,123 @@ class ResolvePresetError(ResolveEngineError):
 
 
 # =============================================================================
+# Resolve Availability Check
+# =============================================================================
+
+@dataclass
+class ResolveAvailability:
+    """
+    Structured result from Resolve availability check.
+    
+    Attributes:
+        available: True if Resolve is ready for RAW job execution
+        reason: Human-readable explanation if unavailable (None if available)
+    """
+    available: bool
+    reason: Optional[str] = None
+    
+    def to_dict(self) -> dict:
+        """Serialize to dictionary for logging/debugging."""
+        return {
+            "available": self.available,
+            "reason": self.reason,
+        }
+
+
+def check_resolve_availability() -> ResolveAvailability:
+    """
+    Check if DaVinci Resolve is available for RAW job execution.
+    
+    This is a deterministic, fail-fast check that validates:
+    1. Resolve scripting module is importable
+    2. Resolve instance is reachable (running or can be launched)
+    3. ProjectManager is accessible
+    
+    This check is designed to prevent cascading failures and partial
+    execution when Resolve is unavailable. It provides a single,
+    structured result that can be logged and surfaced to users.
+    
+    Returns:
+        ResolveAvailability with:
+        - available=True, reason=None if Resolve is ready
+        - available=False, reason="..." if Resolve is unavailable
+        
+    Example:
+        >>> availability = check_resolve_availability()
+        >>> if not availability.available:
+        ...     print(f"Cannot process RAW: {availability.reason}")
+    
+    Design Notes:
+    -------------
+    - Does NOT attempt to start Resolve
+    - Does NOT modify any state
+    - Does NOT throw exceptions
+    - Executes quickly (< 1 second typical)
+    - Deterministic: same environment → same result
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info("[RESOLVE AVAILABILITY] Starting availability check")
+    
+    # STEP 1: Check if scripting module is importable
+    # ------------------------------------------------
+    if not _RESOLVE_API_AVAILABLE:
+        reason = (
+            _RESOLVE_API_ERROR or 
+            "Resolve scripting API not available on this system"
+        )
+        logger.warning(f"[RESOLVE AVAILABILITY] UNAVAILABLE: {reason}")
+        return ResolveAvailability(available=False, reason=reason)
+    
+    # STEP 2: Attempt to connect to Resolve instance
+    # -----------------------------------------------
+    try:
+        import DaVinciResolveScript as dvr_script
+        resolve = dvr_script.scriptapp("Resolve")
+        
+        if resolve is None:
+            reason = (
+                "Cannot connect to DaVinci Resolve. "
+                "Resolve must be running with scripting enabled "
+                "(Preferences > System > General > External scripting using)"
+            )
+            logger.warning(f"[RESOLVE AVAILABILITY] UNAVAILABLE: {reason}")
+            return ResolveAvailability(available=False, reason=reason)
+        
+        logger.info("[RESOLVE AVAILABILITY] Connected to Resolve instance")
+        
+    except Exception as e:
+        reason = f"Failed to connect to Resolve: {e}"
+        logger.warning(f"[RESOLVE AVAILABILITY] UNAVAILABLE: {reason}")
+        return ResolveAvailability(available=False, reason=reason)
+    
+    # STEP 3: Check ProjectManager accessibility
+    # -------------------------------------------
+    try:
+        project_manager = resolve.GetProjectManager()
+        
+        if project_manager is None:
+            reason = (
+                "Connected to Resolve but ProjectManager is not accessible. "
+                "This may indicate a licensing or initialization issue."
+            )
+            logger.warning(f"[RESOLVE AVAILABILITY] UNAVAILABLE: {reason}")
+            return ResolveAvailability(available=False, reason=reason)
+        
+        logger.info("[RESOLVE AVAILABILITY] ProjectManager is accessible")
+        
+    except Exception as e:
+        reason = f"Failed to access ProjectManager: {e}"
+        logger.warning(f"[RESOLVE AVAILABILITY] UNAVAILABLE: {reason}")
+        return ResolveAvailability(available=False, reason=reason)
+    
+    # All checks passed
+    logger.info("[RESOLVE AVAILABILITY] AVAILABLE - all checks passed")
+    return ResolveAvailability(available=True, reason=None)
+
+
+# =============================================================================
 # Resolve Preset Discovery
 # =============================================================================
 # Functions to enumerate available render presets from Resolve.

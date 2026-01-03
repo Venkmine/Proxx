@@ -331,6 +331,54 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
             completed_at=datetime.now(timezone.utc),
         )
     
+    # STEP 4.5: Resolve Availability Guard (RAW jobs only)
+    # -----------------------------------------------------
+    # Fail-fast check for Resolve availability BEFORE job execution.
+    # This prevents:
+    # - Partial task creation
+    # - Cascading failures
+    # - Mystery errors when Resolve is unreachable
+    #
+    # Only applies to jobs that route to Resolve.
+    # FFmpeg jobs are unaffected.
+    if engine_name == "resolve":
+        logger.info("[EXECUTION ADAPTER] Checking Resolve availability for RAW job...")
+        
+        try:
+            from v2.engines.resolve_engine import check_resolve_availability
+        except ImportError:
+            from backend.v2.engines.resolve_engine import check_resolve_availability
+        
+        availability = check_resolve_availability()
+        
+        if not availability.available:
+            # Resolve is unavailable - fail the job immediately
+            # NO task creation, NO retries, NO fallback to FFmpeg
+            logger.error(
+                f"[EXECUTION ADAPTER] Resolve unavailable for RAW job: "
+                f"{availability.reason}"
+            )
+            logger.error("[EXECUTION ADAPTER] Job rejected - no execution will occur")
+            
+            error_message = (
+                f"Resolve is required for this media but is not available: "
+                f"{availability.reason}"
+            )
+            
+            return JobExecutionResult(
+                job_id=jobspec.job_id,
+                clips=[],
+                final_status="FAILED",
+                validation_error=error_message,
+                validation_stage="resolve_availability",
+                jobspec_version=JOBSPEC_VERSION,
+                engine_used=engine_name,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+        
+        logger.info("[EXECUTION ADAPTER] Resolve availability confirmed - proceeding with execution")
+    
     # STEP 5: Execute with Selected Engine
     # -------------------------------------
     # Dispatch to FFmpeg or Resolve engine based on routing decision.
