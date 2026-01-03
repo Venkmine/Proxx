@@ -370,6 +370,10 @@ export function createActionDriver() {
         // STEP 5: Screenshot + State Capture
         await page.screenshot({ path: path.join(artifactDir, 'job_created.png'), fullPage: true })
         
+        // OBSERVATION: Check for progress UI visibility
+        console.log('      → Observing progress UI...')
+        await this.observeProgressUI(page, artifactDir)
+        
         // Infer final state
         const finalState = await inferWorkflowState(page)
         console.log(`      → Final state: ${finalState}`)
@@ -385,6 +389,62 @@ export function createActionDriver() {
       } catch (err) {
         console.error('      ❌ Failed to create job:', err.message)
         throw err
+      }
+    },
+    
+    async observeProgressUI(page, artifactDir) {
+      console.log('      → [OBSERVATION] Checking for visible progress UI...')
+      
+      // Wait a moment for job to potentially start
+      await page.waitForTimeout(2000)
+      
+      // Check for RUNNING state
+      const runningCount = await page.locator('[data-job-status="RUNNING"]').count()
+      const jobRunning = runningCount > 0
+      
+      if (!jobRunning) {
+        console.log('      → [OBSERVATION] Job not in RUNNING state (queued/pending)')
+        console.log('      → Cannot verify progress UI visibility without running job')
+        await page.screenshot({ path: path.join(artifactDir, 'job_queued_not_running.png'), fullPage: true })
+        
+        // This is not a failure - just an observation that we can't test progress UI yet
+        // because the backend worker isn't processing jobs in the test environment
+        return
+      }
+      
+      console.log('      → Job is RUNNING, checking for progress indicators...')
+      
+      // Check for progress indicators
+      const progressChecks = [
+        { name: 'Progress bar (testid)', selector: '[data-testid*="progress"]' },
+        { name: 'Progress bar (role)', selector: '[role="progressbar"]' },
+        { name: 'Progress bar (class)', selector: '[class*="progress"]' },
+        { name: 'Spinner', selector: '[class*="spinner"], [class*="loading"]' },
+      ]
+      
+      const foundIndicators = []
+      
+      for (const check of progressChecks) {
+        try {
+          const element = page.locator(check.selector).first()
+          const isVisible = await element.isVisible().catch(() => false)
+          
+          if (isVisible) {
+            foundIndicators.push(check.name)
+            console.log(`      ✅ Found visible: ${check.name}`)
+          }
+        } catch (e) {
+          // Not found
+        }
+      }
+      
+      await page.screenshot({ path: path.join(artifactDir, 'progress_check_while_running.png'), fullPage: true })
+      
+      if (foundIndicators.length === 0) {
+        console.log('      ❌ OBSERVATION: Job running with no visible progress UI')
+        throw new Error('Job running with no visible progress UI')
+      } else {
+        console.log(`      ✅ OBSERVATION: Progress UI present (${foundIndicators.length} indicators)`)
       }
     },
     
