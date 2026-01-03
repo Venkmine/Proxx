@@ -74,6 +74,9 @@ from preview_proxy import (
     PREVIEW_MAX_DURATION,
 )
 
+# Import routing decision as single source of truth for RAW detection
+from v2.source_capabilities import is_raw_codec
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/preview", tags=["preview"])
@@ -233,11 +236,9 @@ class GeneratePreviewRequest(BaseModel):
 # Available video preview durations (seconds)
 PREVIEW_DURATION_OPTIONS = [1, 5, 10, 20, 30, 60]
 
-# RAW codecs that require Resolve and explicit user confirmation
-RAW_CODECS = {
-    "arriraw", "redcode", "braw", "r3d", "prores_raw", 
-    "prores_raw_hq", "prores_raw_lt", "cineform_raw",
-}
+# ROUTING CLEANUP: RAW codec detection now uses source_capabilities as single source of truth.
+# RAW_CODECS removed - use is_raw_codec() from v2.source_capabilities instead.
+# See: backend/v2/source_capabilities.py for the canonical RAW_CODECS_RESOLVE set.
 
 
 class GeneratePreviewSuccessResponse(BaseModel):
@@ -476,25 +477,24 @@ async def generate_preview(body: GeneratePreviewRequest):
             error="Preview unavailable — source file not found"
         )
     
-    # Check for RAW format
-    # Probe source to detect codec
+    # Check for RAW format using routing decision as single source of truth
+    # ROUTING CLEANUP: Use is_raw_codec() from v2.source_capabilities
     from preview_poster import probe_source_metadata
     source_info = probe_source_metadata(source_path)
     
-    is_raw = False
+    detected_is_raw = False
     if source_info and source_info.get("codec"):
-        codec_lower = source_info["codec"].lower()
-        is_raw = codec_lower in RAW_CODECS
+        detected_is_raw = is_raw_codec(source_info["codec"])
     
     # RAW media requires explicit confirmation
-    if is_raw and not confirm_raw:
+    if detected_is_raw and not confirm_raw:
         return GeneratePreviewErrorResponse(
             error="RAW format detected — video preview requires explicit confirmation",
             requires_confirmation=True,
         )
     
     # Cap RAW preview duration at 5s by default
-    if is_raw:
+    if detected_is_raw:
         if requested_duration is None:
             requested_duration = 5
         elif requested_duration > 5 and not confirm_raw:
@@ -742,19 +742,24 @@ async def clear_cache():
 # INC-CTRL-002: Non-RAW files (mp4/mov/prores) should play directly via 
 # native HTML5 video without preview generation.
 # This endpoint serves source media files for native playback.
+#
+# ROUTING CLEANUP: Extension-based checks are DEPRECATED. Native playback 
+# capability is determined by the playback probe (/playback/probe endpoint).
+# The extension check here is retained only as a security gate, NOT for 
+# routing logic. Actual playability is determined by FFmpeg probe result.
 # ============================================================================
 
-# Allowed extensions for native playback (non-RAW, HTML5 compatible)
+# Allowed extensions for native playback serving (security gate only)
+# NOTE: This does NOT determine playability - that comes from playback probe.
+# Files with these extensions are ALLOWED to be served, but may still fail 
+# playback if the codec inside is not FFmpeg-decodable.
 NATIVE_PLAYBACK_EXTENSIONS = {
     '.mp4', '.mov', '.m4v', '.webm',
     '.mxf',  # Some MXF may work with H.264 essence
 }
 
-# Codecs that require transcoding (RAW formats)
-RAW_CODECS = {
-    'arriraw', 'redcode', 'braw', 'r3d', 'prores_raw',
-    'cineform_raw', 'raw',
-}
+# ROUTING CLEANUP: RAW_CODECS removed. Use is_raw_codec() from v2.source_capabilities.
+# The duplicate set that was here has been deleted to consolidate routing logic.
 
 
 @router.get("/source/{encoded_path:path}")

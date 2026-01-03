@@ -100,6 +100,10 @@ const BACKEND_URL = 'http://127.0.0.1:8085'
 // 
 // Components must render based on this state, not duplicate logic.
 // ============================================================================
+// ROUTING CLEANUP: PreviewState type is now unused after removal of _previewState.
+// Retained for reference and potential future use. The actual preview rendering
+// is handled by MonitorSurface using tieredPreview.playbackUIState from probe.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type PreviewState =
   | { kind: 'none' }
   | { kind: 'poster'; posterUrl: string }
@@ -669,77 +673,16 @@ function App() {
   }, [selectedJobId, jobs, selectedFiles, forceRunningState])
   
   // ============================================
-  // Derive Unified PreviewState — Single source of truth
+  // ROUTING CLEANUP: Unified PreviewState block REMOVED
   // ============================================
-  // Helper to check if codec is RAW
-  const isRawCodec = useCallback((codec?: string): boolean => {
-    if (!codec) return false
-    const c = codec.toLowerCase()
-    return ['arriraw', 'redcode', 'braw', 'r3d', 'prores_raw', 'prores raw'].some(
-      raw => c.includes(raw)
-    )
-  }, [])
-  
-  // Unified preview state - single source of truth for all preview rendering decisions
-  // NOTE: Currently derives state for future integration with MonitorSurface refactor
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _previewState = useMemo((): PreviewState => {
-    // No source selected
-    if (monitorState !== 'source-loaded') {
-      return { kind: 'none' }
-    }
-    
-    // Check for errors first
-    if (tieredPreview.videoError) {
-      return { kind: 'error', message: tieredPreview.videoError }
-    }
-    
-    // Check if loading
-    if (tieredPreview.videoLoading) {
-      return { kind: 'loading', message: 'Generating preview…' }
-    }
-    
-    // Get current source info
-    const sourcePath = selectedFiles[0]
-    const codec = tieredPreview.poster?.sourceInfo?.codec
-    const isRaw = isRawCodec(codec)
-    
-    // VIDEO MODE: Either native playback or proxy
-    if (tieredPreview.mode === 'video' && tieredPreview.video?.previewUrl) {
-      return { kind: 'video-proxy', url: tieredPreview.video.previewUrl }
-    }
-    
-    // NON-RAW: Native playback available
-    if (!isRaw && sourcePath) {
-      const encodedPath = encodeURIComponent(sourcePath)
-      const nativeUrl = `${BACKEND_URL}/preview/source/${encodedPath}`
-      return { kind: 'video-native', url: nativeUrl }
-    }
-    
-    // BURST MODE
-    if (tieredPreview.mode === 'burst' && tieredPreview.burst?.thumbnails?.length) {
-      return { 
-        kind: 'burst', 
-        thumbnails: tieredPreview.burst.thumbnails.map(t => ({ url: t.url, timestamp: t.timestamp }))
-      }
-    }
-    
-    // POSTER MODE
-    if (tieredPreview.poster?.posterUrl) {
-      // For RAW without video proxy
-      if (isRaw && !tieredPreview.video?.previewUrl) {
-        return { kind: 'raw-needs-preview' }
-      }
-      return { kind: 'poster', posterUrl: tieredPreview.poster.posterUrl }
-    }
-    
-    // RAW without any preview
-    if (isRaw) {
-      return { kind: 'raw-needs-preview' }
-    }
-    
-    return { kind: 'none' }
-  }, [monitorState, tieredPreview, selectedFiles, isRawCodec])
+  // The isRawCodec helper and _previewState computation were dead code that
+  // duplicated routing logic. RAW detection now comes from:
+  // - Backend: playback probe result (playbackCapability.isRawFormat)
+  // - MonitorSurface: already uses tieredPreview.playbackUIState.isRawFormat
+  // 
+  // See: frontend/src/utils/playbackCapability.ts for canonical implementation
+  // See: backend/v2/source_capabilities.py for routing source of truth
+  // ============================================
 
   // Derive source metadata for monitor
   const monitorSourceMetadata = useMemo((): SourceMetadata | undefined => {

@@ -238,11 +238,15 @@ class WatchFolderEngine:
                 output_dir=watch_folder.output_dir if hasattr(watch_folder, 'output_dir') else None
             )
             
+            # ROUTING NOTE: engine="ffmpeg" here is a UI hint only.
+            # V2 execution via execution_adapter.execute_jobspec() routes based on 
+            # actual source formats - see _determine_job_engine() in headless_execute.py.
+            # RAW sources will route to Resolve regardless of this hint.
             result = self.ingestion_service.ingest_sources(
                 source_paths=[str(file_path)],
                 output_dir=getattr(watch_folder, 'output_dir', None),
                 deliver_settings=deliver_settings,
-                engine="ffmpeg",  # Watch folders default to ffmpeg
+                engine="ffmpeg",  # UI hint - actual routing is deterministic
                 preset_id=watch_folder.preset_id,
             )
             job = result.job
