@@ -12,6 +12,8 @@ import { contextBridge, ipcRenderer } from 'electron';
  * All methods trigger native OS dialogs. No auto-scanning or enumeration
  * occurs on selection — the frontend handles preflight after receiving paths.
  */
+// Expose audit mode flag from environment
+const E2E_AUDIT_MODE = process.env.E2E_AUDIT_MODE === '1';
 contextBridge.exposeInMainWorld('electron', {
     // Legacy: Select files only
     openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
@@ -21,5 +23,7 @@ contextBridge.exposeInMainWorld('electron', {
     // Returns array of paths (files or directories). Does NOT auto-expand directories.
     openFilesOrFolders: () => ipcRenderer.invoke('dialog:openFilesOrFolders'),
     // Shell operations
-    showItemInFolder: (filePath) => ipcRenderer.invoke('shell:showItemInFolder', filePath)
+    showItemInFolder: (filePath) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
+    // Audit mode flag (dev/test-only)
+    isAuditMode: () => E2E_AUDIT_MODE,
 });

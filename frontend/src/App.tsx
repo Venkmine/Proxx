@@ -42,6 +42,7 @@ import { PresetPositionConflictDialog } from './components/PresetPositionConflic
 import { UndoToast, useUndoStack } from './components/UndoToast'
 import { StatusLog, StatusLogEntry } from './components/StatusLog'
 import { InvariantBanner } from './components/InvariantBanner'
+import { AuditModeBanner } from './components/AuditModeBanner'
 import { assertJobPendingForRender, assertNoSilentPresetOverwrite } from './utils/invariants'
 import type { DeliverSettings, SelectionContext } from './components/DeliverControlPanel'
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
@@ -2168,6 +2169,9 @@ function App() {
       {/* Hardening: Invariant Violation Banner (Alpha diagnostics) */}
       {/* V1 Demo: Suppress in demo mode for cleaner presentations */}
       <InvariantBanner enabled={FEATURE_FLAGS.ALPHA_DIAGNOSTICS_ENABLED && !FEATURE_FLAGS.DEMO_MODE} />
+      
+      {/* Internal Audit Mode Banner (dev/test-only) */}
+      <AuditModeBanner />
       
       {/* Background Layers */}
       <div style={{ position: 'fixed', inset: 0, zIndex: -20, background: 'var(--gradient-base)' }} />

@@ -258,6 +258,7 @@ async function createWindow() {
   writeLog('INFO', `__dirname: ${__dirname}`);
   writeLog('INFO', `Preload path: ${preloadPath}`);
   writeLog('INFO', `VITE_DEV_SERVER_URL: ${process.env.VITE_DEV_SERVER_URL || '(not set)'}`);
+  writeLog('INFO', `E2E_AUDIT_MODE: ${process.env.E2E_AUDIT_MODE || '0'}`);
   writeLog('INFO', `Platform: ${process.platform}, Arch: ${process.arch}`);
   
   // Load saved bounds or calculate 90% of primary display

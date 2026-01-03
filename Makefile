@@ -1,21 +1,24 @@
 # Awaire Proxy Makefile
 
-.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full verify-dogfood verify-v2 dev clean help
+.PHONY: verify-fast verify verify-ui verify-ui-debug verify-full verify-dogfood verify-v2 verify-e2e-truth verify-e2e-audit verify-e2e-report dev clean help
 
 # Default target
 help:
 	@echo "Awaire Proxy - Available targets:"
 	@echo ""
-	@echo "  make verify-fast     - Run fast checks (lint, unit tests, schema)"
-	@echo "  make verify          - Run standard verification (+ integration tests)"
-	@echo "  make verify-ui       - Run UI end-to-end tests (Playwright)"
-	@echo "  make verify-ui-debug - Run UI tests in headed mode (visible browser)"
-	@echo "  make verify-full     - Run full verification (+ E2E + UI tests)"
-	@echo "  make verify-dogfood  - Run exhaustive dogfood verification suite"
-	@echo "  make verify-v2       - Run V2 verification (unit tests + headless smoke test)"
+	@echo "  make verify-fast         - Run fast checks (lint, unit tests, schema)"
+	@echo "  make verify              - Run standard verification (+ integration tests)"
+	@echo "  make verify-ui           - Run UI end-to-end tests (Playwright)"
+	@echo "  make verify-ui-debug     - Run UI tests in headed mode (visible browser)"
+	@echo "  make verify-full         - Run full verification (+ E2E + UI tests)"
+	@echo "  make verify-dogfood      - Run exhaustive dogfood verification suite"
+	@echo "  make verify-v2           - Run V2 verification (unit tests + headless smoke test)"
+	@echo "  make verify-e2e-truth    - Run truth surface E2E tests (default mode)"
+	@echo "  make verify-e2e-audit    - Run internal audit E2E tests (audit mode)"
+	@echo "  make verify-e2e-report   - Generate E2E audit HTML report"
 	@echo ""
-	@echo "  make dev             - Start development environment"
-	@echo "  make clean           - Clean build artifacts"
+	@echo "  make dev                 - Start development environment"
+	@echo "  make clean               - Clean build artifacts"
 	@echo ""
 
 # Verify targets - 1:1 mapping to Verify commands
@@ -71,6 +74,25 @@ verify-v2:
 	@echo "V2 Verification Harness"
 	@echo "==================================================="
 	python scripts/verify_v2.py
+
+# E2E Audit Tests — Truth surface and internal audit mode
+verify-e2e-truth:
+	@echo "==================================================="
+	@echo "E2E Truth Surface Tests (Default Mode)"
+	@echo "==================================================="
+	cd frontend && pnpm run electron:build && pnpm run test:e2e:truth
+
+verify-e2e-audit:
+	@echo "==================================================="
+	@echo "E2E Internal Audit Tests (Audit Mode)"
+	@echo "==================================================="
+	cd frontend && pnpm run electron:build && pnpm run test:e2e:audit
+
+verify-e2e-report:
+	@echo "==================================================="
+	@echo "Generating E2E Audit Report"
+	@echo "==================================================="
+	cd frontend && pnpm run test:e2e:report
 
 # Development
 dev:

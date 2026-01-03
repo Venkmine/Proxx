@@ -14,6 +14,9 @@
     "test:e2e": "cd ../qa/e2e && E2E_TEST=true playwright test",
     "test:e2e:ui": "cd ../qa/e2e && E2E_TEST=true playwright test --ui",
     "test:e2e:debug": "cd ../qa/e2e && E2E_TEST=true playwright test --debug",
+    "test:e2e:truth": "cd ../qa/verify/ui/audit_truth_surface && E2E_TEST=true E2E_AUDIT_MODE=0 playwright test",
+    "test:e2e:audit": "cd ../qa/verify/ui/audit_internal_mode && E2E_TEST=true E2E_AUDIT_MODE=1 playwright test",
+    "test:e2e:report": "node ../scripts/build_e2e_audit_report.mjs",
     "electron:dev": "tsc -p tsconfig.electron.json && sh ./rename-electron-js-to-mjs.sh && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist-electron/main.mjs",
     "electron:build": "tsc -p tsconfig.electron.json && sh ./rename-electron-js-to-mjs.sh",
     "pnpm:electron:dev": "pnpm --filter ./frontend electron:dev"
