@@ -3,6 +3,7 @@
  * QC LOOP ORCHESTRATOR
  * 
  * Orchestrates the complete visual QC pipeline:
+ *   PHASE 0: Preconditions (backend, GLM API key)
  *   PHASE 1: run_visual_qc.mjs (Playwright execution)
  *   PHASE 2: run_glm_visual_judge.mjs (GLM analysis)
  *   PHASE 3: interpret_glm_report.mjs (Rule-based interpretation)
@@ -12,6 +13,7 @@
  * - 0 = QC PASS (VERIFIED_OK)
  * - 1 = QC FAIL (VERIFIED_NOT_OK)
  * - 2 = QC INVALID (re-run required)
+ * - 3 = BLOCKED_PRECONDITION (backend/dependencies unavailable)
  * 
  * REVERSIBILITY:
  * - Can skip phases (e.g., re-run interpretation on existing GLM report)
@@ -23,6 +25,8 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { config } from 'dotenv'
+import { startBackend, waitForHealthy, stopBackend, setupCleanupHandler } from './backend_controller.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -122,8 +126,6 @@ function parseArgs() {
     questionSet: 'v1',
     rulesVersion: 'v1',
     dryRun: false,
-    intentId: 'INTENT_001', // Default intent
-    intentMode: false,       // Use intent-driven execution
   }
   
   for (let i = 0; i < args.length; i++) {
@@ -146,10 +148,6 @@ function parseArgs() {
       case '--dry-run':
         options.dryRun = true
         break
-      case '--intent':
-        options.intentId = args[++i]
-        options.intentMode = true
-        break
       case '--help':
         printHelp()
         process.exit(0)
@@ -167,23 +165,12 @@ QC Loop Orchestrator - Reversible Visual QC Pipeline
 USAGE:
   node run_qc_loop.mjs [options]
 
-OPTIintent <id>          Execute specific workflow intent (e.g., INTENT_001)
-  --dry-run              Show what would be done without executing
-  --help                 Show this help
-
-INTENT-DRIVEN EXECUTION:
-  --intent INTENT_001    Execute "Generate Delivery Proxy (Single File)" workflow
-  --intent INTENT_002    Execute "Preview Without Delivery" workflow
-  --intent INTENT_003    Execute "Backend Failure Feedback" workflow
-  
-  Intent mode executes REAL human workflows from docs/UI_WORKFLOW_INTENTS.md
-
-EXAMPLES:
-  # Full QC loop
-  node run_qc_loop.mjs
-
-  # Execute specific intent
-  node run_qc_loop.mjs --intent INTENT_001   Interpretation rules version (default: v1)
+OPTIONS:
+  --skip-execution       Skip Phase 1 (use existing screenshots)
+  --skip-glm             Skip Phase 2 (use existing GLM report)
+  --artifact-path <path> Use specific artifact directory
+  --question-set <ver>   GLM question set version (default: v1)
+  --rules <ver>          Interpretation rules version (default: v1)
   --dry-run              Show what would be done without executing
   --help                 Show this help
 
@@ -201,10 +188,57 @@ EXIT CODES:
   0 = QC PASS (VERIFIED_OK)
   1 = QC FAIL (VERIFIED_NOT_OK)
   2 = QC INVALID (re-run required)
-`)Intent-Driven: ${options.intentMode}`)
-  if (options.intentMode) {
-    console.log(`    Intent ID: ${options.intentId}`)
+`)
+}
+
+/**
+ * Main execution
+ */
+async function main() {
+  const options = parseArgs()
+  
+  // Setup cleanup handler for graceful shutdown
+  setupCleanupHandler()
+  
+  // Load environment variables
+  config()
+  
+  // PHASE 0: PRECONDITIONS
+  printBanner('PHASE 0 — PRECONDITIONS')
+  console.log('  Checking environment and dependencies...')
+  console.log('')
+  
+  // Check GLM_API_KEY
+  if (!process.env.GLM_API_KEY) {
+    console.error('  ❌ BLOCKED: GLM_API_KEY not found')
+    console.error('')
+    console.error('  The visual QC loop requires a GLM API key for visual verification.')
+    console.error('  Please create a .env file in the project root with:')
+    console.error('    GLM_API_KEY=<your-glm-api-key>')
+    console.error('')
+    process.exit(3)
   }
+  console.log('  ✓ GLM_API_KEY loaded')
+  
+  // Start backend (required for UI testing)
+  console.log('  Starting backend...')
+  try {
+    const { pid, timestamp } = await startBackend()
+    console.log(`    ✓ Backend started (PID: ${pid}, started: ${timestamp})`)
+    
+    // Wait for backend to be healthy
+    const healthLatency = await waitForHealthy()
+    console.log(`    ✓ Backend healthy (latency: ${healthLatency}ms)`)
+  } catch (error) {
+    console.error(`  ❌ BLOCKED: Backend failed to start`)
+    console.error(`     ${error.message}`)
+    console.error('')
+    process.exit(3)
+  }
+  console.log('')
+  
+  printBanner('VISUAL QC LOOP ORCHESTRATOR')
+  console.log('  Mode:')
   console.log(`    Skip Execution: ${options.skipExecution}`)
   console.log(`    Skip GLM: ${options.skipGlm}`)
   console.log(`    Artifact Path: ${options.artifactPath || '(auto)'}`)
@@ -212,36 +246,6 @@ EXIT CODES:
   console.log(`    Rules: ${options.rulesVersion}`)
   console.log(`    Dry Run: ${options.dryRun}`)
   console.log('')
-  
-  let artifactPath = options.artifactPath
-  let glmReportPath = null
-  let intentResult = null
-  
-  // PHASE 1: Exec`  [DRY RUN] Would run: scripts/qc/run_visual_qc.mjs ${executionArgs.join(' ')}`)
-    } else {
-      const phase1 = await runPhase(
-        path.join(__dirname, 'run_visual_qc.mjs'),
-        executionArgsintent mode, pass intent ID to visual QC script
-    const executionArgs = options.intentMode 
-      ? ['--intent', options.intentId]
-      : []tions.artifactPath || '(auto)'}`)
-  console.log(`    Question Set: ${options.questionSet}`)
-  console.log(`    Rules: ${options.rulesVersion}`)
-  console.log(`    Dry Run: ${options.dryRun}`)
-  console.loapture intent execution result if present
-        if (phase1.output.intentResult) {
-          intentResult = phase1.output.intentResult
-          console.log('')
-          console.log('  📋 Intent Execution Summary:')
-          console.log(`     Intent: ${intentResult.intent_id}`)
-          console.log(`     Completed: ${intentResult.completed_steps}/${intentResult.total_steps}`)
-          if (!intentResult.success) {
-            console.log(`     ⚠️  Blocked at: ${intentResult.blocked_at}`)
-            console.log(`     Reason: ${intentResult.failure_reason}`)
-          }
-        }
-        
-        // Cg('')
   
   let artifactPath = options.artifactPath
   let glmReportPath = null
@@ -420,15 +424,6 @@ EXIT CODES:
     artifactPath,
     glmReportPath,
     timestamp: new Date().toISOString(),
-    // Intent execution result
-    intent: options.intentMode ? {
-      intent_id: options.intentId,
-      success: intentResult?.success || false,
-      completed_steps: intentResult?.completed_steps || 0,
-      total_steps: intentResult?.total_steps || 0,
-      blocked_at: intentResult?.blocked_at,
-      failure_reason: intentResult?.failure_reason,
-    } : null,
     // Action-scoped QC summary
     actions: actionSummary ? {
       total: actionSummary.total_actions,
@@ -501,11 +496,18 @@ EXIT CODES:
   console.log('═══════════════════════════════════════════════════════════════')
   console.log('')
   
+  // Stop backend before exit
+  await stopBackend()
+  
   process.exit(decision.exitCode)
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error('❌ QC Loop failed:', error.message)
   console.error(error.stack)
+  
+  // Stop backend before exit
+  await stopBackend()
+  
   process.exit(1)
 })
