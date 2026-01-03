@@ -29,9 +29,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '../..')
 
-// GLM API Configuration
-const GLM_API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
-const GLM_MODEL = 'glm-4v-plus' // Vision-capable model
+// GLM API Configuration (z.ai)
+const GLM_API_URL = 'https://api.z.ai/api/paas/v4/chat/completions'
+const GLM_MODEL = 'glm-4.6v' // Vision-capable model
 
 /**
  * Load question set by version

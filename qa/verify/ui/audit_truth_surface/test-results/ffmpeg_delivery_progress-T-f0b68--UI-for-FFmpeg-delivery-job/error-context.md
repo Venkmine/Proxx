@@ -1,0 +1,102 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - img "Awaire"
+    - generic [ref=e6]:
+      - button "Minimize" [ref=e7] [cursor=pointer]:
+        - img [ref=e8]
+      - button "Maximize" [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+      - button "Close" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+  - banner [ref=e16]:
+    - generic [ref=e17]:
+      - img "Awaire"
+      - generic [ref=e18]:
+        - generic [ref=e19]: ○ Disconnected
+        - generic [ref=e20]: Alpha
+        - button "V2 OFF" [ref=e21] [cursor=pointer]
+  - generic [ref=e22]:
+    - generic [ref=e23]: "Failed to fetch jobs: Failed to fetch"
+    - button "Dismiss" [ref=e24] [cursor=pointer]
+  - generic [ref=e26]:
+    - complementary [ref=e27]:
+      - generic [ref=e28]:
+        - heading "Sources" [level=2] [ref=e30]
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - heading "Create Job" [level=2] [ref=e34]
+            - button "Clear" [ref=e36] [cursor=pointer]
+          - generic [ref=e37]:
+            - heading "Source" [level=3] [ref=e40]
+            - generic [ref=e42]:
+              - generic [ref=e43]: Input Path(s) *
+              - button "Select Files..." [ref=e45] [cursor=pointer]
+          - generic [ref=e46]:
+            - heading "Output" [level=3] [ref=e49]
+            - generic [ref=e51]:
+              - generic [ref=e52]: Output Directory *
+              - generic [ref=e53]:
+                - textbox "/Users/yourname/OUTPUT" [ref=e54]
+                - button "Browse..." [ref=e55] [cursor=pointer]
+          - generic [ref=e56]:
+            - heading "Execution Engine" [level=3] [ref=e59]
+            - generic [ref=e61]:
+              - generic [ref=e62]: FFmpeg
+              - generic [ref=e63]: Configure codec & container in Settings \u2192
+          - generic [ref=e64]:
+            - generic [ref=e65]: Welcome to Proxx
+            - generic [ref=e66]: Select files or folders to begin
+          - button "+ Create Job" [disabled] [ref=e70]
+    - main [ref=e71]:
+      - generic [ref=e76]: Forge
+    - complementary [ref=e77]:
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e80]:
+            - generic [ref=e81]: Filter
+            - button "All" [ref=e82] [cursor=pointer]
+            - button "Running" [ref=e83] [cursor=pointer]
+            - button "Queued" [ref=e84] [cursor=pointer]
+            - button "Pending" [ref=e85] [cursor=pointer]
+            - button "Completed" [ref=e86] [cursor=pointer]
+            - button "Failed" [ref=e87] [cursor=pointer]
+            - button "Skipped" [ref=e88] [cursor=pointer]
+            - button "Cancelled" [ref=e89] [cursor=pointer]
+            - generic [ref=e90]:
+              - button "⊞" [ref=e91] [cursor=pointer]
+              - button "⊟" [ref=e92] [cursor=pointer]
+          - generic [ref=e93]:
+            - generic [ref=e94]:
+              - textbox "Search files..." [ref=e95]
+              - generic: 🔍
+            - generic [ref=e96]:
+              - button "All Time" [ref=e97] [cursor=pointer]
+              - button "Today" [ref=e98] [cursor=pointer]
+              - button "Yesterday" [ref=e99] [cursor=pointer]
+              - button "Last 7 Days" [ref=e100] [cursor=pointer]
+        - heading "Queue (0)" [level=3] [ref=e102]
+        - generic [ref=e104]:
+          - img "Awaire"
+          - generic [ref=e105]: No jobs in queue
+          - generic [ref=e106]: Add files in the left panel and click "Add to Queue"
+  - contentinfo [ref=e107]:
+    - generic [ref=e108]:
+      - generic [ref=e109]: ALPHA
+      - generic [ref=e110]: Basic
+    - generic [ref=e111]:
+      - generic [ref=e112]: FFmpeg ✓
+      - generic [ref=e113]: Resolve —
+    - generic [ref=e114]:
+      - link "Docs" [ref=e115] [cursor=pointer]:
+        - /url: https://docs.awaire.io/proxy
+      - link "Support" [ref=e116] [cursor=pointer]:
+        - /url: https://awaire.io/support
+  - generic [ref=e117]:
+    - generic [ref=e118]:
+      - generic [ref=e119]: Status
+      - button "Details" [ref=e120] [cursor=pointer]
+    - generic [ref=e122]: No status messages
+```

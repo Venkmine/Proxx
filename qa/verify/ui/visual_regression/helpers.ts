@@ -71,6 +71,24 @@ export const test = base.extend<ElectronFixtures>({
   page: async ({ app }, use) => {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 })
+    
+    // Wait for splash screen to disappear before proceeding
+    // Splash screen typically has data-testid="splash" or class containing "splash"
+    console.log('⏳ Waiting for splash screen to disappear...')
+    try {
+      await page.waitForFunction(() => {
+        const splash = document.querySelector('[data-testid="splash"], [class*="splash"], [class*="Splash"], #splash')
+        return !splash || (splash as HTMLElement).style.display === 'none' || (splash as HTMLElement).style.opacity === '0'
+      }, { timeout: 15000 })
+      console.log('✓ Splash screen gone, app ready')
+    } catch (e) {
+      // If no splash found or timeout, continue anyway
+      console.log('⚠️ Splash wait timeout or not found, continuing...')
+    }
+    
+    // Additional wait for app to stabilize
+    await page.waitForTimeout(1000)
+    
     await use(page)
   },
 

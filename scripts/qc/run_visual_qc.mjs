@@ -94,29 +94,56 @@ async function runPlaywrightVisualTests(artifactDir, timestamp) {
 
 /**
  * Collects screenshot files from artifact directory
+ * Also checks sibling timestamp directories created during test run
  */
-function collectScreenshots(artifactDir) {
+function collectScreenshots(artifactDir, startTime) {
   const screenshots = []
+  const visualDir = path.dirname(artifactDir)
   
-  function walk(dir) {
+  // Get all timestamp directories created after startTime
+  const dirsToScan = [artifactDir]
+  
+  if (fs.existsSync(visualDir)) {
+    const siblings = fs.readdirSync(visualDir, { withFileTypes: true })
+      .filter(d => d.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(d.name))
+      .map(d => ({
+        name: d.name,
+        path: path.join(visualDir, d.name),
+      }))
+      .filter(d => {
+        // Include directories created after our start time
+        const dirTime = new Date(d.name.replace(/-/g, (m, i) => i < 10 ? '-' : i < 13 ? 'T' : i < 16 ? ':' : i < 19 ? ':' : '.').replace('T', 'T').slice(0, -1) + 'Z')
+        return !isNaN(dirTime.getTime()) && dirTime >= startTime && d.path !== artifactDir
+      })
+    
+    for (const sibling of siblings) {
+      dirsToScan.push(sibling.path)
+    }
+  }
+  
+  function walk(dir, baseDir) {
     if (!fs.existsSync(dir)) return
     
     const entries = fs.readdirSync(dir, { withFileTypes: true })
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name)
       if (entry.isDirectory()) {
-        walk(fullPath)
+        walk(fullPath, baseDir)
       } else if (entry.name.endsWith('.png')) {
         screenshots.push({
           path: fullPath,
-          relativePath: path.relative(artifactDir, fullPath),
+          relativePath: path.relative(baseDir, fullPath),
+          sourceDir: baseDir,
           size: fs.statSync(fullPath).size,
         })
       }
     }
   }
   
-  walk(artifactDir)
+  for (const dir of dirsToScan) {
+    walk(dir, dir)
+  }
+  
   return screenshots
 }
 
@@ -151,6 +178,7 @@ function writeExecutionMetadata(artifactDir, timestamp, testResult, screenshots)
  * Main execution
  */
 async function main() {
+  const startTime = new Date()
   const timestamp = generateTimestamp()
   console.log('═══════════════════════════════════════════════════════════════')
   console.log('  PHASE 1 — EXECUTION: Visual QC Test Runner')
@@ -164,13 +192,24 @@ async function main() {
     // Run Playwright visual tests
     const testResult = await runPlaywrightVisualTests(artifactDir, timestamp)
     
-    // Collect screenshots
-    const screenshots = collectScreenshots(artifactDir)
+    // Collect screenshots (including from sibling dirs created during tests)
+    const screenshots = collectScreenshots(artifactDir, startTime)
     console.log('')
     console.log(`📸 Collected ${screenshots.length} screenshot(s)`)
     
     if (screenshots.length === 0) {
       console.warn('⚠️  No screenshots captured. Check test execution.')
+    } else {
+      // Copy screenshots from sibling directories to main artifact dir
+      for (const screenshot of screenshots) {
+        if (screenshot.sourceDir !== artifactDir) {
+          const targetDir = path.join(artifactDir, path.dirname(screenshot.relativePath))
+          const targetPath = path.join(artifactDir, screenshot.relativePath)
+          fs.mkdirSync(targetDir, { recursive: true })
+          fs.copyFileSync(screenshot.path, targetPath)
+          console.log(`  📋 Copied: ${screenshot.relativePath}`)
+        }
+      }
     }
     
     // Write metadata
