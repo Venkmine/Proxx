@@ -96,6 +96,26 @@ def classify_file(file_path: Path, probe_data: Optional[Dict], ffmpeg_decodable:
     ext = file_path.suffix.lower()
     rel_path = str(file_path.relative_to('/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW'))
     
+    # RED RAW files - route directly to Resolve without probing
+    # RED files require RED SDK and often fail standard ffprobe
+    if ext == '.r3d':
+        return {
+            'relpath': rel_path,
+            'ext': ext,
+            'container': 'r3d',
+            'codec_name': 'redcode',
+            'codec_tag': 'RED',
+            'profile': '',
+            'pix_fmt': '',
+            'bit_depth': '',
+            'width': '',
+            'height': '',
+            'ffmpeg_decodable': False,
+            'classification': 'METADATA_ONLY',
+            'engine': 'resolve',
+            'reason': 'RED RAW requires Resolve (ffprobe requires RED SDK)',
+        }
+    
     # Extract metadata
     container = probe_data.get('format', {}).get('format_name', 'unknown') if probe_data else 'unknown'
     video_info = extract_video_stream_info(probe_data) if probe_data else None
@@ -190,6 +210,14 @@ def scan_corpus(root_dir: Path) -> List[Dict]:
     # Process each file
     for i, file_path in enumerate(all_files, 1):
         print(f"[{i}/{len(all_files)}] Probing: {file_path.name}")
+        
+        # RED RAW files - skip ffprobe, classify immediately
+        if file_path.suffix.lower() == '.r3d':
+            result = classify_file(file_path, None, False)
+            results.append(result)
+            engine_emoji = '🎨'
+            print(f"  {engine_emoji} {result['engine'].upper()} => {result['reason']}")
+            continue
         
         # Run ffprobe
         probe_data = run_ffprobe(file_path)

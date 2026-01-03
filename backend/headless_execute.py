@@ -254,14 +254,24 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
     for source_path in job_spec.sources:
         # Extract container from file extension
         source = Path(source_path)
-        container = source.suffix.lower().lstrip(".")
+        ext = source.suffix.lower().lstrip(".")
+        
+        # Exclude RED sidecar files and other non-video metadata
+        # These should never be processed as video sources
+        RED_SIDECAR_EXTENSIONS = {"rmd", "rdc", "rtn", "ale"}
+        if ext in RED_SIDECAR_EXTENSIONS:
+            logger.info(f"[ROUTING TABLE] {source.name} ext=.{ext} => SKIPPED reason=sidecar_file")
+            continue
+        
+        container = ext
         
         # For source codec, we need to probe the file or infer from container
         # For now, use container-based heuristics for common RAW formats
         codec = _infer_codec_from_path(source)
         
         # Test FFmpeg decodability if possible (quick single-frame decode test)
-        ffmpeg_decodable = _test_ffmpeg_decodable(source)
+        # Skip decode test for RED files as they require RED SDK
+        ffmpeg_decodable = False if ext == "r3d" else _test_ffmpeg_decodable(source)
         
         # Determine routing engine
         engine = get_execution_engine(container, codec)
@@ -398,9 +408,14 @@ def _infer_codec_from_path(source_path: Path) -> str:
     """
     ext = source_path.suffix.lower().lstrip(".")
     
+    # RED RAW files - route directly to Resolve without probing
+    # RED files often fail ffprobe (require RED SDK) and must not be tested with FFmpeg
+    if ext == "r3d":
+        logger.info(f"[ROUTING TABLE] {source_path.name} ext=.r3d => engine=resolve reason=RED RAW")
+        return "redcode"
+    
     # RAW format extensions that require Resolve
     raw_extensions = {
-        "r3d": "redcode",      # RED RAW
         "ari": "arriraw",      # ARRI RAW
         "braw": "braw",        # Blackmagic RAW
         "crm": "canon_raw",    # Canon Cinema RAW

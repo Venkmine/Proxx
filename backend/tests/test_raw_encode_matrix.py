@@ -46,6 +46,17 @@ def is_raw_format(file_path: Path) -> bool:
         if 'PRORES_RAW' in str(file_path) or 'ProRes' in str(file_path):
             return True
     
+    # ARRI MXF files with codec=unknown must route to Resolve
+    # These are detected at routing time, not by test
+    # For test purposes, check if in ARRI folders that typically contain RAW
+    if ext == '.mxf':
+        path_str = str(file_path)
+        # ARRI 35 Xtreme MXF HDE, ARRICORE folders contain RAW MXF
+        if any(x in path_str for x in ['ARRI 35 Xtreme', 'ARRICORE', 'ARRI35']):
+            # Check if it's NOT the ProRes one (DW0001C003_251020_112744_p1I7H.mxf)
+            if 'p1I7H' not in file_path.name and 'p12SQ' not in file_path.name:
+                return True
+    
     return False
 
 
@@ -62,6 +73,9 @@ def scan_raw_directory(base_dir: Path, exclude_dirs=None):
         '.mkv', '.webm',
     }
     
+    # RED sidecar files and other metadata - exclude from processing
+    EXCLUDED_EXTENSIONS = {'.rmd', '.rdc', '.rtn', '.ale', '.RMD', '.RDC', '.RTN', '.ALE'}
+    
     files = []
     
     for root, dirs, filenames in os.walk(base_dir):
@@ -73,6 +87,11 @@ def scan_raw_directory(base_dir: Path, exclude_dirs=None):
                 continue
             
             file_path = Path(root) / filename
+            
+            # Skip RED sidecars and metadata files
+            if file_path.suffix in EXCLUDED_EXTENSIONS:
+                continue
+            
             if file_path.suffix.lower() in video_extensions:
                 files.append(file_path)
     
