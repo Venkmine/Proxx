@@ -28,6 +28,7 @@ from watch_folder_runner import (
     MANIFEST_FILENAME,
     RESULT_SUFFIX,
 )
+from job_spec import JobSpec
 
 
 # -----------------------------------------------------------------------------
@@ -548,3 +549,83 @@ class TestEngineRoutingIntegration:
         # Verify metadata is serialized correctly
         result_dict = result.to_dict()
         assert result_dict["_metadata"]["engine_used"] == "ffmpeg"
+
+# -----------------------------------------------------------------------------
+# V1 Image Sequence Rejection Tests
+# -----------------------------------------------------------------------------
+
+class TestImageSequenceRejection:
+    """Tests for V1 image sequence rejection behavior."""
+    
+    def test_exr_sequence_rejected(self, tmp_path: Path):
+        """EXR files should be rejected in V1 (still image format)."""
+        from headless_execute import _determine_job_engine
+        
+        source = tmp_path / "render_0001.exr"
+        source.write_bytes(b"fake exr data")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(source)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name is None
+        assert error is not None
+        assert "Image sequences" in error
+        assert "not supported in V1" in error
+    
+    def test_dpx_sequence_rejected(self, tmp_path: Path):
+        """DPX files should be rejected in V1 (cinema still format)."""
+        from headless_execute import _determine_job_engine
+        
+        source = tmp_path / "shot_0100.dpx"
+        source.write_bytes(b"fake dpx data")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(source)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name is None
+        assert error is not None
+        assert "Image sequences" in error
+    
+    def test_tiff_sequence_rejected(self, tmp_path: Path):
+        """TIFF files should be rejected in V1 (still image format)."""
+        from headless_execute import _determine_job_engine
+        
+        source = tmp_path / "frame_001.tiff"
+        source.write_bytes(b"fake tiff data")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(source)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name is None
+        assert error is not None
+        assert "Image sequences" in error

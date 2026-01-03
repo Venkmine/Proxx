@@ -35,6 +35,16 @@ logger = logging.getLogger(__name__)
 from job_spec import JobSpec, JobSpecValidationError, FpsMode, JOBSPEC_VERSION
 from execution_results import ClipExecutionResult, JobExecutionResult
 
+# Image sequence extensions (V1 does NOT support these)
+IMAGE_SEQUENCE_EXTENSIONS = {
+    # RAW stills
+    "dng", "nef", "cr2", "cr3", "arw", "ari",
+    # Rendered stills
+    "exr", "dpx", "tif", "tiff", "png", "jpg", "jpeg",
+    # Other still formats
+    "bmp", "pfm",
+}
+
 # Import image sequence detection
 try:
     from v2.image_sequence import (
@@ -213,6 +223,47 @@ FFMPEG_CODEC_MAP = {
 # This is based purely on source format capability - NO user override.
 # -----------------------------------------------------------------------------
 
+def _is_image_sequence(path: Path) -> bool:
+    """
+    Detect if a path represents an image sequence (still frames).
+    
+    V1 does NOT support image sequences. This function provides early detection
+    to fail fast with a clear error message.
+    
+    Detection rules:
+    1. Extension is in IMAGE_SEQUENCE_EXTENSIONS (excluding .dng - special case)
+    2. Path is a directory containing multiple numbered image files
+    
+    NOTE: .dng files are excluded from automatic rejection because they can be:
+    - RAW video frames (DJI, some cameras) → route to Resolve for debayering
+    - Still photo sequences → should be rejected
+    The distinction is made later via ffprobe bayer pattern detection.
+    
+    Returns:
+        True if this is an image sequence, False otherwise
+    """
+    # Check if extension matches known still image formats
+    # Exclude .dng from this check - it requires ffprobe inspection
+    ext = path.suffix.lower().lstrip(".")
+    if ext in IMAGE_SEQUENCE_EXTENSIONS and ext != "dng":
+        logger.info(f"[ROUTING] Image sequence detected: {path.name} (ext=.{ext}) => REJECTED (V1 unsupported)")
+        return True
+    
+    # Check if path is a directory (common for frame sequences)
+    if path.is_dir():
+        # Look for numbered image files inside
+        try:
+            files = list(path.iterdir())
+            image_files = [f for f in files if f.suffix.lower().lstrip(".") in IMAGE_SEQUENCE_EXTENSIONS]
+            if len(image_files) > 1:
+                logger.info(f"[ROUTING] Image sequence folder detected: {path.name} ({len(image_files)} frames) => REJECTED (V1 unsupported)")
+                return True
+        except (OSError, PermissionError):
+            pass
+    
+    return False
+
+
 def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[str]]:
     """
     Determine which execution engine should process this job.
@@ -255,6 +306,10 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
         # Extract container from file extension
         source = Path(source_path)
         ext = source.suffix.lower().lstrip(".")
+        
+        # REJECT IMAGE SEQUENCES EARLY (V1 does not support)
+        if _is_image_sequence(source):
+            return (None, "Image sequences (DNG / EXR / DPX / TIFF) are not supported in V1. Sequence ingest will be added in V2.")
         
         # Exclude RED sidecar files and other non-video metadata
         # These should never be processed as video sources
