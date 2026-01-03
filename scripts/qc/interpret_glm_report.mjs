@@ -13,6 +13,12 @@
  * - Rule-based only, no AI inference
  * - Deterministic given same input
  * - Reversible: same GLM report = same interpretation
+ * 
+ * AUTHORITATIVE SPECS:
+ * - docs/UI_QC_BEHAVIOUR_SPEC.md — defines what features QC may judge
+ * - docs/UI_QC_WORKFLOW.md — defines workflow states and expectations
+ * 
+ * Features not covered by the Behaviour Spec must be rejected from judgement.
  */
 
 import fs from 'node:fs'
@@ -23,6 +29,92 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '../..')
 
+// ============================================================================
+// AUTHORITATIVE SPEC LOADER
+// ============================================================================
+
+/**
+ * Load and parse the authoritative UI behaviour spec.
+ * Returns the list of features that QC is allowed to judge.
+ */
+function loadBehaviourSpec() {
+  const specPath = path.join(projectRoot, 'docs', 'UI_QC_BEHAVIOUR_SPEC.md')
+  
+  if (!fs.existsSync(specPath)) {
+    console.warn(`⚠️  Behaviour spec not found: ${specPath}`)
+    console.warn('   Falling back to embedded feature list.')
+    return null
+  }
+  
+  const content = fs.readFileSync(specPath, 'utf-8')
+  
+  // Extract defined feature names from the spec (### feature_name sections)
+  const featureRegex = /^### (\w+)\s*$/gm
+  const features = []
+  let match
+  
+  while ((match = featureRegex.exec(content)) !== null) {
+    features.push(match[1])
+  }
+  
+  return {
+    path: specPath,
+    features,
+    raw: content,
+  }
+}
+
+/**
+ * Load and parse the authoritative workflow spec.
+ * Returns the workflow states and their expected features.
+ */
+function loadWorkflowSpec() {
+  const specPath = path.join(projectRoot, 'docs', 'UI_QC_WORKFLOW.md')
+  
+  if (!fs.existsSync(specPath)) {
+    console.warn(`⚠️  Workflow spec not found: ${specPath}`)
+    console.warn('   Falling back to embedded state definitions.')
+    return null
+  }
+  
+  const content = fs.readFileSync(specPath, 'utf-8')
+  
+  // Extract defined state names from the spec (### state_name sections)
+  const stateRegex = /^### (\w+)\s*$/gm
+  const states = []
+  let match
+  
+  while ((match = stateRegex.exec(content)) !== null) {
+    // Skip non-state headers like "Determining Current State"
+    const validStates = ['idle', 'source_loaded', 'job_running', 'job_complete']
+    if (validStates.includes(match[1])) {
+      states.push(match[1])
+    }
+  }
+  
+  return {
+    path: specPath,
+    states,
+    raw: content,
+  }
+}
+
+/**
+ * Check if a feature is covered by the authoritative spec.
+ * If not covered, QC must ignore it.
+ */
+function isFeatureCoveredBySpec(featureId, behaviourSpec) {
+  if (!behaviourSpec) {
+    // Fallback: all features in embedded rules are covered
+    return true
+  }
+  return behaviourSpec.features.includes(featureId)
+}
+
+// Global spec references (loaded once at startup)
+let BEHAVIOUR_SPEC = null
+let WORKFLOW_SPEC = null
+
 /**
  * Interpretation rules (versioned)
  * 
@@ -30,9 +122,26 @@ const projectRoot = path.resolve(__dirname, '../..')
  * - condition: function to evaluate answers
  * - classification: resulting classification
  * - reason: human-readable explanation
+ * 
+ * NOTE: Features must be covered by docs/UI_QC_BEHAVIOUR_SPEC.md.
+ * If a feature is not defined there, judgements against it are rejected.
  */
 const INTERPRETATION_RULES_V1 = {
   version: 'v1',
+  
+  /**
+   * Features defined in UI_QC_BEHAVIOUR_SPEC.md that can be judged.
+   * If a feature is not in this list, QC ignores it.
+   */
+  definedFeatures: [
+    'player_area',
+    'preview_controls',
+    'progress_bar',
+    'create_job_button',
+    'queue_panel',
+    'status_panel',
+    'audit_banner',
+  ],
   
   /**
    * Critical failure conditions (any = VERIFIED_NOT_OK)
@@ -76,34 +185,80 @@ const INTERPRETATION_RULES_V1 = {
   
   /**
    * Required visibility checks (all must pass for VERIFIED_OK)
+   * 
+   * NOTE: Only features defined in UI_QC_BEHAVIOUR_SPEC.md are judged.
+   * The 'required' field is now state-dependent (see workflow spec).
+   * For v1, player_area is NOT required in 'idle' state.
    */
   requiredVisible: [
     {
       id: 'player_area',
       answerKey: 'player_area_visible',
-      required: true,
+      required: false, // State-dependent — see workflow spec
       weight: 'high',
+      coveredBySpec: true,
     },
     {
       id: 'queue_panel',
       answerKey: 'queue_panel_visible',
-      required: false, // Optional but tracked
+      required: false, // Always visible but not blocking
       weight: 'medium',
+      coveredBySpec: true,
     },
     {
       id: 'zoom_controls',
       answerKey: 'zoom_controls_visible',
       required: false,
       weight: 'low',
+      coveredBySpec: false, // NOT in behaviour spec — ignored
     },
   ],
 }
 
 /**
- * Apply interpretation rules to a single screenshot's answers
+ * Determine workflow state from GLM answers.
+ * Uses heuristics defined in UI_QC_WORKFLOW.md.
+ */
+function inferWorkflowState(answers) {
+  // Check for progress bar → job_running
+  if (answers.progress_bar_visible === 'yes') {
+    return 'job_running'
+  }
+  
+  // Check for completion indicators (would need to be added to questions)
+  // For now, if player visible → source_loaded (conservative)
+  if (answers.player_area_visible === 'yes') {
+    return 'source_loaded'
+  }
+  
+  // Default to idle
+  return 'idle'
+}
+
+/**
+ * Check if a feature judgement should be rejected because it's not in spec.
+ */
+function shouldRejectJudgement(featureId, rules) {
+  // Check if feature is in the definedFeatures list
+  if (!rules.definedFeatures.includes(featureId)) {
+    return {
+      rejected: true,
+      reason: `Feature '${featureId}' not defined in UI_QC_BEHAVIOUR_SPEC.md — judgement rejected`,
+    }
+  }
+  return { rejected: false }
+}
+
+/**
+ * Apply interpretation rules to a single screenshot's answers.
+ * 
+ * AUTHORITATIVE: Only judges features defined in UI_QC_BEHAVIOUR_SPEC.md.
+ * Features not covered by the spec are rejected from judgement.
  */
 function interpretScreenshot(answers, rules) {
   const findings = []
+  const rejectedJudgements = []
+  const inferredState = inferWorkflowState(answers)
   
   // Check for QC invalid conditions first
   for (const condition of rules.invalidConditions) {
@@ -113,6 +268,7 @@ function interpretScreenshot(answers, rules) {
         reason: condition.reason,
         ruleId: condition.id,
         findings: [{ type: 'invalid', ...condition }],
+        inferredState,
       }
     }
   }
@@ -134,23 +290,52 @@ function interpretScreenshot(answers, rules) {
       classification: 'VERIFIED_NOT_OK',
       reason: findings.map(f => f.reason).join('; '),
       findings,
+      inferredState,
     }
   }
   
-  // Check required visibility
+  // Check required visibility — only for features covered by spec
   const missingRequired = []
   const visibilityStatus = []
   
   for (const check of rules.requiredVisible) {
+    // SPEC ENFORCEMENT: Skip features not covered by the behaviour spec
+    if (check.coveredBySpec === false) {
+      rejectedJudgements.push({
+        id: check.id,
+        reason: `Feature '${check.id}' not in UI_QC_BEHAVIOUR_SPEC.md — skipped`,
+      })
+      continue
+    }
+    
+    // SPEC ENFORCEMENT: Check if feature is in defined list
+    const rejection = shouldRejectJudgement(check.id, rules)
+    if (rejection.rejected) {
+      rejectedJudgements.push({
+        id: check.id,
+        reason: rejection.reason,
+      })
+      continue
+    }
+    
     const isVisible = answers[check.answerKey] === 'yes'
+    
+    // STATE-AWARE: player_area is NOT required in 'idle' state
+    // per UI_QC_WORKFLOW.md (branded idle background is correct)
+    let effectiveRequired = check.required
+    if (check.id === 'player_area' && inferredState === 'idle') {
+      effectiveRequired = false // Idle state doesn't require player
+    }
+    
     visibilityStatus.push({
       id: check.id,
       visible: isVisible,
-      required: check.required,
+      required: effectiveRequired,
       weight: check.weight,
+      inferredState,
     })
     
-    if (check.required && !isVisible) {
+    if (effectiveRequired && !isVisible) {
       missingRequired.push(check.id)
     }
   }
@@ -160,6 +345,8 @@ function interpretScreenshot(answers, rules) {
       classification: 'VERIFIED_NOT_OK',
       reason: `Missing required UI elements: ${missingRequired.join(', ')}`,
       findings: visibilityStatus.filter(v => v.required && !v.visible),
+      inferredState,
+      rejectedJudgements,
     }
   }
   
@@ -168,6 +355,8 @@ function interpretScreenshot(answers, rules) {
     classification: 'VERIFIED_OK',
     reason: 'All critical checks passed',
     findings: visibilityStatus,
+    inferredState,
+    rejectedJudgements,
   }
 }
 
@@ -245,6 +434,25 @@ async function main() {
   console.log('')
   
   try {
+    // Load authoritative specs
+    BEHAVIOUR_SPEC = loadBehaviourSpec()
+    WORKFLOW_SPEC = loadWorkflowSpec()
+    
+    if (BEHAVIOUR_SPEC) {
+      console.log(`📋 Loaded UI_QC_BEHAVIOUR_SPEC.md (${BEHAVIOUR_SPEC.features.length} defined features)`)
+      console.log(`   Features: ${BEHAVIOUR_SPEC.features.join(', ')}`)
+    } else {
+      console.log('⚠️  No behaviour spec found — using embedded rules')
+    }
+    
+    if (WORKFLOW_SPEC) {
+      console.log(`📋 Loaded UI_QC_WORKFLOW.md (${WORKFLOW_SPEC.states.length} workflow states)`)
+      console.log(`   States: ${WORKFLOW_SPEC.states.join(', ')}`)
+    } else {
+      console.log('⚠️  No workflow spec found — using embedded states')
+    }
+    console.log('')
+    
     // Load GLM report
     const glmReport = JSON.parse(fs.readFileSync(glmReportPath, 'utf-8'))
     console.log(`📋 Loaded GLM report (${glmReport.results.length} screenshot results)`)
@@ -294,6 +502,19 @@ async function main() {
       generatedAt: new Date().toISOString(),
       glmReportPath,
       rulesVersion: rules.version,
+      
+      // Authoritative spec references
+      authoritativeSpecs: {
+        behaviourSpec: BEHAVIOUR_SPEC ? {
+          path: BEHAVIOUR_SPEC.path,
+          features: BEHAVIOUR_SPEC.features,
+        } : null,
+        workflowSpec: WORKFLOW_SPEC ? {
+          path: WORKFLOW_SPEC.path,
+          states: WORKFLOW_SPEC.states,
+        } : null,
+        note: 'QC judgements are limited to features defined in UI_QC_BEHAVIOUR_SPEC.md',
+      },
       
       overall: aggregate,
       

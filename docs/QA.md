@@ -84,6 +84,10 @@ QA explicitly checks that:
 
 A UI that *appears* to work but lies is a QA failure.
 
+### Automated UI QC
+
+UI correctness for automated QC is defined in [UI_QC_BEHAVIOUR_SPEC.md](./UI_QC_BEHAVIOUR_SPEC.md) and [UI_QC_WORKFLOW.md](./UI_QC_WORKFLOW.md). These documents are authoritative for QC purposes.
+
 ### UI Visual Verification (MANDATORY)
 
 **Any UI change requires Electron screenshots as evidence.**

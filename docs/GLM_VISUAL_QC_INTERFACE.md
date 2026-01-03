@@ -101,6 +101,13 @@ scripts/qc/question_sets/
 
 ---
 
+## Authoritative UI Contracts
+
+UI correctness for automated QC is defined in [UI_QC_BEHAVIOUR_SPEC.md](./UI_QC_BEHAVIOUR_SPEC.md) and [UI_QC_WORKFLOW.md](./UI_QC_WORKFLOW.md).
+These documents are normative for QC interpretation. GLM remains observational only; interpretation rules are bound to the behaviour spec.
+
+---
+
 ## V1 Question Set
 
 ### Questions
