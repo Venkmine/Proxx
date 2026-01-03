@@ -497,6 +497,7 @@ async function main() {
     // ========================================================================
     // ACTION-SCOPED QC (if action traces exist)
     // ========================================================================
+    const artifactDir = path.dirname(glmReportPath)
     const actionTraces = loadActionTraces(artifactDir)
     let actionInterpretations = []
     let actionAggregate = null
