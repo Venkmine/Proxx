@@ -1,0 +1,99 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - img "Awaire"
+    - generic [ref=e6]:
+      - button "Minimize" [ref=e7] [cursor=pointer]:
+        - img [ref=e8]
+      - button "Maximize" [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+      - button "Close" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+  - banner [ref=e16]:
+    - generic [ref=e17]:
+      - img "Awaire"
+      - generic [ref=e18]:
+        - generic [ref=e19]: ● Connected
+        - generic [ref=e20]: Alpha
+        - button "V2 OFF" [ref=e21] [cursor=pointer]
+  - generic [ref=e23]:
+    - complementary [ref=e24]:
+      - generic [ref=e25]:
+        - heading "Sources" [level=2] [ref=e27]
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - heading "Create Job" [level=2] [ref=e31]
+            - button "Clear" [ref=e33] [cursor=pointer]
+          - generic [ref=e34]:
+            - heading "Source" [level=3] [ref=e37]
+            - generic [ref=e39]:
+              - generic [ref=e40]: Input Path(s) *
+              - button "Select Files..." [active] [ref=e42] [cursor=pointer]
+          - generic [ref=e43]:
+            - heading "Output" [level=3] [ref=e46]
+            - generic [ref=e48]:
+              - generic [ref=e49]: Output Directory *
+              - generic [ref=e50]:
+                - textbox "/Users/yourname/OUTPUT" [ref=e51]
+                - button "Browse..." [ref=e52] [cursor=pointer]
+          - generic [ref=e53]:
+            - heading "Execution Engine" [level=3] [ref=e56]
+            - generic [ref=e58]:
+              - generic [ref=e59]: FFmpeg
+              - generic [ref=e60]: Configure codec & container in Settings \u2192
+          - generic [ref=e61]:
+            - generic [ref=e62]: Welcome to Proxx
+            - generic [ref=e63]: Select files or folders to begin
+          - button "+ Create Job" [disabled] [ref=e67]
+    - main [ref=e68]:
+      - generic [ref=e73]: Forge
+    - complementary [ref=e74]:
+      - generic [ref=e75]:
+        - generic [ref=e76]:
+          - generic [ref=e77]:
+            - generic [ref=e78]: Filter
+            - button "All" [ref=e79] [cursor=pointer]
+            - button "Running" [ref=e80] [cursor=pointer]
+            - button "Queued" [ref=e81] [cursor=pointer]
+            - button "Pending" [ref=e82] [cursor=pointer]
+            - button "Completed" [ref=e83] [cursor=pointer]
+            - button "Failed" [ref=e84] [cursor=pointer]
+            - button "Skipped" [ref=e85] [cursor=pointer]
+            - button "Cancelled" [ref=e86] [cursor=pointer]
+            - generic [ref=e87]:
+              - button "⊞" [ref=e88] [cursor=pointer]
+              - button "⊟" [ref=e89] [cursor=pointer]
+          - generic [ref=e90]:
+            - generic [ref=e91]:
+              - textbox "Search files..." [ref=e92]
+              - generic: 🔍
+            - generic [ref=e93]:
+              - button "All Time" [ref=e94] [cursor=pointer]
+              - button "Today" [ref=e95] [cursor=pointer]
+              - button "Yesterday" [ref=e96] [cursor=pointer]
+              - button "Last 7 Days" [ref=e97] [cursor=pointer]
+        - heading "Queue (0)" [level=3] [ref=e99]
+        - generic [ref=e101]:
+          - img "Awaire"
+          - generic [ref=e102]: No jobs in queue
+          - generic [ref=e103]: Add files in the left panel and click "Add to Queue"
+  - contentinfo [ref=e104]:
+    - generic [ref=e105]:
+      - generic [ref=e106]: ALPHA
+      - generic [ref=e107]: Basic
+    - generic [ref=e108]:
+      - generic [ref=e109]: FFmpeg ✓
+      - generic [ref=e110]: Resolve —
+    - generic [ref=e111]:
+      - link "Docs" [ref=e112] [cursor=pointer]:
+        - /url: https://docs.awaire.io/proxy
+      - link "Support" [ref=e113] [cursor=pointer]:
+        - /url: https://awaire.io/support
+  - generic [ref=e114]:
+    - generic [ref=e115]:
+      - generic [ref=e116]: Status
+      - button "Details" [ref=e117] [cursor=pointer]
+    - generic [ref=e119]: No status messages
+```

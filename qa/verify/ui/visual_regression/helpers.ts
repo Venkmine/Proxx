@@ -98,6 +98,7 @@ export interface VisualCollector {
   captureElectronScreenshot: (name: string) => Promise<string>
   getScreenshotPath: (name: string) => string
   testName: string
+  artifactDir: string
 }
 
 /**
@@ -127,8 +128,14 @@ export const test = base.extend<ElectronFixtures>({
         E2E_TEST: 'true',
         E2E_AUDIT_MODE: '0', // Not audit mode - normal operation
         NODE_ENV: 'test',
+        // Auto-set output directory to avoid OS dialogs
+        QC_OUTPUT_DIR: path.join(projectRoot, 'qc/tmp/output'),
       },
     })
+    
+    // Set fixed window size for consistent automation
+    const firstWindow = await app.firstWindow()
+    await firstWindow.setViewportSize({ width: 1440, height: 900 })
 
     await use(app)
     await app.close()
@@ -155,6 +162,7 @@ export const test = base.extend<ElectronFixtures>({
 
     const collector: VisualCollector = {
       testName,
+      artifactDir: visualDir,
 
       captureElectronScreenshot: async (name: string) => {
         const screenshotPath = path.join(visualDir, `${name}.png`)

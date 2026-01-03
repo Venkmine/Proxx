@@ -202,50 +202,24 @@ export function createActionDriver() {
       console.log(`      Test file: ${TEST_FILE}`)
       
       try {
-        // Strategy: Directly call the app's file selection handler with our test file
-        // This triggers the REAL ingestion pipeline (validation + probing)
-        console.log('      → Triggering file selection via app handler...')
-        
-        const selectionSucceeded = await page.evaluate(async (filePath) => {
-          try {
-            // Wait for window.electron to be available
-            if (!window.electron || !window.electron.openFiles) {
-              console.error('[TEST] window.electron.openFiles not available')
-              return false
-            }
-            
-            // Save the original implementation
-            const originalOpenFiles = window.electron.openFiles
-            
-            // Mock it temporarily to return our test file
-            window.electron.openFiles = async () => {
-              console.log('[TEST] openFiles() called, returning:', filePath)
-              // Restore original immediately
-              window.electron.openFiles = originalOpenFiles
-              return [filePath]
-            }
-            
-            // Find "Select Files" button - can't use :has-text() in document.querySelector
-            const button = Array.from(document.querySelectorAll('button'))
-              .find(b => b.textContent?.includes('Select Files'))
-            
-            if (!button) {
-              console.error('[TEST] Select Files button not found')
-              return false
-            }
-            
-            console.log('[TEST] Clicking "Select Files" button...')
-            button.click()
-            return true
-          } catch (e) {
-            console.error('[TEST] Error in file selection:', e)
-            return false
+        // STEP 1: Mock window.electron.openFiles() BEFORE clicking button
+        console.log('      → Setting up mock for window.electron.openFiles()...')
+        await page.evaluate((filePath) => {
+          if (!window.electron) {
+            window.electron = {}
+          }
+          // Replace with mock that returns our test file (NO native dialog)
+          window.electron.openFiles = async () => {
+            console.log('[TEST] openFiles() mocked, returning:', filePath)
+            return [filePath]
           }
         }, TEST_FILE)
         
-        if (!selectionSucceeded) {
-          throw new Error('Failed to trigger file selection')
-        }
+        // STEP 2: Now click the button (will use our mock, no native dialog)
+        console.log('      → Clicking Select Files button...')
+        const button = page.locator('button:has-text("Select Files")')
+        await button.waitFor({ state: 'visible', timeout: 5000 })
+        await button.click()
         
         console.log('      → File selection triggered, waiting for backend processing...')
         
@@ -302,7 +276,65 @@ export function createActionDriver() {
     
     async clickCreateJob(page, artifactDir) {
       console.log('   → Action: clickCreateJob')
-      return await instrumentCreateJobAction(page, artifactDir)
+      
+      try {
+        // Find Create Job button
+        const createButton = page.locator('button:has-text("Create Job")')
+        
+        // Assert button is enabled
+        await createButton.waitFor({ state: 'visible', timeout: 5000 })
+        const isEnabled = await createButton.isEnabled()
+        
+        if (!isEnabled) {
+          throw new Error('Create Job button is disabled')
+        }
+        
+        console.log('      → Create Job button is enabled')
+        
+        // Take screenshot before click
+        await page.screenshot({ path: path.join(artifactDir, 'before_create_job.png'), fullPage: true })
+        
+        // Click once
+        console.log('      → Clicking Create Job...')
+        await createButton.click()
+        
+        // Wait for evidence of job creation (at least one must happen)
+        console.log('      → Waiting for job to appear...')
+        
+        const jobIndicators = [
+          page.locator('[data-job-id], [data-testid*="job"]'),
+          page.locator('text=/Job.*created|queued|running/i'),
+          page.locator('[data-testid="status-panel"] >> text=/processing|rendering/i'),
+        ]
+        
+        let jobStarted = false
+        for (const indicator of jobIndicators) {
+          try {
+            await indicator.waitFor({ state: 'visible', timeout: 10000 })
+            jobStarted = true
+            console.log('      ✅ Job started - indicator visible:', await indicator.textContent().catch(() => 'job visible'))
+            break
+          } catch (e) {
+            continue
+          }
+        }
+        
+        if (!jobStarted) {
+          await page.screenshot({ path: path.join(artifactDir, 'job_start_failed.png'), fullPage: true })
+          throw new Error('Create Job did not start job')
+        }
+        
+        // Take screenshot after job creation
+        await page.screenshot({ path: path.join(artifactDir, 'after_create_job.png'), fullPage: true })
+        
+        // Use instrumented action for detailed trace
+        const trace = await instrumentCreateJobAction(page, artifactDir)
+        return trace
+        
+      } catch (err) {
+        console.error('      ❌ Failed to create job:', err.message)
+        throw err
+      }
     },
     
     async waitForJobRunning(page, timeout = 30000) {
@@ -330,9 +362,30 @@ export function createActionDriver() {
 export async function executeSemanticAction(semanticAction, page, driver, artifactDir) {
   const action = semanticAction.action
   
+  // Log current state before action
+  const stateBefore = await inferWorkflowState(page)
+  console.log(`   State before: ${stateBefore}`)
+  
   try {
     if (action === 'user_selects_source_file') {
       await driver.selectRealSource(page)
+      
+      // Wait for UI to settle
+      await waitForUISettle(page, 1000)
+      
+      // Take screenshot after action
+      const screenshotPath = path.join(artifactDir, `${action}.png`)
+      await page.screenshot({ path: screenshotPath, fullPage: true })
+      console.log(`   📸 Screenshot: ${screenshotPath}`)
+      
+      // Log state after action
+      const stateAfter = await inferWorkflowState(page)
+      console.log(`   State after: ${stateAfter}`)
+      
+      if (stateAfter === stateBefore) {
+        throw new Error(`State did not change after ${action} (still: ${stateBefore})`)
+      }
+      
       return { success: true }
     }
     
@@ -356,7 +409,15 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
     }
     
     if (action === 'user_creates_job') {
+      // Wait for UI to settle
+      await waitForUISettle(page, 1000)
+      
       const trace = await driver.clickCreateJob(page, artifactDir)
+      
+      // Log state after job creation
+      const stateAfter = await inferWorkflowState(page)
+      console.log(`   State after: ${stateAfter}`)
+      
       return { success: trace.qc_outcome !== 'VERIFIED_NOT_OK', trace }
     }
     
