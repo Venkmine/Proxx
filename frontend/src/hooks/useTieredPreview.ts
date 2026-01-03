@@ -4,7 +4,7 @@
  * ============================================================================
  * DESIGN PHILOSOPHY
  * ============================================================================
- * This hook manages the tiered, non-blocking preview model:
+ * This hook manages the tiered, non-blocking Preview Proxy model:
  * 
  * Tier 1: POSTER FRAME (Mandatory, Instant)
  *   - Appears IMMEDIATELY on source selection
@@ -12,10 +12,10 @@
  *   - NEVER blocks UI
  * 
  * Tier 2: BURST THUMBNAILS (Recommended)
- *   - 7 evenly spaced frames for scrub preview
+*   - 7 evenly spaced frames for scrub preview
  *   - Optional, user can enable/disable
  * 
- * Tier 3: VIDEO PREVIEW (User-Initiated ONLY)
+ * Tier 3: VIDEO PREVIEW PROXY (User-Initiated ONLY)
  *   - NEVER auto-generated
  *   - User must explicitly request via menu
  *   - RAW formats require confirmation dialog
@@ -27,15 +27,15 @@
  *   - NO_VIDEO / ERROR → no playback, explicit message
  * 
  * PREVIEW INTENT (Phase D1 Refactor):
- *   - PreviewIntent is a per-source state tracking preview generation
- *   - Preview generation is EXPLICIT, NON-QUEUED, and NON-BLOCKING
- *   - Preview does NOT create a Job, does NOT appear in Queue
- *   - Preview does NOT affect AppMode
- *   - Preview failures are non-blocking warnings, not errors
+ *   - PreviewIntent is a per-source state tracking Preview Proxy generation
+ *   - Preview Proxy generation is EXPLICIT, NON-QUEUED, and NON-BLOCKING
+ *   - Preview Proxy does NOT create a Delivery Job, does NOT appear in Queue
+ *   - Preview Proxy does NOT affect AppMode
+ *   - Preview Proxy failures are non-blocking warnings, not errors
  * 
  * CORE PRINCIPLES:
- * 1. Preview must NEVER block job creation, preflight, or encoding
- * 2. Preview generation must NEVER auto-generate video for RAW media
+ * 1. Preview Proxy must NEVER block delivery job creation, preflight, or encoding
+ * 2. Preview Proxy generation must NEVER auto-generate video for RAW media
  * 3. Something visual must appear IMMEDIATELY on source selection
  * 4. All higher-fidelity previews are OPTIONAL and user-initiated
  * 5. Preview is identification only — not editorial accuracy
@@ -114,9 +114,9 @@ export interface TieredPreviewState {
   mode: PreviewMode
   
   /**
-   * PreviewIntent — Explicit state for video preview generation.
-   * This is DECOUPLED from proxy job creation.
-   * Preview failures are non-blocking warnings.
+   * PreviewIntent — Explicit state for Preview Proxy generation.
+   * This is DECOUPLED from delivery job creation.
+   * Preview Proxy failures are non-blocking warnings.
    */
   previewIntent: PreviewIntent
   
@@ -154,14 +154,14 @@ export interface UseTieredPreviewReturn extends TieredPreviewState {
   requestBurst: (sourcePath: string) => Promise<void>
   
   /**
-   * Request video preview (optional, user-initiated ONLY).
+   * Request Preview Proxy for video playback (optional, user-initiated ONLY).
    * 
    * PHASE D1 DECOUPLING:
-   * - This does NOT create a Job
+   * - This does NOT create a Delivery Job
    * - This does NOT appear in Queue
    * - This does NOT affect AppMode
-   * - Preview failures are non-blocking warnings
-   * - Proxy job creation is INDEPENDENT of preview state
+   * - Preview Proxy failures are non-blocking warnings
+   * - Delivery job creation is INDEPENDENT of Preview Proxy state
    */
   requestVideo: (sourcePath: string, duration?: number, confirmRaw?: boolean) => Promise<void>
   

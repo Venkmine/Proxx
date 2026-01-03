@@ -4,22 +4,22 @@
  * ============================================================================
  * DESIGN PHILOSOPHY
  * ============================================================================
- * This hook manages the deterministic generation of browser-safe preview proxies.
+ * This hook manages the deterministic generation of browser-safe Preview Proxies.
  * 
  * Key Principles:
  * 1. UI NEVER attempts playback from original sources
- * 2. ALL playback comes from preview-safe proxy files
- * 3. Preview proxies are temporary, disposable, isolated from output jobs
- * 4. If preview proxy generation fails, UI falls back to Identification Mode
+ * 2. ALL playback comes from Preview Proxy files
+ * 3. Preview Proxies are temporary, disposable, isolated from Delivery Jobs
+ * 4. If Preview Proxy generation fails, UI falls back to Identification Mode
  * 5. No speculative playback. No fake scrubbers. No guessing codec support.
  * 
  * Flow:
  * 1. Source selected
  * 2. Preflight passes
  * 3. Frontend requests POST /preview/generate
- * 4. While pending: show "Preparing Preview…" overlay
+ * 4. While pending: show "Preparing Preview Proxy…" overlay
  * 5. On success: store preview URL, transition to Playback Mode
- * 6. On failure: log reason, remain in Identification Mode
+ * 6. On failure: log reason, remain in Identification Mode (delivery still possible)
  * 
  * See: docs/PREVIEW_PROXY_PIPELINE.md
  * ============================================================================
@@ -32,13 +32,13 @@ import { useState, useCallback, useRef } from 'react'
 // ============================================================================
 
 export type PreviewProxyState = 
-  | 'idle'           // No preview requested
-  | 'generating'     // Preview proxy being generated
-  | 'ready'          // Preview proxy available
-  | 'failed'         // Preview proxy generation failed
+  | 'idle'           // No Preview Proxy requested
+  | 'generating'     // Preview Proxy being generated
+  | 'ready'          // Preview Proxy available
+  | 'failed'         // Preview Proxy generation failed
 
 export interface PreviewProxyInfo {
-  /** HTTP URL to stream the preview proxy */
+  /** HTTP URL to stream the Preview Proxy */
   previewUrl: string
   /** Duration in seconds */
   duration: number | null
@@ -54,13 +54,13 @@ export interface PreviewProxyError {
 }
 
 interface UsePreviewProxyReturn {
-  /** Current state of preview proxy generation */
+  /** Current state of Preview Proxy generation */
   state: PreviewProxyState
-  /** Preview proxy info (only valid when state === 'ready') */
+  /** Preview Proxy info (only valid when state === 'ready') */
   proxyInfo: PreviewProxyInfo | null
   /** Error info (only valid when state === 'failed') */
   error: PreviewProxyError | null
-  /** Request preview proxy generation for a source path */
+  /** Request Preview Proxy generation for a source path */
   generatePreview: (sourcePath: string) => Promise<boolean>
   /** Reset state (e.g., when source changes) */
   reset: () => void
@@ -145,8 +145,8 @@ export function usePreviewProxy(backendUrl: string): UsePreviewProxyReturn {
       }
       
       const message = err instanceof Error 
-        ? `Preview unavailable — ${err.message}` 
-        : 'Preview unavailable — request failed'
+        ? `Preview unavailable (delivery still possible) — ${err.message}` 
+        : 'Preview unavailable (delivery still possible) — request failed'
       
       setError({ message })
       setState('failed')

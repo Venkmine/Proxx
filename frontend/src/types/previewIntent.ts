@@ -1,25 +1,25 @@
 /**
- * PreviewIntent — Explicit Preview Generation State Machine
+ * PreviewIntent — Explicit Preview Proxy Generation State Machine
  * 
  * ============================================================================
  * DESIGN PHILOSOPHY
  * ============================================================================
- * PreviewIntent is a per-source state that tracks preview generation ONLY.
- * It is completely decoupled from proxy job creation.
+ * PreviewIntent is a per-source state that tracks Preview Proxy generation ONLY.
+ * It is completely decoupled from delivery job creation.
  * 
  * KEY PRINCIPLES:
- * 1. Preview generation is EXPLICIT — user must request it
- * 2. Preview generation is NON-QUEUED — runs immediately, not as a job
- * 3. Preview generation is NON-BLOCKING — never blocks proxy job creation
- * 4. Preview state is PER-SOURCE, not per-job
+ * 1. Preview Proxy generation is EXPLICIT — user must request it
+ * 2. Preview Proxy generation is NON-QUEUED — runs immediately, not as a job
+ * 3. Preview Proxy generation is NON-BLOCKING — never blocks delivery job creation
+ * 4. Preview Proxy state is PER-SOURCE, not per-job
  * 
  * RULES:
- * - Clicking "Generate Preview" affects PreviewIntent ONLY
- * - It does NOT create a Job
+ * - Clicking "Generate Preview Proxy" affects PreviewIntent ONLY
+ * - It does NOT create a Delivery Job
  * - It does NOT appear in Queue
  * - It does NOT affect AppMode
  * 
- * Preview uses:
+ * Preview Proxy uses:
  * - FFmpeg for playable sources
  * - Resolve for RAW sources
  * - Short duration (default 5s unless user chooses otherwise)
@@ -27,14 +27,14 @@
  */
 
 /**
- * PreviewIntent — Per-source preview generation state.
+ * PreviewIntent — Per-source Preview Proxy generation state.
  * 
  * States:
- * - none: No preview requested, show neutral placeholder
- * - requested: User clicked "Generate Preview", waiting to start
- * - generating: Preview proxy is being generated (FFmpeg or Resolve)
- * - available: Preview proxy is ready for playback
- * - failed: Preview generation failed (non-blocking warning)
+ * - none: No Preview Proxy requested, show neutral placeholder
+ * - requested: User clicked "Generate Preview Proxy", waiting to start
+ * - generating: Preview Proxy is being generated (FFmpeg or Resolve)
+ * - available: Preview Proxy is ready for playback
+ * - failed: Preview Proxy generation failed (non-blocking warning, delivery still possible)
  */
 export type PreviewIntent =
   | 'none'
@@ -44,8 +44,8 @@ export type PreviewIntent =
   | 'failed'
 
 /**
- * Preview generation error info.
- * Non-fatal — does not block proxy job creation.
+ * Preview Proxy generation error info.
+ * Non-fatal — does not block delivery job creation.
  */
 export interface PreviewError {
   /** Human-readable error message */
@@ -57,7 +57,7 @@ export interface PreviewError {
 }
 
 /**
- * Preview generation result info.
+ * Preview Proxy generation result info.
  */
 export interface PreviewInfo {
   /** HTTP URL to stream the preview proxy */
@@ -110,7 +110,7 @@ export function isPreviewAvailable(intent: PreviewIntent): boolean {
 
 /**
  * Check if preview generation failed.
- * Note: Failed preview does NOT block proxy job creation.
+ * Note: Failed preview does NOT block delivery job creation.
  */
 export function isPreviewFailed(intent: PreviewIntent): boolean {
   return intent === 'failed'
@@ -140,13 +140,13 @@ export function getPreviewStatusMessage(intent: PreviewIntent): string {
     case 'none':
       return ''
     case 'requested':
-      return 'Starting preview generation…'
+      return 'Starting Preview Proxy generation…'
     case 'generating':
-      return 'Generating preview…'
+      return 'Generating Preview Proxy…'
     case 'available':
-      return 'Preview ready'
+      return 'Preview Proxy ready'
     case 'failed':
-      return 'Preview unavailable'
+      return 'Preview unavailable (delivery still possible)'
   }
 }
 

@@ -229,7 +229,7 @@ export function PreviewMenu({
     <div ref={menuRef} style={styles.menu}>
       {/* Header */}
       <div style={styles.menuHeader}>
-        Generate Preview…
+        Generate Preview Proxy…
       </div>
       
       {/* Generating progress */}
@@ -260,7 +260,7 @@ export function PreviewMenu({
             color: 'var(--status-pending-fg, #fbbf24)',
             marginBottom: '0.5rem',
           }}>
-            RAW format detected. Video preview may take longer.
+            RAW format detected. Preview Proxy generation may take longer.
           </div>
           <button
             onClick={onConfirmRaw}
@@ -274,7 +274,7 @@ export function PreviewMenu({
               cursor: 'pointer',
             }}
           >
-            Generate Anyway
+            Generate Preview Proxy Anyway
           </button>
         </div>
       )}

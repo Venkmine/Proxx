@@ -1,19 +1,19 @@
 /**
- * usePreviewIntent — Preview Generation State Management Hook
+ * usePreviewIntent — Preview Proxy Generation State Management Hook
  * 
  * ============================================================================
  * DESIGN PHILOSOPHY
  * ============================================================================
- * This hook manages preview intent state, completely decoupled from proxy jobs.
+ * This hook manages Preview Proxy intent state, completely decoupled from delivery jobs.
  * 
  * KEY PRINCIPLES:
- * 1. Preview generation is EXPLICIT — user must request it
- * 2. Preview generation is NON-QUEUED — runs immediately, not as a job
- * 3. Preview generation is NON-BLOCKING — never blocks proxy job creation
- * 4. Preview state is PER-SOURCE, not per-job
+ * 1. Preview Proxy generation is EXPLICIT — user must request it
+ * 2. Preview Proxy generation is NON-QUEUED — runs immediately, not as a job
+ * 3. Preview Proxy generation is NON-BLOCKING — never blocks delivery job creation
+ * 4. Preview Proxy state is PER-SOURCE, not per-job
  * 
  * This hook replaces the preview-related parts of useTieredPreview for
- * video proxy generation, while keeping poster/burst generation separate.
+ * video Preview Proxy generation, while keeping poster/burst generation separate.
  * ============================================================================
  */
 
@@ -31,26 +31,26 @@ import { createInitialPreviewState } from '../types/previewIntent'
 // ============================================================================
 
 export interface UsePreviewIntentReturn {
-  /** Current preview state for the active source */
+  /** Current Preview Proxy state for the active source */
   previewState: SourcePreviewState
   
-  /** Current preview intent */
+  /** Current Preview Proxy intent */
   intent: PreviewIntent
   
-  /** Preview info (when available) */
+  /** Preview Proxy info (when available) */
   preview: PreviewInfo | null
   
   /** Error info (when failed) */
   error: PreviewError | null
   
-  /** Whether preview is currently loading */
+  /** Whether Preview Proxy is currently loading */
   isLoading: boolean
   
   /**
-   * Request preview generation for a source.
+   * Request Preview Proxy generation for a source.
    * This is EXPLICIT and user-initiated ONLY.
    * @param sourcePath - Path to the source file
-   * @param duration - Preview duration in seconds (default 5)
+   * @param duration - Preview Proxy duration in seconds (default 5)
    * @param confirmRaw - Whether user confirmed RAW processing
    */
   requestPreview: (
@@ -60,12 +60,12 @@ export interface UsePreviewIntentReturn {
   ) => Promise<void>
   
   /**
-   * Cancel ongoing preview generation.
+   * Cancel ongoing Preview Proxy generation.
    */
   cancelPreview: () => void
   
   /**
-   * Reset preview state (e.g., when source changes).
+   * Reset Preview Proxy state (e.g., when source changes).
    */
   reset: () => void
   
@@ -199,7 +199,7 @@ export function usePreviewIntent(backendUrl: string): UsePreviewIntentReturn {
           intent: 'none', // Reset to allow user to confirm
           error: {
             message: 'RAW format requires confirmation',
-            detail: 'Click "Generate Preview" again to confirm Resolve processing',
+            detail: 'Click "Generate Preview Proxy" again to confirm Resolve processing',
             timestamp: new Date(),
           },
         }))

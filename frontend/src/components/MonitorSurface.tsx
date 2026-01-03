@@ -791,7 +791,7 @@ export function MonitorSurface({
               </div>
             )}
             
-            {/* PREVIEW FAILED — Non-blocking warning (does NOT block proxy job creation) */}
+            {/* PREVIEW FAILED — Non-blocking warning (does NOT block delivery job creation) */}
             {tieredPreview?.previewIntent === 'failed' && tieredPreview?.videoError && (
               <div
                 data-testid="preview-failed-banner"
@@ -841,7 +841,7 @@ export function MonitorSurface({
                     marginTop: '0.25rem',
                   }}
                 >
-                  Proxy generation still available
+                  Delivery job still available
                 </span>
               </div>
             )}
@@ -877,7 +877,7 @@ export function MonitorSurface({
                     color: '#eab308',
                   }}
                 >
-                  Playback unavailable — requires Resolve
+                  RAW media requires Preview Proxy for playback
                 </span>
                 <span
                   style={{
@@ -886,7 +886,7 @@ export function MonitorSurface({
                     color: 'rgba(234, 179, 8, 0.8)',
                   }}
                 >
-                  Generate preview proxy to enable playback
+                  Delivery does not require preview. Generate Preview Proxy to enable playback.
                 </span>
               </div>
             )}
