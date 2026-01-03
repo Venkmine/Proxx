@@ -1,0 +1,14 @@
+{
+  "name": "@proxx/visual-regression-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:debug": "playwright test --debug",
+    "test:headed": "playwright test --headed"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}

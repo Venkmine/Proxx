@@ -84,6 +84,24 @@ QA explicitly checks that:
 
 A UI that *appears* to work but lies is a QA failure.
 
+### UI Visual Verification (MANDATORY)
+
+**Any UI change requires Electron screenshots as evidence.**
+
+Code-level reasoning is insufficient. A progress bar may exist in the DOM with correct CSS but still be invisible due to:
+- Z-index conflicts
+- Parent overflow clipping
+- Incorrect positioning
+- Insufficient contrast
+
+**See [UI_VISUAL_VERIFICATION.md](./UI_VISUAL_VERIFICATION.md) for the complete policy.**
+
+Key requirements:
+* Screenshots must be captured from Electron (not browser)
+* Screenshots must clearly show the claimed change
+* Screenshots must be stored in `artifacts/ui/visual/`
+* Missing screenshots = failed verification
+
 ---
 
 ## 5. Invariants as QA Mechanisms

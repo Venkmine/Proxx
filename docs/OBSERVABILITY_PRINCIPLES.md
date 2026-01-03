@@ -49,3 +49,19 @@ Observability is a first-class system principle in Proxx. These five principles 
 **Rule:** Invalid input is a first-class signal, not a recoverable condition.
 
 **Rationale:** Permissive parsing and "helpful" coercion create silent compatibility bugs that surface in production. Contract violations must fail immediately and explicitly with diagnostic information.
+
+---
+
+## 7. UI Changes Require Visual Evidence
+
+**Rule:** Any UI change must be verified with Electron screenshots, not code inspection alone.
+
+**Rationale:** Copilot cannot see UI. Layout bugs are perceptual, not logical. A progress bar may exist in the DOM with correct CSS but still be invisible due to z-index conflicts, parent overflow, or positioning issues. Screenshots provide objective evidence that the UI change is perceivable.
+
+**See [UI_VISUAL_VERIFICATION.md](./UI_VISUAL_VERIFICATION.md) for the complete policy.**
+
+Key requirements:
+* Screenshots captured from Electron (not browser)
+* Stored in `artifacts/ui/visual/<timestamp>/<test-name>/`
+* Required states: idle, job_started, progress_visible, completed
+* Missing screenshots = unverified change
