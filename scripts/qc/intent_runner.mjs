@@ -319,10 +319,10 @@ export function createActionDriver() {
       console.log('   → Action: clickCreateJob')
       
       try {
-        // Find Create Job button
+        // STEP 1: Locate Create Job button
         const createButton = page.locator('button:has-text("Create Job")')
         
-        // Assert button is enabled
+        // STEP 2: Assert button exists and is enabled
         await createButton.waitFor({ state: 'visible', timeout: 5000 })
         const isEnabled = await createButton.isEnabled()
         
@@ -330,47 +330,57 @@ export function createActionDriver() {
           throw new Error('Create Job button is disabled')
         }
         
-        console.log('      → Create Job button is enabled')
+        console.log('      → Create Job button enabled')
         
-        // Take screenshot before click
-        await page.screenshot({ path: path.join(artifactDir, 'before_create_job.png'), fullPage: true })
+        // Get initial job count
+        const initialJobCount = await page.locator('[data-job-id]').count()
+        console.log(`      → Initial job count: ${initialJobCount}`)
         
-        // Click once
-        console.log('      → Clicking Create Job...')
+        // STEP 3: Click once
+        console.log('      → Create Job clicked')
         await createButton.click()
         
-        // Wait for evidence of job creation (at least one must happen)
-        console.log('      → Waiting for job to appear...')
+        // STEP 4: Wait for ONE hard success signal
+        console.log('      → Waiting for job creation evidence...')
         
-        const jobIndicators = [
-          page.locator('[data-job-id], [data-testid*="job"]'),
-          page.locator('text=/Job.*created|queued|running/i'),
-          page.locator('[data-testid="status-panel"] >> text=/processing|rendering/i'),
-        ]
+        const timeout = 30000
+        const startTime = Date.now()
+        let jobCreated = false
         
-        let jobStarted = false
-        for (const indicator of jobIndicators) {
-          try {
-            await indicator.waitFor({ state: 'visible', timeout: 10000 })
-            jobStarted = true
-            console.log('      ✅ Job started - indicator visible:', await indicator.textContent().catch(() => 'job visible'))
+        while (Date.now() - startTime < timeout) {
+          // Check if job count increased
+          const currentJobCount = await page.locator('[data-job-id]').count()
+          
+          if (currentJobCount > initialJobCount) {
+            console.log(`      ✅ Job created - job count: ${initialJobCount} → ${currentJobCount}`)
+            jobCreated = true
             break
-          } catch (e) {
-            continue
           }
+          
+          // Small wait before next check
+          await page.waitForTimeout(500)
         }
         
-        if (!jobStarted) {
-          await page.screenshot({ path: path.join(artifactDir, 'job_start_failed.png'), fullPage: true })
-          throw new Error('Create Job did not start job')
+        if (!jobCreated) {
+          // Capture failure state
+          await page.screenshot({ path: path.join(artifactDir, 'job_creation_failed.png'), fullPage: true })
+          throw new Error('Create Job did not create a job')
         }
         
-        // Take screenshot after job creation
-        await page.screenshot({ path: path.join(artifactDir, 'after_create_job.png'), fullPage: true })
+        // STEP 5: Screenshot + State Capture
+        await page.screenshot({ path: path.join(artifactDir, 'job_created.png'), fullPage: true })
         
-        // Use instrumented action for detailed trace
-        const trace = await instrumentCreateJobAction(page, artifactDir)
-        return trace
+        // Infer final state
+        const finalState = await inferWorkflowState(page)
+        console.log(`      → Final state: ${finalState}`)
+        
+        // Return trace with job_created state
+        return {
+          action: 'clickCreateJob',
+          workflow_state: 'job_created',
+          qc_outcome: 'VERIFIED_OK',
+          timestamp: new Date().toISOString(),
+        }
         
       } catch (err) {
         console.error('      ❌ Failed to create job:', err.message)
