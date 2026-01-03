@@ -89,6 +89,38 @@ export async function waitForAppReady(page: Page, artifactDir?: string): Promise
   }
 }
 
+/**
+ * Install QC mocks for file/folder selection
+ * 
+ * CRITICAL: Must be called BEFORE any UI interaction.
+ * This prevents native OS dialogs from appearing during QC.
+ */
+export async function installQCMocks(page: Page): Promise<void> {
+  const projectRoot = path.resolve(__dirname, '../../../..')
+  const testFile = '/Users/leon.grant/projects/Proxx/artifacts/v2/20251228T160555/v2_smoke_v2_smoke_test_000.mp4'
+  
+  console.log('🔧 Installing QC mocks...')
+  console.log(`   Test file: ${testFile}`)
+  
+  await page.evaluate((filePath) => {
+    // Ensure window.electron exists
+    if (!window.electron) {
+      (window as any).electron = {}
+    }
+    
+    // Mock openFilesOrFolders to return test file (NO native dialog)
+    (window as any).electron.openFilesOrFolders = async () => {
+      console.log('[QC MOCK] openFilesOrFolders() called, returning:', [filePath])
+      return [filePath]
+    }
+    
+    // Set a flag to verify mock is installed
+    (window as any).__QC_MOCKS_INSTALLED__ = true
+  }, testFile)
+  
+  console.log('✅ QC mocks installed')
+}
+
 export interface ElectronFixtures {
   app: ElectronApplication
   page: Page
@@ -118,7 +150,7 @@ export const test = base.extend<ElectronFixtures>({
         `Run: cd frontend && pnpm run electron:build`
       )
     }
-
+    
     const electronPath = path.join(projectRoot, 'frontend/node_modules/.bin/electron')
 
     // Launch Electron with test mode enabled
@@ -149,6 +181,12 @@ export const test = base.extend<ElectronFixtures>({
     
     // MANDATORY: Wait for splash dismissal before ANY visual capture
     await waitForAppReady(page)
+    
+    // TIMING FIX: Install QC mocks BEFORE any UI interaction is possible
+    // Only install if running intent workflows (when INTENT_ID env is set)
+    if (process.env.INTENT_ID) {
+      await installQCMocks(page)
+    }
     
     await use(page)
   },

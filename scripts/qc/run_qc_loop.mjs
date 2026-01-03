@@ -126,6 +126,7 @@ function parseArgs() {
     questionSet: 'v1',
     rulesVersion: 'v1',
     dryRun: false,
+    intentId: null, // Add intentId support
   }
   
   for (let i = 0; i < args.length; i++) {
@@ -147,6 +148,9 @@ function parseArgs() {
         break
       case '--dry-run':
         options.dryRun = true
+        break
+      case '--intent':
+        options.intentId = args[++i]
         break
       case '--help':
         printHelp()
@@ -245,6 +249,9 @@ async function main() {
   console.log(`    Question Set: ${options.questionSet}`)
   console.log(`    Rules: ${options.rulesVersion}`)
   console.log(`    Dry Run: ${options.dryRun}`)
+  if (options.intentId) {
+    console.log(`    Intent ID: ${options.intentId}`)
+  }
   console.log('')
   
   let artifactPath = options.artifactPath
@@ -257,9 +264,15 @@ async function main() {
     if (options.dryRun) {
       console.log('  [DRY RUN] Would run: scripts/qc/run_visual_qc.mjs')
     } else {
+      // Build args for run_visual_qc.mjs
+      const phase1Args = []
+      if (options.intentId) {
+        phase1Args.push('--intent', options.intentId)
+      }
+      
       const phase1 = await runPhase(
         path.join(__dirname, 'run_visual_qc.mjs'),
-        [],
+        phase1Args,
         {}
       )
       

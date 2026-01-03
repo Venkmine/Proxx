@@ -205,23 +205,20 @@ export function createActionDriver() {
       console.log(`      Test file: ${TEST_FILE}`)
       
       try {
-        // STEP 1: Mock window.electron.openFilesOrFolders() BEFORE clicking button
-        // CRITICAL: Must mock openFilesOrFolders, NOT openFiles!
-        // The UI calls openFilesOrFolders() (see SourceSelectionPanel.tsx)
-        console.log('      → Setting up mock for window.electron.openFilesOrFolders()...')
-        await page.evaluate((filePath) => {
-          if (!window.electron) {
-            window.electron = {}
-          }
-          // Replace with mock that returns our test file (NO native dialog)
-          // This EXACTLY replicates what Electron's dialog.showOpenDialog returns
-          window.electron.openFilesOrFolders = async () => {
-            console.log('[TEST] openFilesOrFolders() mocked, returning:', [filePath])
-            return [filePath]
-          }
-        }, TEST_FILE)
+        // HARD ASSERTION: Mock must be installed before UI interaction
+        console.log('      → Verifying QC mocks are installed...')
+        const mockInstalled = await page.evaluate(() => {
+          return typeof window.electron?.openFilesOrFolders === 'function' &&
+                 window.__QC_MOCKS_INSTALLED__ === true
+        })
         
-        // STEP 2: Now click the button (will use our mock, no native dialog)
+        if (!mockInstalled) {
+          throw new Error('openFilesOrFolders mock not installed before UI interaction')
+        }
+        
+        console.log('      ✓ Mock verified')
+        
+        // Click the button (will use our pre-installed mock, no native dialog)
         console.log('      → Clicking Select Files button...')
         const button = page.locator('button:has-text("Select Files")')
         await button.waitFor({ state: 'visible', timeout: 5000 })
