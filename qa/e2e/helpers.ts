@@ -153,3 +153,149 @@ export function cleanupTempFiles(dir: string): void {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 }
+
+/**
+ * RAW format detection utilities
+ */
+
+const RAW_EXTENSIONS = new Set([
+  '.braw',
+  '.r3d', '.R3D',
+  '.ari', '.arri',
+  '.dng',
+  '.cri', '.crm', // Canon RAW
+  '.cine', // Phantom
+])
+
+// Folder patterns that indicate camera card-style RAW folders
+const RAW_FOLDER_INDICATORS = [
+  '.RDC', // RED camera clips folder
+  '.RDM', // RED metadata
+  '.R3D', // RED files inside
+  '.braw', // Blackmagic files inside
+]
+
+const PRORES_RAW_INDICATORS = ['prores_raw', 'prores raw', 'Apple ProRes RAW', 'PRORES_RAW']
+
+export function isRawFormat(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  
+  // Check known RAW extensions
+  if (RAW_EXTENSIONS.has(ext)) {
+    return true
+  }
+  
+  // For .mov files, need to check if it's ProRes RAW
+  // In E2E test context, we'll assume .mov in RAW folders are ProRes RAW
+  if (ext === '.mov') {
+    // Heuristic: if in a folder named "PRORES_RAW" or "ProRes", assume it's RAW
+    if (filePath.includes('PRORES_RAW') || filePath.includes('ProRes')) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+export function determineExpectedEngine(filePath: string): 'resolve' | 'ffmpeg' {
+  return isRawFormat(filePath) ? 'resolve' : 'ffmpeg'
+}
+
+/**
+ * Recursively scan directory for test inputs
+ * Returns both files and folders (for camera card-style folders)
+ */
+export interface TestInput {
+  path: string
+  type: 'file' | 'folder'
+  name: string
+  expectedEngine: 'resolve' | 'ffmpeg'
+}
+
+export function scanRawDirectory(baseDir: string, excludeDirs: string[] = []): TestInput[] {
+  const inputs: TestInput[] = []
+  
+  function scanRecursive(dir: string) {
+    if (!fs.existsSync(dir)) {
+      return
+    }
+    
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      
+      // Skip excluded directories
+      if (excludeDirs.some(excluded => fullPath.includes(excluded))) {
+        continue
+      }
+      
+      // Skip hidden files and DS_Store
+      if (entry.name.startsWith('.')) {
+        continue
+      }
+      
+      if (entry.isDirectory()) {
+        // Check if this is a camera card folder (contains RAW files or special folders like .RDC)
+        let isRawFolder = false
+        let hasVideoFiles = false
+        
+        try {
+          const contents = fs.readdirSync(fullPath)
+          
+          // Check for RAW files
+          hasVideoFiles = contents.some(file => {
+            const ext = path.extname(file).toLowerCase()
+            return RAW_EXTENSIONS.has(ext)
+          })
+          
+          // Check for camera card indicators like .RDC folders
+          isRawFolder = contents.some(file => {
+            const ext = path.extname(file)
+            return RAW_FOLDER_INDICATORS.some(indicator => ext === indicator || file.endsWith(indicator))
+          })
+          
+          if (hasVideoFiles || isRawFolder) {
+            // Add folder as a test input
+            inputs.push({
+              path: fullPath,
+              type: 'folder',
+              name: entry.name,
+              expectedEngine: 'resolve' // Folders with RAW files need Resolve
+            })
+            // Don't scan subdirectories of RAW folders to avoid duplicates
+            continue
+          }
+        } catch (err) {
+          // Skip folders we can't read
+          console.warn(`Cannot read directory ${fullPath}: ${err}`)
+        }
+        
+        // Continue scanning subdirectories if not a RAW folder
+        scanRecursive(fullPath)
+      } else if (entry.isFile()) {
+        // Only test video files
+        const ext = path.extname(entry.name).toLowerCase()
+        const videoExts = [
+          '.braw', '.r3d', '.ari', '.arri', '.dng',
+          '.mov', '.mp4', '.mxf', '.avi',
+          '.cri', '.crm', // Canon RAW
+          '.cine', // Phantom
+          '.mkv', '.webm', // Additional formats
+        ]
+        
+        if (videoExts.includes(ext)) {
+          inputs.push({
+            path: fullPath,
+            type: 'file',
+            name: entry.name,
+            expectedEngine: determineExpectedEngine(fullPath)
+          })
+        }
+      }
+    }
+  }
+  
+  scanRecursive(baseDir)
+  return inputs
+}
