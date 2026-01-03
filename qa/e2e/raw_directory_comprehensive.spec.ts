@@ -134,4 +134,44 @@ test.describe('RAW Directory UI Behavior Test', () => {
     expect(nonRawInputs.length).toBeGreaterThan(0)
     console.log(`✓ Detected ${nonRawInputs.length} non-RAW files that should be playable`)
   })
+
+  test('RAW directory contains expected format distribution', () => {
+    // Verify we have a good mix of formats for testing
+    const resolveFiles = testInputs.filter(i => i.expectedEngine === 'resolve')
+    const ffmpegFiles = testInputs.filter(i => i.expectedEngine === 'ffmpeg')
+    
+    expect(resolveFiles.length).toBeGreaterThan(0)
+    expect(ffmpegFiles.length).toBeGreaterThan(0)
+    
+    console.log(`\n📊 Format distribution:`)
+    console.log(`   Resolve (RAW): ${resolveFiles.length}`)
+    console.log(`   FFmpeg (Standard): ${ffmpegFiles.length}`)
+    console.log(`   Total: ${testInputs.length}`)
+    
+    // Log format breakdown
+    const formatCounts: Record<string, number> = {}
+    for (const input of testInputs) {
+      const ext = input.path.split('.').pop()?.toLowerCase() || 'unknown'
+      formatCounts[ext] = (formatCounts[ext] || 0) + 1
+    }
+    
+    console.log(`\n📝 Format breakdown:`)
+    Object.entries(formatCounts)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([ext, count]) => {
+        console.log(`   .${ext}: ${count}`)
+      })
+  })
+
+  test('No files should have unknown routing', () => {
+    // Every file must have explicit routing (resolve or ffmpeg)
+    // No "unknown" or "unsupported" entries
+    const unknownFiles = testInputs.filter(i => 
+      !i.expectedEngine || 
+      !['resolve', 'ffmpeg'].includes(i.expectedEngine)
+    )
+    
+    expect(unknownFiles).toHaveLength(0)
+    console.log(`✓ All ${testInputs.length} files have explicit routing`)
+  })
 })

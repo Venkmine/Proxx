@@ -303,6 +303,43 @@ SUPPORTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
         reason="ProRes 4444 XQ, highest quality ProRes.",
     ),
     
+    # ProRes in MXF (ARRI, Canon, and broadcast cameras)
+    ("mxf", "prores"): SourceCapability(
+        container="mxf",
+        codec="prores",
+        reason="ProRes in MXF, ARRI/broadcast standard.",
+    ),
+    ("mxf", "prores_proxy"): SourceCapability(
+        container="mxf",
+        codec="prores_proxy",
+        reason="ProRes Proxy in MXF, ARRI/broadcast standard.",
+    ),
+    ("mxf", "prores_lt"): SourceCapability(
+        container="mxf",
+        codec="prores_lt",
+        reason="ProRes LT in MXF, ARRI/broadcast standard.",
+    ),
+    ("mxf", "prores_422"): SourceCapability(
+        container="mxf",
+        codec="prores_422",
+        reason="ProRes 422 in MXF, ARRI/broadcast standard.",
+    ),
+    ("mxf", "prores_hq"): SourceCapability(
+        container="mxf",
+        codec="prores_hq",
+        reason="ProRes HQ in MXF, ARRI/broadcast standard.",
+    ),
+    ("mxf", "prores_4444"): SourceCapability(
+        container="mxf",
+        codec="prores_4444",
+        reason="ProRes 4444 in MXF, ARRI/broadcast standard.",
+    ),
+    ("mxf", "prores_4444xq"): SourceCapability(
+        container="mxf",
+        codec="prores_4444xq",
+        reason="ProRes 4444 XQ in MXF, ARRI/broadcast standard.",
+    ),
+    
     # ---------------------------------------------------------------------
     # DNxHD - Avid HD intra-frame codec (MXF ONLY)
     # DNxHD in MOV is non-standard and unsupported. See REJECTED_SOURCES.
@@ -347,6 +384,11 @@ SUPPORTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
         container="mp4",
         codec="av1",
         reason="AV1 in MP4, next-gen open codec.",
+    ),
+    ("mov", "av1"): SourceCapability(
+        container="mov",
+        codec="av1",
+        reason="AV1 in MOV, next-gen open codec.",
     ),
     ("mkv", "av1"): SourceCapability(
         container="mkv",
@@ -629,6 +671,44 @@ REJECTED_SOURCES: Dict[Tuple[str, str], SourceCapability] = {
         codec="dnxhd",
         reason="DNxHD must be wrapped in MXF. DNxHD-in-MOV is non-standard and unsupported.",
         recommended_action="Use MXF container for DNxHD output, or switch to DNxHR which supports MOV.",
+    ),
+    
+    # ---------------------------------------------------------------------
+    # Image sequences - Still image formats (V1 explicitly rejects these)
+    # ---------------------------------------------------------------------
+    # V1 does NOT support image sequence ingest. These are still photo formats.
+    # DNG files with TIFF codec are still images, not CinemaDNG video.
+    # True CinemaDNG video files have codec="cinemadng" and route to Resolve.
+    # ---------------------------------------------------------------------
+    ("tiff_pipe", "tiff"): SourceCapability(
+        container="tiff_pipe",
+        codec="tiff",
+        reason="Image sequences (TIFF/DNG stills) are not supported in V1.",
+        recommended_action="Convert to video format (ProRes/H.264) before processing, or wait for V2 sequence support.",
+    ),
+    ("image2", "tiff"): SourceCapability(
+        container="image2",
+        codec="tiff",
+        reason="Image sequences (TIFF stills) are not supported in V1.",
+        recommended_action="Convert to video format (ProRes/H.264) before processing, or wait for V2 sequence support.",
+    ),
+    ("image2", "png"): SourceCapability(
+        container="image2",
+        codec="png",
+        reason="Image sequences (PNG stills) are not supported in V1.",
+        recommended_action="Convert to video format (ProRes/H.264) before processing, or wait for V2 sequence support.",
+    ),
+    ("image2", "dpx"): SourceCapability(
+        container="image2",
+        codec="dpx",
+        reason="Image sequences (DPX stills) are not supported in V1.",
+        recommended_action="Convert to video format (ProRes/H.264) before processing, or wait for V2 sequence support.",
+    ),
+    ("image2", "exr"): SourceCapability(
+        container="image2",
+        codec="exr",
+        reason="Image sequences (EXR stills) are not supported in V1.",
+        recommended_action="Convert to video format (ProRes/H.264) before processing, or wait for V2 sequence support.",
     ),
 }
 

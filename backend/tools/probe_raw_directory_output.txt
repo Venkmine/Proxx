@@ -1,0 +1,878 @@
+
+🔍 Probing RAW directory: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW
+   Excluding: Image_SEQS
+
+
+📊 SUMMARY
+   Total files/folders: 70
+   Resolve engine: 23
+   FFmpeg engine: 26
+   Unknown/Rejected: 21
+   Probe failures: 1
+
+
+📋 DETAILED RESULTS
+========================================================================================================================
+
+========================================================================================================================
+ENGINE: UNKNOWN
+========================================================================================================================
+
+A_0001C043_220825_062758_p12SQ.mxf
+  Type: file
+  Container: mxf
+  Codec: prores
+  Pixel Format: yuv444p12le
+  Resolution: 3840x1920
+  Duration: 10.583333s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI35/A_0001C043_220825_062758_p12SQ.mxf
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain25_V1.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 195.967000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain25_V1.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V10.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V10.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V11.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V11.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V12.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V12.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V13.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V13.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V14.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V14.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V15.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V15.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V16.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V16.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V2.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 195.967000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V2.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V3.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 195.967000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V3.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V4.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 195.967000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V4.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V5.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2026
+  Duration: 16.020000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V5.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V6.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 16.020000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V6.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V7.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 16.020000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V7.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V8.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V8.mp4
+
+Sample_Footage_With_added_grain_AV1_RF24_Grain35_V9.mp4
+  Type: file
+  Container: mov
+  Codec: av1
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 15.018000s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/AV1/Sample_Footage_With_added_grain_AV1_RF24_Grain35_V9.mp4
+
+DJI_0010.DNG
+  Type: file
+  Container: tiff_pipe
+  Codec: tiff
+  Pixel Format: bayer_rggb16le
+  Resolution: 4056x3040
+  Duration: 0s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/DJI/DJI_0010.DNG
+
+DJI_0245.DNG
+  Type: file
+  Container: tiff_pipe
+  Codec: tiff
+  Pixel Format: bayer_rggb16le
+  Resolution: 4056x3040
+  Duration: 0s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/DJI/DJI_0245.DNG
+
+DJI_0262.DNG
+  Type: file
+  Container: tiff_pipe
+  Codec: tiff
+  Pixel Format: bayer_rggb16le
+  Resolution: 4056x3040
+  Duration: 0s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/DJI/DJI_0262.DNG
+
+DW0001C003_251020_112744_p1I7H.mxf
+  Type: file
+  Container: mxf
+  Codec: prores
+  Pixel Format: yuv444p12le
+  Resolution: 4608x2592
+  Duration: 5.666667s
+  Engine: UNKNOWN
+  Reason: Unknown/unsupported format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/PRORES/DW0001C003_251020_112744_p1I7H.mxf
+
+========================================================================================================================
+ENGINE: ffmpeg
+========================================================================================================================
+
+A003C025_150830_R0D0.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 2048x1152
+  Duration: 20.020020s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 65/A003C025_150830_R0D0.mov
+
+A005C021_150831_R0D0.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 2048x1152
+  Duration: 20.020020s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 65/A005C021_150831_R0D0.mov
+
+A005C031_160120_R51F.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 2048x1152
+  Duration: 26.375000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 65/A005C031_160120_R51F.mov
+
+A006C021_150902_R0D0.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 2048x1152
+  Duration: 20.020020s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 65/A006C021_150902_R0D0.mov
+
+4K AMR_GENERIC Pit Wall + Team.mp4
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 1280x720
+  Duration: 525.775250s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/NO_TC/4K AMR_GENERIC Pit Wall + Team.mp4
+
+AMF1 Factory Launch HERO v5.0 16x9 H264 MASTER.mov
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 1920x1080
+  Duration: 60.000000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/NO_TC/AMF1 Factory Launch HERO v5.0 16x9 H264 MASTER.mov
+
+AMR22 Sights & Sounds 16.9.mp4
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 1920x1080
+  Duration: 160.640000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/NO_TC/AMR22 Sights & Sounds 16.9.mp4
+
+AMF1 Factory Launch HERO v5.0 16x9 H264 MASTER.mov
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 1920x1080
+  Duration: 60.074667s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/NO_TC/Proxy/AMF1 Factory Launch HERO v5.0 16x9 H264 MASTER.mov
+
+Y2Mate.is - The Moment is Now-Gy5JaXmtnpY-1080p-1642003354193.mp4
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 1920x1080
+  Duration: 279.103855s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/NO_TC/Y2Mate.is - The Moment is Now-Gy5JaXmtnpY-1080p-1642003354193.mp4
+
+iPhone_17_HDR_HLG_ProRES RAW x4 Lens Compressor.mov
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv422p10le
+  Resolution: 3840x2160
+  Duration: 60.000000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/PRORES_RAW/iPhone_17_HDR_HLG_ProRES RAW x4 Lens Compressor.mov
+
+P1000037.MP4
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 2.880000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/EOSHD Panasonic S1 10bit 4K/P1000037.MP4
+
+P1000039.MP4
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 5.280000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/EOSHD Panasonic S1 10bit 4K/P1000039.MP4
+
+P1000070.MP4
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 3.840000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/EOSHD Panasonic S1 10bit 4K/P1000070.MP4
+
+P1000071.MP4
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 1.920000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/EOSHD Panasonic S1 10bit 4K/P1000071.MP4
+
+P1000108.MP4
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 4.320000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/EOSHD Panasonic S1 10bit 4K/P1000108.MP4
+
+P1000111.MP4
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv420p10le
+  Resolution: 3840x2160
+  Duration: 6.240000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/EOSHD Panasonic S1 10bit 4K/P1000111.MP4
+
+S5Sample1.MOV
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv422p10le
+  Resolution: 3840x2160
+  Duration: 26.026000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/S5Sample1.MOV
+
+panasonic_s1h_04.mp4
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 3840x2160
+  Duration: 20.640000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/panasonic_s1h_04.mp4
+
+panasonic_s1h_04_2.mp4
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 3840x2160
+  Duration: 20.640000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Panasonic/panasonic_s1h_04_2.mp4
+
+testclips+-1 2.mov
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuvj420p
+  Resolution: 3840x2160
+  Duration: 30.443333s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Samsung_MAN/Samsung Test Footage/testclips+-1 2.mov
+
+testclips+-1.MOV
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuvj420p
+  Resolution: 3840x2160
+  Duration: 23.080000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Samsung_MAN/Samsung Test Footage/testclips+-1.MOV
+
+H264_A001_07031421_C004.mov
+  Type: file
+  Container: mov
+  Codec: h264
+  Pixel Format: yuv420p
+  Resolution: 3840x2160
+  Duration: 9.158000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/iPhone/H264_A001_07031421_C004.mov
+
+H265_LOG_APPLE_HDR_A001_07031421_C005.mov
+  Type: file
+  Container: mov
+  Codec: hevc
+  Pixel Format: yuv422p10le
+  Resolution: 3840x2160
+  Duration: 5.800000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/iPhone/H265_LOG_APPLE_HDR_A001_07031421_C005.mov
+
+H265_REC2020_HLG_A001_07031422_C006.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 3840x2160
+  Duration: 7.200000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/iPhone/H265_REC2020_HLG_A001_07031422_C006.mov
+
+ProRes422_Apple_Log_A001_07011700_C002.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 3840x2160
+  Duration: 21.278000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/iPhone/ProRes422_Apple_Log_A001_07011700_C002.mov
+
+ProRes422_Apple_Log_A001_07011702_C003.mov
+  Type: file
+  Container: mov
+  Codec: prores
+  Pixel Format: yuv422p10le
+  Resolution: 3840x2160
+  Duration: 16.638000s
+  Engine: ffmpeg
+  Reason: Standard format
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/iPhone/ProRes422_Apple_Log_A001_07011702_C003.mov
+
+========================================================================================================================
+ENGINE: resolve
+========================================================================================================================
+
+S071C024_210930_FNIY
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ALEXA_MINI_HDE_ARX/S071C024_210930_FNIY
+
+DW0001C001_251020_111956_c1I7H.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 7.916667s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 35 Xtreme MXF HDE/DW0001C001_251020_111956_c1I7H.mxf
+
+DW0001C002_251020_112357_h1I7H.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 7.583333s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 35 Xtreme MXF HDE/DW0001C002_251020_112357_h1I7H.mxf
+
+DW0001C036_251021_131835_h1I7H.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 10.541667s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRI 35 Xtreme MXF HDE/DW0001C036_251021_131835_h1I7H.mxf
+
+C_0001C001_250807_130114_c1I82.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 21.720000s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRICORE/C_0001C001_250807_130114_c1I82.mxf
+
+C_0001C009_250807_131328_c1I82.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 48.200000s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI/ARRICORE/C_0001C009_250807_131328_c1I82.mxf
+
+A_0001C008_220824_062101_a12SQ.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 10.791667s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI35/A_0001C008_220824_062101_a12SQ.mxf
+
+A_0001C012_220824_062656_a12SQ.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 10.791667s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRI35/A_0001C012_220824_062656_a12SQ.mxf
+
+DW0001C001_251020_111956_c1I7H.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 7.916667s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRICORE/ARRICORE/DW0001C001_251020_111956_c1I7H.mxf
+
+DW0001C011_251020_122049_c1I7H.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 17.208333s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/ARRICORE/ARRICORE/DW0001C011_251020_122049_c1I7H.mxf
+
+BMPCC6K Indie Film BRAW
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/BLACKMAGIC/BMPCC6K Indie Film BRAW
+
+A003C138_1701148G_CANON.CRM
+  Type: file
+  Container: mov
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 4096x2160
+  Duration: 16.400000s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Canon/A003C138_1701148G_CANON.CRM
+
+01_4K_60P_highlight_N-Log
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Nikon/01_4K_60P_highlight_N-Log
+
+02_4K_60P_shadow_SDR
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Nikon/02_4K_60P_shadow_SDR/02_4K_60P_shadow_SDR
+
+05_6K_60P_skin_tone_N-Log
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Nikon/05_6K_60P_skin_tone_N-Log
+
+a7s III ProRes RAW HQ.mov
+  Type: file
+  Container: mov
+  Codec: prores_raw
+  Pixel Format: bayer_rggb16le
+  Resolution: 4264x2408
+  Duration: 14.398625s
+  Engine: resolve
+  Reason: RAW codec (prores_raw)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/PRORES_RAW/a7s III ProRes RAW HQ.mov
+
+A002_C305_0523UB_S000.RDC
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/R3D/A002_C305_0523UB_S000.RDC
+
+epicdragon-lowlight-6k-ws-48fps
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/R3D/epicdragon-lowlight-6k-ws-48fps
+
+v-raptor-xe-8k-vv-glass-blowing-1
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/R3D/v-raptor-xe-8k-vv-glass-blowing-1
+
+weapon-sth-8k-50fps-9to1redcode
+  Type: folder
+  Container: camera_folder
+  Codec: raw_camera_folder
+  Pixel Format: n/a
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW camera folder structure
+  Probe Status: skipped
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/R3D/weapon-sth-8k-50fps-9to1redcode
+
+BURANO Clip 4.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 16.182833s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/SONY/Burano/BURANO Clip 4.mxf
+
+Sony VENICE 2 Test Footage.mxf
+  Type: file
+  Container: mxf
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 42.750000s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: success
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/SONY/Venice/Sony VENICE 2 Test Footage.mxf
+
+DD14513B-2B3B-462F-BCB1-F1D56AEC83CB.MP4
+  Type: file
+  Container: mp4
+  Codec: unknown
+  Pixel Format: unknown
+  Resolution: 0x0
+  Duration: 0s
+  Engine: resolve
+  Reason: RAW codec (unknown)
+  Probe Status: failed
+  Path: /Users/leon.grant/projects/Proxx/forge-tests/samples/RAW/Samsung_MAN/Samsung Test Footage/DD14513B-2B3B-462F-BCB1-F1D56AEC83CB.MP4
+
+
+✅ Report saved to: /Users/leon.grant/projects/Proxx/backend/tools/probe_raw_directory_report.json
+
+
+⚠️  POTENTIAL ISSUES
+========================================================================================================================
+
+✅ No obvious routing issues detected!
+
+
