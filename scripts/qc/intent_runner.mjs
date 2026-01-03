@@ -16,6 +16,9 @@ const projectRoot = path.resolve(__dirname, '../..')
 const actionTracePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/action_trace.ts')
 const { instrumentCreateJobAction, inferWorkflowState, waitForUISettle } = await import(`file://${actionTracePath}`)
 
+const visualChangeGatePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/visual_change_gate.ts')
+const { assertVisualChange, recordVisualDiffMetrics } = await import(`file://${visualChangeGatePath}`)
+
 /**
  * Load and parse UI_WORKFLOW_INTENTS.md
  */
@@ -470,7 +473,7 @@ export function createActionDriver() {
   }
 }
 
-export async function executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker = null) {
+export async function executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker = null, previousScreenshot = null) {
   const action = semanticAction.action
   
   // STEP 2 — Enforce Renderer Liveness BEFORE action
@@ -517,6 +520,35 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
       await page.screenshot({ path: screenshotPath, fullPage: true })
       console.log(`   📸 Screenshot: ${screenshotPath}`)
       
+      // VISUAL CHANGE GATE — Fail if no visible change
+      if (previousScreenshot) {
+        try {
+          const metrics = await assertVisualChange(
+            action,
+            previousScreenshot,
+            screenshotPath,
+            5.0 // 5% minimum change threshold
+          )
+          recordVisualDiffMetrics(artifactDir, metrics)
+          console.log(`   ✓ Visual change: ${metrics.diff_percent.toFixed(2)}% (threshold: ${metrics.threshold_percent}%)`)
+        } catch (e) {
+          if (e.name === 'VisualChangeError') {
+            console.log(`   ❌ VISUAL CHANGE GATE FAILED: ${e.message}`)
+            console.log(`      Diff: ${e.diffPercent.toFixed(2)}% (threshold: 5.0%)`)
+            console.log(`      Before: ${e.beforePath}`)
+            console.log(`      After: ${e.afterPath}`)
+            return {
+              success: false,
+              error: e.message,
+              visual_change_failure: true,
+              diff_percent: e.diffPercent,
+              screenshot: screenshotPath,
+            }
+          }
+          throw e // Re-throw non-visual-change errors
+        }
+      }
+      
       // Log state after action
       const stateAfter = await inferWorkflowState(page)
       console.log(`   State after: ${stateAfter}`)
@@ -525,7 +557,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         throw new Error(`State did not change after ${action} (still: ${stateBefore})`)
       }
       
-      return { success: true }
+      return { success: true, screenshot: screenshotPath }
     }
     
     if (action === 'system_loads_source') {
@@ -554,7 +586,34 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         await page.screenshot({ path: screenshotPath, fullPage: true })
         console.log(`   📸 Screenshot: ${screenshotPath}`)
         
-        return { success: true }
+        // VISUAL CHANGE GATE — Fail if no visible change
+        if (previousScreenshot) {
+          try {
+            const metrics = await assertVisualChange(
+              action,
+              previousScreenshot,
+              screenshotPath,
+              5.0
+            )
+            recordVisualDiffMetrics(artifactDir, metrics)
+            console.log(`   ✓ Visual change: ${metrics.diff_percent.toFixed(2)}% (threshold: ${metrics.threshold_percent}%)`)
+          } catch (e) {
+            if (e.name === 'VisualChangeError') {
+              console.log(`   ❌ VISUAL CHANGE GATE FAILED: ${e.message}`)
+              console.log(`      Diff: ${e.diffPercent.toFixed(2)}% (threshold: 5.0%)`)
+              return {
+                success: false,
+                error: e.message,
+                visual_change_failure: true,
+                diff_percent: e.diffPercent,
+                screenshot: screenshotPath,
+              }
+            }
+            throw e
+          }
+        }
+        
+        return { success: true, screenshot: screenshotPath }
       }
       await page.waitForTimeout(3000)
       const newState = await inferWorkflowState(page)
@@ -582,9 +641,36 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
         await page.screenshot({ path: screenshotPath, fullPage: true })
         console.log(`   📸 Screenshot: ${screenshotPath}`)
+        
+        // VISUAL CHANGE GATE — Fail if no visible change
+        if (previousScreenshot) {
+          try {
+            const metrics = await assertVisualChange(
+              action,
+              previousScreenshot,
+              screenshotPath,
+              5.0
+            )
+            recordVisualDiffMetrics(artifactDir, metrics)
+            console.log(`   ✓ Visual change: ${metrics.diff_percent.toFixed(2)}% (threshold: ${metrics.threshold_percent}%)`)
+          } catch (e) {
+            if (e.name === 'VisualChangeError') {
+              console.log(`   ❌ VISUAL CHANGE GATE FAILED: ${e.message}`)
+              console.log(`      Diff: ${e.diffPercent.toFixed(2)}% (threshold: 5.0%)`)
+              return {
+                success: false,
+                error: e.message,
+                visual_change_failure: true,
+                diff_percent: e.diffPercent,
+                screenshot: screenshotPath,
+              }
+            }
+            throw e
+          }
+        }
       }
       
-      return { success: newState === 'source_loaded' }
+      return { success: newState === 'source_loaded', screenshot: screenshotPath }
     }
     
     if (action === 'system_displays_preview') {
@@ -604,7 +690,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         }
       }
       
-      return { success: playerVisible }
+      return { success: playerVisible, screenshot: null }
     }
     
     if (action === 'user_configures_job') {
@@ -622,7 +708,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         }
       }
       
-      return { success: true }
+      return { success: true, screenshot: null }
     }
     
     if (action === 'user_creates_job') {
@@ -649,7 +735,38 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
       const stateAfter = await inferWorkflowState(page)
       console.log(`   State after: ${stateAfter}`)
       
-      return { success: trace.qc_outcome !== 'VERIFIED_NOT_OK', trace }
+      // Extract screenshot from trace
+      const screenshotPath = trace?.visual_snapshot?.screenshot_path || null
+      
+      // VISUAL CHANGE GATE — Fail if no visible change
+      if (previousScreenshot && screenshotPath) {
+        try {
+          const metrics = await assertVisualChange(
+            action,
+            previousScreenshot,
+            screenshotPath,
+            5.0
+          )
+          recordVisualDiffMetrics(artifactDir, metrics)
+          console.log(`   ✓ Visual change: ${metrics.diff_percent.toFixed(2)}% (threshold: ${metrics.threshold_percent}%)`)
+        } catch (e) {
+          if (e.name === 'VisualChangeError') {
+            console.log(`   ❌ VISUAL CHANGE GATE FAILED: ${e.message}`)
+            console.log(`      Diff: ${e.diffPercent.toFixed(2)}% (threshold: 5.0%)`)
+            return {
+              success: false,
+              error: e.message,
+              visual_change_failure: true,
+              diff_percent: e.diffPercent,
+              trace,
+              screenshot: screenshotPath,
+            }
+          }
+          throw e
+        }
+      }
+      
+      return { success: trace.qc_outcome !== 'VERIFIED_NOT_OK', trace, screenshot: screenshotPath }
     }
     
     if (action === 'system_queues_job') {
@@ -669,7 +786,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         }
       }
       
-      return { success: jobVisible }
+      return { success: jobVisible, screenshot: null }
     }
     
     if (action === 'system_processes_job') {
@@ -689,7 +806,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         }
       }
       
-      return { success }
+      return { success, screenshot: null }
     }
     
     if (action === 'job_completes') {
@@ -709,7 +826,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         }
       }
       
-      return { success }
+      return { success, screenshot: null }
     }
     
     return { success: false, error: `Unknown semantic action: ${action}` }
@@ -743,6 +860,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
   const actionTraces = []
   const workflowStates = []
   let completedSteps = 0
+  let previousScreenshot = null // Track last screenshot for visual change gate
   
   const initialState = await inferWorkflowState(page)
   workflowStates.push(initialState)
@@ -752,7 +870,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
     console.log(`\nSTEP ${semanticAction.step}: ${semanticAction.action}`)
     console.log(`   Actor: ${semanticAction.actor}`)
     
-    const result = await executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker)
+    const result = await executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker, previousScreenshot)
     
     if (!result.success) {
       const reason = result.error || 'Action did not complete successfully'
@@ -774,6 +892,34 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
         }
       }
       
+      // VISUAL CHANGE GATE — Wire into QC_INVALID
+      if (result.visual_change_failure) {
+        console.log('')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('  VISUAL CHANGE GATE FAILURE')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log(`  Action: ${semanticAction.action}`)
+        console.log(`  Diff: ${result.diff_percent.toFixed(2)}% (threshold: 5.0%)`)
+        console.log(`  Reason: ${reason}`)
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('')
+        
+        return {
+          intent_id: intentId,
+          success: false,
+          completed_steps: completedSteps,
+          total_steps: intent.action_sequence.length,
+          action_traces: actionTraces,
+          workflow_states: workflowStates,
+          failure_reason: reason,
+          blocked_at: semanticAction.action,
+          qc_invalid: true,
+          qc_invalid_reason: `Visual change gate failed: ${reason}`,
+          visual_change_failure: true,
+          diff_percent: result.diff_percent,
+        }
+      }
+      
       return {
         intent_id: intentId,
         success: false,
@@ -791,6 +937,11 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
     
     if (result.trace) {
       actionTraces.push(result.trace)
+    }
+    
+    // Update previous screenshot for next iteration
+    if (result.screenshot) {
+      previousScreenshot = result.screenshot
     }
     
     const newState = await inferWorkflowState(page)
