@@ -193,25 +193,111 @@ export function validateIntent(intent) {
 }
 
 export function createActionDriver() {
+  // Hardcoded test file for QC automation
+  const TEST_FILE = '/Users/leon.grant/projects/Proxx/artifacts/v2/20251228T160555/v2_smoke_v2_smoke_test_000.mp4'
+  
   return {
     async selectRealSource(page) {
       console.log('   → Action: selectRealSource')
+      console.log(`      Test file: ${TEST_FILE}`)
       
-      const fileInput = page.locator('input[type="file"]').first()
-      const selectButton = page.locator('button:has-text("Select"), button:has-text("Browse")').first()
-      
-      const testFile = process.env.QC_TEST_FILE || '<QC_TEST_FILE_NOT_SET>'
-      
-      if (await fileInput.isVisible()) {
-        await fileInput.setInputFiles(testFile)
-      } else if (await selectButton.isVisible()) {
-        await page.evaluate((filePath) => {
-          const event = new CustomEvent('file-selected', { detail: { path: filePath } })
-          document.dispatchEvent(event)
-        }, testFile)
+      try {
+        // Strategy: Directly call the app's file selection handler with our test file
+        // This triggers the REAL ingestion pipeline (validation + probing)
+        console.log('      → Triggering file selection via app handler...')
+        
+        const selectionSucceeded = await page.evaluate(async (filePath) => {
+          try {
+            // Wait for window.electron to be available
+            if (!window.electron || !window.electron.openFiles) {
+              console.error('[TEST] window.electron.openFiles not available')
+              return false
+            }
+            
+            // Save the original implementation
+            const originalOpenFiles = window.electron.openFiles
+            
+            // Mock it temporarily to return our test file
+            window.electron.openFiles = async () => {
+              console.log('[TEST] openFiles() called, returning:', filePath)
+              // Restore original immediately
+              window.electron.openFiles = originalOpenFiles
+              return [filePath]
+            }
+            
+            // Find "Select Files" button - can't use :has-text() in document.querySelector
+            const button = Array.from(document.querySelectorAll('button'))
+              .find(b => b.textContent?.includes('Select Files'))
+            
+            if (!button) {
+              console.error('[TEST] Select Files button not found')
+              return false
+            }
+            
+            console.log('[TEST] Clicking "Select Files" button...')
+            button.click()
+            return true
+          } catch (e) {
+            console.error('[TEST] Error in file selection:', e)
+            return false
+          }
+        }, TEST_FILE)
+        
+        if (!selectionSucceeded) {
+          throw new Error('Failed to trigger file selection')
+        }
+        
+        console.log('      → File selection triggered, waiting for backend processing...')
+        
+        // The app should now:
+        // 1. Call window.electron.openFiles() (our mock)
+        // 2. Get [TEST_FILE] back
+        // 3. Call setSelectedFiles([TEST_FILE])
+        // 4. ingestion.ingest() validates via /filesystem/validate-path
+        // 5. Backend probes file with ffprobe
+        // 6. UI updates with metadata
+        
+        // Wait for evidence of successful load (up to 20 seconds for backend processing)
+        const indicators = [
+          // Filename appears in UI
+          page.locator(`text=${path.basename(TEST_FILE)}`).first(),
+          // Create Job button becomes enabled
+          page.locator('button:has-text("Create Job"):not([disabled])').first(),
+          // Source metadata visible
+          page.locator('[data-testid*="metadata"], [data-testid*="source"]').first(),
+        ]
+        
+        let success = false
+        for (const indicator of indicators) {
+          try {
+            await indicator.waitFor({ state: 'visible', timeout: 20000 })
+            success = true
+            console.log('      ✅ Source loaded - indicator visible:', await indicator.textContent().catch(() => 'unknown'))
+            break
+          } catch (e) {
+            // Try next indicator
+            continue
+          }
+        }
+        
+        if (!success) {
+          // Debug: screenshot and check console errors
+          await page.screenshot({ path: '/tmp/source_load_timeout.png', fullPage: true })
+          const bodyText = await page.locator('body').textContent().catch(() => '')
+          console.log('      ⚠️ UI after 20s wait:')
+          console.log(`         Contains filename: ${bodyText.includes(path.basename(TEST_FILE))}`)
+          console.log(`         Contains "Create Job": ${bodyText.includes('Create Job')}`)
+          console.log(`         Contains "probing": ${bodyText.includes('probing')}`)
+          console.log(`         Contains "loading": ${bodyText.includes('loading')}`)
+          
+          throw new Error('Source file did not load within 20 seconds')
+        }
+        
+        console.log('      ✅ Source file loaded successfully')
+      } catch (err) {
+        console.error('      ❌ Failed to load source file:', err.message)
+        throw new Error(`Failed to load source file: ${err.message}`)
       }
-      
-      await page.waitForTimeout(2000)
     },
     
     async clickCreateJob(page, artifactDir) {
