@@ -213,11 +213,12 @@ export function JobProgressBar({
           data-testid="progress-bar-container"
           style={{
             width: '100%',
-            height: compact ? '5px' : '6px',
-            backgroundColor: 'rgba(30, 41, 59, 0.6)',
-            borderRadius: '3px',
+            height: compact ? '6px' : '8px',
+            backgroundColor: 'rgba(30, 41, 59, 0.8)',
+            borderRadius: '4px',
             overflow: 'hidden',
-            boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.3)',
+            boxShadow: 'inset 0 2px 3px rgba(0, 0, 0, 0.4)',
+            border: '1px solid rgba(51, 65, 85, 0.5)',
           }}
         >
           <div
@@ -227,7 +228,7 @@ export function JobProgressBar({
               height: '100%',
               backgroundColor: stageColor,
               transition: 'width 0.3s ease-out',
-              boxShadow: '0 0 4px rgba(59, 130, 246, 0.5)',
+              boxShadow: '0 0 8px rgba(59, 130, 246, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
             }}
           />
         </div>

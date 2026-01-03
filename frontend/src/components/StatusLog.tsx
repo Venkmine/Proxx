@@ -104,7 +104,7 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
         position: 'fixed',
         bottom: '32px', // Above footer
         left: '16px',  // Aligned with left panel inner padding
-        width: '360px',  // Slightly wider for better readability
+        width: '440px',  // Wider to match left panel content width
         maxHeight: `${maxHeight}px`,
         background: 'rgba(16, 18, 20, 0.98)',
         border: '1px solid var(--border-primary)',

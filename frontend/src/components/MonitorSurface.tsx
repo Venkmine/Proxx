@@ -533,21 +533,27 @@ export function MonitorSurface({
                         : previewMode
               } 
             />
-            {canPlaybackNow && zoomMode === 'actual' && (
+            {canPlaybackNow && (
               <div
                 style={{
                   padding: '0.25rem 0.5rem',
-                  background: 'rgba(59, 130, 246, 0.15)',
-                  border: '1px solid rgba(59, 130, 246, 0.35)',
+                  background: zoomMode === 'actual' 
+                    ? 'rgba(59, 130, 246, 0.15)' 
+                    : 'rgba(100, 116, 139, 0.15)',
+                  border: zoomMode === 'actual'
+                    ? '1px solid rgba(59, 130, 246, 0.35)'
+                    : '1px solid rgba(100, 116, 139, 0.25)',
                   borderRadius: '4px',
                   fontSize: '0.625rem',
                   fontFamily: 'var(--font-mono)',
-                  color: 'var(--accent-primary, #3b82f6)',
+                  color: zoomMode === 'actual'
+                    ? 'var(--accent-primary, #3b82f6)'
+                    : 'var(--text-muted, #94a3b8)',
                   fontWeight: 500,
                 }}
                 title="Double-click to toggle Fit/100% zoom"
               >
-                100%
+                {zoomMode === 'actual' ? '100%' : 'Fit'}
               </div>
             )}
           </div>
