@@ -276,6 +276,45 @@ export function createActionDriver() {
       }
     },
     
+    async clickRunPreflight(page) {
+      console.log('   → Action: clickRunPreflight')
+      
+      try {
+        // Find Run Preflight button
+        const preflightButton = page.locator('button:has-text("Run Preflight")')
+        
+        // Assert button exists and is enabled
+        await preflightButton.waitFor({ state: 'visible', timeout: 5000 })
+        const isEnabled = await preflightButton.isEnabled()
+        
+        if (!isEnabled) {
+          throw new Error('Run Preflight button is disabled')
+        }
+        
+        console.log('      → Run Preflight button enabled')
+        
+        // Click once
+        console.log('      → Run Preflight clicked')
+        await preflightButton.click()
+        
+        // Wait for ONE success signal: Create Job button appears (state = READY)
+        console.log('      → Waiting for preflight to complete...')
+        
+        const createJobButton = page.locator('button:has-text("Create Job")')
+        
+        try {
+          await createJobButton.waitFor({ state: 'visible', timeout: 30000 })
+          console.log('      ✅ Preflight succeeded - Create Job button visible')
+        } catch (e) {
+          throw new Error('Job did not start after Run Preflight click')
+        }
+        
+      } catch (err) {
+        console.error('      ❌ Failed to run preflight:', err.message)
+        throw err
+      }
+    },
+    
     async clickCreateJob(page, artifactDir) {
       console.log('   → Action: clickCreateJob')
       
@@ -394,10 +433,31 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
     if (action === 'system_loads_source') {
       const state = await inferWorkflowState(page)
       if (state === 'source_loaded') {
+        // Source is loaded, now we need to run preflight to transition to READY
+        console.log('   → Running preflight automatically...')
+        await driver.clickRunPreflight(page)
+        
+        // Take screenshot after preflight
+        const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
+        await page.screenshot({ path: screenshotPath, fullPage: true })
+        console.log(`   📸 Screenshot: ${screenshotPath}`)
+        
         return { success: true }
       }
       await page.waitForTimeout(3000)
       const newState = await inferWorkflowState(page)
+      
+      if (newState === 'source_loaded') {
+        // Source is loaded, now we need to run preflight to transition to READY
+        console.log('   → Running preflight automatically...')
+        await driver.clickRunPreflight(page)
+        
+        // Take screenshot after preflight
+        const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
+        await page.screenshot({ path: screenshotPath, fullPage: true })
+        console.log(`   📸 Screenshot: ${screenshotPath}`)
+      }
+      
       return { success: newState === 'source_loaded' }
     }
     
