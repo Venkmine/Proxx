@@ -523,14 +523,49 @@ async function main() {
       console.log(`    ⏸️  BLOCKED_PRECONDITION: ${actionAggregate.blocked_precondition}`)
     }
     
+    // ========================================================================
+    // INTENT-AWARE INTERPRETATION (if intent execution result exists)
+    // ========================================================================
+    let intentResult = null
+    const intentResultPath = path.join(artifactDir, 'intent_execution_result.json')
+    
+    if (fs.existsSync(intentResultPath)) {
+      try {
+        intentResult = JSON.parse(fs.readFileSync(intentResultPath, 'utf-8'))
+        console.log('')
+        console.log('🎯 Processing intent execution result...')
+        console.log(`   Intent: ${intentResult.intent_id}`)
+        console.log(`   Success: ${intentResult.success}`)
+        console.log(`   Completed: ${intentResult.completed_steps}/${intentResult.total_steps}`)
+        
+        if (!intentResult.success) {
+          console.log(`   ⚠️  Blocked at: ${intentResult.blocked_at}`)
+          console.log(`   Reason: ${intentResult.failure_reason}`)
+        }
+      } catch (e) {
+        console.warn(`⚠️  Failed to load intent result: ${e.message}`)
+      }
+    }
+    
     // Build interpretation report
     const artifactDir2 = path.dirname(glmReportPath)
     const interpretation = {
-      version: '1.1.0', // Bumped for action-scoped QC support
+      version: '1.2.0', // Bumped for intent-aware QC support
       phase: 'INTERPRETATION',
       generatedAt: new Date().toISOString(),
       glmReportPath,
       rulesVersion: rules.version,
+      
+      // Intent execution result (if present)
+      intent: intentResult ? {
+        intent_id: intentResult.intent_id,
+        success: intentResult.success,
+        completed_steps: intentResult.completed_steps,
+        total_steps: intentResult.total_steps,
+        blocked_at: intentResult.blocked_at,
+        failure_reason: intentResult.failure_reason,
+        workflow_states: intentResult.workflow_states,
+      } : null,
       
       // Authoritative spec references
       authoritativeSpecs: {

@@ -42,13 +42,16 @@ function prepareArtifactDir(timestamp) {
 /**
  * Runs Playwright tests for visual regression
  */
-async function runPlaywrightVisualTests(artifactDir, timestamp) {
+async function runPlaywrightVisualTests(artifactDir, timestamp, intentId = null) {
   return new Promise((resolve, reject) => {
     const testDir = path.join(projectRoot, 'qa/verify/ui/visual_regression')
     
     console.log('📸 Running Playwright visual regression tests...')
     console.log(`   Test directory: ${testDir}`)
     console.log(`   Artifact directory: ${artifactDir}`)
+    if (intentId) {
+      console.log(`   Intent Mode: ${intentId}`)
+    }
     
     const env = {
       ...process.env,
@@ -56,8 +59,17 @@ async function runPlaywrightVisualTests(artifactDir, timestamp) {
       VISUAL_QC_ARTIFACT_DIR: artifactDir,
       E2E_TEST: 'true',
     }
+    
+    // If intent ID is provided, run intent workflow test
+    if (intentId) {
+      env.INTENT_ID = intentId
+    }
+    
+    // Select test file
+    const testFile = intentId ? 'intent_workflows.spec.ts' : undefined
+    const args = testFile ? ['playwright', 'test', testFile] : ['playwright', 'test']
 
-    const child = spawn('npx', ['playwright', 'test'], {
+    const child = spawn('npx', args, {
       cwd: testDir,
       env,
       stdio: 'pipe',
@@ -203,19 +215,32 @@ function writeExecutionMetadata(artifactDir, timestamp, testResult, screenshots,
  * Main execution
  */
 async function main() {
+  const args = process.argv.slice(2)
+  let intentId = null
+  
+  // Parse arguments
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--intent' && args[i + 1]) {
+      intentId = args[++i]
+    }
+  }
+  
   const startTime = new Date()
   const timestamp = generateTimestamp()
   console.log('═══════════════════════════════════════════════════════════════')
   console.log('  PHASE 1 — EXECUTION: Visual QC Test Runner')
   console.log('═══════════════════════════════════════════════════════════════')
   console.log(`  Timestamp: ${timestamp}`)
+  if (intentId) {
+    console.log(`  Intent Mode: ${intentId}`)
+  }
   console.log('')
   
   try {
     const artifactDir = prepareArtifactDir(timestamp)
     
-    // Run Playwright visual tests
-    const testResult = await runPlaywrightVisualTests(artifactDir, timestamp)
+    // Run Playwright visual tests (with optional intent)
+    const testResult = await runPlaywrightVisualTests(artifactDir, timestamp, intentId)
     
     // Collect screenshots (including from sibling dirs created during tests)
     const screenshots = collectScreenshots(artifactDir, startTime)
@@ -268,7 +293,24 @@ async function main() {
     } else {
       // Copy screenshots from sibling directories to main artifact dir
       for (const screenshot of screenshots) {
-        if (screenshot.sourceDir !== artifactDir) {
+       Check for intent execution result
+    let intentResult = null
+    const intentResultPath = path.join(artifactDir, 'intent_execution_result.json')
+    if (fs.existsSync(intentResultPath)) {
+      try {
+        intentResult = JSON.parse(fs.readFileSync(intentResultPath, 'utf-8'))
+        console.log('')
+        console.log('📋 Intent Execution Result:')
+        console.log(`   Intent: ${intentResult.intent_id}`)
+        console.log(`   Success: ${intentResult.success}`)
+        console.log(`   Completed: ${intentResult.completed_steps}/${intentResult.total_steps}`)
+      } catch (e) {
+        console.warn('⚠️  Failed to read intent result:', e.message)
+      }
+    }
+    
+    //  if (screenshot.sourceDir !== artifactDir) {
+      intentResult: intentResult || undefined,
           const targetDir = path.join(artifactDir, path.dirname(screenshot.relativePath))
           const targetPath = path.join(artifactDir, screenshot.relativePath)
           fs.mkdirSync(targetDir, { recursive: true })
