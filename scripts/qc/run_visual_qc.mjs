@@ -293,24 +293,7 @@ async function main() {
     } else {
       // Copy screenshots from sibling directories to main artifact dir
       for (const screenshot of screenshots) {
-       Check for intent execution result
-    let intentResult = null
-    const intentResultPath = path.join(artifactDir, 'intent_execution_result.json')
-    if (fs.existsSync(intentResultPath)) {
-      try {
-        intentResult = JSON.parse(fs.readFileSync(intentResultPath, 'utf-8'))
-        console.log('')
-        console.log('📋 Intent Execution Result:')
-        console.log(`   Intent: ${intentResult.intent_id}`)
-        console.log(`   Success: ${intentResult.success}`)
-        console.log(`   Completed: ${intentResult.completed_steps}/${intentResult.total_steps}`)
-      } catch (e) {
-        console.warn('⚠️  Failed to read intent result:', e.message)
-      }
-    }
-    
-    //  if (screenshot.sourceDir !== artifactDir) {
-      intentResult: intentResult || undefined,
+        if (screenshot.sourceDir !== artifactDir) {
           const targetDir = path.join(artifactDir, path.dirname(screenshot.relativePath))
           const targetPath = path.join(artifactDir, screenshot.relativePath)
           fs.mkdirSync(targetDir, { recursive: true })
@@ -340,6 +323,23 @@ async function main() {
       timestamp,
       screenshotCount: screenshots.length,
       testPassed: testResult.exitCode === 0,
+    }
+    
+    // Check for intent execution result
+    let intentResult = null
+    const intentResultPath = path.join(artifactDir, 'intent_execution_result.json')
+    if (fs.existsSync(intentResultPath)) {
+      try {
+        intentResult = JSON.parse(fs.readFileSync(intentResultPath, 'utf-8'))
+        console.log('')
+        console.log('📋 Intent Execution Result:')
+        console.log(`   Intent: ${intentResult.intent_id}`)
+        console.log(`   Success: ${intentResult.success}`)
+        console.log(`   Completed: ${intentResult.completed_steps}/${intentResult.total_steps}`)
+        output.intentResult = intentResult
+      } catch (e) {
+        console.warn('⚠️  Failed to read intent result:', e.message)
+      }
     }
     
     // Write to a well-known location for the orchestrator
