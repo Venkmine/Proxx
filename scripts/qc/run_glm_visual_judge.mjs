@@ -31,7 +31,7 @@ const projectRoot = path.resolve(__dirname, '../..')
 
 // GLM API Configuration (z.ai)
 const GLM_API_URL = 'https://api.z.ai/api/paas/v4/chat/completions'
-const GLM_MODEL = 'glm-4.6v' // Vision-capable model
+const GLM_MODEL = 'glm-4.6v-flash' // Free vision-capable model
 
 /**
  * Load question set by version

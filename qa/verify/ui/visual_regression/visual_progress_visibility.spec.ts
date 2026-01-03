@@ -15,7 +15,7 @@
  * - Progress element not in DOM = FAILED
  */
 
-import { test, expect, captureElectronScreenshot, waitForJobRunning, waitForProgressVisible } from './helpers'
+import { test, expect, captureElectronScreenshot, assertNoSplashBeforeCapture, waitForJobRunning, waitForProgressVisible } from './helpers'
 import fs from 'node:fs'
 
 test.describe('Visual Verification: Progress Visibility', () => {
@@ -24,6 +24,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
     console.log('Step 1: Capturing idle state...')
     await page.waitForLoadState('networkidle', { timeout: 15000 })
     
+    await assertNoSplashBeforeCapture(page, 'idle')
     const idleScreenshot = await captureElectronScreenshot(page, visualCollector, 'idle')
     expect(fs.existsSync(idleScreenshot), 'Idle screenshot must exist').toBe(true)
     expect(fs.statSync(idleScreenshot).size, 'Idle screenshot must not be empty').toBeGreaterThan(1000)
@@ -56,6 +57,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
       await page.waitForTimeout(500)
     }
 
+    await assertNoSplashBeforeCapture(page, 'job_started')
     const jobStartedScreenshot = await captureElectronScreenshot(page, visualCollector, 'job_started')
     expect(fs.existsSync(jobStartedScreenshot), 'Job started screenshot must exist').toBe(true)
     expect(fs.statSync(jobStartedScreenshot).size, 'Job started screenshot must not be empty').toBeGreaterThan(1000)
@@ -72,6 +74,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
       await page.waitForTimeout(1000)
       
       // STEP 5: Capture screenshot with progress visible
+      await assertNoSplashBeforeCapture(page, 'progress_visible')
       const progressScreenshot = await captureElectronScreenshot(page, visualCollector, 'progress_visible')
       expect(fs.existsSync(progressScreenshot), 'Progress screenshot must exist').toBe(true)
       expect(fs.statSync(progressScreenshot).size, 'Progress screenshot must not be empty').toBeGreaterThan(1000)
@@ -98,6 +101,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
       console.warn('⚠️  Screenshots captured for manual verification')
       
       // Still capture the state for manual review
+      await assertNoSplashBeforeCapture(page, 'progress_not_running')
       const finalScreenshot = await captureElectronScreenshot(page, visualCollector, 'progress_not_running')
       expect(fs.existsSync(finalScreenshot), 'Final screenshot must exist').toBe(true)
     }
@@ -121,6 +125,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
     console.log('Step 1: Capturing initial state...')
     await page.waitForLoadState('networkidle', { timeout: 15000 })
     
+    await assertNoSplashBeforeCapture(page, 'zoom_initial')
     const initialScreenshot = await captureElectronScreenshot(page, visualCollector, 'zoom_initial')
     expect(fs.existsSync(initialScreenshot), 'Initial screenshot must exist').toBe(true)
 
@@ -140,6 +145,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
     }
 
     // STEP 3: Capture with zoom indicator highlighted
+    await assertNoSplashBeforeCapture(page, 'zoom_indicator')
     const zoomScreenshot = await captureElectronScreenshot(page, visualCollector, 'zoom_indicator')
     expect(fs.existsSync(zoomScreenshot), 'Zoom screenshot must exist').toBe(true)
 
@@ -174,6 +180,7 @@ test.describe('Visual Verification: Progress Visibility', () => {
     }
 
     // STEP 2: Capture screenshot
+    await assertNoSplashBeforeCapture(page, 'status_panel')
     const statusScreenshot = await captureElectronScreenshot(page, visualCollector, 'status_panel')
     expect(fs.existsSync(statusScreenshot), 'Status panel screenshot must exist').toBe(true)
 

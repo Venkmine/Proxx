@@ -418,8 +418,11 @@ function App() {
   const [backendConnected, setBackendConnected] = useState<boolean>(true)
   
   // Phase 22: Splash screen state (shown on first launch / connectivity delay)
-  const [showSplash, setShowSplash] = useState<boolean>(true)
-  const [enginesLoaded, setEnginesLoaded] = useState<boolean>(false)
+  // Skip splash in E2E tests for faster visual QC
+  const skipSplashForTests = typeof window !== 'undefined' && 
+    (window.process?.env?.E2E_TEST === 'true' || import.meta.env.VITE_SKIP_SPLASH === 'true')
+  const [showSplash, setShowSplash] = useState<boolean>(!skipSplashForTests)
+  const [enginesLoaded, setEnginesLoaded] = useState<boolean>(skipSplashForTests)
   
   // Phase 22: Discard changes confirmation dialog
   const [discardDialogOpen, setDiscardDialogOpen] = useState<boolean>(false)

@@ -56,6 +56,23 @@ Additional screenshots may be required depending on the change:
 - **PNG format with lossless compression**
 - **File size > 1KB** (empty/blank screenshots are invalid)
 - **Clear visibility** of the element being changed
+- **MUST NOT show splash screen** (see "Invalid Screenshots" below)
+
+### Invalid Screenshots
+
+⚠️ **AUTOMATIC REJECTION**: Screenshots taken while the splash screen is visible are **INVALID** and will cause the entire QC run to fail.
+
+**Why Splash Screenshots are Invalid:**
+- Splash screens are transient startup states, not application UI
+- Visual QC cannot interpret whether splash "should" be visible
+- Splash presence indicates app may not be fully ready
+- Visual verification requires ACTUAL application state, not startup artifacts
+
+**Detection:** The QC pipeline automatically detects splash-visible screenshots using strict DOM checks (`data-testid="splash-screen"`).
+
+**Consequence:** If splash is detected, the QC run is marked as **QC_INVALID** and exits with code `2`. GLM analysis is skipped.
+
+**How to Avoid:** The test harness automatically waits up to 30 seconds for splash dismissal before capturing screenshots. If your app takes longer to start, this indicates a performance issue that should be investigated.
 
 ---
 

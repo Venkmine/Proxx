@@ -7,6 +7,38 @@
 
 This document defines the **question interface** between the orchestrator (Sonnet/Opus) and the visual witness (GLM-4.6V). It is the contract that governs what questions can be asked and how answers must be formatted.
 
+## Precondition: Screenshot Validity
+
+⚠️ **CRITICAL REQUIREMENT**: All screenshots sent to GLM-4.6V **MUST** be taken from a fully-loaded application state.
+
+### The Splash Screen Problem
+
+**GLM-4.6V cannot interpret whether a splash screen "should" be visible** because:
+- Splash screens are transient startup states, not application UI
+- There is no way to know if splash visibility indicates "app not ready" vs "intentional design"
+- Visual QC requires ACTUAL application UI, not startup artifacts
+
+### Executor Responsibility
+
+The executor (Playwright test harness) MUST:
+1. **Wait for splash dismissal** before ANY screenshot capture
+2. **Use strict DOM-based detection** (`data-testid="splash-screen"`)
+3. **Timeout after 30 seconds** if splash never dismisses
+4. **Mark QC as INVALID** if splash timeout occurs
+5. **Never send splash-visible screenshots to GLM**
+
+### Consequence of Violation
+
+If a screenshot is taken while splash is visible:
+- The entire QC run is **INVALID**
+- GLM analysis is **SKIPPED**
+- Exit code 2 (QC_INVALID) is returned
+- Evidence is captured in `SPLASH_ONLY.png`
+
+This is NOT a GLM failure - it is an executor precondition failure.
+
+---
+
 ## Architectural Principle
 
 ```

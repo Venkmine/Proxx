@@ -101,6 +101,43 @@ artifacts/ui/visual/<timestamp>/
 └── phase1_output.json
 ```
 
+**Exit Codes:**
+- `0` = Tests completed successfully
+- `1` = Test failure (non-splash related)
+- `2` = QC_INVALID (splash screen timeout)
+
+**Splash-Aware Readiness Gate:**
+
+⚠️ **CRITICAL**: Phase 1 includes a mandatory readiness gate to prevent splash-contaminated screenshots.
+
+Before EVERY screenshot capture:
+1. **Wait for splash dismissal** (up to 30 seconds)
+   - Uses strict DOM detection: `data-testid="splash-screen"`
+   - Checks for removal OR CSS hiding (display:none, visibility:hidden, opacity:0)
+2. **Assert splash is gone** before capturing
+   - If splash still visible → Test fails immediately
+   - Captures `SPLASH_ONLY.png` as evidence
+   - Marks QC run as INVALID
+
+**Why This Gate Exists:**
+
+GLM-4.6V **cannot** interpret whether a splash screen "should" be visible because:
+- Splash screens are transient startup states, not application UI
+- No way to know if visibility = "app not ready" vs "intentional design"
+- Visual QC requires ACTUAL app UI, not startup artifacts
+
+**Consequence of Splash Timeout:**
+- Phase 1 exits with code `2` (QC_INVALID)
+- Entire QC run is marked INVALID
+- Phase 2 (GLM analysis) is SKIPPED
+- Evidence captured in `SPLASH_ONLY.png` + DOM snapshot
+
+**Common Causes:**
+- App startup > 30 seconds (performance issue)
+- Splash dismissal logic broken
+- Backend/dependencies unavailable
+- Test environment misconfiguration
+
 ### Phase 2: Visual Judgment
 
 **Script:** `scripts/qc/run_glm_visual_judge.mjs`

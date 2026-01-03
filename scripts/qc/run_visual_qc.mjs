@@ -148,9 +148,32 @@ function collectScreenshots(artifactDir, startTime) {
 }
 
 /**
+ * Analyzes test failure to determine if it's splash-related
+ * Returns true if failure indicates splash screen timeout/visibility
+ */
+function isSplashRelatedFailure(stderr, stdout) {
+  const combinedOutput = (stdout + '\n' + stderr).toLowerCase()
+  
+  // Check for splash-related error messages from assertNoSplashBeforeCapture
+  if (combinedOutput.includes('pre-capture gate failed')) return true
+  if (combinedOutput.includes('splash screen is still visible')) return true
+  if (combinedOutput.includes('splash_only.png')) return true
+  
+  // Check for waitForAppReady timeout from page fixture
+  if (combinedOutput.includes('splash dismissal timeout')) return true
+  if (combinedOutput.includes('timeout: 30000ms exceeded')) {
+    // Only if related to splash detection
+    if (combinedOutput.includes('data-testid="splash-screen"')) return true
+    if (combinedOutput.includes('waitforfunction')) return true
+  }
+  
+  return false
+}
+
+/**
  * Writes execution metadata
  */
-function writeExecutionMetadata(artifactDir, timestamp, testResult, screenshots) {
+function writeExecutionMetadata(artifactDir, timestamp, testResult, screenshots, isSplashFailure = false) {
   const metadata = {
     version: '1.0.0',
     phase: 'EXECUTION',
@@ -159,7 +182,9 @@ function writeExecutionMetadata(artifactDir, timestamp, testResult, screenshots)
     testResult: {
       exitCode: testResult.exitCode,
       passed: testResult.exitCode === 0,
+      splashFailure: isSplashFailure,
     },
+    qcInvalid: isSplashFailure,
     screenshots: screenshots.map(s => ({
       relativePath: s.relativePath,
       size: s.size,
@@ -196,6 +221,47 @@ async function main() {
     const screenshots = collectScreenshots(artifactDir, startTime)
     console.log('')
     console.log(`📸 Collected ${screenshots.length} screenshot(s)`)
+    
+    // Check if failure was splash-related
+    const isSplashFailure = isSplashRelatedFailure(testResult.stderr, testResult.stdout)
+    
+    if (isSplashFailure) {
+      console.log('')
+      console.log('⚠️⚠️⚠️  SPLASH-RELATED FAILURE DETECTED  ⚠️⚠️⚠️')
+      console.log('')
+      console.log('The test failed because the splash screen did not dismiss within the timeout.')
+      console.log('This invalidates the QC run because:')
+      console.log('  1. Screenshots taken with splash visible cannot be visually interpreted')
+      console.log('  2. GLM-4.6V cannot determine if splash "should" be visible')
+      console.log('  3. Visual QC requires ACTUAL application UI, not startup states')
+      console.log('')
+      console.log('Possible causes:')
+      console.log('  - Application startup is too slow (>30 seconds)')
+      console.log('  - Splash dismissal logic is broken')
+      console.log('  - Backend/dependencies not available')
+      console.log('')
+      console.log('Check for SPLASH_ONLY.png in the artifact directory for evidence.')
+      console.log('')
+      
+      // Mark as QC_INVALID
+      const metadata = writeExecutionMetadata(artifactDir, timestamp, testResult, screenshots, true)
+      
+      const output = {
+        artifactPath: artifactDir,
+        timestamp,
+        screenshotCount: screenshots.length,
+        testPassed: false,
+        qcInvalid: true,
+        splashFailure: true,
+      }
+      
+      const outputPath = path.join(artifactDir, 'phase1_output.json')
+      fs.writeFileSync(outputPath, JSON.stringify(output, null, 2))
+      console.log('OUTPUT_JSON:' + JSON.stringify(output))
+      
+      // Exit with QC_INVALID code
+      process.exit(2)
+    }
     
     if (screenshots.length === 0) {
       console.warn('⚠️  No screenshots captured. Check test execution.')

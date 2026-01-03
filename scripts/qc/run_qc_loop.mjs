@@ -221,6 +221,58 @@ async function main() {
       
       if (phase1.output) {
         artifactPath = phase1.output.artifactPath
+        
+        // Check for QC_INVALID due to splash failure
+        if (phase1.output.qcInvalid || phase1.output.splashFailure) {
+          console.log('')
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          console.log('  ⚠️  QC RUN MARKED AS INVALID')
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          console.log('')
+          console.log('Reason: Splash screen did not dismiss within timeout')
+          console.log('')
+          console.log('This QC run is INVALID because:')
+          console.log('  • Screenshots were taken with splash screen visible')
+          console.log('  • GLM-4.6V cannot interpret whether splash "should" be visible')
+          console.log('  • Visual QC requires ACTUAL application UI, not startup states')
+          console.log('')
+          console.log('The pipeline will STOP here. GLM analysis will NOT run.')
+          console.log('')
+          console.log('What to do:')
+          console.log('  1. Check application startup performance')
+          console.log('  2. Verify splash dismissal logic is working')
+          console.log('  3. Look for SPLASH_ONLY.png in artifact directory')
+          console.log('  4. Check backend/dependency availability')
+          console.log('')
+          console.log(`Artifact directory: ${artifactPath}`)
+          console.log('')
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          
+          // Exit with QC_INVALID code
+          process.exit(2)
+        }
+      }
+      
+      if (phase1.exitCode === 2) {
+        // Exit code 2 = QC_INVALID
+        console.log('')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('  ⚠️  QC RUN MARKED AS INVALID (Exit Code 2)')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('')
+        console.log('The execution phase returned exit code 2, indicating QC_INVALID.')
+        console.log('This typically means the test environment is not ready for visual QC.')
+        console.log('')
+        console.log('Common causes:')
+        console.log('  • Splash screen timeout (app startup >30 seconds)')
+        console.log('  • Application failed to load properly')
+        console.log('  • Test environment misconfiguration')
+        console.log('')
+        console.log(`Artifact directory: ${artifactPath || '(not created)'}`)
+        console.log('')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        
+        process.exit(2)
       }
       
       if (phase1.exitCode !== 0 && !artifactPath) {
