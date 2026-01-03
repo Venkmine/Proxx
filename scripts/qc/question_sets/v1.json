@@ -1,0 +1,68 @@
+{
+  "version": "v1",
+  "description": "Core UI visibility questions for Awaire Proxy - Initial release",
+  "created": "2026-01-03",
+  "questions": [
+    {
+      "id": "splash_visible",
+      "question": "Is there a splash screen or loading screen visible that covers most of the window?",
+      "type": "boolean",
+      "significance": "Splash presence may indicate app not fully loaded",
+      "category": "app_state"
+    },
+    {
+      "id": "progress_bar_visible",
+      "question": "Is there a horizontal progress bar visible anywhere in the interface?",
+      "type": "boolean",
+      "significance": "Progress bar visibility during jobs",
+      "category": "job_state"
+    },
+    {
+      "id": "queue_panel_visible",
+      "question": "Is there a queue or job list panel visible on the left or right side?",
+      "type": "boolean",
+      "significance": "Queue panel layout verification",
+      "category": "layout"
+    },
+    {
+      "id": "player_area_visible",
+      "question": "Is there a video player or preview area visible in the center?",
+      "type": "boolean",
+      "significance": "Main content area visibility",
+      "category": "layout"
+    },
+    {
+      "id": "zoom_controls_visible",
+      "question": "Are there zoom controls (buttons with + or -, or a slider) visible near the player area?",
+      "type": "boolean",
+      "significance": "Zoom control accessibility",
+      "category": "controls"
+    },
+    {
+      "id": "ui_elements_clipped",
+      "question": "Are any UI elements cut off, clipped, or extending beyond the visible window boundaries?",
+      "type": "boolean",
+      "significance": "Layout overflow detection",
+      "category": "layout_errors"
+    },
+    {
+      "id": "error_message_visible",
+      "question": "Is there any error message, warning banner, or red-colored alert visible?",
+      "type": "boolean",
+      "significance": "Error state detection",
+      "category": "error_state"
+    },
+    {
+      "id": "primary_action_button",
+      "question": "Is there a prominent action button (like 'Start', 'Render', or 'Add') visible?",
+      "type": "boolean",
+      "significance": "Primary CTA visibility",
+      "category": "controls"
+    }
+  ],
+  "interpretation_hints": {
+    "splash_only_detection": "If splash_visible=yes AND player_area_visible=no AND queue_panel_visible=no, app may not be fully loaded",
+    "critical_failures": ["ui_elements_clipped", "error_message_visible"],
+    "required_for_pass": ["player_area_visible"]
+  }
+}

@@ -17,6 +17,11 @@
     "test:e2e:truth": "cd ../qa/verify/ui/audit_truth_surface && E2E_TEST=true E2E_AUDIT_MODE=0 playwright test",
     "test:e2e:audit": "cd ../qa/verify/ui/audit_internal_mode && E2E_TEST=true E2E_AUDIT_MODE=1 playwright test",
     "test:e2e:report": "node ../scripts/build_e2e_audit_report.mjs",
+    "qc:visual": "node ../scripts/qc/run_visual_qc.mjs",
+    "qc:visual:glm": "node ../scripts/qc/run_glm_visual_judge.mjs",
+    "qc:interpret": "node ../scripts/qc/interpret_glm_report.mjs",
+    "qc:loop": "node ../scripts/qc/run_qc_loop.mjs",
+    "qc:diff": "node ../scripts/qc/diff_glm_reports.mjs",
     "electron:dev": "tsc -p tsconfig.electron.json && sh ./rename-electron-js-to-mjs.sh && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist-electron/main.mjs",
     "electron:build": "tsc -p tsconfig.electron.json && sh ./rename-electron-js-to-mjs.sh",
     "pnpm:electron:dev": "pnpm --filter ./frontend electron:dev"
