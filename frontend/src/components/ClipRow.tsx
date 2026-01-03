@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { StatusBadge } from './StatusBadge'
 import { Button } from './Button'
+import { JobProgressBar, type DeliveryStage as DeliveryStageType } from './JobProgressBar'
 
 /**
  * ClipRow component - first-class clip display in the queue.
@@ -96,6 +97,7 @@ interface ClipRowProps {
   id: string
   sourcePath: string
   status: string
+  deliveryStage?: string  // Phase H: queued, starting, encoding, finalizing, completed, failed
   failureReason?: string | null
   warnings?: string[]
   metadata?: ClipMetadata
@@ -107,8 +109,9 @@ interface ClipRowProps {
   onSettingsClick?: () => void
   // Thumbnail preview
   thumbnail?: string | null
-  // Progress tracking
-  progressPercent?: number  // 0-100
+  // Progress tracking (Phase H: honest progress reporting)
+  progressPercent?: number  // 0-100, only when real data available
+  etaSeconds?: number | null  // Only when calculable from real signal
 }
 
 // Extract filename from full path
@@ -133,6 +136,7 @@ export function ClipRow({
   id: _id,
   sourcePath,
   status,
+  deliveryStage,
   failureReason,
   warnings = [],
   metadata = {},
@@ -144,6 +148,7 @@ export function ClipRow({
   onSettingsClick,
   thumbnail,
   progressPercent = 0,
+  etaSeconds,
 }: ClipRowProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -283,67 +288,18 @@ export function ClipRow({
             )}
           </div>
           
-          {/* Progress indicator for running clips */}
+          {/* Phase H: Honest delivery progress indicator */}
           {isRunning && (
-            <div 
-              style={{ 
-                marginTop: '0.5rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.375rem',
-              }}
-            >
-              {/* Status row with spinner */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {/* Spinner */}
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '0.875rem',
-                    height: '0.875rem',
-                    borderRadius: '50%',
-                    border: '2px solid var(--text-muted)',
-                    borderTopColor: 'var(--button-primary-bg)',
-                    animation: 'spin 1s linear infinite',
-                    flexShrink: 0,
-                  }}
-                />
-                {/* Label with progress percentage */}
-                <span
-                  style={{
-                    fontSize: '0.6875rem',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
-                    color: 'var(--button-primary-bg)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  Encoding{progressPercent > 0 && ` ${Math.round(progressPercent)}%`}
-                </span>
-              </div>
-              
-              {/* Progress bar (only when progress > 0) */}
-              {progressPercent > 0 && (
-                <div
-                  style={{
-                    width: '100%',
-                    height: '3px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    borderRadius: '2px',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.min(100, Math.max(0, progressPercent))}%`,
-                      height: '100%',
-                      backgroundColor: 'var(--button-primary-bg)',
-                      transition: 'width 300ms ease-out',
-                    }}
-                  />
-                </div>
-              )}
+            <div style={{ marginTop: '0.5rem' }}>
+              <JobProgressBar
+                progress={{
+                  status: 'running',
+                  delivery_stage: deliveryStage as DeliveryStageType,
+                  progress_percent: progressPercent,
+                  eta_seconds: etaSeconds,
+                }}
+                compact={false}
+              />
             </div>
           )}
         </div>

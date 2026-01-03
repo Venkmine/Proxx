@@ -8,7 +8,7 @@ Models are optimized for remote visibility, not control.
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
-from app.jobs.models import JobStatus, TaskStatus
+from app.jobs.models import JobStatus, TaskStatus, DeliveryStage
 
 
 class HealthResponse(BaseModel):
@@ -68,6 +68,9 @@ class ClipTaskDetail(BaseModel):
     
     # State
     status: TaskStatus
+    
+    # Phase H: Delivery progress stage for honest progress
+    delivery_stage: DeliveryStage = DeliveryStage.QUEUED
     
     # Timestamps
     started_at: Optional[datetime] = None

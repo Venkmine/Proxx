@@ -23,6 +23,7 @@ interface ClipTask {
   id: string
   source_path: string
   status: string
+  delivery_stage?: string  // Phase H: queued, starting, encoding, finalizing, completed, failed
   failure_reason?: string | null
   warnings?: string[]
   started_at?: string | null
@@ -921,6 +922,7 @@ export function JobGroup({
                       id={task.id}
                       sourcePath={task.source_path}
                       status={task.status}
+                      deliveryStage={task.delivery_stage}
                       failureReason={task.failure_reason}
                       warnings={task.warnings}
                       metadata={{
@@ -942,6 +944,7 @@ export function JobGroup({
                       }
                       thumbnail={task.thumbnail}
                       progressPercent={task.progress_percent}
+                      etaSeconds={task.eta_seconds}
                     />
                   </div>
                 )

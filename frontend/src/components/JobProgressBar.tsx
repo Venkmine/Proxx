@@ -1,22 +1,18 @@
 /**
- * JobProgressBar — Per-Job Status Indicator
+ * JobProgressBar — Honest Delivery Progress Indicator
  * 
- * Simplified to show only real states:
- * - Encoding (running)
- * - Completed
- * - Failed
+ * Phase H: Shows delivery stage with honest progress reporting.
+ * - Stage-based labels (queued, starting, encoding, finalizing, completed, failed)
+ * - Progress bar only when real data exists (FFmpeg with timing)
+ * - ETA only when derived from real signal
+ * - Indeterminate spinner for Resolve or FFmpeg without timing
+ * - No fake percentages
  * 
- * No fake progress, no percentage, no ETA, no interpolation.
- * 
- * ============================================================================
- * V1 INTENTIONAL OMISSION: No progress bar, no percentage, no ETA
- * ============================================================================
- * Why: Progress estimation requires frame count analysis and FFmpeg output
- * parsing that was not reliable in testing. Users saw "80%" stuck for minutes.
- * The simple status badge ("Encoding") is honest about what we know.
- * 
- * If you are about to add a progress bar, stop and read DECISIONS.md.
- * ============================================================================
+ * Visual honesty rules:
+ * - Determinate bar: Only when progress_percent > 0
+ * - ETA: Only when eta_seconds exists and > 0
+ * - Indeterminate bar: Resolve jobs or FFmpeg without timing data
+ * - Fast jobs: Still show brief "Encoding" phase
  */
 
 // ============================================================================
@@ -24,14 +20,98 @@
 // ============================================================================
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type DeliveryStage = 'queued' | 'starting' | 'encoding' | 'finalizing' | 'completed' | 'failed'
 
 export interface JobProgress {
   status: JobStatus
+  delivery_stage?: DeliveryStage
+  progress_percent?: number  // 0-100, only set when real data available
+  eta_seconds?: number | null  // Estimated seconds remaining, only when calculable
 }
 
 interface JobProgressBarProps {
   progress: JobProgress
   compact?: boolean
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function getStageLabel(stage: DeliveryStage | undefined, status: JobStatus): string {
+  if (stage) {
+    switch (stage) {
+      case 'queued': return 'Queued'
+      case 'starting': return 'Starting'
+      case 'encoding': return 'Encoding'
+      case 'finalizing': return 'Finalizing'
+      case 'completed': return 'Completed'
+      case 'failed': return 'Failed'
+    }
+  }
+  
+  // Fallback to status
+  switch (status) {
+    case 'running': return 'Encoding'
+    case 'completed': return 'Completed'
+    case 'failed': return 'Failed'
+    case 'cancelled': return 'Cancelled'
+    case 'pending': return 'Pending'
+    default: return 'Pending'
+  }
+}
+
+function getStageColor(stage: DeliveryStage | undefined, status: JobStatus): string {
+  if (stage === 'completed' || status === 'completed') {
+    return 'var(--status-complete-bg)'
+  }
+  if (stage === 'failed' || status === 'failed') {
+    return 'var(--status-failed-bg)'
+  }
+  if (status === 'cancelled') {
+    return 'var(--text-dim)'
+  }
+  if (stage === 'encoding' || status === 'running') {
+    return 'var(--button-primary-bg)'
+  }
+  return 'var(--text-muted)'
+}
+
+function formatETA(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`
+  }
+  const minutes = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  return `${minutes}m ${secs}s`
+}
+
+function shouldShowProgress(progress: JobProgress): boolean {
+  // Only show progress bar when we have real progress data
+  return (
+    (progress.status === 'running' || progress.delivery_stage === 'encoding') &&
+    typeof progress.progress_percent === 'number' &&
+    progress.progress_percent > 0
+  )
+}
+
+function shouldShowIndeterminate(progress: JobProgress): boolean {
+  // Show indeterminate for active stages without progress data
+  return (
+    (progress.status === 'running' ||
+     progress.delivery_stage === 'starting' ||
+     progress.delivery_stage === 'encoding') &&
+    (!progress.progress_percent || progress.progress_percent === 0)
+  )
+}
+
+function shouldShowETA(progress: JobProgress): boolean {
+  // Only show ETA if we have real signal and it's meaningful
+  return (
+    typeof progress.eta_seconds === 'number' &&
+    progress.eta_seconds > 0 &&
+    progress.eta_seconds < 86400  // Less than 24 hours
+  )
 }
 
 // ============================================================================
@@ -42,78 +122,126 @@ export function JobProgressBar({
   progress,
   compact = false,
 }: JobProgressBarProps) {
-  const { status } = progress
+  const stageLabel = getStageLabel(progress.delivery_stage, progress.status)
+  const stageColor = getStageColor(progress.delivery_stage, progress.status)
+  const showProgress = shouldShowProgress(progress)
+  const showIndeterminate = shouldShowIndeterminate(progress)
+  const showETA = shouldShowETA(progress)
   
-  // Status-based colors
-  const getStatusColor = () => {
-    switch (status) {
-      case 'running':
-        return 'var(--button-primary-bg)'
-      case 'completed':
-        return 'var(--status-complete-bg)'
-      case 'failed':
-        return 'var(--status-failed-bg)'
-      case 'cancelled':
-        return 'var(--text-dim)'
-      case 'pending':
-      default:
-        return 'var(--text-muted)'
-    }
-  }
-  
-  const getStatusText = () => {
-    switch (status) {
-      case 'running':
-        return 'Encoding'
-      case 'completed':
-        return 'Completed'
-      case 'failed':
-        return 'Failed'
-      case 'cancelled':
-        return 'Cancelled'
-      case 'pending':
-      default:
-        return 'Pending'
-    }
-  }
-  
-  // Simple status display - no progress bar, no fake progress
   return (
     <div 
       data-testid={compact ? "job-progress-bar-compact" : "job-progress-bar"}
       style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
+        flexDirection: 'column',
+        gap: '0.25rem',
+        minWidth: compact ? '120px' : '160px',
       }}
     >
-      {/* Spinner for running state */}
-      {status === 'running' && (
-        <span
+      {/* Stage label and ETA row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        justifyContent: 'space-between',
+      }}>
+        {/* Stage indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+          {/* Spinner for active stages */}
+          {showIndeterminate && (
+            <span
+              data-testid="progress-spinner"
+              style={{
+                display: 'inline-block',
+                width: compact ? '0.625rem' : '0.75rem',
+                height: compact ? '0.625rem' : '0.75rem',
+                borderRadius: '50%',
+                border: '2px solid var(--text-muted)',
+                borderTopColor: stageColor,
+                animation: 'spin 1s linear infinite',
+                flexShrink: 0,
+              }}
+            />
+          )}
+          
+          {/* Stage label */}
+          <span style={{
+            fontSize: compact ? '0.625rem' : '0.6875rem',
+            fontFamily: 'var(--font-mono)',
+            fontWeight: (showProgress || showIndeterminate) ? 600 : 400,
+            color: stageColor,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}>
+            {stageLabel}
+          </span>
+        </div>
+        
+        {/* ETA (only when reliable) */}
+        {showETA && progress.eta_seconds && (
+          <span
+            data-testid="progress-eta"
+            style={{
+              fontSize: compact ? '0.625rem' : '0.6875rem',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-dim)',
+              whiteSpace: 'nowrap',
+            }}
+            title="Estimated time remaining (based on encoding speed)"
+          >
+            ~{formatETA(progress.eta_seconds)}
+          </span>
+        )}
+      </div>
+      
+      {/* Progress bar (determinate only when real data exists) */}
+      {showProgress && (
+        <div
+          data-testid="progress-bar-container"
           style={{
-            display: 'inline-block',
-            width: compact ? '0.625rem' : '0.75rem',
-            height: compact ? '0.625rem' : '0.75rem',
-            borderRadius: '50%',
-            border: '2px solid var(--text-muted)',
-            borderTopColor: 'var(--button-primary-bg)',
-            animation: 'spin 1s linear infinite',
-            flexShrink: 0,
+            width: '100%',
+            height: compact ? '3px' : '4px',
+            backgroundColor: 'var(--divider-color)',
+            borderRadius: '2px',
+            overflow: 'hidden',
           }}
-        />
+        >
+          <div
+            data-testid="progress-bar-fill"
+            style={{
+              width: `${Math.min(100, Math.max(0, progress.progress_percent || 0))}%`,
+              height: '100%',
+              backgroundColor: stageColor,
+              transition: 'width 0.3s ease-out',
+            }}
+          />
+        </div>
       )}
       
-      {/* Status text */}
-      <span style={{
-        fontSize: compact ? '0.625rem' : '0.6875rem',
-        fontFamily: 'var(--font-mono)',
-        fontWeight: status === 'running' ? 600 : 400,
-        color: getStatusColor(),
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-      }}>
-        {getStatusText()}
-      </span>
+      {/* Indeterminate bar (for Resolve or FFmpeg without timing) */}
+      {showIndeterminate && (
+        <div
+          data-testid="progress-bar-indeterminate"
+          style={{
+            width: '100%',
+            height: compact ? '3px' : '4px',
+            backgroundColor: 'var(--divider-color)',
+            borderRadius: '2px',
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              width: '30%',
+              height: '100%',
+              backgroundColor: stageColor,
+              animation: 'indeterminate 1.5s ease-in-out infinite',
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -61,6 +61,22 @@ class TaskStatus(str, Enum):
     FAILED = "failed"  # Failed during processing
 
 
+class DeliveryStage(str, Enum):
+    """
+    Phase H: Delivery progress stage for honest progress reporting.
+    
+    Represents the current stage of delivery encoding.
+    Used to show users what's happening without fake percentages.
+    """
+    
+    QUEUED = "queued"  # Waiting in queue
+    STARTING = "starting"  # Initializing engine/process
+    ENCODING = "encoding"  # Actively encoding
+    FINALIZING = "finalizing"  # Writing final output/cleanup
+    COMPLETED = "completed"  # Successfully finished
+    FAILED = "failed"  # Failed at any stage
+
+
 class ClipTask(BaseModel):
     """
     A single clip processing task.
@@ -77,6 +93,9 @@ class ClipTask(BaseModel):
     
     # State
     status: TaskStatus = TaskStatus.QUEUED
+    
+    # Phase H: Delivery progress stage (honest progress without fake percentages)
+    delivery_stage: DeliveryStage = DeliveryStage.QUEUED
     
     # Execution metadata
     started_at: Optional[datetime] = None

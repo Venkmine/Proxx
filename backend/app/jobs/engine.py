@@ -9,6 +9,7 @@ Phase 4 scope: State management only, no execution.
 Execution hooks are stubs for Phase 5+ integration.
 Phase 8: Reporting integration for job and clip diagnostics.
 Phase 16: Execution engine integration (FFmpeg first).
+Phase H: Honest delivery progress with stage-based tracking.
 
 ============================================================================
 V1 GUARDRAIL
@@ -39,7 +40,7 @@ Invariants enforced:
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, TYPE_CHECKING
-from .models import Job, ClipTask, JobStatus, TaskStatus
+from .models import Job, ClipTask, JobStatus, TaskStatus, DeliveryStage
 from .state import validate_job_transition, validate_task_transition
 from .errors import JobEngineError
 
@@ -362,6 +363,7 @@ class JobEngine:
         Update a task's status.
         
         Validates state transition and updates metadata.
+        Phase H: Also updates delivery_stage for honest progress tracking.
         
         Args:
             task: The task to update
@@ -378,6 +380,17 @@ class JobEngine:
         # Update status
         old_status = task.status
         task.status = new_status
+        
+        # Phase H: Update delivery stage based on status
+        if new_status == TaskStatus.QUEUED:
+            task.delivery_stage = DeliveryStage.QUEUED
+        elif new_status == TaskStatus.RUNNING:
+            # Will be updated to ENCODING by engine's progress callback
+            task.delivery_stage = DeliveryStage.STARTING
+        elif new_status == TaskStatus.COMPLETED:
+            task.delivery_stage = DeliveryStage.COMPLETED
+        elif new_status in (TaskStatus.FAILED, TaskStatus.SKIPPED):
+            task.delivery_stage = DeliveryStage.FAILED
         
         # Update timestamps
         if old_status == TaskStatus.QUEUED and new_status == TaskStatus.RUNNING:
@@ -613,6 +626,9 @@ class JobEngine:
                     """Update task with progress info for UI polling."""
                     task.progress_percent = progress_info.progress_percent
                     task.eta_seconds = progress_info.eta_seconds
+                    # Phase H: Set delivery stage to ENCODING when progress starts
+                    if progress_info.progress_percent > 0 and task.delivery_stage == DeliveryStage.STARTING:
+                        task.delivery_stage = DeliveryStage.ENCODING
                     # Phase 20: Enhanced progress fields
                     if hasattr(progress_info, 'encoding_fps'):
                         # Store on task for monitoring queries

@@ -226,6 +226,7 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
             id=task.id,
             source_path=task.source_path,
             status=task.status,
+            delivery_stage=task.delivery_stage,  # Phase H: Honest delivery progress
             started_at=task.started_at,
             completed_at=task.completed_at,
             output_path=task.output_path,  # Phase 16.1: Include output path
