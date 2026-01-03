@@ -76,6 +76,38 @@ The UI QC Loop is a **reversible, closed-loop visual verification pipeline** whe
 
 ---
 
+## Action-Scoped QC
+
+In addition to scenario-based visual QC, the loop now supports **action-scoped QC** for individual user actions.
+
+### Key Differences
+
+| Aspect | Scenario QC | Action QC |
+|--------|-------------|-----------|
+| Scope | Full test scenario | Single user action |
+| Screenshots | Multiple, per phase | One, post-settle |
+| Backend correlation | None | Required |
+| Verdict granularity | Per scenario | Per action |
+
+### How It Works
+
+For each instrumented action (e.g., `click_create_job`):
+1. **Prior state** is recorded from UI
+2. **Backend signals** are captured (job created? error reason?)
+3. **UI settles** before screenshot (spinner, error, or timeout)
+4. **Single screenshot** captured with DOM snapshot
+5. **Correlated verdict** considers both backend + UI
+
+### Action Outcomes
+
+- `VERIFIED_OK` — Backend succeeded, UI matches expected state
+- `VERIFIED_NOT_OK` — Backend or UI failed unexpectedly
+- `BLOCKED_PRECONDITION` — Backend unavailable (not a UI bug)
+
+See [QC_ACTION_TRACE.md](./QC_ACTION_TRACE.md) for the full schema.
+
+---
+
 ## Phase Details
 
 ### Phase 1: Execution
@@ -448,8 +480,8 @@ artifacts/ui/visual/
 ### Required Environment Variables
 
 ```bash
-# GLM API access
-export GLM_API_KEY=your-api-key
+# GLM API access (GLM-4.6V visual model)
+export GLM_API_KEY=a4bee94a75af4be7a4b2685228ff2d29.ADO4pKcjuxR7RD6k
 
 # Optional: Custom artifact path
 export VISUAL_QC_ARTIFACT_DIR=/path/to/artifacts

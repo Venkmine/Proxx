@@ -358,18 +358,49 @@ async function main() {
   // PHASE 4: Decision
   printBanner('PHASE 4 — DECISION')
   
+  // Load full interpretation to get action-scoped data
+  let actionSummary = null
+  if (artifactPath) {
+    const interpPath = path.join(artifactPath, 'qc_interpretation.json')
+    if (fs.existsSync(interpPath)) {
+      try {
+        const interpData = JSON.parse(fs.readFileSync(interpPath, 'utf-8'))
+        if (interpData.actions) {
+          actionSummary = interpData.actions.aggregate
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+  }
+  
   const decision = {
     classification: interpretationResult.overall,
     confidence: interpretationResult.confidence,
     artifactPath,
     glmReportPath,
     timestamp: new Date().toISOString(),
+    // Action-scoped QC summary
+    actions: actionSummary ? {
+      total: actionSummary.total_actions,
+      verified_ok: actionSummary.verified_ok,
+      verified_not_ok: actionSummary.verified_not_ok,
+      blocked_precondition: actionSummary.blocked_precondition,
+      blocked_actions: actionSummary.blocked_actions,
+      failed_actions: actionSummary.failed_actions,
+    } : null,
   }
   
   if (interpretationResult.overall === 'VERIFIED_OK') {
     console.log('  ✅ QC PASS')
     console.log('')
     console.log('  All visual checks passed.')
+    if (actionSummary && actionSummary.blocked_precondition > 0) {
+      console.log(`  ⏸️  ${actionSummary.blocked_precondition} action(s) blocked by preconditions (not failures).`)
+      for (const blocked of actionSummary.blocked_actions || []) {
+        console.log(`     - ${blocked.action_id}: ${blocked.reason}`)
+      }
+    }
     console.log('  No action required.')
     decision.action = 'NONE'
     decision.exitCode = 0

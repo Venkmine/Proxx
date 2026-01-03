@@ -494,10 +494,38 @@ async function main() {
     // Aggregate results
     const aggregate = aggregateInterpretations(interpretations)
     
+    // ========================================================================
+    // ACTION-SCOPED QC (if action traces exist)
+    // ========================================================================
+    const actionTraces = loadActionTraces(artifactDir)
+    let actionInterpretations = []
+    let actionAggregate = null
+    
+    if (actionTraces.length > 0) {
+      console.log('')
+      console.log('🎯 Processing action traces...')
+      
+      for (const trace of actionTraces) {
+        const interp = interpretActionTrace(trace)
+        actionInterpretations.push(interp)
+        
+        const icon = interp.is_success ? '✅' :
+                     interp.is_blocked ? '⏸️' : '❌'
+        console.log(`  ${icon} ${trace.action_id}: ${trace.qc_outcome}`)
+      }
+      
+      actionAggregate = aggregateActionInterpretations(actionInterpretations)
+      console.log('')
+      console.log(`  Action Summary:`)
+      console.log(`    ✅ VERIFIED_OK: ${actionAggregate.verified_ok}`)
+      console.log(`    ❌ VERIFIED_NOT_OK: ${actionAggregate.verified_not_ok}`)
+      console.log(`    ⏸️  BLOCKED_PRECONDITION: ${actionAggregate.blocked_precondition}`)
+    }
+    
     // Build interpretation report
-    const artifactDir = path.dirname(glmReportPath)
+    const artifactDir2 = path.dirname(glmReportPath)
     const interpretation = {
-      version: '1.0.0',
+      version: '1.1.0', // Bumped for action-scoped QC support
       phase: 'INTERPRETATION',
       generatedAt: new Date().toISOString(),
       glmReportPath,
@@ -513,18 +541,31 @@ async function main() {
           path: WORKFLOW_SPEC.path,
           states: WORKFLOW_SPEC.states,
         } : null,
-        note: 'QC judgements are limited to features defined in UI_QC_BEHAVIOUR_SPEC.md',
+        actionTraceSpec: 'docs/QC_ACTION_TRACE.md',
+        note: 'QC judgements are limited to features defined in UI_QC_BEHAVIOUR_SPEC.md. Action-scoped QC overrides screenshot-only judgement.',
       },
       
       overall: aggregate,
       
+      // Scenario-based (screenshot) results
       screenshots: interpretations,
+      
+      // Action-scoped results (if available)
+      actions: actionInterpretations.length > 0 ? {
+        traces: actionInterpretations,
+        aggregate: actionAggregate,
+      } : null,
       
       summary: {
         total: interpretations.length,
         verified_ok: interpretations.filter(i => i.classification === 'VERIFIED_OK').length,
         verified_not_ok: interpretations.filter(i => i.classification === 'VERIFIED_NOT_OK').length,
         qc_invalid: interpretations.filter(i => i.classification === 'QC_INVALID').length,
+        // Action summary
+        actions_total: actionInterpretations.length,
+        actions_verified_ok: actionAggregate?.verified_ok || 0,
+        actions_verified_not_ok: actionAggregate?.verified_not_ok || 0,
+        actions_blocked: actionAggregate?.blocked_precondition || 0,
       },
       
       // If there are failures, generate fix tasks
@@ -536,10 +577,19 @@ async function main() {
           findings: i.findings,
           suggestedAction: generateFixSuggestion(i),
         })),
+      
+      // Action-level fix tasks
+      actionFixTasks: actionInterpretations
+        .filter(a => a.is_failure)
+        .map(a => ({
+          action_id: a.action_id,
+          issue: a.qc_reason,
+          backend_signals: a.backend_signals,
+        })),
     }
     
     // Write interpretation
-    const interpretationPath = path.join(artifactDir, 'qc_interpretation.json')
+    const interpretationPath = path.join(artifactDir2, 'qc_interpretation.json')
     fs.writeFileSync(interpretationPath, JSON.stringify(interpretation, null, 2))
     
     console.log('')
@@ -554,6 +604,13 @@ async function main() {
     console.log(`    ✅ VERIFIED_OK: ${interpretation.summary.verified_ok}`)
     console.log(`    ❌ VERIFIED_NOT_OK: ${interpretation.summary.verified_not_ok}`)
     console.log(`    ⚠️  QC_INVALID: ${interpretation.summary.qc_invalid}`)
+    if (actionInterpretations.length > 0) {
+      console.log('')
+      console.log(`  Actions:`)
+      console.log(`    ✅ VERIFIED_OK: ${interpretation.summary.actions_verified_ok}`)
+      console.log(`    ❌ VERIFIED_NOT_OK: ${interpretation.summary.actions_verified_not_ok}`)
+      console.log(`    ⏸️  BLOCKED: ${interpretation.summary.actions_blocked}`)
+    }
     console.log('')
     console.log(`  Report: ${interpretationPath}`)
     console.log('')
@@ -600,6 +657,115 @@ function generateFixSuggestion(interpretation) {
   }
   
   return 'Manual investigation required'
+}
+
+// ============================================================================
+// ACTION-SCOPED QC INTERPRETATION
+// ============================================================================
+
+/**
+ * Load action traces from the actions artifact directory.
+ * See docs/QC_ACTION_TRACE.md for schema.
+ */
+function loadActionTraces(baseArtifactDir) {
+  const actionsDir = path.join(baseArtifactDir, '..', 'actions')
+  
+  if (!fs.existsSync(actionsDir)) {
+    return []
+  }
+  
+  const traces = []
+  
+  // Scan timestamp directories
+  const timestamps = fs.readdirSync(actionsDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name)
+  
+  for (const ts of timestamps) {
+    const tsDir = path.join(actionsDir, ts)
+    
+    // Scan action directories
+    const actionDirs = fs.readdirSync(tsDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name)
+    
+    for (const actionId of actionDirs) {
+      const tracePath = path.join(tsDir, actionId, 'action_trace.json')
+      
+      if (fs.existsSync(tracePath)) {
+        try {
+          const trace = JSON.parse(fs.readFileSync(tracePath, 'utf-8'))
+          traces.push({
+            ...trace,
+            trace_path: tracePath,
+          })
+        } catch (e) {
+          console.warn(`⚠️  Failed to parse action trace: ${tracePath}`)
+        }
+      }
+    }
+  }
+  
+  return traces
+}
+
+/**
+ * Interpret action traces according to QC_ACTION_TRACE.md rules.
+ * 
+ * For click_create_job:
+ * - If backend_signals.job_created == false AND error_category is precondition/backend:
+ *   → BLOCKED_PRECONDITION
+ * - If backend_signals.job_created == true AND UI violates spec:
+ *   → VERIFIED_NOT_OK
+ * - If backend_signals.job_created == true AND UI matches spec:
+ *   → VERIFIED_OK
+ */
+function interpretActionTrace(trace) {
+  const actionId = trace.action_id
+  const backend = trace.backend_signals || {}
+  const evaluation = trace.evaluation_details || {}
+  
+  // Action already has qc_outcome from instrumentation
+  // We validate and potentially override based on GLM analysis
+  
+  const interpretation = {
+    action_id: actionId,
+    trace_id: trace.trace_id,
+    prior_state: trace.prior_workflow_state,
+    expected_transition: trace.expected_transition,
+    backend_signals: backend,
+    qc_outcome: trace.qc_outcome,
+    qc_reason: trace.qc_reason,
+    
+    // Flag for aggregation
+    is_blocked: trace.qc_outcome === 'BLOCKED_PRECONDITION',
+    is_failure: trace.qc_outcome === 'VERIFIED_NOT_OK',
+    is_success: trace.qc_outcome === 'VERIFIED_OK',
+  }
+  
+  return interpretation
+}
+
+/**
+ * Aggregate action interpretations.
+ */
+function aggregateActionInterpretations(actionInterpretations) {
+  if (actionInterpretations.length === 0) {
+    return null
+  }
+  
+  const blocked = actionInterpretations.filter(a => a.is_blocked)
+  const failed = actionInterpretations.filter(a => a.is_failure)
+  const passed = actionInterpretations.filter(a => a.is_success)
+  
+  return {
+    total_actions: actionInterpretations.length,
+    verified_ok: passed.length,
+    verified_not_ok: failed.length,
+    blocked_precondition: blocked.length,
+    blocked_actions: blocked.map(a => ({ action_id: a.action_id, reason: a.qc_reason })),
+    failed_actions: failed.map(a => ({ action_id: a.action_id, reason: a.qc_reason })),
+  }
 }
 
 main()

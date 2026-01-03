@@ -88,6 +88,15 @@ A UI that *appears* to work but lies is a QA failure.
 
 UI correctness for automated QC is defined in [UI_QC_BEHAVIOUR_SPEC.md](./UI_QC_BEHAVIOUR_SPEC.md) and [UI_QC_WORKFLOW.md](./UI_QC_WORKFLOW.md). These documents are authoritative for QC purposes.
 
+### Action-Scoped QC
+
+QC now reasons **per user action**, not just per screenshot. For each meaningful action (e.g., clicking "Create Job"):
+- Backend signals are captured alongside visual state
+- Screenshots are contextual evidence, not absolute verdicts
+- Backend + UI correlation is required for judgement
+
+See [QC_ACTION_TRACE.md](./QC_ACTION_TRACE.md) for the action trace schema.
+
 ### UI Visual Verification (MANDATORY)
 
 **Any UI change requires Electron screenshots as evidence.**
