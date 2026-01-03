@@ -40,9 +40,20 @@ This specification does **not** define:
 | Hidden when | `idle` |
 | Enabled when | N/A (passive display, not interactive) |
 
+**REQUIRED_VISIBLE_WHEN:**
+- `source_loaded`
+- `job_running`
+- `job_complete`
+
+**REQUIRED_BEHAVIOUR:**
+- A visible player shell or placeholder MUST render once a source is loaded
+- Player area MUST occupy the central panel region
+- Rendering branding-only text (e.g., "FORGE") is NOT sufficient after `source_loaded`
+
 **Notes:**
 - In `idle` state, the area displays Awaire logo at ~12% opacity. This is **not** considered a player/preview.
 - The presence of the branded idle background is expected in `idle` — QC must not flag this as missing player.
+- **USABILITY:** After `source_loaded`, the player MUST show source-related content, NOT idle branding.
 
 ---
 
@@ -72,9 +83,18 @@ This specification does **not** define:
 | Hidden when | `idle`, `source_loaded`, `job_complete` |
 | Enabled when | N/A (informational only) |
 
+**REQUIRED_VISIBLE_WHEN:**
+- `job_running` (when backend reports encoding/processing)
+
+**REQUIRED_BEHAVIOUR:**
+- A visual progress indicator (determinate or indeterminate) MUST be visible during `job_running`
+- Absence of progress bar during `job_running` is a **QC FAILURE**
+- Progress bar MUST be clearly distinguishable from static UI elements
+
 **Notes:**
 - Progress bar is part of the job status display, not a standalone component.
 - May show indeterminate state during certain encoding phases.
+- **USABILITY:** Users MUST have visual feedback that processing is occurring.
 
 ---
 
@@ -89,9 +109,18 @@ This specification does **not** define:
 | Enabled when | `source_loaded` (at least one source file selected) |
 | Disabled when | `idle`, `job_running`, `job_complete` |
 
+**REQUIRED_ENABLED_WHEN:**
+- `source_loaded` AND backend prerequisites are satisfied
+
+**REQUIRED_BEHAVIOUR:**
+- Disabled state MUST include an explanation if backend blocks execution
+- Users MUST understand why the button is disabled (tooltip, label, or inline message)
+- Button MUST NOT be disabled without a visible reason when source is loaded
+
 **Notes:**
 - Button visibility is constant; only enabled state changes.
 - Located in the left panel (job configuration area).
+- **USABILITY:** Unexplained disabled states are a QC failure.
 
 ---
 
@@ -121,9 +150,44 @@ This specification does **not** define:
 | Hidden when | `idle`, `source_loaded` (no job selected) |
 | Enabled when | N/A (informational only) |
 
+**REQUIRED_VISIBLE_WHEN:**
+- All workflow states (panel container must always be visible)
+
+**REQUIRED_BEHAVIOUR:**
+- Panel MUST meet minimum usable width (≥ 300px)
+- Content MUST NOT be clipped or truncated
+- Status text MUST be fully readable without horizontal scrolling
+- During `job_running`, panel MUST reflect active processing state
+
 **Notes:**
 - Shows delivery stage (queued, starting, encoding, finalizing, completed, failed).
 - Part of the job card within queue_panel.
+- **USABILITY:** Truncated or clipped status information is a QC failure.
+
+---
+
+### zoom_controls
+
+**Description:** Zoom affordances for the player/preview area (buttons, dropdown, slider, or indicator).
+
+| Condition | State |
+|-----------|-------|
+| Visible when | `source_loaded`, `job_running` |
+| Hidden when | `idle`, `job_complete` |
+| Enabled when | `source_loaded` |
+
+**REQUIRED_VISIBLE_WHEN:**
+- `source_loaded`
+- `job_running`
+
+**REQUIRED_BEHAVIOUR:**
+- At least ONE visible zoom affordance MUST exist (button, dropdown, slider, or percentage indicator)
+- Zoom controls MUST be positioned near or within the player area
+- Absence of zoom controls when source is loaded is a **QC FAILURE**
+
+**Notes:**
+- Zoom controls may be disabled during `job_running` but must remain visible.
+- **USABILITY:** Users MUST be able to verify zoom level when previewing source content.
 
 ---
 

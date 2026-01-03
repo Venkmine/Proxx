@@ -88,6 +88,9 @@ A UI that *appears* to work but lies is a QA failure.
 
 UI correctness for automated QC is defined in [UI_QC_BEHAVIOUR_SPEC.md](./UI_QC_BEHAVIOUR_SPEC.md) and [UI_QC_WORKFLOW.md](./UI_QC_WORKFLOW.md). These documents are authoritative for QC purposes.
 
+> **Note:** QC now enforces **minimum usability requirements**, not just structural presence.
+> Features must be functionally useful in their expected states, not merely visible.
+
 ### Action-Scoped QC
 
 QC now reasons **per user action**, not just per screenshot. For each meaningful action (e.g., clicking "Create Job"):

@@ -11,6 +11,9 @@ The UI QC Loop is a **reversible, closed-loop visual verification pipeline** whe
 - No UI claim is made without visual confirmation
 - The loop can re-run after code changes with new questions
 
+> **Note:** QC now enforces **minimum usability requirements**, not just structural presence.
+> Features must be functionally useful in their expected states — idle branding where content is expected is a failure.
+
 ---
 
 ## Architectural Principle

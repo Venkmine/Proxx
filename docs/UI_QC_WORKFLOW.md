@@ -59,10 +59,16 @@ This document defines the **workflow states** used by automated QC to determine 
 - `queue_panel`
 - `create_job_button` (enabled)
 - `preview_controls` (if source supports playback)
+- `zoom_controls`
 
 **Expected Hidden/Inactive Features:**
 - `progress_bar`
 - `status_panel` (unless pending job selected)
+
+**MINIMUM USABILITY REQUIREMENTS (QC ENFORCED):**
+- `player_area` MUST be visible (not idle branding)
+- `zoom_controls` MUST be visible
+- `create_job_button` MUST be enabled unless backend-blocked (with explanation)
 
 **Allowed User Actions:**
 - Configure job settings
@@ -73,6 +79,7 @@ This document defines the **workflow states** used by automated QC to determine 
 **Forbidden Expectations:**
 - Progress bar is **never visible** in source_loaded (no job running).
 - Status panel shows no job stage information.
+- Player area showing only idle branding ("FORGE") is a **QC FAILURE**.
 
 ---
 
@@ -91,9 +98,15 @@ This document defines the **workflow states** used by automated QC to determine 
 - `progress_bar`
 - `status_panel` (showing delivery stage)
 - `create_job_button` (disabled)
+- `zoom_controls` (visible but may be disabled)
 
 **Expected Hidden/Inactive Features:**
 - `preview_controls` (playback disabled during encoding)
+
+**MINIMUM USABILITY REQUIREMENTS (QC ENFORCED):**
+- `progress_bar` MUST be visible (determinate or indeterminate)
+- `status_panel` MUST reflect active processing state
+- Absence of visual progress feedback is a **QC FAILURE**
 
 **Allowed User Actions:**
 - View progress
@@ -103,6 +116,7 @@ This document defines the **workflow states** used by automated QC to determine 
 **Forbidden Expectations:**
 - Preview controls are **not interactive** during encoding.
 - Create Job button is **not enabled** during encoding.
+- Missing progress indicator is a **QC FAILURE**.
 
 ---
 
