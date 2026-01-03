@@ -7,11 +7,14 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import {
-  instrumentCreateJobAction,
-  inferWorkflowState,
-  waitForUISettle,
-} from '../../../qa/verify/ui/visual_regression/action_trace.js'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const projectRoot = path.resolve(__dirname, '../..')
+
+const actionTracePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/action_trace.js')
+const { instrumentCreateJobAction, inferWorkflowState, waitForUISettle } = await import(`file://${actionTracePath}`)
 
 /**
  * Load and parse UI_WORKFLOW_INTENTS.md
