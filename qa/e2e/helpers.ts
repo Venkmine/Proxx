@@ -3,9 +3,12 @@
  * 
  * Provides utilities for:
  * - Launching Electron app in test mode
- * - Polling job status
+ * - Mocking backend API responses
  * - File system verification
  * - UI interaction helpers
+ * 
+ * NOTE: E2E tests use MOCKED backend responses for UI testing.
+ * For actual encoding tests, see backend/tests/test_raw_encode_matrix.py
  */
 
 import { test as base, _electron as electron, ElectronApplication, Page } from '@playwright/test'
@@ -72,7 +75,78 @@ export const test = base.extend<ElectronFixtures>({
 export { expect } from '@playwright/test'
 
 /**
+ * Mock backend response utilities for UI E2E tests
+ */
+
+export interface MockJobResponse {
+  job_id: string
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  progress?: number
+  engine?: string
+  error?: string
+}
+
+export function createMockJobResponse(payload: any): MockJobResponse {
+  const jobId = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  return {
+    job_id: jobId,
+    status: 'QUEUED',
+    engine: payload.engine || 'ffmpeg',
+    progress: 0
+  }
+}
+
+export function createMockJobStatusResponse(jobId: string, status: MockJobResponse['status']): MockJobResponse {
+  return {
+    job_id: jobId,
+    status,
+    progress: status === 'COMPLETED' ? 100 : status === 'RUNNING' ? 50 : 0,
+    engine: 'ffmpeg'
+  }
+}
+
+/**
+ * Setup mock backend routes for Playwright page
+ */
+export async function setupMockBackend(page: Page) {
+  // Mock job creation endpoint
+  await page.route('**/control/jobs/create', async (route) => {
+    const request = route.request()
+    const payload = request.postDataJSON()
+    const response = createMockJobResponse(payload)
+    
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response)
+    })
+  })
+  
+  // Mock job status endpoint
+  await page.route('**/monitor/jobs/*', async (route) => {
+    const jobId = route.request().url().split('/').pop() || 'mock-job'
+    const response = createMockJobStatusResponse(jobId, 'COMPLETED')
+    
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response)
+    })
+  })
+  
+  // Mock health check endpoint
+  await page.route('**/health', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok' })
+    })
+  })
+}
+
+/**
  * Poll for job status until it reaches expected state or times out
+ * NOTE: In mocked mode, this returns immediately with mocked status
  */
 export async function pollJobStatus(
   page: Page,
