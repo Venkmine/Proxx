@@ -14,8 +14,10 @@ import { contextBridge, ipcRenderer } from 'electron';
  * occurs on selection — the frontend handles preflight after receiving paths.
  */
 
-// Expose audit mode flag from environment
-const E2E_AUDIT_MODE = process.env.E2E_AUDIT_MODE === '1'
+// Expose audit mode flag from command line arguments
+// The main process passes this via additionalArguments in webPreferences
+const auditModeArg = process.argv.find(arg => arg.startsWith('--e2e-audit-mode='))
+const E2E_AUDIT_MODE = auditModeArg?.split('=')[1] === '1'
 
 contextBridge.exposeInMainWorld('electron', {
   // Legacy: Select files only

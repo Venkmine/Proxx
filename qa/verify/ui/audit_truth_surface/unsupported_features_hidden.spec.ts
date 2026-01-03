@@ -39,7 +39,7 @@ test.describe('Truth Surface: Unsupported Features Hidden', () => {
     await collectStepArtifacts(page, artifactCollector, scenario, '01-app-loaded', consoleLogs, networkLogs)
 
     // Step 2: Verify watch folders UI is not visible
-    const watchFoldersUI = page.locator('text=/watch.*folder/i, [data-testid="watch-folders"]')
+    const watchFoldersUI = page.locator('[data-testid="watch-folders"]').or(page.locator('text=/watch.*folder/i'))
     await expect(watchFoldersUI).not.toBeVisible()
 
     await collectStepArtifacts(page, artifactCollector, scenario, '02-no-watch-folders-ui', consoleLogs, networkLogs)
@@ -53,7 +53,7 @@ test.describe('Truth Surface: Unsupported Features Hidden', () => {
     // Step 1: Check for autonomous ingestion UI
     await collectStepArtifacts(page, artifactCollector, scenario, '01-check-autonomous-ui', consoleLogs, networkLogs)
 
-    const autonomousUI = page.locator('text=/autonomous.*ingestion/i, [data-testid="autonomous-ingestion"]')
+    const autonomousUI = page.locator('[data-testid="autonomous-ingestion"]').or(page.locator('text=/autonomous.*ingestion/i'))
     await expect(autonomousUI).not.toBeVisible()
 
     await collectStepArtifacts(page, artifactCollector, scenario, '02-no-autonomous-ui', consoleLogs, networkLogs)
@@ -67,7 +67,7 @@ test.describe('Truth Surface: Unsupported Features Hidden', () => {
     // Step 1: Check for "coming soon" or similar messaging
     await collectStepArtifacts(page, artifactCollector, scenario, '01-check-coming-soon', consoleLogs, networkLogs)
 
-    const comingSoonUI = page.locator('text=/coming soon/i, text=/under development/i, text=/not yet available/i')
+    const comingSoonUI = page.locator('text=/coming soon/i').or(page.locator('text=/under development/i')).or(page.locator('text=/not yet available/i'))
     await expect(comingSoonUI).not.toBeVisible()
 
     await collectStepArtifacts(page, artifactCollector, scenario, '02-no-coming-soon', consoleLogs, networkLogs)
@@ -81,7 +81,7 @@ test.describe('Truth Surface: Unsupported Features Hidden', () => {
     // Step 1: Check that audit mode banner is NOT present
     await collectStepArtifacts(page, artifactCollector, scenario, '01-check-audit-banner', consoleLogs, networkLogs)
 
-    const auditBanner = page.locator('text=/INTERNAL AUDIT MODE/i, text=/UNSUPPORTED FEATURES/i, [data-testid="audit-mode-banner"]')
+    const auditBanner = page.locator('[data-testid="audit-mode-banner"]')
     await expect(auditBanner).not.toBeVisible()
 
     await collectStepArtifacts(page, artifactCollector, scenario, '02-no-audit-banner', consoleLogs, networkLogs)

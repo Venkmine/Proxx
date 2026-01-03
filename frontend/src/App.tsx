@@ -145,6 +145,8 @@ declare global {
       showItemInFolder: (filePath: string) => Promise<void>
       /** Open a path in the default application (for AttachProxiesInfoPanel) */
       openPath?: (path: string) => void
+      /** Check if audit mode is enabled (exposes unsupported features for testing) */
+      isAuditMode: () => boolean
     }
   }
 }

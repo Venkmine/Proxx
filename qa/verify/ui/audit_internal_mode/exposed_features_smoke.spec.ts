@@ -5,15 +5,37 @@
  * These tests are DIAGNOSTIC only - they're not required to pass for release.
  */
 
-import { test, expect } from './helpers'
+import { test, expect, collectStepArtifacts } from './helpers'
 
 test.describe('Internal Audit: Exposed Features', () => {
-  test('should expose watch folders UI in audit mode', async ({ page }) => {
+  const consoleLogs: string[] = []
+  const networkLogs: string[] = []
+
+  test.beforeEach(async ({ page }) => {
+    // Collect console logs
+    page.on('console', (msg) => {
+      consoleLogs.push(`[${msg.type()}] ${msg.text()}`)
+    })
+
+    // Collect network logs
+    page.on('request', (request) => {
+      networkLogs.push(`REQUEST: ${request.method()} ${request.url()}`)
+    })
+
+    page.on('response', (response) => {
+      networkLogs.push(`RESPONSE: ${response.status()} ${response.url()}`)
+    })
+  })
+
+  test('should expose watch folders UI in audit mode', async ({ page, artifactCollector }) => {
+    const scenario = 'watch-folders-smoke'
+    await collectStepArtifacts(page, artifactCollector, scenario, '01-check-watch-folders-ui', consoleLogs, networkLogs)
+
     // In audit mode, watch folders UI should be visible (even if not fully implemented)
     // If feature doesn't exist yet, this test will fail (expected diagnostic behavior)
     
     // Look for watch folders UI elements
-    const watchFoldersUI = page.locator('text=/watch.*folder/i, [data-testid="watch-folders"]')
+    const watchFoldersUI = page.locator('[data-testid="watch-folders"]').or(page.locator('text=/watch.*folder/i'))
     
     try {
       if (await watchFoldersUI.count() > 0) {
@@ -34,9 +56,12 @@ test.describe('Internal Audit: Exposed Features', () => {
     }
   })
 
-  test('should expose autonomous ingestion UI in audit mode', async ({ page }) => {
+  test('should expose autonomous ingestion UI in audit mode', async ({ page, artifactCollector }) => {
+    const scenario = 'autonomous-ingestion-smoke'
+    await collectStepArtifacts(page, artifactCollector, scenario, '01-check-autonomous-ui', consoleLogs, networkLogs)
+
     // Look for autonomous ingestion UI elements
-    const autonomousUI = page.locator('text=/autonomous.*ingestion/i, [data-testid="autonomous-ingestion"]')
+    const autonomousUI = page.locator('[data-testid="autonomous-ingestion"]').or(page.locator('text=/autonomous.*ingestion/i'))
     
     try {
       if (await autonomousUI.count() > 0) {
@@ -57,7 +82,10 @@ test.describe('Internal Audit: Exposed Features', () => {
     }
   })
 
-  test('should verify all exposed features have clear "not implemented" messaging', async ({ page }) => {
+  test('should verify all exposed features have clear "not implemented" messaging', async ({ page, artifactCollector }) => {
+    const scenario = 'feature-messaging'
+    await collectStepArtifacts(page, artifactCollector, scenario, '01-check-messaging', consoleLogs, networkLogs)
+
     // Features exposed in audit mode should either work OR have clear "not implemented" messaging
     // Silent no-ops are NOT acceptable
     
@@ -77,9 +105,12 @@ test.describe('Internal Audit: Exposed Features', () => {
     }
   })
 
-  test('should expose settings/configuration panels in audit mode', async ({ page }) => {
+  test('should expose settings/configuration panels in audit mode', async ({ page, artifactCollector }) => {
+    const scenario = 'settings-smoke'
+    await collectStepArtifacts(page, artifactCollector, scenario, '01-check-settings-ui', consoleLogs, networkLogs)
+
     // Look for settings/config UI that might be hidden in default mode
-    const settingsUI = page.locator('text=/settings/i, text=/configuration/i, [data-testid="settings"]')
+    const settingsUI = page.locator('[data-testid="settings"]').or(page.locator('text=/settings/i')).or(page.locator('text=/configuration/i'))
     
     try {
       if (await settingsUI.count() > 0) {
@@ -97,9 +128,12 @@ test.describe('Internal Audit: Exposed Features', () => {
     }
   })
 
-  test('should verify overlays/burnins UI in audit mode', async ({ page }) => {
+  test('should verify overlays/burnins UI in audit mode', async ({ page, artifactCollector }) => {
+    const scenario = 'overlays-smoke'
+    await collectStepArtifacts(page, artifactCollector, scenario, '01-check-overlays-ui', consoleLogs, networkLogs)
+
     // Look for overlay/burnin editing UI
-    const overlaysUI = page.locator('text=/overlay/i, text=/burn.*in/i, [data-testid="overlays"]')
+    const overlaysUI = page.locator('[data-testid="overlays"]').or(page.locator('text=/overlay/i')).or(page.locator('text=/burn.*in/i'))
     
     try {
       if (await overlaysUI.count() > 0) {

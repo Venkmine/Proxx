@@ -274,6 +274,9 @@ async function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: false,
+            additionalArguments: [
+                `--e2e-audit-mode=${process.env.E2E_AUDIT_MODE || '0'}`
+            ],
         },
     });
     // Save bounds on resize/move

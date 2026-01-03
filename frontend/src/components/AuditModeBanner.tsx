@@ -7,12 +7,36 @@
  * CRITICAL: This banner MUST be visible whenever audit mode is active.
  */
 
+import { useEffect, useState } from 'react'
 import './AuditModeBanner.css'
 
 export function AuditModeBanner() {
-  // Check if running in audit mode
-  const isAuditMode = typeof window !== 'undefined' && 
-                      window.electron?.isAuditMode?.() === true
+  const [isAuditMode, setIsAuditMode] = useState(false)
+  const [isClient, setIsClient] = useState(false)
+
+  // Hydration effect - ensure we're on the client
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  // Check audit mode after hydration
+  useEffect(() => {
+    if (!isClient) return
+
+    const checkAuditMode = () => {
+      if (typeof window !== 'undefined' && window.electron?.isAuditMode) {
+        const auditMode = window.electron.isAuditMode()
+        setIsAuditMode(auditMode)
+      }
+    }
+
+    // Check immediately
+    checkAuditMode()
+    
+    // Also check after a short delay to ensure Electron IPC is ready
+    const timer = setTimeout(checkAuditMode, 100)
+    return () => clearTimeout(timer)
+  }, [isClient])
 
   if (!isAuditMode) {
     return null
