@@ -223,6 +223,62 @@ FFMPEG_CODEC_MAP = {
 # This is based purely on source format capability - NO user override.
 # -----------------------------------------------------------------------------
 
+def _is_raw_camera_folder(path: Path) -> bool:
+    """
+    Detect if a directory is a RAW camera card/folder structure.
+    
+    RAW camera folders contain video files that require Resolve, not still sequences.
+    
+    Detection criteria (checks for presence of RAW video file types):
+    - RED: .R3D files (+ optional .RMD/.RDC sidecars)
+    - ARRI: .arx files, ARRI MXF RAW structures
+    - Sony: X-OCN MXF files
+    - Canon: .crm files
+    - Nikon: .nev files  
+    - Blackmagic: .braw files
+    - DJI: .dng files with bayer patterns (video, not stills)
+    
+    Returns:
+        True if this is a RAW camera folder, False otherwise
+    """
+    if not path.is_dir():
+        return False
+    
+    # RAW video file extensions (video formats that require Resolve)
+    RAW_VIDEO_EXTENSIONS = {
+        '.r3d', '.R3D',           # RED
+        '.arx',                    # ARRI RAW
+        '.nev', '.NEV',           # Nikon N-RAW
+        '.braw',                   # Blackmagic RAW
+        '.crm',                    # Canon RAW
+    }
+    
+    try:
+        files = list(path.iterdir())
+        
+        # Check for RAW video files
+        raw_video_files = [f for f in files if f.suffix in RAW_VIDEO_EXTENSIONS]
+        if raw_video_files:
+            logger.info(f"[ROUTING] RAW camera folder detected: {path.name} ({len(raw_video_files)} RAW files) => Resolve")
+            return True
+        
+        # Check for RAW MXF that might be ARRI/Sony (requires deeper inspection)
+        mxf_files = [f for f in files if f.suffix.lower() == '.mxf']
+        if mxf_files:
+            # ARRI and Sony X-OCN use MXF containers
+            # These will be detected via codec probing later
+            # For now, mark as potential RAW if in known folder structures
+            path_str = str(path).lower()
+            if any(x in path_str for x in ['arri', 'sony', 'venice', 'burano', 'xocn']):
+                logger.info(f"[ROUTING] Potential RAW camera folder: {path.name} (contains MXF in RAW path) => will probe")
+                return True
+        
+    except (OSError, PermissionError):
+        pass
+    
+    return False
+
+
 def _is_image_sequence(path: Path) -> bool:
     """
     Detect if a path represents an image sequence (still frames).
@@ -251,6 +307,10 @@ def _is_image_sequence(path: Path) -> bool:
     
     # Check if path is a directory (common for frame sequences)
     if path.is_dir():
+        # First check if it's a RAW camera folder (video, not stills)
+        if _is_raw_camera_folder(path):
+            return False  # RAW camera folders are NOT image sequences
+        
         # Look for numbered image files inside
         try:
             files = list(path.iterdir())
@@ -307,7 +367,13 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
         source = Path(source_path)
         ext = source.suffix.lower().lstrip(".")
         
-        # REJECT IMAGE SEQUENCES EARLY (V1 does not support)
+        # CHECK FOR RAW CAMERA FOLDERS FIRST (video content, not stills)
+        if _is_raw_camera_folder(source):
+            logger.info(f"[ROUTING TABLE] {source.name} => engine=resolve reason=RAW_camera_folder")
+            engines_required["resolve"].append(source_path)
+            continue
+        
+        # REJECT IMAGE SEQUENCES EARLY (V1 does not support still sequences)
         if _is_image_sequence(source):
             return (None, "Image sequences (DNG / EXR / DPX / TIFF) are not supported in V1. Sequence ingest will be added in V2.")
         

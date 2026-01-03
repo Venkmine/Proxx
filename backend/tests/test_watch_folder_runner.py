@@ -629,3 +629,147 @@ class TestImageSequenceRejection:
         assert engine_name is None
         assert error is not None
         assert "Image sequences" in error
+
+# -----------------------------------------------------------------------------
+# RAW Camera Folder Detection Tests
+# -----------------------------------------------------------------------------
+
+class TestRawCameraFolderDetection:
+    """Tests for RAW camera folder detection and routing."""
+    
+    def test_red_camera_folder_routes_to_resolve(self, tmp_path: Path):
+        """RED camera folder with .R3D files should route to Resolve."""
+        from headless_execute import _determine_job_engine
+        
+        # Create RED camera folder structure
+        red_folder = tmp_path / "A001_C001_0101AB"
+        red_folder.mkdir()
+        (red_folder / "A001_C001_0101AB_001.R3D").write_bytes(b"fake RED data")
+        (red_folder / "A001_C001_0101AB_002.R3D").write_bytes(b"fake RED data")
+        
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(red_folder)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name == "resolve", f"RED folder should route to Resolve, got: {engine_name}, error: {error}"
+        assert error is None
+    
+    def test_arri_camera_folder_routes_to_resolve(self, tmp_path: Path):
+        """ARRI camera folder with .arx files should route to Resolve."""
+        from headless_execute import _determine_job_engine
+        
+        # Create ARRI camera folder structure
+        arri_folder = tmp_path / "S001C001_210101_A001"
+        arri_folder.mkdir()
+        (arri_folder / "S001C001_210101_A001.0001.arx").write_bytes(b"fake ARRI data")
+        (arri_folder / "S001C001_210101_A001.0002.arx").write_bytes(b"fake ARRI data")
+        
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(arri_folder)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name == "resolve", f"ARRI folder should route to Resolve, got: {engine_name}, error: {error}"
+        assert error is None
+    
+    def test_nikon_nraw_folder_routes_to_resolve(self, tmp_path: Path):
+        """Nikon N-RAW folder with .nev files should route to Resolve."""
+        from headless_execute import _determine_job_engine
+        
+        # Create Nikon N-RAW folder structure
+        nikon_folder = tmp_path / "NIKON_RAW"
+        nikon_folder.mkdir()
+        (nikon_folder / "DSC_0001.NEV").write_bytes(b"fake Nikon N-RAW data")
+        (nikon_folder / "DSC_0002.NEV").write_bytes(b"fake Nikon N-RAW data")
+        
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(nikon_folder)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name == "resolve", f"Nikon N-RAW folder should route to Resolve, got: {engine_name}, error: {error}"
+        assert error is None
+    
+    def test_braw_folder_routes_to_resolve(self, tmp_path: Path):
+        """Blackmagic RAW folder with .braw files should route to Resolve."""
+        from headless_execute import _determine_job_engine
+        
+        # Create BRAW folder structure
+        braw_folder = tmp_path / "BMPCC_001"
+        braw_folder.mkdir()
+        (braw_folder / "A001_0101_001.braw").write_bytes(b"fake BRAW data")
+        (braw_folder / "A001_0101_002.braw").write_bytes(b"fake BRAW data")
+        
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(braw_folder)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name == "resolve", f"BRAW folder should route to Resolve, got: {engine_name}, error: {error}"
+        assert error is None
+    
+    def test_exr_sequence_folder_still_rejected(self, tmp_path: Path):
+        """EXR sequence folder should still be rejected (not RAW camera)."""
+        from headless_execute import _determine_job_engine
+        
+        # Create EXR sequence folder (still sequence, not video)
+        exr_folder = tmp_path / "render_sequence"
+        exr_folder.mkdir()
+        (exr_folder / "frame_0001.exr").write_bytes(b"fake EXR data")
+        (exr_folder / "frame_0002.exr").write_bytes(b"fake EXR data")
+        (exr_folder / "frame_0003.exr").write_bytes(b"fake EXR data")
+        
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        
+        job_spec = JobSpec(
+            sources=[str(exr_folder)],
+            output_directory=str(output_dir),
+            codec="prores_proxy",
+            container="mov",
+            resolution="full",
+            naming_template="{source_name}_proxy",
+        )
+        
+        engine_name, error = _determine_job_engine(job_spec)
+        
+        assert engine_name is None, "EXR sequence should be rejected"
+        assert error is not None
+        assert "Image sequences" in error
