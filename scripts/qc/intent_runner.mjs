@@ -18,8 +18,6 @@ import {
   instrumentCreateJobAction,
   inferWorkflowState,
   waitForUISettle,
-  type WorkflowState,
-  type ActionTrace,
 } from '../../../qa/verify/ui/visual_regression/action_trace.js'
 
 // ============================================================================
