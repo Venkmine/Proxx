@@ -128,6 +128,19 @@ export function JobProgressBar({
   const showIndeterminate = shouldShowIndeterminate(progress)
   const showETA = shouldShowETA(progress)
   
+  // DIAGNOSTIC: Log every render when diagnostic mode is enabled
+  if (typeof window !== 'undefined' && (window as any).DIAGNOSTIC_MODE) {
+    console.log('[DIAGNOSTIC] JobProgressBar render', {
+      delivery_stage: progress.delivery_stage,
+      progress_percent: progress.progress_percent,
+      eta_seconds: progress.eta_seconds,
+      status: progress.status,
+      showProgress,
+      showIndeterminate,
+      showETA,
+    })
+  }
+  
   return (
     <div 
       data-testid={compact ? "job-progress-bar-compact" : "job-progress-bar"}
@@ -200,10 +213,11 @@ export function JobProgressBar({
           data-testid="progress-bar-container"
           style={{
             width: '100%',
-            height: compact ? '3px' : '4px',
-            backgroundColor: 'var(--divider-color)',
-            borderRadius: '2px',
+            height: compact ? '5px' : '6px',
+            backgroundColor: 'rgba(30, 41, 59, 0.6)',
+            borderRadius: '3px',
             overflow: 'hidden',
+            boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.3)',
           }}
         >
           <div
@@ -213,6 +227,7 @@ export function JobProgressBar({
               height: '100%',
               backgroundColor: stageColor,
               transition: 'width 0.3s ease-out',
+              boxShadow: '0 0 4px rgba(59, 130, 246, 0.5)',
             }}
           />
         </div>
@@ -224,11 +239,12 @@ export function JobProgressBar({
           data-testid="progress-bar-indeterminate"
           style={{
             width: '100%',
-            height: compact ? '3px' : '4px',
-            backgroundColor: 'var(--divider-color)',
-            borderRadius: '2px',
+            height: compact ? '5px' : '6px',
+            backgroundColor: 'rgba(30, 41, 59, 0.6)',
+            borderRadius: '3px',
             overflow: 'hidden',
             position: 'relative',
+            boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.3)',
           }}
         >
           <div
@@ -238,6 +254,7 @@ export function JobProgressBar({
               height: '100%',
               backgroundColor: stageColor,
               animation: 'indeterminate 1.5s ease-in-out infinite',
+              boxShadow: '0 0 4px rgba(59, 130, 246, 0.5)',
             }}
           />
         </div>

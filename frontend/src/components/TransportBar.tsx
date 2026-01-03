@@ -176,7 +176,7 @@ const styles = {
   scrubberRow: {
     display: 'flex',
     alignItems: 'center',
-    padding: '0.5rem 0.75rem 0.25rem',
+    padding: '0.375rem 0.75rem 0.25rem',  // Reduced top padding
     gap: '0.5rem',
   } as React.CSSProperties,
   
@@ -185,8 +185,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    padding: '0.25rem 0.75rem 0.5rem',
-    minHeight: '44px',
+    padding: '0.25rem 0.75rem 0.375rem',  // Reduced bottom padding
+    minHeight: '40px',  // Reduced from 44px to reclaim space
   } as React.CSSProperties,
   
   controlGroup: {

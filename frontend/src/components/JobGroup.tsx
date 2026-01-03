@@ -374,6 +374,9 @@ export function JobGroup({
               : isHovered && !isTerminalState
                 ? '0 4px 12px rgba(0,0,0,0.15)' 
                 : 'none',
+          minWidth: 0,
+          maxWidth: '100%',
+          overflow: 'hidden',
         }}
       >
         {/* Job Header */}
@@ -610,7 +613,12 @@ export function JobGroup({
         </div>
 
         {/* Trust Stabilisation: Always-visible action buttons in header */}
-        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: '0.25rem', 
+          alignItems: 'center',
+          flexShrink: 0,
+        }}>
           {/* Render button for PENDING jobs - always visible */}
           {showStart && onStart && (
             <button
@@ -634,6 +642,7 @@ export function JobGroup({
                 alignItems: 'center',
                 gap: '0.25rem',
                 transition: 'all 0.15s',
+                whiteSpace: 'nowrap',
               }}
               title="Start rendering this job"
             >
@@ -663,6 +672,7 @@ export function JobGroup({
                 alignItems: 'center',
                 gap: '0.25rem',
                 transition: 'all 0.15s',
+                whiteSpace: 'nowrap',
               }}
               title="Request cancellation (best-effort, may not stop immediately)"
             >
@@ -691,6 +701,7 @@ export function JobGroup({
                 alignItems: 'center',
                 gap: '0.25rem',
                 transition: 'all 0.15s',
+                whiteSpace: 'nowrap',
               }}
               title="Remove this job from queue"
             >
