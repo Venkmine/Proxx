@@ -1,0 +1,17 @@
+{
+  "name": "proxx",
+  "version": "2.0.0",
+  "description": "ProRes video processing application",
+  "type": "module",
+  "scripts": {
+    "qc": "node scripts/qc/run_qc_loop.mjs",
+    "qc:intent": "node scripts/qc/run_qc_loop.mjs --intent"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}
