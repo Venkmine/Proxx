@@ -84,6 +84,15 @@ QA explicitly checks that:
 
 A UI that *appears* to work but lies is a QA failure.
 
+### Intent-Driven QC
+
+**QC is intent-driven, not component-driven.**
+
+All QC validation derives from explicit human workflow intents defined in [UI_WORKFLOW_INTENTS.md](./UI_WORKFLOW_INTENTS.md). This ensures:
+- QC validates what users actually expect, not what UI happens to show
+- Automation traces to documented intents, not inferred behavior
+- Disputes resolve by consulting intent definitions, not UI structure
+
 ### Automated UI QC
 
 UI correctness for automated QC is defined in [UI_QC_BEHAVIOUR_SPEC.md](./UI_QC_BEHAVIOUR_SPEC.md) and [UI_QC_WORKFLOW.md](./UI_QC_WORKFLOW.md). These documents are authoritative for QC purposes.

@@ -79,6 +79,17 @@ The UI QC Loop is a **reversible, closed-loop visual verification pipeline** whe
 
 ---
 
+## Intent-Driven QC
+
+**QC is intent-driven, not component-driven.**
+
+All visual verification derives from explicit human workflow intents defined in [UI_WORKFLOW_INTENTS.md](./UI_WORKFLOW_INTENTS.md). The QC loop validates that:
+- Each documented intent can be fulfilled end-to-end
+- UI evidence matches intent requirements
+- Failures are classified per intent's acceptable/hard failure definitions
+
+---
+
 ## Action-Scoped QC
 
 In addition to scenario-based visual QC, the loop now supports **action-scoped QC** for individual user actions.
