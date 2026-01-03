@@ -270,8 +270,9 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
         codec = _infer_codec_from_path(source)
         
         # Test FFmpeg decodability if possible (quick single-frame decode test)
-        # Skip decode test for RED files as they require RED SDK
-        ffmpeg_decodable = False if ext == "r3d" else _test_ffmpeg_decodable(source)
+        # Skip decode test for proprietary RAW files that require manufacturer SDKs
+        raw_extensions_no_decode = {"r3d", "arx", "nev"}
+        ffmpeg_decodable = False if ext in raw_extensions_no_decode else _test_ffmpeg_decodable(source)
         
         # Determine routing engine
         engine = get_execution_engine(container, codec)
@@ -414,12 +415,24 @@ def _infer_codec_from_path(source_path: Path) -> str:
         logger.info(f"[ROUTING TABLE] {source_path.name} ext=.r3d => engine=resolve reason=RED RAW")
         return "redcode"
     
+    # ARRI RAW files - route directly to Resolve without probing
+    # ARRI .arx files often fail ffprobe (require ARRI SDK) and must not be tested with FFmpeg
+    if ext == "arx":
+        logger.info(f"[ROUTING TABLE] {source_path.name} ext=.arx => engine=resolve reason=ARRI RAW")
+        return "arriraw"
+    
+    # Nikon N-RAW files - route directly to Resolve without probing
+    # Nikon .nev files report codec=unknown in ffprobe
+    if ext == "nev":
+        logger.info(f"[ROUTING TABLE] {source_path.name} ext=.nev => engine=resolve reason=Nikon N-RAW")
+        return "nikon_raw"
+    
     # RAW format extensions that require Resolve
     raw_extensions = {
-        "ari": "arriraw",      # ARRI RAW
+        "ari": "arriraw",      # ARRI RAW (.ari)
         "braw": "braw",        # Blackmagic RAW
         "crm": "canon_raw",    # Canon Cinema RAW
-        "dng": "cinemadng",    # CinemaDNG
+        "dng": "cinemadng",    # CinemaDNG / DJI RAW
         "exr": "exr",          # OpenEXR (not RAW, but requires Resolve)
     }
     

@@ -75,8 +75,6 @@ test.describe('RAW Directory UI Behavior Test', () => {
   
   // Test a subset of inputs for UI behavior
   test('should display job rows for RAW and non-RAW sources', async ({ page, app }) => {
-  // Test a subset of inputs for UI behavior
-  test('should display job rows for RAW and non-RAW sources', async ({ page, app }) => {
     console.log('\n🎨 Testing UI behavior with mocked backend')
     
     // Select a few representative files to test UI with
@@ -125,7 +123,6 @@ test.describe('RAW Directory UI Behavior Test', () => {
     console.log(`\n✅ UI behavior validated for ${testSamples.length} samples`)
   })
   
-  test('should show RAW format detection in UI', async () => {
   test('should show RAW format detection in UI', async () => {
     const rawInputs = testInputs.filter(i => i.expectedEngine === 'resolve' && i.type === 'file')
     expect(rawInputs.length).toBeGreaterThan(0)

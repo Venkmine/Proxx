@@ -236,6 +236,8 @@ const RAW_EXTENSIONS = new Set([
   '.braw',
   '.r3d', '.R3D',
   '.ari', '.arri',
+  '.arx',  // ARRI RAW (HDE/ARX format)
+  '.nev', '.NEV',  // Nikon N-RAW
   '.dng',
   '.cri', '.crm', // Canon RAW
   '.cine', // Phantom

@@ -28,6 +28,8 @@ RAW_EXTENSIONS = {
     '.braw',     # Blackmagic RAW
     '.ari',      # ARRIRAW
     '.arri',     # ARRIRAW
+    '.arx',      # ARRI RAW (HDE/ARX format)
+    '.nev',      # Nikon N-RAW
 }
 
 
@@ -97,14 +99,14 @@ def classify_file(file_path: Path, probe_data: Optional[Dict], ffmpeg_decodable:
     rel_path = str(file_path.relative_to('/Users/leon.grant/projects/Proxx/forge-tests/samples/RAW'))
     
     # RED RAW files - route directly to Resolve without probing
-    # RED files require RED SDK and often fail standard ffprobe
+    # Early return for proprietary RAW files (skip all probing logic)
     if ext == '.r3d':
         return {
             'relpath': rel_path,
             'ext': ext,
             'container': 'r3d',
             'codec_name': 'redcode',
-            'codec_tag': 'RED',
+            'codec_tag': '',
             'profile': '',
             'pix_fmt': '',
             'bit_depth': '',
@@ -114,6 +116,42 @@ def classify_file(file_path: Path, probe_data: Optional[Dict], ffmpeg_decodable:
             'classification': 'METADATA_ONLY',
             'engine': 'resolve',
             'reason': 'RED RAW requires Resolve (ffprobe requires RED SDK)',
+        }
+    
+    if ext == '.arx':
+        return {
+            'relpath': rel_path,
+            'ext': ext,
+            'container': 'arx',
+            'codec_name': 'arriraw',
+            'codec_tag': '',
+            'profile': '',
+            'pix_fmt': '',
+            'bit_depth': '',
+            'width': '',
+            'height': '',
+            'ffmpeg_decodable': False,
+            'classification': 'METADATA_ONLY',
+            'engine': 'resolve',
+            'reason': 'ARRI RAW (.arx) requires Resolve (ffprobe requires ARRI SDK)',
+        }
+    
+    if ext == '.nev':
+        return {
+            'relpath': rel_path,
+            'ext': ext,
+            'container': 'nev',
+            'codec_name': 'nikon_raw',
+            'codec_tag': '',
+            'profile': '',
+            'pix_fmt': '',
+            'bit_depth': '',
+            'width': '',
+            'height': '',
+            'ffmpeg_decodable': False,
+            'classification': 'METADATA_ONLY',
+            'engine': 'resolve',
+            'reason': 'Nikon N-RAW requires Resolve (ffprobe returns codec=unknown)',
         }
     
     # Extract metadata
@@ -151,6 +189,11 @@ def classify_file(file_path: Path, probe_data: Optional[Dict], ffmpeg_decodable:
         classification = 'METADATA_ONLY'
         engine = 'resolve'
         reason = 'ProRes RAW (codec_tag indicates RAW variant)'
+    
+    elif 'bayer' in video_info.get('pix_fmt', '').lower():
+        classification = 'METADATA_ONLY'
+        engine = 'resolve'
+        reason = f"Bayer RAW sensor data (pix_fmt={video_info.get('pix_fmt', '')}) - requires debayering in Resolve"
     
     elif not ffmpeg_decodable:
         classification = 'METADATA_ONLY'
