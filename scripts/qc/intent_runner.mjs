@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '../..')
 
-const actionTracePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/action_trace.js')
+const actionTracePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/action_trace.ts')
 const { instrumentCreateJobAction, inferWorkflowState, waitForUISettle } = await import(`file://${actionTracePath}`)
 
 /**
