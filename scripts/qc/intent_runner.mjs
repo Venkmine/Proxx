@@ -19,6 +19,9 @@ const { instrumentCreateJobAction, inferWorkflowState, waitForUISettle } = await
 const visualChangeGatePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/visual_change_gate.ts')
 const { assertVisualChange, recordVisualDiffMetrics } = await import(`file://${visualChangeGatePath}`)
 
+const finderDetectionPath = path.join(projectRoot, 'scripts/qc/finder_detection.mjs')
+const { assertFinderNotOpen, FinderDialogError } = await import(`file://${finderDetectionPath}`)
+
 /**
  * Load and parse UI_WORKFLOW_INTENTS.md
  */
@@ -473,7 +476,41 @@ export function createActionDriver() {
 export async function executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker = null, previousScreenshot = null) {
   const action = semanticAction.action
   
-  // STEP 2 — Enforce Renderer Liveness BEFORE action
+  // ===========================================================================
+  // STEP 1 — LOG ACTION START
+  // ===========================================================================
+  const actionStartTime = new Date().toISOString()
+  console.log(`   ⏱️  Action started: ${action} at ${actionStartTime}`)
+  
+  // ===========================================================================
+  // STEP 2 — DETECT FINDER DIALOG (HARD STOP)
+  // ===========================================================================
+  try {
+    assertFinderNotOpen(action)
+  } catch (e) {
+    if (e instanceof FinderDialogError) {
+      console.log(``)
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+      console.log(`  🚨 FINDER DIALOG DETECTED — QC INVALID`)
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+      console.log(`  Last Action: ${e.actionName}`)
+      console.log(`  Timestamp: ${e.timestamp}`)
+      console.log(`  Reason: ${e.message}`)
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+      console.log(``)
+      
+      return {
+        success: false,
+        error: e.message,
+        finder_dialog_detected: true,
+        last_action: e.actionName,
+        timestamp: e.timestamp,
+      }
+    }
+    throw e
+  }
+  
+  // STEP 3 — Enforce Renderer Liveness BEFORE action
   if (livenessTracker) {
     try {
       await livenessTracker.assertRendererIsAlive()
@@ -872,6 +909,37 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
     if (!result.success) {
       const reason = result.error || 'Action did not complete successfully'
       console.log(`   ❌ BLOCKED: ${reason}`)
+      
+      // FINDER DIALOG DETECTED — Immediate QC_INVALID (HARD STOP)
+      if (result.finder_dialog_detected) {
+        console.log('')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('  🚨 FINDER DIALOG DETECTED — QC INVALID')
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log(`  Last Action: ${result.last_action}`)
+        console.log(`  Timestamp: ${result.timestamp}`)
+        console.log(`  Reason: ${reason}`)
+        console.log(``)
+        console.log(`  This indicates the automation lost control to a native`)
+        console.log(`  macOS file dialog. QC cannot continue.`)
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('')
+        
+        return {
+          intent_id: intentId,
+          success: false,
+          completed_steps: completedSteps,
+          total_steps: intent.action_sequence.length,
+          action_traces: actionTraces,
+          workflow_states: workflowStates,
+          failure_reason: reason,
+          blocked_at: semanticAction.action,
+          qc_invalid: true,
+          qc_invalid_reason: `Finder dialog detected: ${reason}`,
+          finder_dialog_detected: true,
+          last_action: result.last_action,
+        }
+      }
       
       // STEP 3 — Wire liveness failures into QC_INVALID
       if (result.liveness_failure) {
