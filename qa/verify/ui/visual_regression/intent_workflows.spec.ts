@@ -9,7 +9,7 @@
  */
 
 import { test, expect } from './helpers'
-import { runIntent } from '../../../scripts/qc/intent_runner.mjs'
+import { runIntent } from '../../../../scripts/qc/intent_runner.mjs'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
