@@ -470,8 +470,22 @@ export function createActionDriver() {
   }
 }
 
-export async function executeSemanticAction(semanticAction, page, driver, artifactDir) {
+export async function executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker = null) {
   const action = semanticAction.action
+  
+  // STEP 2 — Enforce Renderer Liveness BEFORE action
+  if (livenessTracker) {
+    try {
+      await livenessTracker.assertRendererIsAlive()
+    } catch (e) {
+      console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+      return { 
+        success: false, 
+        error: e.message,
+        liveness_failure: true 
+      }
+    }
+  }
   
   // Log current state before action
   const stateBefore = await inferWorkflowState(page)
@@ -483,6 +497,20 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
       
       // Wait for UI to settle
       await waitForUISettle(page, 1000)
+      
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
       
       // Take screenshot after action
       const screenshotPath = path.join(artifactDir, `${action}.png`)
@@ -507,6 +535,20 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         console.log('   → Running preflight automatically...')
         await driver.clickRunPreflight(page)
         
+        // STEP 2 — Check liveness AFTER action
+        if (livenessTracker) {
+          try {
+            await livenessTracker.assertRendererIsAlive()
+          } catch (e) {
+            console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+            return { 
+              success: false, 
+              error: e.message,
+              liveness_failure: true 
+            }
+          }
+        }
+        
         // Take screenshot after preflight
         const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
         await page.screenshot({ path: screenshotPath, fullPage: true })
@@ -522,6 +564,20 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         console.log('   → Running preflight automatically...')
         await driver.clickRunPreflight(page)
         
+        // STEP 2 — Check liveness AFTER action
+        if (livenessTracker) {
+          try {
+            await livenessTracker.assertRendererIsAlive()
+          } catch (e) {
+            console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+            return { 
+              success: false, 
+              error: e.message,
+              liveness_failure: true 
+            }
+          }
+        }
+        
         // Take screenshot after preflight
         const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
         await page.screenshot({ path: screenshotPath, fullPage: true })
@@ -533,10 +589,39 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
     
     if (action === 'system_displays_preview') {
       const playerVisible = await page.locator('[data-testid="monitor-surface"], video, .video-player').first().isVisible()
+      
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
+      
       return { success: playerVisible }
     }
     
     if (action === 'user_configures_job') {
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
+      
       return { success: true }
     }
     
@@ -545,6 +630,20 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
       await waitForUISettle(page, 1000)
       
       const trace = await driver.clickCreateJob(page, artifactDir)
+      
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
       
       // Log state after job creation
       const stateAfter = await inferWorkflowState(page)
@@ -555,16 +654,61 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
     
     if (action === 'system_queues_job') {
       const jobVisible = await page.locator('[data-job-id]').first().isVisible()
+      
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
+      
       return { success: jobVisible }
     }
     
     if (action === 'system_processes_job') {
       const success = await driver.waitForJobRunning(page)
+      
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
+      
       return { success }
     }
     
     if (action === 'job_completes') {
       const success = await driver.waitForJobComplete(page)
+      
+      // STEP 2 — Check liveness AFTER action
+      if (livenessTracker) {
+        try {
+          await livenessTracker.assertRendererIsAlive()
+        } catch (e) {
+          console.log(`   ❌ LIVENESS FAILURE: ${e.message}`)
+          return { 
+            success: false, 
+            error: e.message,
+            liveness_failure: true 
+          }
+        }
+      }
+      
       return { success }
     }
     
@@ -594,7 +738,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
   console.log(`Total Steps: ${intent.action_sequence.length}\n`)
   
   const driver = createActionDriver()
-  const { page } = context
+  const { page, livenessTracker } = context
   
   const actionTraces = []
   const workflowStates = []
@@ -608,11 +752,27 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
     console.log(`\nSTEP ${semanticAction.step}: ${semanticAction.action}`)
     console.log(`   Actor: ${semanticAction.actor}`)
     
-    const result = await executeSemanticAction(semanticAction, page, driver, artifactDir)
+    const result = await executeSemanticAction(semanticAction, page, driver, artifactDir, livenessTracker)
     
     if (!result.success) {
       const reason = result.error || 'Action did not complete successfully'
       console.log(`   ❌ BLOCKED: ${reason}`)
+      
+      // STEP 3 — Wire liveness failures into QC_INVALID
+      if (result.liveness_failure) {
+        return {
+          intent_id: intentId,
+          success: false,
+          completed_steps: completedSteps,
+          total_steps: intent.action_sequence.length,
+          action_traces: actionTraces,
+          workflow_states: workflowStates,
+          failure_reason: reason,
+          blocked_at: semanticAction.action,
+          qc_invalid: true,
+          qc_invalid_reason: reason,
+        }
+      }
       
       return {
         intent_id: intentId,

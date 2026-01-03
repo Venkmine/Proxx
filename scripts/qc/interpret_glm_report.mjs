@@ -538,6 +538,31 @@ async function main() {
         console.log(`   Success: ${intentResult.success}`)
         console.log(`   Completed: ${intentResult.completed_steps}/${intentResult.total_steps}`)
         
+        // STEP 3 — Check for liveness failure (qc_invalid flag)
+        if (intentResult.qc_invalid) {
+          console.log(`   ⚠️  QC_INVALID: ${intentResult.qc_invalid_reason}`)
+          console.log('')
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          console.log('  LIVENESS FAILURE DETECTED')
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          console.log('')
+          console.log('The Electron app exited or renderer was destroyed during QC.')
+          console.log('This QC run is INVALID.')
+          console.log('')
+          console.log(`Reason: ${intentResult.qc_invalid_reason}`)
+          console.log(`Blocked at: ${intentResult.blocked_at}`)
+          console.log('')
+          console.log('QC Outcome: QC_INVALID')
+          console.log('Exit Code: 2')
+          console.log('')
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+          
+          // Override aggregate to QC_INVALID
+          aggregate.overall = 'QC_INVALID'
+          aggregate.reason = intentResult.qc_invalid_reason
+          aggregate.confidence = 'high'
+        }
+        
         if (!intentResult.success) {
           console.log(`   ⚠️  Blocked at: ${intentResult.blocked_at}`)
           console.log(`   Reason: ${intentResult.failure_reason}`)

@@ -18,6 +18,7 @@ import { test as base, _electron as electron, ElectronApplication, Page } from '
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createLivenessTracker, type LivenessTracker } from './liveness_enforcement'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -92,6 +93,7 @@ export interface ElectronFixtures {
   app: ElectronApplication
   page: Page
   visualCollector: VisualCollector
+  livenessTracker: LivenessTracker
 }
 
 export interface VisualCollector {
@@ -149,6 +151,18 @@ export const test = base.extend<ElectronFixtures>({
     await waitForAppReady(page)
     
     await use(page)
+  },
+
+  livenessTracker: async ({ app, page }, use) => {
+    const tracker = createLivenessTracker(app, page)
+    
+    // Set up app liveness tracking immediately
+    tracker.setupAppLivenessTracking()
+    
+    await use(tracker)
+    
+    // Clean up tracking on teardown
+    tracker.cleanup()
   },
 
   visualCollector: async ({}, use, testInfo) => {

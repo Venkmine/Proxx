@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '../../../..')
 
 test.describe('Intent-Driven Workflows', () => {
-  test('execute workflow intent', async ({ page, visualCollector }) => {
+  test('execute workflow intent', async ({ page, visualCollector, livenessTracker }) => {
     // Get intent ID from environment (default to INTENT_001)
     const intentId = process.env.INTENT_ID || 'INTENT_001'
     
@@ -30,10 +30,10 @@ test.describe('Intent-Driven Workflows', () => {
     // Wait for app to be ready
     await page.waitForLoadState('networkidle', { timeout: 15000 })
     
-    // Execute intent
+    // Execute intent with liveness tracker
     const result = await runIntent(
       intentId,
-      { page },
+      { page, livenessTracker },
       projectRoot,
       visualCollector.artifactDir
     )
