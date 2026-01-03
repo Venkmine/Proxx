@@ -202,15 +202,18 @@ export function createActionDriver() {
       console.log(`      Test file: ${TEST_FILE}`)
       
       try {
-        // STEP 1: Mock window.electron.openFiles() BEFORE clicking button
-        console.log('      → Setting up mock for window.electron.openFiles()...')
+        // STEP 1: Mock window.electron.openFilesOrFolders() BEFORE clicking button
+        // CRITICAL: Must mock openFilesOrFolders, NOT openFiles!
+        // The UI calls openFilesOrFolders() (see SourceSelectionPanel.tsx)
+        console.log('      → Setting up mock for window.electron.openFilesOrFolders()...')
         await page.evaluate((filePath) => {
           if (!window.electron) {
             window.electron = {}
           }
           // Replace with mock that returns our test file (NO native dialog)
-          window.electron.openFiles = async () => {
-            console.log('[TEST] openFiles() mocked, returning:', filePath)
+          // This EXACTLY replicates what Electron's dialog.showOpenDialog returns
+          window.electron.openFilesOrFolders = async () => {
+            console.log('[TEST] openFilesOrFolders() mocked, returning:', [filePath])
             return [filePath]
           }
         }, TEST_FILE)
@@ -224,19 +227,18 @@ export function createActionDriver() {
         console.log('      → File selection triggered, waiting for backend processing...')
         
         // The app should now:
-        // 1. Call window.electron.openFiles() (our mock)
+        // 1. Call window.electron.openFilesOrFolders() (our mock)
         // 2. Get [TEST_FILE] back
-        // 3. Call setSelectedFiles([TEST_FILE])
-        // 4. ingestion.ingest() validates via /filesystem/validate-path
-        // 5. Backend probes file with ffprobe
-        // 6. UI updates with metadata
+        // 3. Call addPaths([TEST_FILE])
+        // 4. Store updates state to SELECTED_UNVALIDATED
+        // 5. UI shows "Run Preflight" button
         
         // Wait for evidence of successful load (up to 20 seconds for backend processing)
         const indicators = [
           // Filename appears in UI
           page.locator(`text=${path.basename(TEST_FILE)}`).first(),
-          // Create Job button becomes enabled
-          page.locator('button:has-text("Create Job"):not([disabled])').first(),
+          // Run Preflight button becomes visible (state is now SELECTED_UNVALIDATED)
+          page.locator('button:has-text("Run Preflight")').first(),
           // Source metadata visible
           page.locator('[data-testid*="metadata"], [data-testid*="source"]').first(),
         ]
