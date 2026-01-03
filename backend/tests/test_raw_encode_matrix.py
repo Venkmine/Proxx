@@ -133,86 +133,158 @@ def output_dir():
 class TestRawEncodeMatrix:
     """Backend integration tests for RAW encode matrix."""
     
-    @pytest.mark.parametrize("test_file", pytest.lazy_fixture("test_files"), ids=lambda f: f.name)
-    def test_encode_file(self, test_client, test_file, output_dir):
-        """Test encoding for a single file with correct engine routing."""
+    def test_encode_all_files(self, test_client, test_files, output_dir):
+        """Test encoding for all discovered files with correct engine routing."""
         
-        # Determine expected engine
-        is_raw = is_raw_format(test_file)
-        expected_engine = 'resolve' if is_raw else 'ffmpeg'
+        results = []
         
-        print(f"\n  🧪 Testing: {test_file.name}")
-        print(f"     Format: {'RAW' if is_raw else 'non-RAW'}")
-        print(f"     Engine: {expected_engine}")
-        print(f"     Path: {test_file}")
-        
-        # Create job payload
-        payload = {
-            "source_paths": [str(test_file)],
-            "engine": expected_engine,
-            "deliver_settings": {
-                "output_dir": str(output_dir),
-                "video": {"codec": "prores_proxy"},
-                "audio": {"codec": "pcm_s16le"},
-                "file": {
-                    "container": "mov",
-                    "naming_template": "{source_name}__proxx"
+        for test_file in test_files:
+            # Determine expected engine
+            is_raw = is_raw_format(test_file)
+            expected_engine = 'resolve' if is_raw else 'ffmpeg'
+            
+            print(f"\n  🧪 Testing: {test_file.name}")
+            print(f"     Format: {'RAW' if is_raw else 'non-RAW'}")
+            print(f"     Engine: {expected_engine}")
+            print(f"     Path: {test_file}")
+            
+            # Create unique output dir for this test
+            import tempfile
+            temp_output = Path(tempfile.mkdtemp(prefix='proxx-test-'))
+            
+            try:
+                # Create job payload
+                payload = {
+                    "source_paths": [str(test_file)],
+                    "engine": expected_engine,
+                    "deliver_settings": {
+                        "output_dir": str(temp_output),
+                        "video": {"codec": "prores_proxy"},
+                        "audio": {"codec": "pcm_s16le"},
+                        "file": {
+                            "container": "mov",
+                            "naming_template": "{source_name}__proxx"
+                        }
+                    }
                 }
-            }
-        }
+                
+                # Create job
+                start_time = time.time()
+                response = test_client.post("/control/jobs/create", json=payload)
+                
+                # Assert job creation succeeded
+                if response.status_code != 200:
+                    print(f"     ✗ Job creation failed: {response.text}")
+                    results.append({'file': test_file.name, 'success': False, 'error': response.text})
+                    continue
+                
+                job_data = response.json()
+                if "job_id" not in job_data:
+                    print(f"     ✗ Response missing job_id")
+                    results.append({'file': test_file.name, 'success': False, 'error': 'Missing job_id'})
+                    continue
+                
+                job_id = job_data["job_id"]
+                print(f"     ✓ Job created: {job_id}")
+                
+                # Start the job (transitions from PENDING → RUNNING)
+                start_response = test_client.post(f"/control/jobs/{job_id}/start")
+                if start_response.status_code != 200:
+                    print(f"     ✗ Failed to start job: {start_response.text}")
+                    results.append({'file': test_file.name, 'success': False, 'error': f'Start failed: {start_response.text}'})
+                    continue
+                
+                print(f"     ✓ Job started")
+                
+                # Poll for job completion
+                max_attempts = 120  # 60 seconds with 0.5s intervals
+                attempts = 0
+                final_status = None
+                
+                while attempts < max_attempts:
+                    job_response = test_client.get(f"/monitor/jobs/{job_id}")
+                    if job_response.status_code != 200:
+                        if attempts == 0:
+                            print(f"     ⚠️  Status check failed: {job_response.status_code}")
+                            print(f"         Response: {job_response.text[:200]}")
+                        time.sleep(0.5)
+                        attempts += 1
+                        continue
+                    
+                    job_info = job_response.json()
+                    status = job_info.get("status", "UNKNOWN").upper()
+                    
+                    if attempts == 0:
+                        print(f"     📊 Initial status: {status}")
+                        print(f"         Full response: {job_info}")
+                    
+                    if status in ['COMPLETED', 'FAILED', 'ERROR']:
+                        final_status = status
+                        break
+                    
+                    time.sleep(0.5)
+                    attempts += 1
+                
+                duration = time.time() - start_time
+                
+                # Assert job completed successfully
+                if final_status != 'COMPLETED':
+                    error_msg = f"Job status: {final_status}, Time: {duration:.1f}s"
+                    print(f"     ✗ {error_msg}")
+                    results.append({'file': test_file.name, 'success': False, 'error': error_msg})
+                    continue
+                
+                print(f"     ✓ Job completed in {duration:.1f}s")
+                
+                # Verify output file exists
+                output_files = list(temp_output.glob('*.mov')) + list(temp_output.glob('*.mp4'))
+                if len(output_files) == 0:
+                    print(f"     ✗ No output files created")
+                    results.append({'file': test_file.name, 'success': False, 'error': 'No output files'})
+                    continue
+                
+                output_file = output_files[0]
+                if not output_file.exists():
+                    print(f"     ✗ Output file missing: {output_file}")
+                    results.append({'file': test_file.name, 'success': False, 'error': 'Output file missing'})
+                    continue
+                
+                # Verify output file is non-zero
+                file_size = output_file.stat().st_size
+                if file_size == 0:
+                    print(f"     ✗ Output file is empty")
+                    results.append({'file': test_file.name, 'success': False, 'error': 'Output file empty'})
+                    continue
+                
+                print(f"     ✓ Output: {output_file.name} ({file_size / 1024 / 1024:.2f} MB)")
+                results.append({'file': test_file.name, 'success': True})
+                
+            finally:
+                # Cleanup temp output dir
+                import shutil
+                if temp_output.exists():
+                    shutil.rmtree(temp_output)
         
-        # Create job
-        start_time = time.time()
-        response = test_client.post("/control/jobs/create", json=payload)
+        # Print summary
+        print(f"\n{'='*70}")
+        print(f"📊 Test Results:")
+        print(f"{'='*70}")
+        passed = len([r for r in results if r['success']])
+        failed = len([r for r in results if not r['success']])
+        print(f"Total: {len(results)}")
+        print(f"✓ Passed: {passed}")
+        print(f"✗ Failed: {failed}")
         
-        # Assert job creation succeeded
-        assert response.status_code == 200, f"Job creation failed: {response.text}"
+        if failed > 0:
+            print(f"\nFailed files:")
+            for r in results:
+                if not r['success']:
+                    print(f"  - {r['file']}: {r['error']}")
         
-        job_data = response.json()
-        assert "job_id" in job_data, "Response missing job_id"
+        print(f"{'='*70}\n")
         
-        job_id = job_data["job_id"]
-        print(f"     ✓ Job created: {job_id}")
-        
-        # Poll for job completion
-        max_attempts = 120  # 60 seconds with 0.5s intervals
-        attempts = 0
-        final_status = None
-        
-        while attempts < max_attempts:
-            job_response = test_client.get(f"/monitor/jobs/{job_id}")
-            assert job_response.status_code == 200, f"Failed to fetch job: {job_response.text}"
-            
-            job_info = job_response.json()
-            status = job_info.get("status", "UNKNOWN").upper()
-            
-            if status in ['COMPLETED', 'FAILED', 'ERROR']:
-                final_status = status
-                break
-            
-            time.sleep(0.5)
-            attempts += 1
-        
-        duration = time.time() - start_time
-        
-        # Assert job completed successfully
-        assert final_status == 'COMPLETED', \
-            f"Job did not complete successfully. Status: {final_status}, Time: {duration:.1f}s"
-        
-        print(f"     ✓ Job completed in {duration:.1f}s")
-        
-        # Verify output file exists
-        output_files = list(output_dir.glob('*.mov')) + list(output_dir.glob('*.mp4'))
-        assert len(output_files) > 0, f"No output files created in {output_dir}"
-        
-        output_file = output_files[0]
-        assert output_file.exists(), f"Output file does not exist: {output_file}"
-        
-        # Verify output file is non-zero
-        file_size = output_file.stat().st_size
-        assert file_size > 0, f"Output file is empty: {output_file}"
-        
-        print(f"     ✓ Output: {output_file.name} ({file_size / 1024 / 1024:.2f} MB)")
+        # Assert all passed
+        assert failed == 0, f"{failed}/{len(results)} files failed"
     
     def test_raw_files_route_to_resolve(self, test_client, test_files):
         """Verify RAW files are correctly identified and would route to Resolve."""

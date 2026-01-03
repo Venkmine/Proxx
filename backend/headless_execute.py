@@ -260,18 +260,30 @@ def _determine_job_engine(job_spec: JobSpec) -> Tuple[Optional[str], Optional[st
         # For now, use container-based heuristics for common RAW formats
         codec = _infer_codec_from_path(source)
         
-        logger.info(f"[ENGINE ROUTING] Source: {source.name}, container={container}, codec={codec}")
+        # Test FFmpeg decodability if possible (quick single-frame decode test)
+        ffmpeg_decodable = _test_ffmpeg_decodable(source)
         
+        # Determine routing engine
         engine = get_execution_engine(container, codec)
         
+        # Log routing table entry with full diagnostic metadata
         if engine == ExecutionEngine.FFMPEG:
-            logger.info(f"[ENGINE ROUTING] {source.name} → FFmpeg (standard format)")
+            logger.info(
+                f"[ROUTING TABLE] {source.name} container={container} codec={codec} "
+                f"ffmpeg_decodable={ffmpeg_decodable} => engine=ffmpeg reason=standard_format"
+            )
             engines_required["ffmpeg"].append(source_path)
         elif engine == ExecutionEngine.RESOLVE:
-            logger.info(f"[ENGINE ROUTING] {source.name} → Resolve (RAW format: {codec})")
+            logger.info(
+                f"[ROUTING TABLE] {source.name} container={container} codec={codec} "
+                f"ffmpeg_decodable={ffmpeg_decodable} => engine=resolve reason=raw_or_proprietary_format"
+            )
             engines_required["resolve"].append(source_path)
         else:
-            logger.warning(f"[ENGINE ROUTING] {source.name} → UNKNOWN (unsupported format)")
+            logger.warning(
+                f"[ROUTING TABLE] {source.name} container={container} codec={codec} "
+                f"ffmpeg_decodable={ffmpeg_decodable} => engine=UNKNOWN reason=unsupported_format"
+            )
             engines_required["unknown"].append(source_path)
     
     # Check for unknown formats
@@ -332,6 +344,42 @@ def _probe_codec_ffprobe(source_path: Path) -> Optional[str]:
     except (subprocess.TimeoutExpired, Exception):
         pass
     return None
+
+
+def _test_ffmpeg_decodable(source_path: Path) -> bool:
+    """
+    Test if FFmpeg can decode this file by attempting a single-frame decode.
+    
+    This is a quick diagnostic check (not used for routing decisions).
+    Routing is purely based on codec/container detection.
+    
+    Args:
+        source_path: Path to source file
+        
+    Returns:
+        True if FFmpeg can decode the file, False otherwise
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg or not source_path.exists():
+        return False
+    
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v", "error",
+                "-i", str(source_path),
+                "-map", "0:v:0",
+                "-frames:v", "1",
+                "-f", "null",
+                "-",
+            ],
+            capture_output=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, Exception):
+        return False
 
 
 def _infer_codec_from_path(source_path: Path) -> str:
