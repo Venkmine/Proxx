@@ -22,6 +22,7 @@ All automated tests, visual verification loops, and acceptance criteria trace ba
 | Scope | Responsibility | Environment | Validated By |
 |-------|---------------|-------------|--------------|
 | **UI QC** | UI workflow through job queuing | Electron + Playwright | INTENT_001 through INTENT_005 |
+| **Usability QC** | Static layout and usability sanity | Electron + Playwright | INTENT_010 |
 | **Execution QC** | Job processing through completion | Headless backend | INTENT_006 |
 
 ### Contract Boundary
@@ -490,6 +491,97 @@ node scripts/qc/run_execution_qc.mjs --output /tmp/exec_qc_result.json
 | Fixture | Description |
 |---------|-------------|
 | `single_proxy` | Generate a single ProRes proxy from test media |
+
+---
+
+## Usability QC Intents
+
+> **These intents validate static layout and usability issues, not workflow.**
+> They perform NO file selection, NO backend calls, and NO job creation.
+
+---
+
+### INTENT_010 — Basic Usability & Layout Sanity — Usability QC
+
+#### Human Goal
+
+> "I want to verify the app has no obvious layout bugs at standard resolution."
+
+This intent validates **static usability** — layout issues that would frustrate users regardless of workflow. It performs NO file selection, NO backend calls, and NO job creation.
+
+> ⚠️ **SCOPE BOUNDARY**: This intent validates layout only. It does not test any workflow or backend behavior.
+
+#### Preconditions
+
+- Application is running and idle
+- Window geometry is 1440x900 (standard QC resolution)
+- No source file loaded
+- No backend interaction required
+
+#### Execution Environment
+
+| Aspect | Value |
+|--------|-------|
+| Electron | ✅ Required |
+| Playwright | ✅ Required |
+| Backend | ❌ Not used |
+| File Selection | ❌ Not used |
+| Job Creation | ❌ Not used |
+
+#### Checks Performed
+
+| Check | Description | Failure Condition |
+|-------|-------------|-------------------|
+| No duplicate scrollbars in left panel | Nested scrollable containers create double scrollbars | >1 nested scrollable element with overflow-y: scroll/auto |
+| App window is resizable | Window should allow user resize unless explicitly locked | BrowserWindow.isResizable() returns false |
+| No buttons visually clipped at 1440x900 | All buttons must be fully visible | Any button bounding box extends beyond viewport |
+| No horizontal scrollbars in main panels | Horizontal scroll indicates layout overflow | Any main panel has scrollWidth > clientWidth |
+
+#### Action Sequence
+
+| Step | Action | Actor |
+|------|--------|-------|
+| 1 | `launch_electron` | System |
+| 2 | `wait_for_app_ready` | System |
+| 3 | `check_no_duplicate_scrollbars` | QC |
+| 4 | `check_window_resizable` | QC |
+| 5 | `check_no_clipped_buttons` | QC |
+| 6 | `check_no_horizontal_scrollbars` | QC |
+
+#### Required Evidence
+
+| Check | Evidence |
+|-------|----------|
+| Each check | Screenshot captured at time of check |
+| Result | JSON result file with pass/fail per check |
+
+#### Fail-Fast Behavior
+
+This intent uses **fail-fast** behavior:
+- If ANY check fails, mark VERIFIED_NOT_OK immediately
+- Capture screenshot at failure point
+- Stop remaining checks
+- Exit with failure
+
+#### Hard Failures
+
+| Failure | Why It's a Contract Violation |
+|---------|-------------------------------|
+| Duplicate scrollbars in left panel | Creates confusing nested scroll behavior |
+| Window not resizable | Restricts user control over workspace |
+| Buttons clipped at 1440x900 | Users cannot see or click essential controls |
+| Horizontal scrollbars in main panels | Indicates content overflow / broken layout |
+
+#### Invocation
+
+```bash
+# Run usability QC
+cd qa/verify/ui/visual_regression
+npx playwright test intent_010_usability.spec.ts
+
+# With headed mode for debugging
+npx playwright test intent_010_usability.spec.ts --headed
+```
 
 ---
 
