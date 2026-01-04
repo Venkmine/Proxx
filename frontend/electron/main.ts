@@ -323,9 +323,9 @@ async function createWindow() {
     center: isE2ETest, // Force center in test mode
     minWidth: 1280,
     minHeight: 800,
-    resizable: !isE2ETest, // Non-resizable in test mode
+    resizable: true, // Always resizable for user workflow flexibility
     fullscreen: false,
-    maximizable: !isE2ETest, // Non-maximizable in test mode
+    maximizable: true, // Always maximizable for user workflow flexibility
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 12, y: 12 },
     webPreferences: {
