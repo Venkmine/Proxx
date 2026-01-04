@@ -169,6 +169,66 @@ function checkIntent010Result(artifactPath) {
 }
 
 /**
+ * Check for INTENT_020 accessibility result and determine exit code
+ * 
+ * @param {string} artifactPath - Path to the artifact directory
+ * @returns {{ found: boolean, verdict?: string, severity?: string, failed_check_id?: string, report_path?: string, exitCode?: number }}
+ */
+function checkIntent020Result(artifactPath) {
+  if (!artifactPath) return { found: false }
+  
+  // Search for intent_020_result.json in artifact directory and subdirectories
+  const possiblePaths = [
+    path.join(artifactPath, 'intent_020_result.json'),
+  ]
+  
+  // Also search subdirectories
+  try {
+    const subdirs = fs.readdirSync(artifactPath, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => path.join(artifactPath, d.name, 'intent_020_result.json'))
+    possiblePaths.push(...subdirs)
+  } catch (e) {
+    // Ignore read errors
+  }
+  
+  for (const resultPath of possiblePaths) {
+    if (fs.existsSync(resultPath)) {
+      try {
+        const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8'))
+        
+        if (result.intent_id === 'INTENT_020') {
+          const response = {
+            found: true,
+            verdict: result.verdict,
+            severity: result.severity,
+            failed_check_id: result.failure_payload?.check_id || result.failed_at,
+            report_path: result.report_path || resultPath.replace('_result.json', '_report.md'),
+          }
+          
+          // Determine exit code based on severity
+          if (result.verdict === 'VERIFIED_OK') {
+            response.exitCode = 0
+          } else if (result.severity === 'HIGH') {
+            response.exitCode = 1 // Blocking failure
+          } else if (result.severity === 'MEDIUM') {
+            response.exitCode = 2 // Warning, re-run required
+          } else {
+            response.exitCode = 1 // Default to fail if severity unknown
+          }
+          
+          return response
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+  }
+  
+  return { found: false }
+}
+
+/**
  * Print INTENT_010 summary to terminal
  */
 function printIntent010Summary(intent010Result) {
@@ -188,6 +248,31 @@ function printIntent010Summary(intent010Result) {
     console.log(`     Failed Check: ${intent010Result.failed_check_id}`)
     console.log('')
     console.log(`  📝 Report: ${intent010Result.report_path}`)
+  }
+  
+  console.log('')
+}
+
+/**
+ * Print INTENT_020 summary to terminal
+ */
+function printIntent020Summary(intent020Result) {
+  console.log('')
+  console.log('┌──────────────────────────────────────────────────────────────┐')
+  console.log('│  INTENT_020 — Accessibility Gate                             │')
+  console.log('└──────────────────────────────────────────────────────────────┘')
+  console.log('')
+  
+  if (intent020Result.verdict === 'VERIFIED_OK') {
+    console.log('  ✅ ACCESSIBILITY: PASS')
+    console.log('     All accessibility and interaction checks passed.')
+  } else {
+    const severityEmoji = intent020Result.severity === 'HIGH' ? '🔴' : '🟡'
+    console.log(`  ❌ ACCESSIBILITY: FAIL`)
+    console.log(`     Severity: ${severityEmoji} ${intent020Result.severity}`)
+    console.log(`     Failed Check: ${intent020Result.failed_check_id}`)
+    console.log('')
+    console.log(`  📝 Report: ${intent020Result.report_path}`)
   }
   
   console.log('')
@@ -547,6 +632,50 @@ async function main() {
         console.log('  ⛔ BLOCKING: HIGH severity usability failure')
       } else {
         console.log('  ⚠️  WARNING: MEDIUM severity usability failure')
+      }
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('')
+      
+      // Stop backend before exit
+      await stopBackend()
+      
+      process.exit(decision.exitCode)
+    }
+  }
+  
+  // Check for INTENT_020 accessibility result (also takes precedence)
+  const intent020Result = checkIntent020Result(artifactPath)
+  
+  if (intent020Result.found) {
+    printIntent020Summary(intent020Result)
+    
+    // If INTENT_020 failed, it takes precedence over other QC decisions
+    if (intent020Result.verdict !== 'VERIFIED_OK') {
+      const decision = {
+        classification: 'VERIFIED_NOT_OK',
+        source: 'INTENT_020',
+        severity: intent020Result.severity,
+        failed_check: intent020Result.failed_check_id,
+        report_path: intent020Result.report_path,
+        artifactPath,
+        timestamp: new Date().toISOString(),
+        exitCode: intent020Result.exitCode,
+      }
+      
+      // Write decision
+      if (!options.dryRun && artifactPath) {
+        const decisionPath = path.join(artifactPath, 'qc_decision.json')
+        fs.writeFileSync(decisionPath, JSON.stringify(decision, null, 2))
+        console.log(`  Decision written to: ${decisionPath}`)
+      }
+      
+      console.log('')
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log(`  QC LOOP COMPLETE — Exit Code: ${decision.exitCode}`)
+      if (intent020Result.severity === 'HIGH') {
+        console.log('  ⛔ BLOCKING: HIGH severity accessibility failure')
+      } else {
+        console.log('  ⚠️  WARNING: MEDIUM severity accessibility failure')
       }
       console.log('═══════════════════════════════════════════════════════════════')
       console.log('')

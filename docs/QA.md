@@ -182,6 +182,73 @@ INTENT_010_UPDATE_BASELINE=1 npx playwright test intent_010_usability.spec.ts
 INTENT_010_HUMAN_CONFIRM=1 npx playwright test intent_010_usability.spec.ts
 ```
 
+### INTENT_020 — Accessibility & Interaction Sanity
+
+**UI changes affecting interactive elements MUST pass INTENT_020 before merge.**
+
+INTENT_020 validates accessibility and interaction properties that ensure all users can effectively interact with the UI:
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| Keyboard reachability | HIGH | All interactive elements must be reachable via Tab/Shift+Tab |
+| Focus indicators visible | MEDIUM | Focus indicators must be visible (no outline:none without replacement) |
+| Dead-click detection | HIGH | No visible button/link should be unresponsive to clicks |
+| Invisible interactive elements | MEDIUM | No interactive elements with opacity:0 or zero size |
+| Cursor/hitbox match | MEDIUM | Clickable area must match visible bounds |
+| Focus trap validation | MEDIUM | Modals must contain focusable elements |
+
+#### Property-Based Accessibility Invariants
+
+INTENT_020 validates architectural invariants using semantic checks:
+
+| Invariant | Description |
+|-----------|-------------|
+| KEYBOARD_REACHABILITY | Every visible interactive element has tabIndex >= 0 or is naturally focusable |
+| FOCUS_INDICATORS_VISIBLE | Every focusable element has outline or alternative focus indicator |
+| DEAD_CLICK_DETECTION | Every button/link has click handler or href |
+| INVISIBLE_INTERACTIVE_DETECTION | No element with pointer-events has opacity:0 or zero size |
+| CURSOR_HITBOX_MATCH | Clickable area within 10% of visual bounds |
+| FOCUS_TRAP_VALIDATION | Modals contain focusable descendants |
+
+These invariants are:
+- **Deterministic**: Same state produces same result
+- **CI-safe**: No human interaction required
+- **Fail-fast**: First violation terminates with screenshot
+- **Semantic-based**: Use ARIA roles and properties, not brittle selectors
+
+#### Exit Code Mapping
+
+| Severity | Exit Code | Meaning |
+|----------|-----------|---------|
+| PASS | 0 | All accessibility checks passed |
+| HIGH | 1 | Blocking failure — keyboard or interaction broken |
+| MEDIUM | 2 | Warning — accessibility issue detected, fix recommended |
+
+#### HIGH Severity Conditions
+
+A failure is marked HIGH severity when:
+- Interactive elements are not keyboard reachable (blocks keyboard-only users)
+- Visible buttons have no click handler (broken functionality)
+
+#### Running Locally
+
+```bash
+cd qa/verify/ui/visual_regression
+npx playwright test intent_020_accessibility.spec.ts
+```
+
+Results are stored in:
+- `artifacts/ui/visual/<run>/intent_020_result.json` (structured data)
+- `artifacts/ui/visual/<run>/intent_020_report.md` (human-readable report)
+
+#### Integration with QC Loop
+
+INTENT_020 is integrated into `run_qc_loop.mjs` Phase 4:
+- Runs after INTENT_010 (usability gate)
+- Takes precedence over other QC decisions
+- Produces exit code based on severity
+- Report included in QC_SUMMARY.md
+
 ### Action-Scoped QC
 
 QC now reasons **per user action**, not just per screenshot. For each meaningful action (e.g., clicking "Create Job"):
@@ -199,6 +266,7 @@ Every QC run produces a **QC_SUMMARY.md** that consolidates all results:
 |---------|----------|
 | Executive Summary | SHIP / NO-SHIP / REVIEW recommendation |
 | UI QC (INTENT_010) | Usability check results |
+| UI QC (INTENT_020) | Accessibility check results |
 | Baseline Regressions | Metric drift from baselines |
 | Property Invariants | Invariant violations |
 | Human Confirmations | Human review decisions |
