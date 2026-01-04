@@ -13,6 +13,11 @@
  * - NO job creation
  * - Pure DOM/layout inspection
  * 
+ * DIAGNOSTICS:
+ * - Emits structured failure payloads with actionable data
+ * - Generates human-readable markdown report on failure
+ * - Uses severity classification (HIGH / MEDIUM)
+ * 
  * Run with:
  *   npx playwright test intent_010_usability.spec.ts
  */
@@ -26,31 +31,99 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '../../../..')
 
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+interface BoundingBox {
+  left: number
+  top: number
+  right: number
+  bottom: number
+  width: number
+  height: number
+}
+
+interface FailurePayload {
+  check_id: string
+  check_name: string
+  failing_selectors: string[]
+  bounding_boxes: BoundingBox[]
+  viewport: { width: number; height: number }
+  screenshot_path: string
+  raw_details: Record<string, unknown>
+}
+
 interface UsabilityCheck {
   name: string
+  check_id: string
   passed: boolean
   reason?: string
   screenshot?: string
+  failure_payload?: FailurePayload
 }
+
+type Severity = 'HIGH' | 'MEDIUM'
 
 interface UsabilityResult {
   intent_id: string
   timestamp: string
   verdict: 'VERIFIED_OK' | 'VERIFIED_NOT_OK'
+  severity?: Severity
   checks: UsabilityCheck[]
   failed_at?: string
+  failure_payload?: FailurePayload
+  report_path?: string
 }
+
+// ============================================================================
+// PLAIN ENGLISH EXPLANATIONS
+// ============================================================================
+
+const FAILURE_EXPLANATIONS: Record<string, (payload: FailurePayload) => string> = {
+  'duplicate_scrollbars': (payload) => {
+    const count = (payload.raw_details.nested_count as number) || 0
+    return `The left panel has ${count} nested scrollable areas. This creates a confusing "scroll within scroll" experience where users can accidentally scroll the wrong container. The panel should have only one scrollable area.`
+  },
+  'window_not_resizable': () => {
+    return `The application window cannot be resized by the user. This prevents users from adjusting the workspace to fit their monitor or workflow. The window should allow horizontal and vertical resizing.`
+  },
+  'buttons_clipped': (payload) => {
+    const clipped = payload.raw_details.clipped_buttons as Array<{ text: string; reason: string }>
+    const buttonList = clipped.map(b => `"${b.text}"`).join(', ')
+    return `${clipped.length} button(s) are cut off at the edges of the window: ${buttonList}. Users cannot see or click these buttons at 1440×900 resolution. The layout needs to account for standard screen sizes.`
+  },
+  'horizontal_scrollbars': (payload) => {
+    const panels = payload.raw_details.panels_affected as string[]
+    return `${panels.length} panel(s) have horizontal scrollbars: ${panels.join(', ')}. This indicates content is wider than its container, making the UI feel cramped and requiring awkward side-scrolling.`
+  },
+}
+
+// ============================================================================
+// MAIN TEST
+// ============================================================================
 
 test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
   test('verify layout sanity at 1440x900', async ({ page, visualCollector, app }) => {
     const artifactDir = visualCollector.artifactDir
     const checks: UsabilityCheck[] = []
-    let firstFailure: string | null = null
+    // Use object wrapper to avoid TypeScript narrowing issues
+    const state = {
+      state.firstFailure: null as UsabilityCheck | null,
+      state.windowIsResizable: true,
+      state.hasClippedButtons: false,
+    }
 
     console.log('\n═══════════════════════════════════════════════════════════')
     console.log('  INTENT_010 — Basic Usability & Layout Sanity')
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`  Artifact dir: ${artifactDir}\n`)
+
+    // Get viewport size once for all checks
+    const viewport = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }))
 
     // Helper: capture screenshot with check name
     async function captureCheckScreenshot(checkName: string): Promise<string> {
@@ -61,16 +134,32 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
       return screenshotPath
     }
 
-    // Helper: fail fast if check fails
-    function recordCheck(name: string, passed: boolean, reason?: string, screenshot?: string) {
-      checks.push({ name, passed, reason, screenshot })
+    // Helper: record check result with optional failure payload
+    function recordCheck(
+      checkId: string,
+      name: string, 
+      passed: boolean, 
+      reason?: string, 
+      screenshot?: string,
+      failurePayload?: FailurePayload
+    ) {
+      const check: UsabilityCheck = { 
+        check_id: checkId,
+        name, 
+        passed, 
+        reason, 
+        screenshot,
+        failure_payload: failurePayload,
+      }
+      checks.push(check)
+      
       if (passed) {
         console.log(`   ✅ ${name}`)
       } else {
         console.log(`   ❌ ${name}`)
         if (reason) console.log(`      Reason: ${reason}`)
-        if (!firstFailure) {
-          firstFailure = name
+        if (!state.firstFailure) {
+          state.firstFailure = check
         }
       }
     }
@@ -81,80 +170,93 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     console.log('\n🔍 Check 1: No duplicate scrollbars in left panel')
     
     try {
-      // Find the left panel (source selection area)
-      const leftPanel = page.locator('[data-testid="left-panel"], [data-testid="source-panel"], aside').first()
-      const leftPanelExists = await leftPanel.count() > 0
-
-      if (!leftPanelExists) {
-        // Try alternative selectors
-        const altLeftPanel = page.locator('.left-panel, .source-panel, [class*="sidebar"]').first()
-        const altExists = await altLeftPanel.count() > 0
-        
-        if (!altExists) {
-          const screenshot = await captureCheckScreenshot('no_left_panel')
-          recordCheck('No duplicate scrollbars in left panel', true, 'Left panel not found (acceptable in idle state)', screenshot)
-        } else {
-          // Check for nested scrollbars
-          const nestedScrollables = await page.evaluate(() => {
-            const panel = document.querySelector('.left-panel, .source-panel, [class*="sidebar"]')
-            if (!panel) return { count: 0, hasNested: false }
-            
-            const scrollables = panel.querySelectorAll('[style*="overflow"], [class*="scroll"]')
-            const nestedCount = Array.from(scrollables).filter(el => {
-              const style = window.getComputedStyle(el)
-              return style.overflowY === 'scroll' || style.overflowY === 'auto'
-            }).length
-            
-            return { count: nestedCount, hasNested: nestedCount > 1 }
-          })
+      const panelSelectors = [
+        '[data-testid="left-panel"]',
+        '[data-testid="source-panel"]',
+        'aside',
+        '.left-panel',
+        '.source-panel',
+        '[class*="sidebar"]',
+      ]
+      
+      const scrollbarCheck = await page.evaluate((selectors) => {
+        for (const selector of selectors) {
+          const panel = document.querySelector(selector)
+          if (!panel) continue
           
-          const screenshot = await captureCheckScreenshot('left_panel_scrollbars')
-          if (nestedScrollables.hasNested) {
-            recordCheck('No duplicate scrollbars in left panel', false, 
-              `Found ${nestedScrollables.count} nested scrollable elements`, screenshot)
-          } else {
-            recordCheck('No duplicate scrollbars in left panel', true, undefined, screenshot)
-          }
-        }
-      } else {
-        // Check for nested scrollbars in the found panel
-        const nestedScrollables = await page.evaluate(() => {
-          const panel = document.querySelector('[data-testid="left-panel"], [data-testid="source-panel"], aside')
-          if (!panel) return { count: 0, hasNested: false }
-          
-          // Count elements with overflow-y: scroll or auto that are nested
+          // Count elements with overflow-y: scroll or auto that have scrollable content
           let scrollableCount = 0
-          const walk = (el: Element, depth: number) => {
+          const scrollableElements: Array<{ selector: string; rect: DOMRect }> = []
+          
+          const walk = (el: Element) => {
             const style = window.getComputedStyle(el)
             if ((style.overflowY === 'scroll' || style.overflowY === 'auto') && 
                 el.scrollHeight > el.clientHeight) {
               scrollableCount++
+              scrollableElements.push({
+                selector: el.tagName.toLowerCase() + (el.className ? `.${el.className.split(' ')[0]}` : ''),
+                rect: el.getBoundingClientRect(),
+              })
             }
-            Array.from(el.children).forEach(child => walk(child, depth + 1))
+            Array.from(el.children).forEach(child => walk(child))
           }
-          walk(panel, 0)
+          walk(panel)
           
-          return { count: scrollableCount, hasNested: scrollableCount > 1 }
-        })
-        
-        const screenshot = await captureCheckScreenshot('left_panel_scrollbars')
-        if (nestedScrollables.hasNested) {
-          recordCheck('No duplicate scrollbars in left panel', false, 
-            `Found ${nestedScrollables.count} nested scrollable elements (should be max 1)`, screenshot)
-        } else {
-          recordCheck('No duplicate scrollbars in left panel', true, undefined, screenshot)
+          return {
+            found: true,
+            panelSelector: selector,
+            panelRect: panel.getBoundingClientRect(),
+            nestedCount: scrollableCount,
+            hasNested: scrollableCount > 1,
+            scrollableElements,
+          }
         }
+        
+        return { found: false, panelSelector: null, nestedCount: 0, hasNested: false, scrollableElements: [] }
+      }, panelSelectors)
+      
+      const screenshot = await captureCheckScreenshot('left_panel_scrollbars')
+      
+      if (!scrollbarCheck.found) {
+        recordCheck('duplicate_scrollbars', 'No duplicate scrollbars in left panel', true, 
+          'Left panel not found (acceptable in idle state)', screenshot)
+      } else if (scrollbarCheck.hasNested) {
+        const failurePayload: FailurePayload = {
+          check_id: 'duplicate_scrollbars',
+          check_name: 'No duplicate scrollbars in left panel',
+          failing_selectors: scrollbarCheck.scrollableElements.map(e => e.selector),
+          bounding_boxes: scrollbarCheck.scrollableElements.map(e => ({
+            left: e.rect.left,
+            top: e.rect.top,
+            right: e.rect.right,
+            bottom: e.rect.bottom,
+            width: e.rect.width,
+            height: e.rect.height,
+          })),
+          viewport,
+          screenshot_path: screenshot,
+          raw_details: {
+            panel_selector: scrollbarCheck.panelSelector,
+            nested_count: scrollbarCheck.nestedCount,
+          },
+        }
+        recordCheck('duplicate_scrollbars', 'No duplicate scrollbars in left panel', false, 
+          `Found ${scrollbarCheck.nestedCount} nested scrollable elements (should be max 1)`, 
+          screenshot, failurePayload)
+      } else {
+        recordCheck('duplicate_scrollbars', 'No duplicate scrollbars in left panel', true, undefined, screenshot)
       }
     } catch (err) {
       const screenshot = await captureCheckScreenshot('left_panel_error')
-      recordCheck('No duplicate scrollbars in left panel', false, 
+      recordCheck('duplicate_scrollbars', 'No duplicate scrollbars in left panel', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
 
     // FAIL FAST: Stop if first check failed
-    if (firstFailure) {
-      await saveResult(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure)
-      throw new Error(`Usability check failed: ${firstFailure}`)
+    if (state.firstFailure) {
+      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
+      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
     }
 
     // =========================================================================
@@ -163,38 +265,67 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     console.log('\n🔍 Check 2: App window is resizable')
     
     try {
-      // Get current window bounds
-      const initialBounds = await app.evaluate(({ BrowserWindow }) => {
+      const windowInfo = await app.evaluate(({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0]
         if (!win) return null
+        const bounds = win.getBounds()
         return {
-          width: win.getBounds().width,
-          height: win.getBounds().height,
+          width: bounds.width,
+          height: bounds.height,
           resizable: win.isResizable(),
+          minimizable: win.isMinimizable(),
+          maximizable: win.isMaximizable(),
         }
       })
       
-      if (!initialBounds) {
+      if (!windowInfo) {
         const screenshot = await captureCheckScreenshot('no_window')
-        recordCheck('App window is resizable', false, 'Could not get window bounds', screenshot)
-      } else if (!initialBounds.resizable) {
-        const screenshot = await captureCheckScreenshot('window_not_resizable')
-        recordCheck('App window is resizable', false, 
-          'Window isResizable() returned false', screenshot)
+        recordCheck('window_not_resizable', 'App window is resizable', false, 
+          'Could not get window bounds', screenshot)
       } else {
-        const screenshot = await captureCheckScreenshot('window_resizable')
-        recordCheck('App window is resizable', true, undefined, screenshot)
+        state.windowIsResizable = windowInfo.resizable
+        
+        if (!windowInfo.resizable) {
+          const screenshot = await captureCheckScreenshot('window_not_resizable')
+          const failurePayload: FailurePayload = {
+            check_id: 'window_not_resizable',
+            check_name: 'App window is resizable',
+            failing_selectors: ['BrowserWindow'],
+            bounding_boxes: [{
+              left: 0,
+              top: 0,
+              right: windowInfo.width,
+              bottom: windowInfo.height,
+              width: windowInfo.width,
+              height: windowInfo.height,
+            }],
+            viewport,
+            screenshot_path: screenshot,
+            raw_details: {
+              resizable: windowInfo.resizable,
+              minimizable: windowInfo.minimizable,
+              maximizable: windowInfo.maximizable,
+              window_size: { width: windowInfo.width, height: windowInfo.height },
+            },
+          }
+          recordCheck('window_not_resizable', 'App window is resizable', false, 
+            'Window isResizable() returned false', screenshot, failurePayload)
+        } else {
+          const screenshot = await captureCheckScreenshot('window_resizable')
+          recordCheck('window_not_resizable', 'App window is resizable', true, undefined, screenshot)
+        }
       }
     } catch (err) {
       const screenshot = await captureCheckScreenshot('resizable_error')
-      recordCheck('App window is resizable', false, 
+      recordCheck('window_not_resizable', 'App window is resizable', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
 
     // FAIL FAST
-    if (firstFailure) {
-      await saveResult(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure)
-      throw new Error(`Usability check failed: ${firstFailure}`)
+    if (state.firstFailure) {
+      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
+      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
     }
 
     // =========================================================================
@@ -203,66 +334,100 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     console.log('\n🔍 Check 3: No buttons visually clipped at 1440x900')
     
     try {
-      // Get all visible buttons and check their bounding boxes
-      const clippedButtons = await page.evaluate(() => {
+      const buttonCheck = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'))
         const viewportWidth = window.innerWidth
         const viewportHeight = window.innerHeight
-        const clipped: Array<{ text: string; reason: string; rect: DOMRect }> = []
+        const clipped: Array<{ 
+          text: string
+          reason: string
+          selector: string
+          rect: { left: number; top: number; right: number; bottom: number; width: number; height: number }
+        }> = []
         
         for (const btn of buttons) {
           const style = window.getComputedStyle(btn)
-          // Skip hidden buttons
           if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
             continue
           }
           
           const rect = btn.getBoundingClientRect()
-          
-          // Skip zero-size buttons (likely hidden or collapsed)
           if (rect.width === 0 || rect.height === 0) {
             continue
           }
           
           const btnText = btn.textContent?.trim() || btn.getAttribute('aria-label') || '[unnamed]'
+          const btnSelector = btn.getAttribute('data-testid') 
+            ? `[data-testid="${btn.getAttribute('data-testid')}"]`
+            : `button:has-text("${btnText.slice(0, 20)}")`
           
-          // Check if button is clipped by viewport
+          const reasons: string[] = []
           if (rect.right > viewportWidth) {
-            clipped.push({ text: btnText, reason: `right edge (${rect.right.toFixed(0)}px) exceeds viewport (${viewportWidth}px)`, rect })
+            reasons.push(`right edge (${rect.right.toFixed(0)}px) exceeds viewport (${viewportWidth}px)`)
           }
           if (rect.bottom > viewportHeight) {
-            clipped.push({ text: btnText, reason: `bottom edge (${rect.bottom.toFixed(0)}px) exceeds viewport (${viewportHeight}px)`, rect })
+            reasons.push(`bottom edge (${rect.bottom.toFixed(0)}px) exceeds viewport (${viewportHeight}px)`)
           }
           if (rect.left < 0) {
-            clipped.push({ text: btnText, reason: `left edge (${rect.left.toFixed(0)}px) is negative`, rect })
+            reasons.push(`left edge (${rect.left.toFixed(0)}px) is negative`)
           }
           if (rect.top < 0) {
-            clipped.push({ text: btnText, reason: `top edge (${rect.top.toFixed(0)}px) is negative`, rect })
+            reasons.push(`top edge (${rect.top.toFixed(0)}px) is negative`)
+          }
+          
+          if (reasons.length > 0) {
+            clipped.push({ 
+              text: btnText, 
+              reason: reasons.join('; '), 
+              selector: btnSelector,
+              rect: {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+              },
+            })
           }
         }
         
-        return clipped.map(c => ({ text: c.text, reason: c.reason }))
+        return { clipped, viewportWidth, viewportHeight }
       })
       
       const screenshot = await captureCheckScreenshot('button_clipping')
       
-      if (clippedButtons.length > 0) {
-        const clippedList = clippedButtons.map(b => `"${b.text}": ${b.reason}`).join('; ')
-        recordCheck('No buttons visually clipped at 1440x900', false, 
-          `${clippedButtons.length} clipped button(s): ${clippedList}`, screenshot)
+      if (buttonCheck.clipped.length > 0) {
+        state.hasClippedButtons = true
+        const clippedList = buttonCheck.clipped.map(b => `"${b.text}": ${b.reason}`).join('; ')
+        const failurePayload: FailurePayload = {
+          check_id: 'buttons_clipped',
+          check_name: 'No buttons visually clipped at 1440x900',
+          failing_selectors: buttonCheck.clipped.map(b => b.selector),
+          bounding_boxes: buttonCheck.clipped.map(b => b.rect),
+          viewport,
+          screenshot_path: screenshot,
+          raw_details: {
+            clipped_buttons: buttonCheck.clipped.map(b => ({ text: b.text, reason: b.reason })),
+            total_clipped: buttonCheck.clipped.length,
+          },
+        }
+        recordCheck('buttons_clipped', 'No buttons visually clipped at 1440x900', false, 
+          `${buttonCheck.clipped.length} clipped button(s): ${clippedList}`, screenshot, failurePayload)
       } else {
-        recordCheck('No buttons visually clipped at 1440x900', true, undefined, screenshot)
+        recordCheck('buttons_clipped', 'No buttons visually clipped at 1440x900', true, undefined, screenshot)
       }
     } catch (err) {
       const screenshot = await captureCheckScreenshot('button_clipping_error')
-      recordCheck('No buttons visually clipped at 1440x900', false, 
+      recordCheck('buttons_clipped', 'No buttons visually clipped at 1440x900', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
 
     // FAIL FAST
-    if (firstFailure) {
-      await saveResult(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure)
-      throw new Error(`Usability check failed: ${firstFailure}`)
+    if (state.firstFailure) {
+      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
+      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
     }
 
     // =========================================================================
@@ -271,8 +436,7 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     console.log('\n🔍 Check 4: No horizontal scrollbars in main panels')
     
     try {
-      const horizontalScrollbars = await page.evaluate(() => {
-        // Check main panels for horizontal scroll
+      const scrollCheck = await page.evaluate(() => {
         const panelSelectors = [
           '[data-testid="left-panel"]',
           '[data-testid="right-panel"]',
@@ -281,25 +445,37 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
           'main',
           'aside',
           '[role="main"]',
-          '[class*="panel"]',
-          '[class*="sidebar"]',
         ]
         
-        const withHorizontalScroll: Array<{ selector: string; scrollWidth: number; clientWidth: number }> = []
+        const withHorizontalScroll: Array<{ 
+          selector: string
+          scrollWidth: number
+          clientWidth: number
+          rect: { left: number; top: number; right: number; bottom: number; width: number; height: number }
+        }> = []
         
         for (const selector of panelSelectors) {
           const elements = document.querySelectorAll(selector)
           for (const el of elements) {
-            const hasHorizontalScroll = el.scrollWidth > el.clientWidth + 5 // 5px tolerance
+            const hasHorizontalScroll = el.scrollWidth > el.clientWidth + 5
             const style = window.getComputedStyle(el)
             const hasOverflowX = style.overflowX === 'scroll' || 
               (style.overflowX === 'auto' && el.scrollWidth > el.clientWidth)
             
             if (hasHorizontalScroll && hasOverflowX) {
+              const rect = el.getBoundingClientRect()
               withHorizontalScroll.push({
-                selector: selector,
+                selector,
                 scrollWidth: el.scrollWidth,
                 clientWidth: el.clientWidth,
+                rect: {
+                  left: rect.left,
+                  top: rect.top,
+                  right: rect.right,
+                  bottom: rect.bottom,
+                  width: rect.width,
+                  height: rect.height,
+                },
               })
             }
           }
@@ -310,25 +486,43 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
       
       const screenshot = await captureCheckScreenshot('horizontal_scrollbars')
       
-      if (horizontalScrollbars.length > 0) {
-        const scrollList = horizontalScrollbars.map(s => 
+      if (scrollCheck.length > 0) {
+        const scrollList = scrollCheck.map(s => 
           `${s.selector}: scrollWidth=${s.scrollWidth}, clientWidth=${s.clientWidth}`
         ).join('; ')
-        recordCheck('No horizontal scrollbars in main panels', false, 
-          `${horizontalScrollbars.length} panel(s) with horizontal scroll: ${scrollList}`, screenshot)
+        const failurePayload: FailurePayload = {
+          check_id: 'horizontal_scrollbars',
+          check_name: 'No horizontal scrollbars in main panels',
+          failing_selectors: scrollCheck.map(s => s.selector),
+          bounding_boxes: scrollCheck.map(s => s.rect),
+          viewport,
+          screenshot_path: screenshot,
+          raw_details: {
+            panels_affected: scrollCheck.map(s => s.selector),
+            scroll_dimensions: scrollCheck.map(s => ({ 
+              selector: s.selector, 
+              scrollWidth: s.scrollWidth, 
+              clientWidth: s.clientWidth,
+              overflow: s.scrollWidth - s.clientWidth,
+            })),
+          },
+        }
+        recordCheck('horizontal_scrollbars', 'No horizontal scrollbars in main panels', false, 
+          `${scrollCheck.length} panel(s) with horizontal scroll: ${scrollList}`, screenshot, failurePayload)
       } else {
-        recordCheck('No horizontal scrollbars in main panels', true, undefined, screenshot)
+        recordCheck('horizontal_scrollbars', 'No horizontal scrollbars in main panels', true, undefined, screenshot)
       }
     } catch (err) {
       const screenshot = await captureCheckScreenshot('horizontal_scrollbars_error')
-      recordCheck('No horizontal scrollbars in main panels', false, 
+      recordCheck('horizontal_scrollbars', 'No horizontal scrollbars in main panels', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
 
     // FAIL FAST (final check)
-    if (firstFailure) {
-      await saveResult(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure)
-      throw new Error(`Usability check failed: ${firstFailure}`)
+    if (state.firstFailure) {
+      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
+      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
     }
 
     // =========================================================================
@@ -338,28 +532,183 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     console.log('  ✅ INTENT_010: ALL USABILITY CHECKS PASSED')
     console.log('═══════════════════════════════════════════════════════════\n')
     
-    await saveResult(artifactDir, 'VERIFIED_OK', checks)
+    await saveResultWithReport(artifactDir, 'VERIFIED_OK', checks, null, undefined)
     
-    // Final assertion
     expect(checks.every(c => c.passed), 'All usability checks should pass').toBe(true)
   })
 })
 
-async function saveResult(
+// ============================================================================
+// SEVERITY DETERMINATION
+// ============================================================================
+
+function determineSeverity(
+  state.windowIsResizable: boolean, 
+  state.hasClippedButtons: boolean,
+  failedCheckId: string
+): Severity {
+  // HIGH severity: non-resizable window AND clipped buttons
+  // This is a critical usability issue - users cannot see buttons AND cannot resize to fix it
+  if (!state.windowIsResizable && state.hasClippedButtons) {
+    return 'HIGH'
+  }
+  
+  // HIGH severity if the specific check combo is met
+  if (failedCheckId === 'buttons_clipped' && !state.windowIsResizable) {
+    return 'HIGH'
+  }
+  
+  // MEDIUM severity for all other failures
+  return 'MEDIUM'
+}
+
+// ============================================================================
+// RESULT SAVING AND REPORT GENERATION
+// ============================================================================
+
+async function saveResultWithReport(
   artifactDir: string, 
   verdict: 'VERIFIED_OK' | 'VERIFIED_NOT_OK', 
   checks: UsabilityCheck[],
-  failedAt?: string
+  failedCheck: UsabilityCheck | null,
+  severity?: Severity
 ) {
+  const timestamp = new Date().toISOString()
+  
+  // Build result object
   const result: UsabilityResult = {
     intent_id: 'INTENT_010',
-    timestamp: new Date().toISOString(),
+    timestamp,
     verdict,
+    severity,
     checks,
-    failed_at: failedAt,
+    failed_at: failedCheck?.name,
+    failure_payload: failedCheck?.failure_payload,
   }
   
+  // Save JSON result
   const resultPath = path.join(artifactDir, 'intent_010_result.json')
   fs.writeFileSync(resultPath, JSON.stringify(result, null, 2))
-  console.log(`\n💾 Result saved: ${resultPath}`)
+  console.log(`\n💾 JSON result saved: ${resultPath}`)
+  
+  // Generate markdown report
+  const reportPath = path.join(artifactDir, 'intent_010_usability_report.md')
+  const reportContent = generateMarkdownReport(result, artifactDir)
+  fs.writeFileSync(reportPath, reportContent)
+  console.log(`📝 Markdown report saved: ${reportPath}`)
+  
+  result.report_path = reportPath
+  
+  // Update JSON with report path
+  fs.writeFileSync(resultPath, JSON.stringify(result, null, 2))
+}
+
+function generateMarkdownReport(result: UsabilityResult, artifactDir: string): string {
+  const lines: string[] = []
+  
+  // Header
+  lines.push('# INTENT_010 — Usability Report')
+  lines.push('')
+  lines.push(`**Generated:** ${result.timestamp}`)
+  lines.push(`**Verdict:** ${result.verdict === 'VERIFIED_OK' ? '✅ PASS' : '❌ FAIL'}`)
+  
+  if (result.severity) {
+    const severityEmoji = result.severity === 'HIGH' ? '🔴' : '🟡'
+    lines.push(`**Severity:** ${severityEmoji} ${result.severity}`)
+  }
+  
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+  
+  if (result.verdict === 'VERIFIED_OK') {
+    // Success case
+    lines.push('## ✅ All Usability Checks Passed')
+    lines.push('')
+    lines.push('The application passed all layout and usability checks at 1440×900 resolution.')
+    lines.push('')
+    lines.push('### Checks Performed')
+    lines.push('')
+    for (const check of result.checks) {
+      lines.push(`- ✅ ${check.name}`)
+    }
+  } else {
+    // Failure case - show ONE failure (fail-fast)
+    lines.push('## ❌ Usability Check Failed')
+    lines.push('')
+    
+    const failedCheck = result.checks.find(c => !c.passed)
+    if (failedCheck) {
+      lines.push(`### Failed Check: ${failedCheck.name}`)
+      lines.push('')
+      
+      // Plain English explanation
+      const payload = failedCheck.failure_payload
+      if (payload && FAILURE_EXPLANATIONS[payload.check_id]) {
+        lines.push('#### What Went Wrong')
+        lines.push('')
+        lines.push(FAILURE_EXPLANATIONS[payload.check_id](payload))
+        lines.push('')
+      }
+      
+      // Technical details
+      lines.push('#### Technical Details')
+      lines.push('')
+      if (failedCheck.reason) {
+        lines.push(`**Reason:** ${failedCheck.reason}`)
+        lines.push('')
+      }
+      
+      if (payload) {
+        lines.push(`**Viewport:** ${payload.viewport.width}×${payload.viewport.height}`)
+        lines.push('')
+        
+        if (payload.failing_selectors.length > 0) {
+          lines.push('**Affected Elements:**')
+          lines.push('')
+          for (const selector of payload.failing_selectors) {
+            lines.push(`- \`${selector}\``)
+          }
+          lines.push('')
+        }
+        
+        if (payload.bounding_boxes.length > 0) {
+          lines.push('**Bounding Boxes:**')
+          lines.push('')
+          lines.push('| Element | Left | Top | Right | Bottom | Width | Height |')
+          lines.push('|---------|------|-----|-------|--------|-------|--------|')
+          for (let i = 0; i < payload.bounding_boxes.length; i++) {
+            const box = payload.bounding_boxes[i]
+            const selector = payload.failing_selectors[i] || `Element ${i + 1}`
+            lines.push(`| \`${selector.slice(0, 30)}\` | ${box.left.toFixed(0)} | ${box.top.toFixed(0)} | ${box.right.toFixed(0)} | ${box.bottom.toFixed(0)} | ${box.width.toFixed(0)} | ${box.height.toFixed(0)} |`)
+          }
+          lines.push('')
+        }
+      }
+      
+      // Screenshot
+      if (failedCheck.screenshot) {
+        lines.push('#### Screenshot')
+        lines.push('')
+        const relativePath = path.relative(artifactDir, failedCheck.screenshot)
+        lines.push(`![Failure Screenshot](${relativePath})`)
+        lines.push('')
+      }
+      
+      // Severity explanation
+      if (result.severity === 'HIGH') {
+        lines.push('#### ⚠️ High Severity')
+        lines.push('')
+        lines.push('This issue is marked as **HIGH** severity because the window is non-resizable AND buttons are clipped. Users cannot work around this by resizing the window.')
+        lines.push('')
+      }
+    }
+  }
+  
+  // Footer
+  lines.push('---')
+  lines.push('')
+  lines.push('*This report was generated by INTENT_010 — Basic Usability & Layout Sanity QC.*')
+  
+  return lines.join('\n')
 }
