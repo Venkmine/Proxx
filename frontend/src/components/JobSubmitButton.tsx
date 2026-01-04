@@ -59,7 +59,7 @@ export interface JobSubmitButtonProps {
 
 export function JobSubmitButton({
   preflightChecks,
-  jobSummary: _jobSummary,
+  jobSummary,
   onSubmit,
   loading = false,
   disabled = false,
@@ -80,8 +80,17 @@ export function JobSubmitButton({
     if (onValidationTrigger) {
       onValidationTrigger()
     }
-    // Submit immediately if no blocking failures
-    if (!hasBlockingFailures && canSubmit) {
+    
+    // FIX: Check deferred validation state directly, don't rely on stale preflightChecks.
+    // The outputDirectory field in jobSummary reflects current state synchronously.
+    // If output directory is missing or not absolute, don't submit.
+    const outputDir = jobSummary.outputDirectory
+    const hasValidOutput = outputDir && 
+                           outputDir !== '(not set)' && 
+                           (outputDir.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(outputDir))
+    
+    // Only submit if: no blocking failures AND output dir is valid AND can submit
+    if (!hasBlockingFailures && hasValidOutput && canSubmit) {
       onSubmit()
     }
   }
