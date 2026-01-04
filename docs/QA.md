@@ -329,6 +329,113 @@ Recent bugs were caused by:
 
 INTENT_030 makes future UI expansion (Settings panel, Watch Folders, etc.) safe by ensuring state remains single-source-of-truth.
 
+### INTENT_040 — Settings Panel Sanity
+
+**Settings panel reintroduction MUST pass INTENT_040 before merge.**
+
+INTENT_040 is a structural safety gate that validates the Settings panel can be safely reintroduced without breaking existing functionality. This is about **structural safety**, NOT feature correctness.
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| Render & toggle | HIGH | Settings panel can be opened and closed via UI control |
+| Layout safety | HIGH | No clipped buttons, no overflow, no scrollbar conflicts while open |
+| Accessibility safety | HIGH | Keyboard can open/close, focus management works |
+| State integrity | HIGH | No deprecated store writes, no unintended mutations |
+| Isolation | HIGH | No side effects on job/queue/source state |
+
+#### Purpose: Controlled Reintroduction
+
+The Settings panel was temporarily removed during Phase F layout simplification. INTENT_040 ensures it can be **safely brought back** without:
+- Breaking the INTENT_010 layout invariants
+- Violating INTENT_020 accessibility requirements
+- Causing INTENT_030 state integrity violations
+- Triggering unexpected side effects in other UI domains
+
+#### What INTENT_040 Does NOT Check
+
+This is NOT a feature correctness test:
+- ❌ Does NOT validate individual settings behavior
+- ❌ Does NOT test settings persistence
+- ❌ Does NOT verify codec/container selections work
+- ❌ Does NOT check settings application to jobs
+
+Those checks come in **INTENT_041 — Settings State Correctness** (future work).
+
+#### Property-Based Safety Invariants
+
+INTENT_040 validates structural integrity using runtime checks:
+
+| Invariant | Description |
+|-----------|-------------|
+| SETTINGS_RENDER_AND_TOGGLE | Panel element exists, toggle control works, focus managed |
+| SETTINGS_LAYOUT_SAFETY | Reuses INTENT_010 checks (no overflow, no nested scrollbars) |
+| SETTINGS_ACCESSIBILITY | Reuses INTENT_020 checks (keyboard nav, focus indicators) |
+| SETTINGS_STATE_INTEGRITY | Reuses INTENT_030 checks (no store violations) |
+| SETTINGS_ISOLATION | Opening Settings does NOT trigger job fetches, preview loads, or state mutations |
+
+These invariants are:
+- **Reusable**: Leverage existing INTENT_010/020/030 checks
+- **Deterministic**: Same UI state produces same result
+- **CI-safe**: No human interaction required
+- **Fail-fast**: First violation terminates with screenshot
+
+#### Exit Code Mapping
+
+| Severity | Exit Code | Meaning |
+|----------|-----------|---------|
+| PASS | 0 | Settings panel is structurally safe |
+| HIGH | 1 | Blocking failure — panel breaks layout/accessibility/state |
+| MEDIUM | 2 | Warning — minor issue detected |
+
+#### HIGH Severity Conditions
+
+A failure is marked HIGH severity when:
+- Settings toggle is missing or non-functional (users cannot access)
+- Opening Settings breaks layout (buttons clipped, horizontal overflow)
+- Opening Settings violates state integrity (dual-writes, deprecated stores)
+- Opening Settings is not keyboard accessible (blocks keyboard users)
+- Opening Settings causes job/queue mutations (isolation violation)
+
+#### Running Locally
+
+```bash
+cd qa/verify/ui/visual_regression
+npx playwright test intent_040_settings_sanity.spec.ts
+```
+
+Results are stored in:
+- `artifacts/ui/visual/<run>/intent_040_result.json` (structured data)
+- `artifacts/ui/visual/<run>/intent_040_report.md` (human-readable report)
+
+#### Integration with QC Loop
+
+INTENT_040 is integrated into `run_qc_loop.mjs` Phase 4:
+- Runs after INTENT_030 (state integrity gate)
+- Takes precedence over other QC decisions
+- Produces exit code based on severity
+- Report included in QC_SUMMARY.md
+
+#### Implementation Requirements
+
+For INTENT_040 to pass, the Settings panel implementation MUST:
+
+1. **Have a toggle control**: `[data-testid="settings-toggle"]`
+2. **Have a panel element**: `[data-testid="settings-panel"]`
+3. **Be keyboard accessible**: Toggle has tabIndex >= 0 or is a button
+4. **Manage focus**: Focus enters/exits panel appropriately
+5. **Not break layout**: Pass INTENT_010 checks while open
+6. **Not break accessibility**: Pass INTENT_020 checks while open
+7. **Not violate state**: Pass INTENT_030 checks while open
+8. **Be isolated**: No network calls, no DOM mutations outside Settings
+
+#### Next Steps After INTENT_040
+
+Once INTENT_040 passes:
+1. Settings panel is officially "back" in the UI
+2. Feature correctness can be validated in **INTENT_041**
+3. Settings persistence can be added
+4. Preset loading/saving can be wired up
+
 ### Action-Scoped QC
 
 QC now reasons **per user action**, not just per screenshot. For each meaningful action (e.g., clicking "Create Job"):
