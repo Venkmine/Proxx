@@ -67,6 +67,7 @@ function collectQCData(artifactPath) {
     blockers: [],
     warnings: [],
     intent010: null,
+    intent010v2: null,
     playwrightResults: null,
     glmAnalysis: null,
     regressions: [],
@@ -118,6 +119,16 @@ function collectQCData(artifactPath) {
     }
   }
 
+  // 1b. Collect INTENT_010 v2 results (layout robustness)
+  data.intent010v2 = findIntent010V2Results(artifactPath)
+  if (data.intent010v2) {
+    if (data.intent010v2.verdict === 'VERIFIED_NOT_OK') {
+      // v2 failures are MEDIUM severity (warning, not blocking)
+      data.warnings.push(`INTENT_010_V2: ${data.intent010v2.failed_invariant} (${data.intent010v2.failure_reason})`)
+      if (data.recommendation !== 'NO-SHIP') data.recommendation = 'REVIEW'
+    }
+  }
+
   // 2. Collect Playwright results
   data.playwrightResults = findPlaywrightResults(artifactPath)
   if (data.playwrightResults) {
@@ -155,6 +166,39 @@ function findIntent010Results(artifactPath) {
     
     for (const d of subdirs) {
       possiblePaths.push(path.join(artifactPath, d.name, 'intent_010_result.json'))
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+  
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        return JSON.parse(fs.readFileSync(p, 'utf-8'))
+      } catch (e) {
+        // Continue to next
+      }
+    }
+  }
+  
+  return null
+}
+
+/**
+ * Find INTENT_010 v2 results in artifact directory
+ */
+function findIntent010V2Results(artifactPath) {
+  const possiblePaths = [
+    path.join(artifactPath, 'intent_010_v2_result.json'),
+  ]
+  
+  // Search subdirectories
+  try {
+    const subdirs = fs.readdirSync(artifactPath, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+    
+    for (const d of subdirs) {
+      possiblePaths.push(path.join(artifactPath, d.name, 'intent_010_v2_result.json'))
     }
   } catch (e) {
     // Ignore read errors
@@ -305,6 +349,60 @@ function generateMarkdown(data) {
     }
   } else {
     lines.push('*INTENT_010 results not found.*')
+    lines.push('')
+  }
+  
+  // UI QC v2 Section (Layout Robustness)
+  lines.push('---')
+  lines.push('')
+  lines.push('## 🔧 Layout Robustness (INTENT_010 v2)')
+  lines.push('')
+  
+  if (data.intent010v2) {
+    const verdict = data.intent010v2.verdict === 'VERIFIED_OK' ? '✅ PASS' : '❌ FAIL'
+    lines.push(`**Verdict:** ${verdict}`)
+    
+    if (data.intent010v2.failed_invariant) {
+      lines.push(`**Failed Invariant:** ${data.intent010v2.failed_invariant}`)
+      lines.push(`**Reason:** ${data.intent010v2.failure_reason}`)
+    }
+    
+    lines.push('')
+    
+    // Breakdown of v2 checks
+    if (data.intent010v2.checks) {
+      lines.push('### V2 Invariants')
+      lines.push('')
+      
+      const checks = data.intent010v2.checks
+      
+      // Nested scroll detection
+      if (checks.nested_scroll_detection_v2) {
+        const ns = checks.nested_scroll_detection_v2
+        const emoji = ns.passed ? '✅' : '❌'
+        lines.push(`- ${emoji} **Nested Scroll Detection**: ${ns.passed ? 'No problematic nested scrollables' : `${ns.violations?.length || 0} violation(s)`}`)
+      }
+      
+      // Resize stability
+      if (checks.resize_stability) {
+        const rs = checks.resize_stability
+        const emoji = rs.passed ? '✅' : '❌'
+        const breakpoints = rs.breakpoints_tested?.map(b => b.name).join(', ') || 'unknown'
+        lines.push(`- ${emoji} **Resize Stability**: ${rs.passed ? `Stable across ${breakpoints}` : `${rs.violations?.length || 0} issue(s) at different breakpoints`}`)
+      }
+      
+      // Panel overflow
+      if (checks.panel_overflow_invariants) {
+        const po = checks.panel_overflow_invariants
+        const emoji = po.passed ? '✅' : '❌'
+        const panels = po.panels_checked?.join(', ') || 'none checked'
+        lines.push(`- ${emoji} **Panel Overflow**: ${po.passed ? `No overflow in ${panels}` : `${po.violations?.length || 0} panel(s) overflowing`}`)
+      }
+      
+      lines.push('')
+    }
+  } else {
+    lines.push('*INTENT_010 v2 results not found.*')
     lines.push('')
   }
   

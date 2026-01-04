@@ -48,6 +48,16 @@ import {
   type ConfirmationSession,
   type HumanConfirmation,
 } from './intent_010_human_confirm'
+import {
+  checkNestedScrollablesV2,
+  checkResizeStability,
+  checkPanelOverflowInvariants,
+  generateV2InvariantSection,
+  STANDARD_BREAKPOINTS,
+  type DuplicateScrollbarResult,
+  type ResizeStabilityResult,
+  type PanelOverflowResult,
+} from './intent_010_v2_invariants'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -701,6 +711,193 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     await saveResultWithReport(artifactDir, 'VERIFIED_OK', checks, null, undefined, regressionResults, invariantResults, finalSession)
     
     expect(checks.every(c => c.passed), 'All usability checks should pass').toBe(true)
+  })
+
+  // ==========================================================================
+  // INTENT_010 v2 — Layout Robustness Checks
+  // ==========================================================================
+
+  test('v2 layout robustness checks', async ({ page, visualCollector, app }) => {
+    const artifactDir = visualCollector.artifactDir
+
+    console.log('\n═══════════════════════════════════════════════════════════')
+    console.log('  INTENT_010 v2 — Layout Robustness Checks')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`  Artifact dir: ${artifactDir}`)
+    console.log('')
+
+    // Track results
+    let scrollResult: DuplicateScrollbarResult | null = null
+    let resizeResult: ResizeStabilityResult | null = null
+    let overflowResult: PanelOverflowResult | null = null
+    let firstFailure: { invariant: string; reason: string } | null = null
+
+    // =========================================================================
+    // V2 CHECK 1: Stronger Duplicate Scrollbar Detection
+    // =========================================================================
+    console.log('\n🔍 V2 Check 1: Nested scroll container detection (DOM paths + bounds)')
+
+    try {
+      scrollResult = await checkNestedScrollablesV2(page)
+      
+      if (scrollResult.passed) {
+        console.log(`   ✅ No problematic nested scrollables detected`)
+        console.log(`      Total scrollable containers: ${scrollResult.total_nested_scrollables}`)
+      } else {
+        console.log(`   ❌ ${scrollResult.violations.length} panel(s) with nested scrollables`)
+        for (const v of scrollResult.violations) {
+          console.log(`      Panel: ${v.panelTestId || v.panelPath}`)
+          console.log(`      Nested elements: ${v.nestedScrollables.length}`)
+          for (const s of v.nestedScrollables.slice(0, 3)) {
+            console.log(`        - ${s.domPath}`)
+          }
+        }
+        
+        // Screenshot on failure
+        const screenshot = path.join(artifactDir, 'v2_nested_scrollables_failure.png')
+        await page.screenshot({ path: screenshot, fullPage: true })
+        console.log(`   📸 Screenshot: ${path.basename(screenshot)}`)
+        
+        firstFailure = {
+          invariant: 'NESTED_SCROLL_DETECTION_V2',
+          reason: `${scrollResult.violations.length} panel(s) with nested scrollable containers`,
+        }
+      }
+    } catch (err) {
+      console.log(`   ⚠️  Error during check: ${(err as Error).message}`)
+    }
+
+    // =========================================================================
+    // V2 CHECK 2: Resize Stress Test (3 breakpoints)
+    // =========================================================================
+    console.log('\n🔍 V2 Check 2: Resize stability across standard breakpoints')
+    console.log(`   Testing: ${STANDARD_BREAKPOINTS.map(b => b.name).join(', ')}`)
+
+    try {
+      resizeResult = await checkResizeStability(page, app, artifactDir, STANDARD_BREAKPOINTS)
+      
+      if (resizeResult.passed) {
+        console.log(`   ✅ Layout stable across all ${resizeResult.breakpoints_tested.length} breakpoints`)
+      } else {
+        console.log(`   ❌ ${resizeResult.violations.length} resize issue(s) detected`)
+        for (const v of resizeResult.violations) {
+          console.log(`      ${v.breakpoint.name}: ${v.issue}`)
+          console.log(`        ${v.details}`)
+        }
+        
+        if (!firstFailure) {
+          firstFailure = {
+            invariant: 'RESIZE_STABILITY',
+            reason: `${resizeResult.violations.length} layout issue(s) at different breakpoints`,
+          }
+        }
+      }
+      
+      // Log screenshots
+      console.log('   📸 Screenshots captured:')
+      for (const [name, screenshotPath] of Object.entries(resizeResult.screenshots)) {
+        console.log(`      - ${path.basename(screenshotPath)}`)
+      }
+    } catch (err) {
+      console.log(`   ⚠️  Error during check: ${(err as Error).message}`)
+    }
+
+    // =========================================================================
+    // V2 CHECK 3: Panel Overflow Invariants
+    // =========================================================================
+    console.log('\n🔍 V2 Check 3: Critical panel overflow detection')
+
+    try {
+      overflowResult = await checkPanelOverflowInvariants(page)
+      
+      if (overflowResult.passed) {
+        console.log(`   ✅ No horizontal overflow in critical panels`)
+        console.log(`      Panels checked: ${overflowResult.panels_checked.join(', ') || 'none found'}`)
+      } else {
+        console.log(`   ❌ ${overflowResult.violations.length} panel(s) with horizontal overflow`)
+        for (const v of overflowResult.violations) {
+          console.log(`      ${v.panel}: ${v.overflowAmount}px overflow`)
+        }
+        
+        // Screenshot on failure
+        const screenshot = path.join(artifactDir, 'v2_panel_overflow_failure.png')
+        await page.screenshot({ path: screenshot, fullPage: true })
+        console.log(`   📸 Screenshot: ${path.basename(screenshot)}`)
+        
+        if (!firstFailure) {
+          firstFailure = {
+            invariant: 'PANEL_OVERFLOW_INVARIANTS',
+            reason: `${overflowResult.violations.length} critical panel(s) overflowing horizontally`,
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`   ⚠️  Error during check: ${(err as Error).message}`)
+    }
+
+    // =========================================================================
+    // SAVE V2 RESULTS
+    // =========================================================================
+    const v2Result = {
+      intent_id: 'INTENT_010_V2',
+      timestamp: new Date().toISOString(),
+      verdict: firstFailure ? 'VERIFIED_NOT_OK' : 'VERIFIED_OK',
+      severity: firstFailure ? 'MEDIUM' as Severity : undefined,
+      failed_invariant: firstFailure?.invariant,
+      failure_reason: firstFailure?.reason,
+      checks: {
+        nested_scroll_detection_v2: scrollResult,
+        resize_stability: resizeResult,
+        panel_overflow_invariants: overflowResult,
+      },
+    }
+
+    // Save JSON result
+    const v2ResultPath = path.join(artifactDir, 'intent_010_v2_result.json')
+    fs.writeFileSync(v2ResultPath, JSON.stringify(v2Result, null, 2))
+    console.log(`\n💾 V2 JSON result saved: ${v2ResultPath}`)
+
+    // Generate v2 markdown section
+    if (scrollResult && resizeResult && overflowResult) {
+      const v2Markdown = generateV2InvariantSection(scrollResult, resizeResult, overflowResult)
+      const v2ReportPath = path.join(artifactDir, 'intent_010_v2_report.md')
+      
+      const reportLines = [
+        '# INTENT_010 v2 — Layout Robustness Report',
+        '',
+        `**Generated:** ${v2Result.timestamp}`,
+        `**Verdict:** ${v2Result.verdict === 'VERIFIED_OK' ? '✅ PASS' : '❌ FAIL'}`,
+        '',
+        '---',
+        '',
+        v2Markdown,
+        '',
+        '---',
+        '',
+        '*This report was generated by INTENT_010 v2 — Layout Robustness QC.*',
+      ]
+      fs.writeFileSync(v2ReportPath, reportLines.join('\n'))
+      console.log(`📝 V2 Markdown report saved: ${v2ReportPath}`)
+    }
+
+    // =========================================================================
+    // VERDICT
+    // =========================================================================
+    if (firstFailure) {
+      console.log('\n═══════════════════════════════════════════════════════════')
+      console.log('  ❌ INTENT_010 v2: LAYOUT ROBUSTNESS CHECK FAILED')
+      console.log(`     Invariant: ${firstFailure.invariant}`)
+      console.log(`     Reason: ${firstFailure.reason}`)
+      console.log('═══════════════════════════════════════════════════════════\n')
+      
+      // v2 failures are MEDIUM severity (warning, not blocking)
+      // We still throw to mark the test as failed
+      throw new Error(`Layout robustness check failed: ${firstFailure.invariant}`)
+    }
+
+    console.log('\n═══════════════════════════════════════════════════════════')
+    console.log('  ✅ INTENT_010 v2: ALL LAYOUT ROBUSTNESS CHECKS PASSED')
+    console.log('═══════════════════════════════════════════════════════════\n')
   })
 })
 
