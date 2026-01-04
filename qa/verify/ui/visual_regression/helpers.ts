@@ -268,31 +268,21 @@ export const test = base.extend<ElectronFixtures>({
     
     console.log('✅ [QC LAUNCH] Electron started')
     
-    // Set DETERMINISTIC window geometry for all QC runs
-    // Width: 1440, Height: 900, Centered, Not resizable
+    // Window geometry is set by Electron main process at creation time
+    // QC only VERIFIES it, does not mutate it
     const firstWindow = await app.firstWindow()
     
-    // Get screen size for centering
-    const screenSize = await firstWindow.evaluate(() => {
+    const bounds = await firstWindow.evaluate(() => {
       return {
-        width: window.screen.width,
-        height: window.screen.height
+        width: window.innerWidth,
+        height: window.innerHeight
       }
     })
     
-    const width = 1440
-    const height = 900
-    const x = Math.floor((screenSize.width - width) / 2)
-    const y = Math.floor((screenSize.height - height) / 2)
-    
-    // Set viewport size (this affects the renderer process window size)
-    await firstWindow.setViewportSize({ width, height })
-    
-    console.log('📐 [WINDOW GEOMETRY] Set deterministic bounds:')
-    console.log(`   Size: ${width}x${height}`)
-    console.log(`   Position: centered on screen`)
-    console.log(`   Resizable: false (enforced by QC)`)
-    console.log(`   Maximized: false`)
+    console.log('📐 [WINDOW GEOMETRY] Verifying deterministic bounds:')
+    console.log(`   Expected: 1440x900`)
+    console.log(`   Actual: ${bounds.width}x${bounds.height}`)
+
 
     await use(app)
     await app.close()

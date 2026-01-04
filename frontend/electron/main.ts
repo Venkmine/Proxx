@@ -267,18 +267,26 @@ async function createWindow() {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   
   const savedBounds = loadWindowBounds();
-  const defaultWidth = Math.round(screenWidth * 0.9);
-  const defaultHeight = Math.round(screenHeight * 0.9);
-  const defaultX = Math.round((screenWidth - defaultWidth) / 2);
-  const defaultY = Math.round((screenHeight - defaultHeight) / 2);
+  // DETERMINISTIC WINDOW GEOMETRY
+  // QC and production both use 1440x900, centered, non-resizable
+  const isE2ETest = process.env.E2E_TEST === 'true';
+  
+  const width = isE2ETest ? 1440 : (savedBounds?.width ?? Math.round(screenWidth * 0.9));
+  const height = isE2ETest ? 900 : (savedBounds?.height ?? Math.round(screenHeight * 0.9));
+  const x = isE2ETest ? Math.round((screenWidth - width) / 2) : (savedBounds?.x ?? Math.round((screenWidth - width) / 2));
+  const y = isE2ETest ? Math.round((screenHeight - height) / 2) : (savedBounds?.y ?? Math.round((screenHeight - height) / 2));
   
   const win = new BrowserWindow({
-    x: savedBounds?.x ?? defaultX,
-    y: savedBounds?.y ?? defaultY,
-    width: savedBounds?.width ?? defaultWidth,
-    height: savedBounds?.height ?? defaultHeight,
+    x,
+    y,
+    width,
+    height,
+    center: isE2ETest, // Force center in test mode
     minWidth: 1280,
     minHeight: 800,
+    resizable: !isE2ETest, // Non-resizable in test mode
+    fullscreen: false,
+    maximizable: !isE2ETest, // Non-maximizable in test mode
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 12, y: 12 },
     webPreferences: {
@@ -291,6 +299,10 @@ async function createWindow() {
       ],
     },
   });
+  
+  // Log final bounds on creation
+  const bounds = win.getBounds();
+  writeLog('INFO', `Window created: ${bounds.width}x${bounds.height} at (${bounds.x}, ${bounds.y})`);
   
   // Save bounds on resize/move
   win.on('resize', () => saveWindowBounds(win.getBounds()));
