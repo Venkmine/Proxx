@@ -101,6 +101,7 @@ export function useIngestion(backendUrl: string): UseIngestionReturn {
   
   // Path management
   const setPendingPaths = useCallback((paths: string[]) => {
+    console.log('[useIngestion] setPendingPaths called with:', paths)
     setPendingPathsState(paths)
     setLastError(null)
   }, [])

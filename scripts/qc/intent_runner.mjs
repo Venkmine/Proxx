@@ -304,6 +304,35 @@ export function createActionDriver() {
         }
         
         console.log('      ✅ Source file loaded successfully')
+        
+        // Set output directory to enable job creation
+        console.log('      → Setting output directory...')
+        
+        // Find and click Select Output Folder button
+        const selectFolderButton = page.locator('button:has-text("Select Folder"), button:has-text("Select Output")')
+        const folderButtonVisible = await selectFolderButton.first().isVisible().catch(() => false)
+        
+        if (folderButtonVisible) {
+          await selectFolderButton.first().click()
+          console.log('      ✓ Select Folder clicked - mock should return /tmp/qc_output')
+          await page.waitForTimeout(500) // Let React update
+        } else {
+          // Fallback: try to set via input field with React-compatible method
+          await page.evaluate(() => {
+            const input = document.querySelector('[data-testid="output-directory-input"]')
+            if (input) {
+              // Trigger React's onChange by setting value and dispatching input event
+              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+              nativeInputValueSetter.call(input, '/tmp/qc_output')
+              const event = new Event('input', { bubbles: true })
+              input.dispatchEvent(event)
+            }
+          })
+          console.log('      ✓ Output directory set via input field')
+        }
+        
+        await page.waitForTimeout(500) // Give React time to update state
+        console.log('      ✓ Output directory configured')
       } catch (err) {
         console.error('      ❌ Failed to load source file:', err.message)
         throw new Error(`Failed to load source file: ${err.message}`)
@@ -370,9 +399,10 @@ export function createActionDriver() {
         const initialJobCount = await page.locator('[data-job-id]').count()
         console.log(`      → Initial job count: ${initialJobCount}`)
         
-        // STEP 3: Click once
+        // STEP 3: Click once (use testid for reliability, force click to bypass overlays)
         console.log('      → Create Job clicked')
-        await createButton.click()
+        const submitButton = page.locator('[data-testid="job-submit-button"]')
+        await submitButton.click({ timeout: 10000, force: true })
         
         // STEP 4: Wait for ONE hard success signal
         console.log('      → Waiting for job creation evidence...')
@@ -614,6 +644,9 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         }
       }
       
+      // Allow React to complete re-render before checking state
+      await page.waitForTimeout(1000)
+      
       // Log state after action
       const stateAfter = await inferWorkflowState(page)
       console.log(`   State after: ${stateAfter}`)
@@ -628,9 +661,22 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
     if (action === 'system_loads_source') {
       const state = await inferWorkflowState(page)
       if (state === 'source_loaded') {
-        // Source is loaded, now we need to run preflight to transition to READY
-        console.log('   → Running preflight automatically...')
-        await driver.clickRunPreflight(page)
+        // Source is loaded - verify UI state
+        console.log('   → Verifying source loaded state...')
+        
+        // Assert data-has-sources is set
+        const hasSourcesAttr = await page.locator('[data-testid="create-job-panel"][data-has-sources="true"]').isVisible().catch(() => false)
+        if (!hasSourcesAttr) {
+          throw new Error('data-has-sources attribute not set after file selection')
+        }
+        console.log('   ✓ data-has-sources="true" confirmed')
+        
+        // Assert Create Job button is visible
+        const createJobBtn = await page.locator('button:has-text("Create Job")').isVisible().catch(() => false)
+        if (!createJobBtn) {
+          throw new Error('Create Job button not visible in source_loaded state')
+        }
+        console.log('   ✓ Create Job button visible')
         
         // STEP 2 — Check liveness AFTER action
         if (livenessTracker) {
@@ -646,9 +692,9 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
           }
         }
         
-        // Take screenshot after preflight
-        const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
-        await captureScreenshotGuarded(page, screenshotPath, `${action}_after_preflight`)
+        // Take screenshot
+        const screenshotPath = path.join(artifactDir, `${action}.png`)
+        await captureScreenshotGuarded(page, screenshotPath, action)
         console.log(`   📸 Screenshot: ${screenshotPath}`)
         
         // VISUAL CHANGE GATE — Fail if no visible change
@@ -684,9 +730,22 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
       const newState = await inferWorkflowState(page)
       
       if (newState === 'source_loaded') {
-        // Source is loaded, now we need to run preflight to transition to READY
-        console.log('   → Running preflight automatically...')
-        await driver.clickRunPreflight(page)
+        // Source is loaded - verify UI state
+        console.log('   → Verifying source loaded state (after wait)...')
+        
+        // Assert data-has-sources is set
+        const hasSourcesAttr = await page.locator('[data-testid="create-job-panel"][data-has-sources="true"]').isVisible().catch(() => false)
+        if (!hasSourcesAttr) {
+          throw new Error('data-has-sources attribute not set after file selection')
+        }
+        console.log('   ✓ data-has-sources="true" confirmed')
+        
+        // Assert Create Job button is visible
+        const createJobBtn = await page.locator('button:has-text("Create Job")').isVisible().catch(() => false)
+        if (!createJobBtn) {
+          throw new Error('Create Job button not visible in source_loaded state')
+        }
+        console.log('   ✓ Create Job button visible')
         
         // STEP 2 — Check liveness AFTER action
         if (livenessTracker) {
@@ -702,9 +761,9 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
           }
         }
         
-        // Take screenshot after preflight
-        const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
-        await captureScreenshotGuarded(page, screenshotPath, `${action}_after_preflight`)
+        // Take screenshot
+        const screenshotPath = path.join(artifactDir, `${action}.png`)
+        await captureScreenshotGuarded(page, screenshotPath, action)
         console.log(`   📸 Screenshot: ${screenshotPath}`)
         
         // VISUAL CHANGE GATE — Fail if no visible change

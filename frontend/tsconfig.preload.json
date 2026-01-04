@@ -1,15 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ES2020",
+    "module": "CommonJS",
     "moduleResolution": "node",
     "outDir": "dist-electron",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "jsx": "preserve"
+    "resolveJsonModule": true
   },
-  "include": ["electron"],
-  "exclude": ["electron/preload.ts"]
+  "include": ["electron/preload.ts"]
 }

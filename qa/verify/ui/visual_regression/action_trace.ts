@@ -93,30 +93,36 @@ export async function inferWorkflowState(page: Page): Promise<WorkflowState> {
   
   // Check for sources loaded indicator (explicit UI element)
   const sourcesLoadedIndicator = await page.locator('[data-testid="sources-loaded-indicator"]').isVisible().catch(() => false)
+  console.log('[STATE DEBUG] sourcesLoadedIndicator:', sourcesLoadedIndicator)
   if (sourcesLoadedIndicator) {
     return 'source_loaded'
   }
   
   // Check for source selection panel with sources loaded
-  const hasSources = await page.locator('[data-testid="source-selection-panel"][data-has-sources="true"]').isVisible().catch(() => false)
+  // NOTE: CreateJobPanel sets data-has-sources attribute (not SourceSelectionPanel)
+  const hasSources = await page.locator('[data-testid="create-job-panel"][data-has-sources="true"]').isVisible().catch(() => false)
+  console.log('[STATE DEBUG] hasSources:', hasSources)
   if (hasSources) {
     return 'source_loaded'
   }
   
   // Check for source list (visible when paths are loaded)
   const sourceListVisible = await page.locator('[data-testid="source-list"]').isVisible().catch(() => false)
+  console.log('[STATE DEBUG] sourceListVisible:', sourceListVisible)
   if (sourceListVisible) {
     return 'source_loaded'
   }
   
   // Check for loaded source (player area with content)
   const sourceLoaded = await page.locator('[data-testid="monitor-surface"][data-state="source-loaded"], [data-testid="source-metadata"]').isVisible().catch(() => false)
+  console.log('[STATE DEBUG] sourceLoaded:', sourceLoaded)
   if (sourceLoaded) {
     return 'source_loaded'
   }
   
   // Check for Create Job button enabled (implies source loaded)
   const createJobEnabled = await page.locator('button:has-text("Create Job"):not([disabled])').isVisible().catch(() => false)
+  console.log('[STATE DEBUG] createJobEnabled:', createJobEnabled)
   if (createJobEnabled) {
     return 'source_loaded'
   }

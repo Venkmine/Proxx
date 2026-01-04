@@ -63,6 +63,8 @@ import { V2ResultPanel } from './components/V2ResultPanel'
 // import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
+// Source Selection Store: Authoritative source selection state
+import { useSourceSelectionStore } from './stores/sourceSelectionStore'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'
 // App State Machine: Explicit centralized state derivation
@@ -324,9 +326,14 @@ function App() {
   // activeJobId = job created after ingestion (post-job)
   const ingestion = useIngestion(BACKEND_URL)
   
-  // Alias for backwards compatibility with existing components
-  const selectedFiles = ingestion.pendingPaths
-  const setSelectedFiles = ingestion.setPendingPaths
+  // SINGLE SOURCE OF TRUTH: Read selected files from useSourceSelectionStore
+  // This is the canonical store that SourceSelectionPanel uses for data-has-sources
+  const selectedFiles = useSourceSelectionStore(state => state.selectedPaths)
+  const setSelectedFiles = useCallback((paths: string[]) => {
+    // Update the source selection store (single source of truth)
+    useSourceSelectionStore.getState().clearAll()
+    useSourceSelectionStore.getState().addPaths(paths)
+  }, [])
   
   // ============================================
   // TIERED PREVIEW SYSTEM
@@ -1625,6 +1632,7 @@ function App() {
     console.log('[App] selectFiles called, hasElectron:', hasElectron)
     console.log('[App] window.electron:', window.electron)
     if (!hasElectron) {
+      console.error('[App] No Electron, alerting user')
       alert('File picker requires Electron runtime')
       return
     }
@@ -1633,8 +1641,58 @@ function App() {
       const paths = await window.electron!.openFiles()
       console.log('[App] openFiles returned:', paths)
       if (paths.length > 0) {
-        setSelectedFiles(paths)
-        console.log('[App] Files selected:', paths)
+        console.log('[App] Paths non-empty, updating source selection store...')
+        // SINGLE SOURCE OF TRUTH: Write ONLY to useSourceSelectionStore
+        // SourceSelectionPanel reads from this to set data-has-sources
+        // CreateJobPanel will also read from this (via selectedFiles alias below)
+        useSourceSelectionStore.getState().addPaths(paths)
+        console.log('[App] Files selected and synced to store:', paths)
+        
+        // ═══════════════════════════════════════════════════════════════
+        // QC DIAGNOSTIC: Expose state mismatch
+        // ═══════════════════════════════════════════════════════════════
+        setTimeout(() => {
+          const storeState = useSourceSelectionStore.getState()
+          const ingestionState = ingestion.pendingPaths
+          
+          console.log('')
+          console.log('╔═══════════════════════════════════════════════════════════════╗')
+          console.log('║ QC DIAGNOSTIC: STATE MISMATCH CHECK                          ║')
+          console.log('╚═══════════════════════════════════════════════════════════════╝')
+          console.log('')
+          console.log('DATA STORES (Source of Truth):')
+          console.log('  useSourceSelectionStore.selectedPaths:', storeState.selectedPaths)
+          console.log('  useIngestion.pendingPaths:', ingestionState)
+          console.log('')
+          console.log('UI INDICATORS (What UI reads):')
+          console.log('  [data-testid="sources-loaded-indicator"]: checking...')
+          console.log('  [data-has-sources="true"]: checking...')
+          console.log('')
+          
+          // Check what the UI actually sees
+          const indicator = document.querySelector('[data-testid="sources-loaded-indicator"]')
+          const panel = document.querySelector('[data-testid="create-job-panel"]') // CreateJobPanel sets data-has-sources
+          const hasSourcesAttr = panel?.getAttribute('data-has-sources')
+          
+          console.log('ACTUAL UI STATE:')
+          console.log('  sources-loaded-indicator exists:', !!indicator)
+          console.log('  sources-loaded-indicator visible:', indicator ? window.getComputedStyle(indicator).display !== 'none' : false)
+          console.log('  panel data-has-sources:', hasSourcesAttr)
+          console.log('')
+          
+          if ((storeState.selectedPaths.length > 0 || ingestionState.length > 0) && 
+              (!indicator || hasSourcesAttr !== 'true')) {
+            console.error('🔥 FILE SELECTED BUT UI STILL IDLE')
+            console.error('   Data exists:', storeState.selectedPaths.length > 0 || ingestionState.length > 0)
+            console.error('   UI reflects it:', indicator && hasSourcesAttr === 'true')
+            console.error('')
+            console.error('   ⚠️  SOURCE-OF-TRUTH MISMATCH DETECTED')
+          }
+          console.log('═══════════════════════════════════════════════════════════════')
+          console.log('')
+        }, 100) // Delay to let UI update
+      } else {
+        console.log('[App] No paths returned from openFiles')
       }
     } catch (err) {
       console.error('[App] File selection error:', err)
@@ -2403,7 +2461,8 @@ function App() {
               hasSubmitIntent={hasSubmitIntent}
               onClear={() => {
                 // PROBLEM #4 FIX: Clear preview state when clearing sources
-                ingestion.clearPendingPaths()
+                // SINGLE SOURCE OF TRUTH: Clear useSourceSelectionStore
+                useSourceSelectionStore.getState().clearAll()
                 setOutputDirectory('')
                 currentPreviewSource.current = null
                 tieredPreview.reset()

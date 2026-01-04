@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "dist-electron/main.mjs",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "dev:electron": "vite & sleep 3 && pnpm run electron:dev",
@@ -22,8 +22,8 @@
     "qc:interpret": "node ../scripts/qc/interpret_glm_report.mjs",
     "qc:loop": "node ../scripts/qc/run_qc_loop.mjs",
     "qc:diff": "node ../scripts/qc/diff_glm_reports.mjs",
-    "electron:dev": "tsc -p tsconfig.electron.json && sh ./rename-electron-js-to-mjs.sh && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist-electron/main.mjs",
-    "electron:build": "tsc -p tsconfig.electron.json && sh ./rename-electron-js-to-mjs.sh",
+    "electron:dev": "tsc -p tsconfig.electron.json && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist-electron/main.js",
+    "electron:build": "tsc -p tsconfig.electron.json",
     "pnpm:electron:dev": "pnpm --filter ./frontend electron:dev"
   },
   "dependencies": {

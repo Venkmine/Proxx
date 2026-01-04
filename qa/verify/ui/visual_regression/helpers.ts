@@ -55,11 +55,34 @@ export async function assertElectronOnly(page: Page, app: ElectronApplication): 
   }
   
   // Check 2: window.electron preload API must exist
-  const hasElectronAPI = await page.evaluate(() => {
-    return typeof (window as any).electron !== 'undefined'
+  // DEBUG: Detailed check of what exists on window
+  const electronCheck = await page.evaluate(() => {
+    const windowKeys = Object.keys(window)
+    const hasElectron = 'electron' in window
+    const electronType = typeof (window as any).electron
+    const electronValue = (window as any).electron
+    const preloadRan = (window as any).__PRELOAD_RAN__
+    const preloadArgv = (window as any).__PRELOAD_ARGV__
+    
+    console.log('[DEBUG] window keys:', windowKeys.filter(k => !k.startsWith('webkit')).slice(0, 20))
+    console.log('[DEBUG] hasElectron:', hasElectron)
+    console.log('[DEBUG] __PRELOAD_RAN__:', preloadRan)
+    console.log('[DEBUG] __PRELOAD_ARGV__:', preloadArgv)
+    console.log('[DEBUG] electronType:', electronType)
+    console.log('[DEBUG] electronValue:', electronValue)
+    
+    return {
+      hasElectron,
+      preloadRan,
+      preloadArgv,
+      electronType,
+      windowKeys: windowKeys.filter(k => k.includes('electron') || k.includes('QC') || k.includes('_') || k.includes('PRELOAD')),
+    }
   })
   
-  if (!hasElectronAPI) {
+  console.log('[ELECTRON CHECK]', JSON.stringify(electronCheck, null, 2))
+  
+  if (!electronCheck.hasElectron) {
     const error = 'QC_INVALID: window.electron preload API not found. Electron required.'
     console.error(`❌ ${error}`)
     throw new Error(error)
@@ -160,40 +183,40 @@ export async function waitForAppReady(page: Page, artifactDir?: string): Promise
 }
 
 /**
+ * Get QC test file path
+ * DEPRECATED: Mocks are now installed in preload.ts via QC_TEST_FILE env var.
+ * This function remains for backward compatibility with intent_runner.mjs.
+ */
+export function getQCTestFile(): string {
+  return '/Users/leon.grant/projects/Proxx/artifacts/v2/20251228T160555/v2_smoke_v2_smoke_test_000.mp4'
+}
+
+/**
  * Install QC mocks for file/folder selection
  * 
- * CRITICAL: Must be called BEFORE any UI interaction.
- * This prevents native OS dialogs from appearing during QC.
+ * DEPRECATED: Mocks are now installed in preload.ts BEFORE React renders.
+ * This function is kept for backward compatibility but does nothing.
+ * The preload context reads QC_TEST_FILE env var and installs mocks early.
  */
 export async function installQCMocks(page: Page): Promise<void> {
-  const projectRoot = path.resolve(__dirname, '../../../..')
-  const testFile = '/Users/leon.grant/projects/Proxx/artifacts/v2/20251228T160555/v2_smoke_v2_smoke_test_000.mp4'
+  const testFile = getQCTestFile()
   
   console.log('🔧 Installing QC mocks...')
   console.log(`   Test file: ${testFile}`)
   
-  await page.evaluate((filePath) => {
-    // Ensure window.electron exists
-    if (!window.electron) {
-      (window as any).electron = {}
-    }
-    
-    // Mock BOTH file selection functions (NO native dialog)
-    // openFiles: Legacy function for files only
-    (window as any).electron.openFiles = async () => {
-      console.log('[QC MOCK] openFiles() called, returning:', [filePath])
-      return [filePath]
-    }
-    
-    // openFilesOrFolders: New function for files+folders
-    (window as any).electron.openFilesOrFolders = async () => {
-      console.log('[QC MOCK] openFilesOrFolders() called, returning:', [filePath])
-      return [filePath]
-    }
-    
-    // Set a flag to verify mock is installed
-    (window as any).__QC_MOCKS_INSTALLED__ = true
-  }, testFile)
+  // Verify preload mocks are installed
+  const mocksInstalled = await page.evaluate(() => {
+    return typeof window.electron?.openFiles === 'function' &&
+           typeof window.electron?.openFilesOrFolders === 'function' &&
+           (window as any).__QC_MOCKS_INSTALLED__ === true
+  })
+  
+  if (!mocksInstalled) {
+    throw new Error(
+      'QC_INVALID: Preload mocks not installed. ' +
+      'Ensure QC_TEST_FILE env var is set when launching Electron.'
+    )
+  }
   
   console.log('✅ QC mocks installed')
 }
@@ -236,7 +259,7 @@ export const test = base.extend<ElectronFixtures>({
 
   app: async ({ finderGuard }, use) => {
     const projectRoot = path.resolve(__dirname, '../../../..')
-    const electronMain = path.join(projectRoot, 'frontend/dist-electron/main.mjs')
+    const electronMain = path.join(projectRoot, 'frontend/dist-electron/main.js')
     
     // Ensure Electron build exists
     if (!fs.existsSync(electronMain)) {
@@ -252,16 +275,19 @@ export const test = base.extend<ElectronFixtures>({
     console.log(`   Electron path: ${electronPath}`)
     console.log(`   Main: ${electronMain}`)
 
+    // Get test file path from environment or use default
+    const testFile = process.env.QC_TEST_FILE || getQCTestFile()
+
     // Launch Electron with test mode enabled
+    // Preload needs env vars (not args) since it runs in sandboxed context
     const app = await electron.launch({
       executablePath: electronPath,
       args: [electronMain],
       env: {
         ...process.env,
-        E2E_TEST: 'true',
-        E2E_AUDIT_MODE: '0', // Not audit mode - normal operation
         NODE_ENV: 'test',
-        // Auto-set output directory to avoid OS dialogs
+        E2E_TEST: 'true',
+        QC_TEST_FILE: testFile,
         QC_OUTPUT_DIR: path.join(projectRoot, 'qc/tmp/output'),
       },
     })
@@ -293,6 +319,38 @@ export const test = base.extend<ElectronFixtures>({
     finderGuard.assertNotDetected('page_creation')
     
     const page = await app.firstWindow()
+    
+    // DEBUG: Capture all console messages from renderer
+    page.on('console', msg => {
+      console.log('[RENDERER]', msg.type(), msg.text())
+    })
+    
+    // CRITICAL: Capture renderer errors BEFORE liveness guard throws
+    page.on('pageerror', error => {
+      console.error('🔥 [RENDERER ERROR] Uncaught exception in renderer:')
+      console.error('   Message:', error.message)
+      console.error('   Stack:', error.stack)
+    })
+    
+    // Capture unhandled promise rejections
+    await page.evaluate(() => {
+      window.addEventListener('unhandledrejection', (event) => {
+        console.error('[RENDERER REJECTION]', event.reason)
+      })
+      
+      // Override window.onerror to capture errors
+      window.onerror = (message, source, lineno, colno, error) => {
+        console.error('[RENDERER window.onerror]', {
+          message,
+          source,
+          lineno,
+          colno,
+          stack: error?.stack
+        })
+        return false
+      }
+    })
+    
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 })
     
     // MANDATORY: Verify Electron-only (never browser/Vite)

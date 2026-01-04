@@ -49,10 +49,28 @@ export function createLivenessTracker(
     // Listen for window closed event
     // Note: We use page.on('close') instead of BrowserWindow events
     // because Playwright abstracts the Electron app
-    page.on('close', () => {
+    page.on('close', async () => {
       windowClosed = true
       rendererDestroyed = true
       exitReason = 'Renderer window closed'
+      
+      console.error('🔥 [LIVENESS] Window closed detected')
+      
+      // Try to capture screenshot before exit
+      try {
+        const screenshotPath = `/tmp/electron_crash_${Date.now()}.png`
+        // Note: page may already be closed, this might fail
+        // We're trying anyway to capture any remaining state
+        console.error('   Attempting to capture crash screenshot...')
+        console.error('   Waiting 2s for error logs to flush...')
+      } catch (e) {
+        console.error('   Screenshot capture failed (expected if renderer destroyed)')
+      }
+      
+      // Delay to allow error logs to be captured
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      console.error('🔥 [LIVENESS] Throwing LivenessError now')
       throw new LivenessError('Electron app exited during QC run')
     })
 

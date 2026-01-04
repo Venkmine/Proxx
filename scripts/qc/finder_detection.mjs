@@ -103,20 +103,24 @@ export class FinderGuard {
         
         console.error('')
         console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.error('  🚨 FINDER GUARD TRIGGERED — QC ABORTED')
+        console.error('  🚨 FINDER GUARD TRIGGERED — QC_INVALID')
         console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.error('  Finder or native file dialog detected.')
-        console.error('  QC cannot continue — automation has lost control.')
+        console.error('  Native Finder dialog opened during E2E test.')
+        console.error('  This MUST NOT happen — file dialogs should be mocked.')
+        console.error('  Exiting immediately with code 2 (QC_INVALID).')
         console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
         console.error('')
         
         // Stop monitoring
         this.stop()
         
-        // Call detection callback
+        // Call detection callback if provided
         if (this.detectionCallback) {
           this.detectionCallback()
         }
+        
+        // Exit immediately - do NOT continue, do NOT retry
+        process.exit(2)
       }
     }, intervalMs)
   }

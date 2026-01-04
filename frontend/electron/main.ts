@@ -75,6 +75,29 @@ function writeLog(level: 'INFO' | 'ERROR' | 'WARN', message: string) {
   }
 }
 
+// E2E MODE: Hard-disable native dialogs BEFORE any window creation
+const E2E_TEST = process.env.E2E_TEST === 'true';
+
+if (E2E_TEST) {
+  writeLog('INFO', '[E2E] Native dialogs disabled');
+  
+  // Override dialog.showOpenDialog to throw
+  const originalShowOpenDialog = dialog.showOpenDialog;
+  dialog.showOpenDialog = function(...args: any[]): any {
+    const error = new Error('Native dialogs are forbidden in E2E mode');
+    writeLog('ERROR', `[E2E] Attempted to call dialog.showOpenDialog in E2E mode`);
+    throw error;
+  };
+  
+  // Override dialog.showOpenDialogSync to throw
+  const originalShowOpenDialogSync = dialog.showOpenDialogSync;
+  dialog.showOpenDialogSync = function(...args: any[]): any {
+    const error = new Error('Native dialogs are forbidden in E2E mode');
+    writeLog('ERROR', `[E2E] Attempted to call dialog.showOpenDialogSync in E2E mode`);
+    throw error;
+  };
+}
+
 // Phase 20: Error fallback HTML for white screen prevention
 function getErrorHtml(errorTitle: string, errorDetails: string): string {
   return `<!DOCTYPE html>
@@ -250,15 +273,31 @@ function saveWindowBounds(bounds: Electron.Rectangle) {
 }
 
 async function createWindow() {
-  const preloadPath = path.join(__dirname, 'preload.mjs');
+  const preloadPath = path.resolve(__dirname, 'preload.js'); // Use absolute path
   
   writeLog('INFO', '═══════════════════════════════════════');
   writeLog('INFO', 'AWAIRE PROXY BOOT');
   writeLog('INFO', '═══════════════════════════════════════');
   writeLog('INFO', `__dirname: ${__dirname}`);
-  writeLog('INFO', `Preload path: ${preloadPath}`);
+  writeLog('INFO', `Preload path (absolute): ${preloadPath}`);
+  
+  // DEBUG: Check if preload file exists
+  try {
+    const fs = await import('fs');
+    const exists = fs.existsSync(preloadPath);
+    const stats = exists ? fs.statSync(preloadPath) : null;
+    writeLog('INFO', `Preload file exists: ${exists}`);
+    if (stats) {
+      writeLog('INFO', `Preload file size: ${stats.size} bytes`);
+    }
+  } catch (err) {
+    writeLog('ERROR', `Preload file check failed: ${err}`);
+  }
+  
   writeLog('INFO', `VITE_DEV_SERVER_URL: ${process.env.VITE_DEV_SERVER_URL || '(not set)'}`);
   writeLog('INFO', `E2E_AUDIT_MODE: ${process.env.E2E_AUDIT_MODE || '0'}`);
+  writeLog('INFO', `E2E_TEST: ${process.env.E2E_TEST || '0'}`);
+  writeLog('INFO', `QC_TEST_FILE: ${process.env.QC_TEST_FILE || '(none)'}`);
   writeLog('INFO', `Platform: ${process.platform}, Arch: ${process.arch}`);
   
   // Load saved bounds or calculate 90% of primary display
@@ -293,9 +332,11 @@ async function createWindow() {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,  // Try with sandbox enabled
       additionalArguments: [
-        `--e2e-audit-mode=${process.env.E2E_AUDIT_MODE || '0'}`
+        `--e2e-test=${E2E_TEST ? '1' : '0'}`,
+        `--e2e-audit-mode=${process.env.E2E_AUDIT_MODE || '0'}`,
+        `--qc-test-file=${process.env.QC_TEST_FILE || ''}`,
       ],
     },
   });
@@ -303,6 +344,39 @@ async function createWindow() {
   // Log final bounds on creation
   const bounds = win.getBounds();
   writeLog('INFO', `Window created: ${bounds.width}x${bounds.height} at (${bounds.x}, ${bounds.y})`);
+  
+  // DEBUG: Log preload errors
+  win.webContents.on('console-message', (event, level, message) => {
+    if (message.includes('[PRELOAD')) {
+      writeLog('INFO', `PRELOAD CONSOLE: ${message}`)
+    }
+  })
+  
+  // CRITICAL: Capture renderer process crashes/exits
+  win.webContents.on('render-process-gone', (event, details) => {
+    writeLog('ERROR', '🔥 RENDERER PROCESS GONE')
+    writeLog('ERROR', `   Reason: ${details.reason}`)
+    writeLog('ERROR', `   Exit Code: ${details.exitCode}`)
+  })
+  
+  // Capture unresponsive renderer
+  win.webContents.on('unresponsive', () => {
+    writeLog('ERROR', '🔥 RENDERER UNRESPONSIVE')
+  })
+  
+  // Capture renderer becoming responsive again
+  win.webContents.on('responsive', () => {
+    writeLog('INFO', '✅ RENDERER RESPONSIVE AGAIN')
+  })
+  
+  // Capture window close
+  win.on('close', (event) => {
+    writeLog('INFO', '🚪 WINDOW CLOSING')
+  })
+  
+  win.on('closed', () => {
+    writeLog('INFO', '🚪 WINDOW CLOSED')
+  })
   
   // Save bounds on resize/move
   win.on('resize', () => saveWindowBounds(win.getBounds()));
@@ -396,6 +470,10 @@ async function createWindow() {
 // Phase 15: IPC handlers for file/folder dialogs and shell operations
 function setupIpcHandlers() {
   ipcMain.handle('dialog:openFiles', async () => {
+    if (E2E_TEST) {
+      writeLog('ERROR', '[E2E] dialog:openFiles called but should be mocked');
+      throw new Error('Native dialogs are forbidden in E2E mode');
+    }
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: [
@@ -406,6 +484,10 @@ function setupIpcHandlers() {
     return result.filePaths;
   });
   ipcMain.handle('dialog:openFolder', async () => {
+    if (E2E_TEST) {
+      writeLog('ERROR', '[E2E] dialog:openFolder called but should be mocked');
+      throw new Error('Native dialogs are forbidden in E2E mode');
+    }
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
     });
@@ -429,6 +511,10 @@ function setupIpcHandlers() {
    * - Users can add /Volumes/MyDrive as a source directly
    */
   ipcMain.handle('dialog:openFilesOrFolders', async () => {
+    if (E2E_TEST) {
+      writeLog('ERROR', '[E2E] dialog:openFilesOrFolders called but should be mocked');
+      throw new Error('Native dialogs are forbidden in E2E mode');
+    }
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'openDirectory', 'multiSelections'],
       filters: [
@@ -640,7 +726,12 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  writeLog('INFO', '🚪 [APP EVENT] window-all-closed triggered')
+  writeLog('INFO', `   Platform: ${process.platform}`)
+  writeLog('INFO', `   Will quit: ${process.platform !== 'darwin' ? 'YES' : 'NO (macOS behavior)'}`)
+  
   if (process.platform !== 'darwin') {
+    writeLog('INFO', '   Calling app.quit()...')
     app.quit()
   }
 })

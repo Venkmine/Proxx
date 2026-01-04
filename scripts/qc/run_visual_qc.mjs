@@ -58,6 +58,7 @@ async function runPlaywrightVisualTests(artifactDir, timestamp, intentId = null)
       VISUAL_QC_TIMESTAMP: timestamp,
       VISUAL_QC_ARTIFACT_DIR: artifactDir,
       E2E_TEST: 'true',
+      QC_TEST_FILE: '/Users/leon.grant/projects/Proxx/artifacts/v2/20251228T160555/v2_smoke_v2_smoke_test_000.mp4',
     }
     
     // If intent ID is provided, run intent workflow test

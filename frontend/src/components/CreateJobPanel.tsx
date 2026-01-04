@@ -472,6 +472,7 @@ export function CreateJobPanel({
   return (
     <div
       data-testid="create-job-panel"
+      data-has-sources={selectedFiles.length > 0}
       style={{
         padding: '1.25rem 1.5rem',
         borderBottom: '1px solid var(--border-primary)',
@@ -631,9 +632,15 @@ export function CreateJobPanel({
                 variant="secondary"
                 size="sm"
                 data-testid="select-files-button"
-                onClick={() => {
+                onClick={async () => {
                   console.log('[SELECT FILES CLICKED]')
-                  onSelectFilesClick()
+                  console.log('[CreateJobPanel] About to call onSelectFilesClick')
+                  try {
+                    await onSelectFilesClick()
+                    console.log('[CreateJobPanel] onSelectFilesClick returned')
+                  } catch (err) {
+                    console.error('[CreateJobPanel] Error calling onSelectFilesClick:', err)
+                  }
                 }}
                 disabled={loading}
               >
@@ -686,6 +693,8 @@ export function CreateJobPanel({
               marginBottom: '0.75rem',
             }}
           >
+            {/* Indicator for QC state detection */}
+            <div data-testid="sources-loaded-indicator" style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
             {selectedFiles.map((f, i) => (
               <div
                 key={i}

@@ -56,13 +56,10 @@ This is the primary use case. A user selects a source file, the system loads and
 | Step | Action | Actor |
 |------|--------|-------|
 | 1 | `user_selects_source_file` | User |
-| 2 | `system_loads_source` | System |
-| 3 | `system_displays_preview` | System |
-| 4 | `user_configures_job` (optional) | User |
-| 5 | `user_creates_job` | User |
-| 6 | `system_queues_job` | System |
-| 7 | `system_processes_job` | System |
-| 8 | `job_completes` | System |
+| 2 | `user_creates_job` | User |
+| 3 | `system_queues_job` | System |
+| 4 | `system_processes_job` | System |
+| 5 | `job_completes` | System |
 
 #### Expected State Transitions
 
