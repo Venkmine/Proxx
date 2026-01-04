@@ -308,31 +308,19 @@ export function createActionDriver() {
         // Set output directory to enable job creation
         console.log('      → Setting output directory...')
         
-        // Find and click Select Output Folder button
-        const selectFolderButton = page.locator('button:has-text("Select Folder"), button:has-text("Select Output")')
-        const folderButtonVisible = await selectFolderButton.first().isVisible().catch(() => false)
+        // Find and click Browse button for output directory
+        const browseButton = page.locator('button:has-text("Browse...")')
+        const browseButtonVisible = await browseButton.first().isVisible().catch(() => false)
         
-        if (folderButtonVisible) {
-          await selectFolderButton.first().click()
-          console.log('      ✓ Select Folder clicked - mock should return /tmp/qc_output')
-          await page.waitForTimeout(500) // Let React update
+        if (browseButtonVisible) {
+          await browseButton.first().click({ force: true })
+          console.log('      ✓ Browse button clicked - mock should return /tmp/qc_output')
+          await page.waitForTimeout(1000) // Let React update
         } else {
-          // Fallback: try to set via input field with React-compatible method
-          await page.evaluate(() => {
-            const input = document.querySelector('[data-testid="output-directory-input"]')
-            if (input) {
-              // Trigger React's onChange by setting value and dispatching input event
-              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-              nativeInputValueSetter.call(input, '/tmp/qc_output')
-              const event = new Event('input', { bubbles: true })
-              input.dispatchEvent(event)
-            }
-          })
-          console.log('      ✓ Output directory set via input field')
+          console.log('      ⚠️ Browse button not found, output directory may not be set')
         }
         
-        await page.waitForTimeout(500) // Give React time to update state
-        console.log('      ✓ Output directory configured')
+        console.log('      ✓ Output directory configuration attempted')
       } catch (err) {
         console.error('      ❌ Failed to load source file:', err.message)
         throw new Error(`Failed to load source file: ${err.message}`)
