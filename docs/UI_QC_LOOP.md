@@ -1,7 +1,7 @@
 # UI QC Loop
 
-> Version: 1.0.0  
-> Last Updated: 2026-01-03
+> Version: 1.1.0  
+> Last Updated: 2026-01-04
 
 ## Overview
 
@@ -87,6 +87,45 @@ All visual verification derives from explicit human workflow intents defined in 
 - Each documented intent can be fulfilled end-to-end
 - UI evidence matches intent requirements
 - Failures are classified per intent's acceptable/hard failure definitions
+
+---
+
+## UI QC vs Execution QC
+
+**UI QC and Execution QC are formally separated.**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     QC SCOPE BOUNDARY                                │
+├─────────────────────────────┬───────────────────────────────────────┤
+│          UI QC              │         EXECUTION QC                  │
+│   (This document)           │    (INTENT_006, headless)             │
+├─────────────────────────────┼───────────────────────────────────────┤
+│ Electron + Playwright       │ Backend only (no UI)                  │
+│ Visual verification (GLM)   │ FFmpeg execution                      │
+│ Non-interactive (mocked)    │ Real file I/O                         │
+│ Fast, deterministic         │ May take minutes                      │
+├─────────────────────────────┼───────────────────────────────────────┤
+│ ENDS AT: system_queues_job  │ STARTS AT: system_processes_job      │
+└─────────────────────────────┴───────────────────────────────────────┘
+```
+
+### Why This Separation?
+
+| Concern | Explanation |
+|---------|-------------|
+| **Determinism** | UI QC must be fast, repeatable, and non-interactive |
+| **Dependencies** | Execution QC requires real FFmpeg, which may not be available |
+| **Isolation** | UI bugs should not block execution testing, and vice versa |
+| **Speed** | UI QC completes in seconds; execution may take minutes |
+
+### UI QC Terminal State
+
+- **Terminal action**: `system_queues_job`
+- **Terminal state**: `job_queued`
+- **Success criteria**: Job visible in queue panel
+
+Execution-scope actions (`system_processes_job`, `job_completes`) are **skipped** by the intent runner in UI QC mode. They are validated by INTENT_006.
 
 ---
 

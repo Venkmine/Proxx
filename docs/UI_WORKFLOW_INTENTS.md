@@ -1,7 +1,7 @@
 # UI Workflow Intents
 
-> Version: 1.0.0  
-> Last Updated: 2026-01-03
+> Version: 1.1.0  
+> Last Updated: 2026-01-04
 
 ---
 
@@ -12,6 +12,43 @@
 QC, automation, and UI verification **MUST** derive from this specification, not infer intent from UI structure.
 
 All automated tests, visual verification loops, and acceptance criteria trace back to the intents defined here. If an intent is not documented, it is not contractually expected.
+
+---
+
+## QC Scope Separation
+
+**UI QC and Execution QC are formally separated.**
+
+| Scope | Responsibility | Environment | Validated By |
+|-------|---------------|-------------|--------------|
+| **UI QC** | UI workflow through job queuing | Electron + Playwright | INTENT_001 through INTENT_005 |
+| **Execution QC** | Job processing through completion | Headless backend | INTENT_006 |
+
+### Contract Boundary
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        QC SCOPE BOUNDARY                              │
+├───────────────────────────────┬──────────────────────────────────────┤
+│           UI QC               │         EXECUTION QC                 │
+│    (Electron + Playwright)    │       (Headless Backend)             │
+├───────────────────────────────┼──────────────────────────────────────┤
+│ • Source file selection       │ • FFmpeg invocation                  │
+│ • Source loading/preview      │ • Encoding progress                  │
+│ • Job configuration UI        │ • Output file generation             │
+│ • Job creation                │ • Job completion/failure             │
+│ • Job visible in queue        │ • Post-processing                    │
+│                               │                                      │
+│ ENDS AT: system_queues_job    │ STARTS AT: system_processes_job     │
+└───────────────────────────────┴──────────────────────────────────────┘
+```
+
+### Why This Separation?
+
+1. **Determinism**: UI QC must be fast, deterministic, and non-interactive
+2. **Dependencies**: Execution QC requires real FFmpeg, which may not be available in all environments
+3. **Isolation**: UI bugs should not block execution testing, and vice versa
+4. **Speed**: UI QC can complete in seconds; execution QC may take minutes
 
 ---
 
@@ -36,35 +73,36 @@ Each workflow intent follows this schema:
 
 ---
 
-### INTENT_001 — Generate Delivery Proxy (Single File)
+### INTENT_001 — Queue Delivery Proxy (Single File) — UI QC
 
 #### Human Goal
 
-> "I want to generate a delivery proxy from a video file."
+> "I want to select a source file, configure it, and queue a delivery proxy job."
 
-This is the primary use case. A user selects a source file, the system loads and analyzes it, the user creates a job, the system processes it, and the job completes with a usable output.
+This is the **primary UI QC use case**. A user selects a source file, the system loads and analyzes it, the user creates a job, and the system queues it. **UI QC ends when the job is successfully queued.**
+
+> ⚠️ **CONTRACT BOUNDARY**: This intent validates **UI workflow only**. Job processing (FFmpeg execution) is validated by INTENT_006.
 
 #### Preconditions
 
 - Application is running and idle
 - No active jobs in progress
 - User has a valid video file accessible on disk
-- Sufficient disk space for output
 
 #### Action Sequence
 
-| Step | Action | Actor |
-|------|--------|-------|
-| 1 | `user_selects_source_file` | User |
-| 2 | `user_creates_job` | User |
-| 3 | `system_queues_job` | System |
-| 4 | `system_processes_job` | System |
-| 5 | `job_completes` | System |
+| Step | Action | Actor | QC Scope |
+|------|--------|-------|----------|
+| 1 | `user_selects_source_file` | User | UI QC |
+| 2 | `user_creates_job` | User | UI QC |
+| 3 | `system_queues_job` | System | UI QC ✅ BOUNDARY |
+
+> **Note:** Steps 4-5 (`system_processes_job`, `job_completes`) are execution-scope, validated by INTENT_006.
 
 #### Expected State Transitions
 
 ```
-idle → source_loading → source_loaded → job_queued → job_running → job_complete
+idle → source_loading → source_loaded → job_queued
 ```
 
 | From State | To State | Trigger |
@@ -72,8 +110,6 @@ idle → source_loading → source_loaded → job_queued → job_running → job
 | `idle` | `source_loading` | User selects source file |
 | `source_loading` | `source_loaded` | System finishes probe/preview generation |
 | `source_loaded` | `job_queued` | User clicks "Create Job" |
-| `job_queued` | `job_running` | System starts processing |
-| `job_running` | `job_complete` | Encode finishes successfully |
 
 #### Required UI Evidence
 
@@ -83,10 +119,6 @@ idle → source_loading → source_loaded → job_queued → job_running → job
 | `source_loaded` | Video player visible with first frame |
 | `source_loaded` | Source metadata displayed (resolution, codec, duration) |
 | `job_queued` | Job visible in queue panel |
-| `job_running` | Progress indicator visible (percentage or bar) |
-| `job_running` | Status updates visible (encoding stage) |
-| `job_complete` | Success indicator visible |
-| `job_complete` | Output path accessible or revealed |
 
 #### Acceptable Failures
 
@@ -94,18 +126,15 @@ idle → source_loading → source_loaded → job_queued → job_running → job
 |---------|-------------------|
 | Source file is corrupt | Error message displayed, user can select another file |
 | Unsupported codec | Clear error explaining codec not supported |
-| Disk full during encode | Job fails with explicit error, partial output cleaned |
-| User cancels job | Job stops, status shows "Cancelled" |
 
 #### Hard Failures
 
 | Failure | Why It's a Contract Violation |
 |---------|-------------------------------|
-| Job appears complete but no output file exists | System lied about success |
-| Progress shows 100% but status is "Running" | UI state inconsistency |
 | Error occurs with no visible feedback | Silent failure violates trust |
 | Source loads but player shows black/frozen | Preview pipeline broken |
-| Job starts without user action | Unauthorized execution |
+| Job creation UI unresponsive | User cannot complete workflow |
+| Job not visible in queue after creation | Queue state not reflected |
 
 ---
 
@@ -357,6 +386,89 @@ Jobs transition individually while queue state is maintained.
 | Job order changes unexpectedly | Unpredictable behavior |
 | Jobs disappear from queue | Lost work |
 | Completed jobs not distinguishable | User cannot verify |
+
+---
+
+## Execution QC Intents
+
+> **These intents validate backend job execution, not UI workflow.**
+> They run headless (no Electron, no Playwright) and require real FFmpeg.
+
+---
+
+### INTENT_006 — Execute Job Headless (Backend Only) — Execution QC
+
+#### Human Goal
+
+> "I want to verify that a queued job executes correctly and produces valid output."
+
+This intent validates the **execution pipeline** — FFmpeg invocation, progress tracking, output generation, and job completion. It does NOT test UI.
+
+> ⚠️ **CONTRACT BOUNDARY**: This intent starts where UI QC ends. It assumes a job is already queued.
+
+#### Preconditions
+
+- Job is already queued (via API or previous INTENT_001 run)
+- FFmpeg is available and functional
+- Sufficient disk space for output
+- Test media file is valid and accessible
+
+#### Execution Environment
+
+| Aspect | Value |
+|--------|-------|
+| Electron | ❌ Not used |
+| Playwright | ❌ Not used |
+| UI | ❌ No UI interaction |
+| Backend | ✅ Direct API/CLI invocation |
+| FFmpeg | ✅ Required |
+
+#### Action Sequence
+
+| Step | Action | Actor | QC Scope |
+|------|--------|-------|----------|
+| 1 | `backend_starts_job` | System | Execution QC |
+| 2 | `system_processes_job` | System | Execution QC |
+| 3 | `job_completes` | System | Execution QC |
+| 4 | `output_validated` | System | Execution QC |
+
+#### Expected Outcomes
+
+| Outcome | Validation |
+|---------|------------|
+| Job runs | FFmpeg process started |
+| Progress reported | Progress events emitted |
+| Output exists | Output file created at expected path |
+| Output valid | Output file is playable/valid media |
+| Job marked complete | Job status = "complete" |
+
+#### Acceptable Failures
+
+| Failure | Expected Behavior |
+|---------|-------------------|
+| Source file corrupt | Job fails with clear error |
+| Disk full | Job fails with explicit error, partial output cleaned |
+| FFmpeg timeout | Job fails with timeout error |
+
+#### Hard Failures
+
+| Failure | Why It's a Contract Violation |
+|---------|-------------------------------|
+| Job hangs indefinitely | No timeout/recovery |
+| Output file missing on success | System lied about completion |
+| Output file corrupt on success | Validation not performed |
+| Progress never reported | No observability |
+| Error swallowed silently | No error propagation |
+
+#### Invocation
+
+```bash
+# Run execution QC only (no UI)
+node scripts/qc/run_execution_qc.mjs --job-id <id>
+
+# Or with test fixture
+node scripts/qc/run_execution_qc.mjs --fixture single_proxy
+```
 
 ---
 

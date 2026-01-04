@@ -3,6 +3,11 @@
  * 
  * Loads and executes human workflow intents from docs/UI_WORKFLOW_INTENTS.md.
  * Maps semantic actions to real UI actions via action_trace.ts.
+ * 
+ * UI QC BOUNDARY:
+ * UI QC ends at `system_queues_job`. Actions beyond this boundary
+ * (system_processes_job, job_completes) are execution-scope only.
+ * See docs/UI_WORKFLOW_INTENTS.md for the formal contract.
  */
 
 import fs from 'node:fs'
@@ -12,6 +17,22 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '../..')
+
+/**
+ * UI QC BOUNDARY DEFINITION
+ * 
+ * Actions in EXECUTION_SCOPE_ACTIONS are OUT OF SCOPE for UI QC.
+ * They require real backend execution (FFmpeg) and are tested separately.
+ * 
+ * UI QC terminal action: system_queues_job
+ */
+const UI_QC_TERMINAL_ACTION = 'system_queues_job'
+const EXECUTION_SCOPE_ACTIONS = new Set([
+  'system_processes_job',
+  'job_completes',
+  'backend_starts_job',
+  'output_validated',
+])
 
 const actionTracePath = path.join(projectRoot, 'qa/verify/ui/visual_regression/action_trace.ts')
 const { instrumentCreateJobAction, inferWorkflowState, waitForUISettle } = await import(`file://${actionTracePath}`)
@@ -968,8 +989,26 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
     throw new Error(`Intent validation failed: ${intentId}`)
   }
   
+  // UI QC BOUNDARY: Filter out execution-scope actions
+  // These require real backend execution and are out of scope for UI QC
+  const uiQcActions = intent.action_sequence.filter(
+    action => !EXECUTION_SCOPE_ACTIONS.has(action.action)
+  )
+  
+  const skippedActions = intent.action_sequence.filter(
+    action => EXECUTION_SCOPE_ACTIONS.has(action.action)
+  )
+  
   console.log(`Human Goal: "${intent.human_goal}"`)
-  console.log(`Total Steps: ${intent.action_sequence.length}\n`)
+  console.log(`UI QC Steps: ${uiQcActions.length} (of ${intent.action_sequence.length} total)`)
+  
+  if (skippedActions.length > 0) {
+    console.log(`\n⚠️  UI QC BOUNDARY — Skipping execution-scope actions:`)
+    for (const skipped of skippedActions) {
+      console.log(`   • ${skipped.action} (requires backend execution)`)
+    }
+    console.log(`   See INTENT_006 for execution QC.\n`)
+  }
   
   const driver = createActionDriver()
   const { page, livenessTracker } = context
@@ -983,7 +1022,8 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
   workflowStates.push(initialState)
   console.log(`Initial State: ${initialState}\n`)
   
-  for (const semanticAction of intent.action_sequence) {
+  // Iterate over UI QC actions only (execution-scope actions filtered out)
+  for (const semanticAction of uiQcActions) {
     console.log(`\nSTEP ${semanticAction.step}: ${semanticAction.action}`)
     console.log(`   Actor: ${semanticAction.actor}`)
     
@@ -1012,7 +1052,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
           intent_id: intentId,
           success: false,
           completed_steps: completedSteps,
-          total_steps: intent.action_sequence.length,
+          total_steps: uiQcActions.length,
           action_traces: actionTraces,
           workflow_states: workflowStates,
           failure_reason: reason,
@@ -1030,7 +1070,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
           intent_id: intentId,
           success: false,
           completed_steps: completedSteps,
-          total_steps: intent.action_sequence.length,
+          total_steps: uiQcActions.length,
           action_traces: actionTraces,
           workflow_states: workflowStates,
           failure_reason: reason,
@@ -1056,7 +1096,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
           intent_id: intentId,
           success: false,
           completed_steps: completedSteps,
-          total_steps: intent.action_sequence.length,
+          total_steps: uiQcActions.length,
           action_traces: actionTraces,
           workflow_states: workflowStates,
           failure_reason: reason,
@@ -1072,7 +1112,7 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
         intent_id: intentId,
         success: false,
         completed_steps: completedSteps,
-        total_steps: intent.action_sequence.length,
+        total_steps: uiQcActions.length,
         action_traces: actionTraces,
         workflow_states: workflowStates,
         failure_reason: reason,
@@ -1097,16 +1137,27 @@ export async function runIntent(intentId, context, projectRoot, artifactDir) {
     console.log(`   State: ${newState}`)
   }
   
+  // UI QC COMPLETE — All UI-scope actions passed
+  const uiQcComplete = completedSteps === uiQcActions.length
+  const hasSkippedExecutionSteps = skippedActions.length > 0
+  
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-  console.log(`✅ INTENT COMPLETED: ${intentId}`)
-  console.log(`   Completed: ${completedSteps}/${intent.action_sequence.length}`)
+  console.log(`✅ UI QC COMPLETE: ${intentId}`)
+  console.log(`   UI Steps Completed: ${completedSteps}/${uiQcActions.length}`)
+  if (hasSkippedExecutionSteps) {
+    console.log(`   Execution Steps Skipped: ${skippedActions.length} (out of UI QC scope)`)
+    console.log(`   → Run INTENT_006 for execution validation`)
+  }
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`)
   
   return {
     intent_id: intentId,
-    success: true,
+    success: uiQcComplete,
     completed_steps: completedSteps,
-    total_steps: intent.action_sequence.length,
+    total_steps: uiQcActions.length,
+    total_intent_steps: intent.action_sequence.length,
+    skipped_execution_steps: skippedActions.map(a => a.action),
+    ui_qc_boundary: UI_QC_TERMINAL_ACTION,
     action_traces: actionTraces,
     workflow_states: workflowStates,
   }
