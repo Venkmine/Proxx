@@ -72,3 +72,81 @@ export class FinderDialogError extends Error {
     this.timestamp = new Date().toISOString()
   }
 }
+
+/**
+ * Global Finder guard that runs on an interval
+ * 
+ * This is the ROOT GUARD that monitors for Finder throughout QC execution.
+ * If Finder opens at ANY point, QC is immediately aborted.
+ */
+export class FinderGuard {
+  constructor() {
+    this.intervalId = null
+    this.isFinderDetected = false
+    this.detectionCallback = null
+  }
+
+  /**
+   * Start monitoring for Finder on an interval
+   * 
+   * @param {number} intervalMs - Check interval in milliseconds (default: 250ms)
+   * @param {Function} onDetected - Callback when Finder is detected
+   */
+  start(intervalMs = 250, onDetected = null) {
+    console.log(`🛡️  [FINDER GUARD] Starting Finder detection (interval: ${intervalMs}ms)`)
+    
+    this.detectionCallback = onDetected
+    
+    this.intervalId = setInterval(() => {
+      if (isFinderFrontmost()) {
+        this.isFinderDetected = true
+        
+        console.error('')
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.error('  🚨 FINDER GUARD TRIGGERED — QC ABORTED')
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.error('  Finder or native file dialog detected.')
+        console.error('  QC cannot continue — automation has lost control.')
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.error('')
+        
+        // Stop monitoring
+        this.stop()
+        
+        // Call detection callback
+        if (this.detectionCallback) {
+          this.detectionCallback()
+        }
+      }
+    }, intervalMs)
+  }
+
+  /**
+   * Stop monitoring
+   */
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId)
+      this.intervalId = null
+      console.log('🛡️  [FINDER GUARD] Stopped')
+    }
+  }
+
+  /**
+   * Check if Finder has been detected
+   */
+  isDetected() {
+    return this.isFinderDetected
+  }
+
+  /**
+   * Assert that Finder has not been detected
+   * 
+   * @throws {FinderDialogError}
+   */
+  assertNotDetected(actionName = 'QC') {
+    if (this.isFinderDetected) {
+      throw new FinderDialogError(actionName)
+    }
+  }
+}

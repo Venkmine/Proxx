@@ -23,6 +23,20 @@ const finderDetectionPath = path.join(projectRoot, 'scripts/qc/finder_detection.
 const { assertFinderNotOpen, FinderDialogError } = await import(`file://${finderDetectionPath}`)
 
 /**
+ * Guarded screenshot capture
+ * Asserts Finder is not open before taking screenshot
+ */
+async function captureScreenshotGuarded(page, screenshotPath, actionName) {
+  // GUARD: Assert Finder not open before screenshot
+  assertFinderNotOpen(actionName)
+  
+  // Take screenshot
+  await page.screenshot({ path: screenshotPath, fullPage: true })
+  
+  return screenshotPath
+}
+
+/**
  * Load and parse UI_WORKFLOW_INTENTS.md
  */
 export function loadIntents(projectRoot) {
@@ -261,7 +275,7 @@ export function createActionDriver() {
         
         if (!success) {
           // Debug: screenshot and check console errors
-          await page.screenshot({ path: '/tmp/source_load_timeout.png', fullPage: true })
+          await captureScreenshotGuarded(page, '/tmp/source_load_timeout.png', 'source_load_timeout')
           const bodyText = await page.locator('body').textContent().catch(() => '')
           console.log('      ⚠️ UI after 20s wait:')
           console.log(`         Contains filename: ${bodyText.includes(path.basename(TEST_FILE))}`)
@@ -366,12 +380,12 @@ export function createActionDriver() {
         
         if (!jobCreated) {
           // Capture failure state
-          await page.screenshot({ path: path.join(artifactDir, 'job_creation_failed.png'), fullPage: true })
+          await captureScreenshotGuarded(page, path.join(artifactDir, 'job_creation_failed.png'), 'job_creation_failed')
           throw new Error('Create Job did not create a job')
         }
         
         // STEP 5: Screenshot + State Capture
-        await page.screenshot({ path: path.join(artifactDir, 'job_created.png'), fullPage: true })
+        await captureScreenshotGuarded(page, path.join(artifactDir, 'job_created.png'), 'job_created')
         
         // OBSERVATION: Check for progress UI visibility
         console.log('      → Observing progress UI...')
@@ -408,7 +422,7 @@ export function createActionDriver() {
       if (!jobRunning) {
         console.log('      → [OBSERVATION] Job not in RUNNING state (queued/pending)')
         console.log('      → Cannot verify progress UI visibility without running job')
-        await page.screenshot({ path: path.join(artifactDir, 'job_queued_not_running.png'), fullPage: true })
+        await captureScreenshotGuarded(page, path.join(artifactDir, 'job_queued_not_running.png'), 'job_queued_not_running')
         
         // This is not a failure - just an observation that we can't test progress UI yet
         // because the backend worker isn't processing jobs in the test environment
@@ -441,7 +455,7 @@ export function createActionDriver() {
         }
       }
       
-      await page.screenshot({ path: path.join(artifactDir, 'progress_check_while_running.png'), fullPage: true })
+      await captureScreenshotGuarded(page, path.join(artifactDir, 'progress_check_while_running.png'), 'progress_check_while_running')
       
       if (foundIndicators.length === 0) {
         console.log('      ❌ OBSERVATION: Job running with no visible progress UI')
@@ -551,7 +565,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
       
       // Take screenshot after action
       const screenshotPath = path.join(artifactDir, `${action}.png`)
-      await page.screenshot({ path: screenshotPath, fullPage: true })
+      await captureScreenshotGuarded(page, screenshotPath, action)
       console.log(`   📸 Screenshot: ${screenshotPath}`)
       
       // VISUAL CHANGE GATE — Fail if no visible change
@@ -617,7 +631,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         
         // Take screenshot after preflight
         const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
-        await page.screenshot({ path: screenshotPath, fullPage: true })
+        await captureScreenshotGuarded(page, screenshotPath, `${action}_after_preflight`)
         console.log(`   📸 Screenshot: ${screenshotPath}`)
         
         // VISUAL CHANGE GATE — Fail if no visible change
@@ -673,7 +687,7 @@ export async function executeSemanticAction(semanticAction, page, driver, artifa
         
         // Take screenshot after preflight
         const screenshotPath = path.join(artifactDir, `${action}_after_preflight.png`)
-        await page.screenshot({ path: screenshotPath, fullPage: true })
+        await captureScreenshotGuarded(page, screenshotPath, `${action}_after_preflight`)
         console.log(`   📸 Screenshot: ${screenshotPath}`)
         
         // VISUAL CHANGE GATE — Fail if no visible change

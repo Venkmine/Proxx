@@ -23,6 +23,14 @@ import { createLivenessTracker, type LivenessTracker } from './liveness_enforcem
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Import Finder guard
+const projectRoot = path.resolve(__dirname, '../../../..')
+const finderDetectionPath = path.join(projectRoot, 'scripts/qc/finder_detection.mjs')
+const { FinderGuard } = await import(`file://${finderDetectionPath}`)
+
+// Global Finder guard instance
+let globalFinderGuard: any = null
+
 /**
  * MANDATORY: Wait for app to be fully ready (splash screen dismissed)
  * 
@@ -126,6 +134,7 @@ export interface ElectronFixtures {
   page: Page
   visualCollector: VisualCollector
   livenessTracker: LivenessTracker
+  finderGuard: any
 }
 
 export interface VisualCollector {
@@ -139,7 +148,24 @@ export interface VisualCollector {
  * Extended test fixture with visual verification
  */
 export const test = base.extend<ElectronFixtures>({
-  app: async ({}, use) => {
+  finderGuard: async ({}, use) => {
+    // START FINDER GUARD BEFORE ANYTHING ELSE
+    if (!globalFinderGuard) {
+      globalFinderGuard = new FinderGuard()
+      globalFinderGuard.start(250, () => {
+        console.error('🚨 Finder detected — aborting QC immediately')
+        process.exit(2) // QC_INVALID exit code
+      })
+    }
+    
+    await use(globalFinderGuard)
+    
+    // Stop guard on teardown
+    globalFinderGuard.stop()
+    globalFinderGuard = null
+  },
+
+  app: async ({ finderGuard }, use) => {
     const projectRoot = path.resolve(__dirname, '../../../..')
     const electronMain = path.join(projectRoot, 'frontend/dist-electron/main.mjs')
     
@@ -175,12 +201,18 @@ export const test = base.extend<ElectronFixtures>({
     await app.close()
   },
   
-  page: async ({ app }, use) => {
+  page: async ({ app, finderGuard }, use) => {
+    // Assert Finder not open before getting page
+    finderGuard.assertNotDetected('page_creation')
+    
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 })
     
     // MANDATORY: Wait for splash dismissal before ANY visual capture
     await waitForAppReady(page)
+    
+    // Assert Finder not open after app ready
+    finderGuard.assertNotDetected('app_ready')
     
     // TIMING FIX: Install QC mocks BEFORE any UI interaction is possible
     // Only install if running intent workflows (when INTENT_ID env is set)
@@ -191,7 +223,10 @@ export const test = base.extend<ElectronFixtures>({
     await use(page)
   },
 
-  livenessTracker: async ({ app, page }, use) => {
+  livenessTracker: async ({ app, page, finderGuard }, use) => {
+    // Assert Finder not open before creating tracker
+    finderGuard.assertNotDetected('liveness_tracker_init')
+    
     const tracker = createLivenessTracker(app, page)
     
     // Set up app liveness tracking immediately
@@ -203,7 +238,10 @@ export const test = base.extend<ElectronFixtures>({
     tracker.cleanup()
   },
 
-  visualCollector: async ({}, use, testInfo) => {
+  visualCollector: async ({ finderGuard }, use, testInfo) => {
+    // Assert Finder not open before creating collector
+    finderGuard.assertNotDetected('visual_collector_init')
+    
     const projectRoot = path.resolve(__dirname, '../../../..')
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const testName = testInfo.title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase()
@@ -217,6 +255,9 @@ export const test = base.extend<ElectronFixtures>({
       artifactDir: visualDir,
 
       captureElectronScreenshot: async (name: string) => {
+        // GUARD: Assert Finder not open BEFORE screenshot
+        finderGuard.assertNotDetected(`screenshot_${name}`)
+        
         const screenshotPath = path.join(visualDir, `${name}.png`)
         
         // Get the first (and usually only) window
