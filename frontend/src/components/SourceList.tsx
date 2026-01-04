@@ -65,23 +65,30 @@ export function SourceList({
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      minHeight: 0,
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: '12px 16px',
+    <div 
+      data-testid="source-list"
+      data-source-count={sources.length}
+      style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid #333',
-        backgroundColor: '#1e1e1e',
-      }}>
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+      }}
+    >
+      {/* Header */}
+      <div 
+        data-testid="source-list-header"
+        style={{
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #333',
+          backgroundColor: '#1e1e1e',
+        }}
+      >
         <div style={{ fontSize: '13px', fontWeight: 500, color: '#fff' }}>
-          {sources.length} path{sources.length !== 1 ? 's' : ''} selected
+          ✓ {sources.length} path{sources.length !== 1 ? 's' : ''} selected
         </div>
         <Button
           onClick={onClearAll}

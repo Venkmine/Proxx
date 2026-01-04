@@ -225,12 +225,13 @@ export function createActionDriver() {
         // HARD ASSERTION: Mock must be installed before UI interaction
         console.log('      → Verifying QC mocks are installed...')
         const mockInstalled = await page.evaluate(() => {
-          return typeof window.electron?.openFilesOrFolders === 'function' &&
+          return (typeof window.electron?.openFiles === 'function' ||
+                  typeof window.electron?.openFilesOrFolders === 'function') &&
                  window.__QC_MOCKS_INSTALLED__ === true
         })
         
         if (!mockInstalled) {
-          throw new Error('openFilesOrFolders mock not installed before UI interaction')
+          throw new Error('File selection mocks (openFiles/openFilesOrFolders) not installed before UI interaction')
         }
         
         console.log('      ✓ Mock verified')

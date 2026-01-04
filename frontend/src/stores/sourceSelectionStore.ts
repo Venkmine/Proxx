@@ -142,11 +142,13 @@ export const useSourceSelectionStore = create<SourceSelectionStoreState>((set, g
   preflightError: null,
   
   addPaths: (paths: string[]) => {
+    console.log('[sourceSelectionStore] addPaths called with:', paths)
     if (paths.length === 0) return
     
     set((state) => {
       // Deduplicate
       const combined = [...new Set([...state.selectedPaths, ...paths])]
+      console.log('[sourceSelectionStore] Setting state to SELECTED_UNVALIDATED with paths:', combined)
       return {
         selectedPaths: combined,
         state: SourceSelectionState.SELECTED_UNVALIDATED,
@@ -155,6 +157,7 @@ export const useSourceSelectionStore = create<SourceSelectionStoreState>((set, g
         preflightError: null,
       }
     })
+    console.log('[sourceSelectionStore] State updated')
   },
   
   removePath: (path: string) => {

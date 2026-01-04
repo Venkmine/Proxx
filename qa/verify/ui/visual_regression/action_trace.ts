@@ -91,6 +91,24 @@ export async function inferWorkflowState(page: Page): Promise<WorkflowState> {
     return 'job_complete'
   }
   
+  // Check for sources loaded indicator (explicit UI element)
+  const sourcesLoadedIndicator = await page.locator('[data-testid="sources-loaded-indicator"]').isVisible().catch(() => false)
+  if (sourcesLoadedIndicator) {
+    return 'source_loaded'
+  }
+  
+  // Check for source selection panel with sources loaded
+  const hasSources = await page.locator('[data-testid="source-selection-panel"][data-has-sources="true"]').isVisible().catch(() => false)
+  if (hasSources) {
+    return 'source_loaded'
+  }
+  
+  // Check for source list (visible when paths are loaded)
+  const sourceListVisible = await page.locator('[data-testid="source-list"]').isVisible().catch(() => false)
+  if (sourceListVisible) {
+    return 'source_loaded'
+  }
+  
   // Check for loaded source (player area with content)
   const sourceLoaded = await page.locator('[data-testid="monitor-surface"][data-state="source-loaded"], [data-testid="source-metadata"]').isVisible().catch(() => false)
   if (sourceLoaded) {

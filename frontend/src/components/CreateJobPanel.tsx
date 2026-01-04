@@ -670,6 +670,8 @@ export function CreateJobPanel({
         {/* Selected Files List */}
         {selectedFiles.length > 0 && (
           <div
+            data-testid="source-list"
+            data-source-count={selectedFiles.length}
             style={{
               maxHeight: '80px',
               overflow: 'auto',

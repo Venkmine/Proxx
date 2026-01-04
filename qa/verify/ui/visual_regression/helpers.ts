@@ -116,7 +116,14 @@ export async function installQCMocks(page: Page): Promise<void> {
       (window as any).electron = {}
     }
     
-    // Mock openFilesOrFolders to return test file (NO native dialog)
+    // Mock BOTH file selection functions (NO native dialog)
+    // openFiles: Legacy function for files only
+    (window as any).electron.openFiles = async () => {
+      console.log('[QC MOCK] openFiles() called, returning:', [filePath])
+      return [filePath]
+    }
+    
+    // openFilesOrFolders: New function for files+folders
     (window as any).electron.openFilesOrFolders = async () => {
       console.log('[QC MOCK] openFilesOrFolders() called, returning:', [filePath])
       return [filePath]

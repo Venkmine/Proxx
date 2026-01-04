@@ -84,8 +84,11 @@ export function SourceSelectionPanel({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const electron = window.electron as any
       const result = await electron.openFilesOrFolders()
+      console.log('[SourceSelectionPanel] openFilesOrFolders returned:', result)
       if (result && result.length > 0) {
+        console.log('[SourceSelectionPanel] Calling addPaths with:', result)
         addPaths(result)
+        console.log('[SourceSelectionPanel] addPaths completed')
       }
     } catch (err) {
       console.error('Error selecting files:', err)
@@ -109,6 +112,8 @@ export function SourceSelectionPanel({
   return (
     <div
       data-testid="source-selection-panel"
+      data-source-state={state}
+      data-has-sources={selectedPaths.length > 0}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -157,6 +162,23 @@ export function SourceSelectionPanel({
         display: 'flex',
         flexDirection: 'column',
       }}>
+        {/* Debug indicator - ALWAYS show when paths exist */}
+        {selectedPaths.length > 0 && (
+          <div 
+            data-testid="sources-loaded-indicator"
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#2a4a2a',
+              color: '#4ade80',
+              fontSize: '12px',
+              fontWeight: 600,
+              borderBottom: '1px solid #333',
+            }}
+          >
+            ✓ {selectedPaths.length} source{selectedPaths.length !== 1 ? 's' : ''} loaded
+          </div>
+        )}
+        
         {/* EMPTY state: Show add prompt */}
         {state === SourceSelectionState.EMPTY && (
           <div style={{
