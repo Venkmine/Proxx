@@ -630,7 +630,11 @@ export function CreateJobPanel({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={onSelectFilesClick}
+                data-testid="select-files-button"
+                onClick={() => {
+                  console.log('[SELECT FILES CLICKED]')
+                  onSelectFilesClick()
+                }}
                 disabled={loading}
               >
                 Select Files...

@@ -236,11 +236,27 @@ export function createActionDriver() {
         
         console.log('      ✓ Mock verified')
         
+        // Set up console listener BEFORE clicking to catch the log
+        const consoleMessages = []
+        const consoleHandler = msg => consoleMessages.push(msg.text())
+        page.on('console', consoleHandler)
+        
         // Click the button (will use our pre-installed mock, no native dialog)
         console.log('      → Clicking Select Files button...')
-        const button = page.locator('button:has-text("Select Files")')
+        const button = page.locator('[data-testid="select-files-button"]')
         await button.waitFor({ state: 'visible', timeout: 5000 })
+        
         await button.click()
+        
+        // HARD ASSERTION: onClick handler must fire
+        await page.waitForTimeout(500) // Give React time to execute handler
+        const handlerFired = consoleMessages.some(msg => msg.includes('[SELECT FILES CLICKED]'))
+        page.off('console', consoleHandler) // Clean up listener
+        
+        if (!handlerFired) {
+          throw new Error('Select Files onClick handler did not fire')
+        }
+        console.log('      ✅ onClick handler fired: [SELECT FILES CLICKED]')
         
         console.log('      → File selection triggered, waiting for backend processing...')
         
