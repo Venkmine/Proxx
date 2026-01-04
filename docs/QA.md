@@ -100,6 +100,46 @@ UI correctness for automated QC is defined in [UI_QC_BEHAVIOUR_SPEC.md](./UI_QC_
 > **Note:** QC now enforces **minimum usability requirements**, not just structural presence.
 > Features must be functionally useful in their expected states, not merely visible.
 
+### INTENT_010 — Non-negotiable Usability Gate
+
+**UI changes MUST pass INTENT_010 before merge.**
+
+INTENT_010 validates fundamental layout and usability requirements that affect all users:
+
+| Check | Description |
+|-------|-------------|
+| No duplicate scrollbars | Left panel must have at most one scrollable container |
+| Window resizable | Users must be able to resize the application window |
+| No clipped buttons | All buttons must be fully visible at 1440×900 |
+| No horizontal scrollbars | Main panels must not overflow horizontally |
+
+#### Exit Code Mapping
+
+| Severity | Exit Code | Meaning |
+|----------|-----------|---------|
+| PASS | 0 | All usability checks passed |
+| HIGH | 1 | Blocking failure — UI is broken, cannot merge |
+| MEDIUM | 2 | Warning — layout issue detected, fix recommended |
+
+#### HIGH Severity Conditions
+
+A failure is marked HIGH severity when:
+- Window is non-resizable AND buttons are clipped
+- Users have no workaround (cannot resize to see clipped elements)
+
+#### Enforcement
+
+1. **Pre-merge gate**: INTENT_010 runs in CI and blocks merge on HIGH severity
+2. **Fail-fast**: Only ONE failure is reported per run (fix sequentially)
+3. **Human-readable reports**: See `artifacts/ui/visual/<run>/intent_010_usability_report.md`
+
+#### Running Locally
+
+```bash
+cd qa/verify/ui/visual_regression
+npx playwright test intent_010_usability.spec.ts
+```
+
 ### Action-Scoped QC
 
 QC now reasons **per user action**, not just per screenshot. For each meaningful action (e.g., clicking "Create Job"):

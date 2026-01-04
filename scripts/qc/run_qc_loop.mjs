@@ -11,9 +11,13 @@
  * 
  * EXIT CODES:
  * - 0 = QC PASS (VERIFIED_OK)
- * - 1 = QC FAIL (VERIFIED_NOT_OK)
- * - 2 = QC INVALID (re-run required)
+ * - 1 = QC FAIL (VERIFIED_NOT_OK or HIGH severity usability failure)
+ * - 2 = QC INVALID (re-run required) or MEDIUM severity usability failure
  * - 3 = BLOCKED_PRECONDITION (backend/dependencies unavailable)
+ * 
+ * INTENT_010 USABILITY GATE:
+ * - HIGH severity → exit code 1 (blocking)
+ * - MEDIUM severity → exit code 2 (warning, re-run required)
  * 
  * REVERSIBILITY:
  * - Can skip phases (e.g., re-run interpretation on existing GLM report)
@@ -101,6 +105,92 @@ function findLatestArtifact() {
     .reverse()
   
   return dirs.length > 0 ? path.join(visualDir, dirs[0]) : null
+}
+
+/**
+ * Check for INTENT_010 usability result and determine exit code
+ * 
+ * @param {string} artifactPath - Path to the artifact directory
+ * @returns {{ found: boolean, verdict?: string, severity?: string, failed_check_id?: string, report_path?: string, exitCode?: number }}
+ */
+function checkIntent010Result(artifactPath) {
+  if (!artifactPath) return { found: false }
+  
+  // Search for intent_010_result.json in artifact directory and subdirectories
+  const possiblePaths = [
+    path.join(artifactPath, 'intent_010_result.json'),
+    path.join(artifactPath, 'verify_layout_sanity_at_1440x900', 'intent_010_result.json'),
+  ]
+  
+  // Also search subdirectories
+  try {
+    const subdirs = fs.readdirSync(artifactPath, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => path.join(artifactPath, d.name, 'intent_010_result.json'))
+    possiblePaths.push(...subdirs)
+  } catch (e) {
+    // Ignore read errors
+  }
+  
+  for (const resultPath of possiblePaths) {
+    if (fs.existsSync(resultPath)) {
+      try {
+        const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8'))
+        
+        if (result.intent_id === 'INTENT_010') {
+          const response = {
+            found: true,
+            verdict: result.verdict,
+            severity: result.severity,
+            failed_check_id: result.failure_payload?.check_id || result.failed_at,
+            report_path: result.report_path || resultPath.replace('_result.json', '_usability_report.md'),
+          }
+          
+          // Determine exit code based on severity
+          if (result.verdict === 'VERIFIED_OK') {
+            response.exitCode = 0
+          } else if (result.severity === 'HIGH') {
+            response.exitCode = 1 // Blocking failure
+          } else if (result.severity === 'MEDIUM') {
+            response.exitCode = 2 // Warning, re-run required
+          } else {
+            response.exitCode = 1 // Default to fail if severity unknown
+          }
+          
+          return response
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+  }
+  
+  return { found: false }
+}
+
+/**
+ * Print INTENT_010 summary to terminal
+ */
+function printIntent010Summary(intent010Result) {
+  console.log('')
+  console.log('┌──────────────────────────────────────────────────────────────┐')
+  console.log('│  INTENT_010 — Usability Gate                                 │')
+  console.log('└──────────────────────────────────────────────────────────────┘')
+  console.log('')
+  
+  if (intent010Result.verdict === 'VERIFIED_OK') {
+    console.log('  ✅ USABILITY: PASS')
+    console.log('     All layout and usability checks passed.')
+  } else {
+    const severityEmoji = intent010Result.severity === 'HIGH' ? '🔴' : '🟡'
+    console.log(`  ❌ USABILITY: FAIL`)
+    console.log(`     Severity: ${severityEmoji} ${intent010Result.severity}`)
+    console.log(`     Failed Check: ${intent010Result.failed_check_id}`)
+    console.log('')
+    console.log(`  📝 Report: ${intent010Result.report_path}`)
+  }
+  
+  console.log('')
 }
 
 /**
@@ -423,6 +513,50 @@ async function main() {
   
   // PHASE 4: Decision
   printBanner('PHASE 4 — DECISION')
+  
+  // Check for INTENT_010 usability result (takes precedence)
+  const intent010Result = checkIntent010Result(artifactPath)
+  
+  if (intent010Result.found) {
+    printIntent010Summary(intent010Result)
+    
+    // If INTENT_010 failed, it takes precedence over other QC decisions
+    if (intent010Result.verdict !== 'VERIFIED_OK') {
+      const decision = {
+        classification: 'VERIFIED_NOT_OK',
+        source: 'INTENT_010',
+        severity: intent010Result.severity,
+        failed_check: intent010Result.failed_check_id,
+        report_path: intent010Result.report_path,
+        artifactPath,
+        timestamp: new Date().toISOString(),
+        exitCode: intent010Result.exitCode,
+      }
+      
+      // Write decision
+      if (!options.dryRun && artifactPath) {
+        const decisionPath = path.join(artifactPath, 'qc_decision.json')
+        fs.writeFileSync(decisionPath, JSON.stringify(decision, null, 2))
+        console.log(`  Decision written to: ${decisionPath}`)
+      }
+      
+      console.log('')
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log(`  QC LOOP COMPLETE — Exit Code: ${decision.exitCode}`)
+      if (intent010Result.severity === 'HIGH') {
+        console.log('  ⛔ BLOCKING: HIGH severity usability failure')
+      } else {
+        console.log('  ⚠️  WARNING: MEDIUM severity usability failure')
+      }
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('')
+      
+      // Stop backend before exit
+      await stopBackend()
+      
+      process.exit(decision.exitCode)
+    }
+  }
   
   // Load full interpretation to get action-scoped data
   let actionSummary = null
