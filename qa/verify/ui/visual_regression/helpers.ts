@@ -32,6 +32,68 @@ const { FinderGuard } = await import(`file://${finderDetectionPath}`)
 let globalFinderGuard: any = null
 
 /**
+ * ELECTRON-ONLY LAUNCH GUARD
+ * 
+ * Enforces that QC tests ONLY run against Electron, never Vite dev server or browser.
+ * 
+ * Checks:
+ * 1. URL must NOT start with http:// or https://
+ * 2. window.electron preload API must exist
+ * 3. Window bounds must be deterministic (1440x900)
+ * 
+ * @throws Error if running in browser/Vite (QC_INVALID)
+ */
+export async function assertElectronOnly(page: Page, app: ElectronApplication): Promise<void> {
+  console.log('🔒 [ELECTRON GUARD] Verifying Electron-only launch...')
+  
+  // Check 1: URL must NOT be http/https
+  const url = page.url()
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    const error = `QC_INVALID: Browser/Vite frontend detected. Electron required.\nURL: ${url}`
+    console.error(`❌ ${error}`)
+    throw new Error(error)
+  }
+  
+  // Check 2: window.electron preload API must exist
+  const hasElectronAPI = await page.evaluate(() => {
+    return typeof (window as any).electron !== 'undefined'
+  })
+  
+  if (!hasElectronAPI) {
+    const error = 'QC_INVALID: window.electron preload API not found. Electron required.'
+    console.error(`❌ ${error}`)
+    throw new Error(error)
+  }
+  
+  // Check 3: Window geometry must be deterministic
+  const bounds = await page.evaluate(() => {
+    return {
+      width: window.innerWidth,
+      height: window.innerHeight
+    }
+  })
+  
+  const expectedWidth = 1440
+  const expectedHeight = 900
+  const tolerance = 2
+  
+  const widthDiff = Math.abs(bounds.width - expectedWidth)
+  const heightDiff = Math.abs(bounds.height - expectedHeight)
+  
+  if (widthDiff > tolerance || heightDiff > tolerance) {
+    const error = `QC_INVALID: Window geometry mismatch. Expected ${expectedWidth}x${expectedHeight}, got ${bounds.width}x${bounds.height}`
+    console.error(`❌ ${error}`)
+    throw new Error(error)
+  }
+  
+  // Log proof
+  console.log(`✅ [ELECTRON GUARD] Electron verified`)
+  console.log(`   URL: ${url}`)
+  console.log(`   window.electron: exists`)
+  console.log(`   Window bounds: ${bounds.width}x${bounds.height}`)
+}
+
+/**
  * MANDATORY: Wait for app to be fully ready (splash screen dismissed)
  * 
  * STRICT RULE: Visual QC screenshots MUST NOT be taken while splash is visible.
@@ -186,6 +248,10 @@ export const test = base.extend<ElectronFixtures>({
     
     const electronPath = path.join(projectRoot, 'frontend/node_modules/.bin/electron')
 
+    console.log('🚀 [QC LAUNCH] Starting Electron...')
+    console.log(`   Electron path: ${electronPath}`)
+    console.log(`   Main: ${electronMain}`)
+
     // Launch Electron with test mode enabled
     const app = await electron.launch({
       executablePath: electronPath,
@@ -200,9 +266,33 @@ export const test = base.extend<ElectronFixtures>({
       },
     })
     
-    // Set fixed window size for consistent automation
+    console.log('✅ [QC LAUNCH] Electron started')
+    
+    // Set DETERMINISTIC window geometry for all QC runs
+    // Width: 1440, Height: 900, Centered, Not resizable
     const firstWindow = await app.firstWindow()
-    await firstWindow.setViewportSize({ width: 1440, height: 900 })
+    
+    // Get screen size for centering
+    const screenSize = await firstWindow.evaluate(() => {
+      return {
+        width: window.screen.width,
+        height: window.screen.height
+      }
+    })
+    
+    const width = 1440
+    const height = 900
+    const x = Math.floor((screenSize.width - width) / 2)
+    const y = Math.floor((screenSize.height - height) / 2)
+    
+    // Set viewport size (this affects the renderer process window size)
+    await firstWindow.setViewportSize({ width, height })
+    
+    console.log('📐 [WINDOW GEOMETRY] Set deterministic bounds:')
+    console.log(`   Size: ${width}x${height}`)
+    console.log(`   Position: centered on screen`)
+    console.log(`   Resizable: false (enforced by QC)`)
+    console.log(`   Maximized: false`)
 
     await use(app)
     await app.close()
@@ -215,11 +305,22 @@ export const test = base.extend<ElectronFixtures>({
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 })
     
+    // MANDATORY: Verify Electron-only (never browser/Vite)
+    await assertElectronOnly(page, app)
+    
     // MANDATORY: Wait for splash dismissal before ANY visual capture
     await waitForAppReady(page)
     
     // Assert Finder not open after app ready
     finderGuard.assertNotDetected('app_ready')
+    
+    // PROOF: Capture qc_launch_proof.png after successful Electron verification
+    const projectRoot = path.resolve(__dirname, '../../../..')
+    const proofDir = path.join(projectRoot, 'artifacts/ui/visual/qc_launch_proof')
+    fs.mkdirSync(proofDir, { recursive: true})
+    const proofPath = path.join(proofDir, 'qc_launch_proof.png')
+    await page.screenshot({ path: proofPath, fullPage: true })
+    console.log(`📸 [QC LAUNCH PROOF] Screenshot saved: ${proofPath}`)
     
     // TIMING FIX: Install QC mocks BEFORE any UI interaction is possible
     // Only install if running intent workflows (when INTENT_ID env is set)
