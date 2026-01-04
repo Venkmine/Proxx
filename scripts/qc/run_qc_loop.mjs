@@ -229,6 +229,66 @@ function checkIntent020Result(artifactPath) {
 }
 
 /**
+ * Check for INTENT_030 state integrity result and determine exit code
+ * 
+ * @param {string} artifactPath - Path to the artifact directory
+ * @returns {{ found: boolean, verdict?: string, severity?: string, failed_check_id?: string, report_path?: string, exitCode?: number }}
+ */
+function checkIntent030Result(artifactPath) {
+  if (!artifactPath) return { found: false }
+  
+  // Search for intent_030_result.json in artifact directory and subdirectories
+  const possiblePaths = [
+    path.join(artifactPath, 'intent_030_result.json'),
+  ]
+  
+  // Also search subdirectories
+  try {
+    const subdirs = fs.readdirSync(artifactPath, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => path.join(artifactPath, d.name, 'intent_030_result.json'))
+    possiblePaths.push(...subdirs)
+  } catch (e) {
+    // Ignore read errors
+  }
+  
+  for (const resultPath of possiblePaths) {
+    if (fs.existsSync(resultPath)) {
+      try {
+        const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8'))
+        
+        if (result.intent_id === 'INTENT_030') {
+          const response = {
+            found: true,
+            verdict: result.verdict,
+            severity: result.severity,
+            failed_check_id: result.failure_payload?.check_id || result.failed_at,
+            report_path: result.report_path || resultPath.replace('_result.json', '_report.md'),
+          }
+          
+          // Determine exit code based on severity
+          if (result.verdict === 'VERIFIED_OK') {
+            response.exitCode = 0
+          } else if (result.severity === 'HIGH') {
+            response.exitCode = 1 // Blocking failure
+          } else if (result.severity === 'MEDIUM') {
+            response.exitCode = 2 // Warning, re-run required
+          } else {
+            response.exitCode = 1 // Default to fail if severity unknown
+          }
+          
+          return response
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+  }
+  
+  return { found: false }
+}
+
+/**
  * Print INTENT_010 summary to terminal
  */
 function printIntent010Summary(intent010Result) {
@@ -273,6 +333,31 @@ function printIntent020Summary(intent020Result) {
     console.log(`     Failed Check: ${intent020Result.failed_check_id}`)
     console.log('')
     console.log(`  📝 Report: ${intent020Result.report_path}`)
+  }
+  
+  console.log('')
+}
+
+/**
+ * Print INTENT_030 summary to terminal
+ */
+function printIntent030Summary(intent030Result) {
+  console.log('')
+  console.log('┌──────────────────────────────────────────────────────────────┐')
+  console.log('│  INTENT_030 — State Integrity Gate                          │')
+  console.log('└──────────────────────────────────────────────────────────────┘')
+  console.log('')
+  
+  if (intent030Result.verdict === 'VERIFIED_OK') {
+    console.log('  ✅ STATE INTEGRITY: PASS')
+    console.log('     All state and store integrity checks passed.')
+  } else {
+    const severityEmoji = intent030Result.severity === 'HIGH' ? '🔴' : '🟡'
+    console.log(`  ❌ STATE INTEGRITY: FAIL`)
+    console.log(`     Severity: ${severityEmoji} ${intent030Result.severity}`)
+    console.log(`     Failed Check: ${intent030Result.failed_check_id}`)
+    console.log('')
+    console.log(`  📝 Report: ${intent030Result.report_path}`)
   }
   
   console.log('')
@@ -676,6 +761,50 @@ async function main() {
         console.log('  ⛔ BLOCKING: HIGH severity accessibility failure')
       } else {
         console.log('  ⚠️  WARNING: MEDIUM severity accessibility failure')
+      }
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('')
+      
+      // Stop backend before exit
+      await stopBackend()
+      
+      process.exit(decision.exitCode)
+    }
+  }
+  
+  // Check for INTENT_030 state integrity result (also takes precedence)
+  const intent030Result = checkIntent030Result(artifactPath)
+  
+  if (intent030Result.found) {
+    printIntent030Summary(intent030Result)
+    
+    // If INTENT_030 failed, it takes precedence over other QC decisions
+    if (intent030Result.verdict !== 'VERIFIED_OK') {
+      const decision = {
+        classification: 'VERIFIED_NOT_OK',
+        source: 'INTENT_030',
+        severity: intent030Result.severity,
+        failed_check: intent030Result.failed_check_id,
+        report_path: intent030Result.report_path,
+        artifactPath,
+        timestamp: new Date().toISOString(),
+        exitCode: intent030Result.exitCode,
+      }
+      
+      // Write decision
+      if (!options.dryRun && artifactPath) {
+        const decisionPath = path.join(artifactPath, 'qc_decision.json')
+        fs.writeFileSync(decisionPath, JSON.stringify(decision, null, 2))
+        console.log(`  Decision written to: ${decisionPath}`)
+      }
+      
+      console.log('')
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log(`  QC LOOP COMPLETE — Exit Code: ${decision.exitCode}`)
+      if (intent030Result.severity === 'HIGH') {
+        console.log('  ⛔ BLOCKING: HIGH severity state integrity failure')
+      } else {
+        console.log('  ⚠️  WARNING: MEDIUM severity state integrity failure')
       }
       console.log('═══════════════════════════════════════════════════════════════')
       console.log('')

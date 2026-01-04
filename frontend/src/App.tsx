@@ -65,6 +65,7 @@ import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 // Source Selection Store: Authoritative source selection state
 import { useSourceSelectionStore } from './stores/sourceSelectionStore'
+import { registerStoresForQC } from './stores/qcRegistry'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'
 // App State Machine: Explicit centralized state derivation
@@ -348,6 +349,11 @@ function App() {
   // Auto-trigger POSTER FRAME ONLY when source files change
   // Video previews are NEVER auto-generated — users must request them
   const currentPreviewSource = useRef<string | null>(null)
+  
+  // Register stores for QC inspection (QC mode only)
+  useEffect(() => {
+    registerStoresForQC()
+  }, [])
   
   useEffect(() => {
     // Only trigger poster for single file selection

@@ -1,13 +1,13 @@
 /**
- * INTENT_020 — Accessibility & Interaction Sanity
+ * INTENT_030 — State & Store Integrity
  * 
- * Validates accessibility and interaction properties in idle state:
- * - Keyboard reachability (Tab navigation)
- * - Focus indicators visibility
- * - Dead-click detection
- * - Invisible interactive elements
- * - Cursor/hitbox alignment
- * - Focus trap validation (for modals)
+ * Structural guardrails to prevent state fragmentation bugs.
+ * Validates:
+ * - Single ownership per UI domain
+ * - No dual writes per action
+ * - No deprecated store usage
+ * - State transitions are visible
+ * - Read-after-write consistency
  * 
  * EXIT CODES (via test failure):
  * - HIGH severity violations → exit 1 (blocking)
@@ -15,12 +15,12 @@
  * - All passed → exit 0
  * 
  * ARTIFACTS:
- * - intent_020_result.json (structured JSON result)
- * - intent_020_report.md (human-readable markdown report)
+ * - intent_030_result.json (structured JSON result)
+ * - intent_030_report.md (human-readable markdown report)
  * 
  * RUN LOCALLY:
  *   cd qa/verify/ui/visual_regression
- *   npx playwright test intent_020_accessibility.spec.ts
+ *   npx playwright test intent_030_state_integrity.spec.ts
  * 
  * INTEGRATION:
  *   Integrated into run_qc_loop.mjs Phase 4 summary
@@ -31,16 +31,20 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Page } from '@playwright/test'
 import {
-  checkKeyboardReachability,
-  checkFocusIndicatorsVisible,
-  checkDeadClicks,
-  checkInvisibleInteractive,
-  checkCursorHitboxMatch,
-  checkFocusTrap,
-  type InvariantResult,
-  type AccessibilityViolation,
+  exposeStoreDiagnostics,
+  getStoreDiagnostics,
+  captureDOMState,
+  checkSingleOwnership,
+  checkNoDualWrites,
+  checkDeprecatedStores,
+  checkStateTransitionVisibility,
+  checkReadAfterWriteConsistency,
+  type StoreInvariantResult,
+  type StoreViolation,
   type InvariantContext,
-} from './intent_020_invariants'
+  type StoreDiagnostics,
+  type DOMStateSnapshot,
+} from './intent_030_invariants'
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -52,12 +56,12 @@ interface CheckResult {
   passed: boolean
   severity: 'HIGH' | 'MEDIUM'
   violation_count?: number
-  violations?: AccessibilityViolation[]
+  violations?: StoreViolation[]
   screenshot_path?: string
 }
 
-interface AccessibilityResult {
-  intent_id: 'INTENT_020'
+interface StateIntegrityResult {
+  intent_id: 'INTENT_030'
   timestamp: string
   verdict: 'VERIFIED_OK' | 'VERIFIED_NOT_OK'
   severity?: 'HIGH' | 'MEDIUM'
@@ -67,8 +71,10 @@ interface AccessibilityResult {
     check_id: string
     severity: 'HIGH' | 'MEDIUM'
     violation_count: number
-    first_violation?: AccessibilityViolation
+    first_violation?: StoreViolation
   }
+  diagnostics?: StoreDiagnostics | null
+  dom_snapshot?: DOMStateSnapshot
   report_path?: string
 }
 
@@ -86,17 +92,17 @@ test.use({
   viewport: STANDARD_VIEWPORT,
 })
 
-test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
+test.describe('INTENT_030 — State & Store Integrity', () => {
   test.beforeEach(async ({ page, visualCollector }) => {
     console.log('\n═══════════════════════════════════════════════════════════')
-    console.log('  INTENT_020 — Accessibility & Interaction Sanity')
+    console.log('  INTENT_030 — State & Store Integrity')
     console.log('═══════════════════════════════════════════════════════════')
     console.log(`  Artifact dir: ${visualCollector.artifactDir}`)
     console.log(`  Viewport: ${STANDARD_VIEWPORT.width}×${STANDARD_VIEWPORT.height}`)
     console.log('')
   })
 
-  test('accessibility and interaction checks', async ({ page, visualCollector, app }) => {
+  test('state and store integrity checks', async ({ page, visualCollector, app }) => {
     const artifactDir = visualCollector.artifactDir
     const isE2EMode = process.env.E2E_TEST === 'true'
     
@@ -109,16 +115,27 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
     console.log('⏳ Waiting for idle state...')
     await page.waitForTimeout(2000)
     
+    // Expose store diagnostics for inspection
+    console.log('🔧 Exposing store diagnostics...')
+    await exposeStoreDiagnostics(page)
+    
+    // Capture initial state
+    const initialDiagnostics = await getStoreDiagnostics(page)
+    const initialDOMState = await captureDOMState(page)
+    
+    console.log('📊 Initial store diagnostics:', JSON.stringify(initialDiagnostics, null, 2))
+    console.log('📊 Initial DOM state:', JSON.stringify(initialDOMState, null, 2))
+    
     const checks: CheckResult[] = []
-    let firstFailure: { check: CheckResult; invariant: InvariantResult } | null = null
+    let firstFailure: { check: CheckResult; invariant: StoreInvariantResult } | null = null
     
     // =========================================================================
-    // CHECK 1: Keyboard Reachability (HIGH severity)
+    // CHECK 1: Single Ownership (HIGH severity)
     // =========================================================================
-    console.log('\n🔍 Check 1: Keyboard reachability')
+    console.log('\n🔍 Check 1: Single ownership per UI domain')
     
     try {
-      const result = await checkKeyboardReachability(page, context)
+      const result = await checkSingleOwnership(page, context)
       
       const check: CheckResult = {
         id: result.invariant_id,
@@ -132,14 +149,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
       checks.push(check)
       
       if (!result.passed) {
-        console.log(`   ❌ ${result.violations.length} keyboard reachability violation(s)`)
+        console.log(`   ❌ ${result.violations.length} ownership violation(s)`)
         for (const v of result.violations.slice(0, 3)) {
-          console.log(`      • ${v.element_description}: ${v.reason}`)
+          console.log(`      • ${v.domain}: ${v.issue}`)
         }
         
         if (!firstFailure) {
-          // Capture failure screenshot
-          const screenshotPath = path.join(artifactDir, 'keyboard_reachability_failure.png')
+          const screenshotPath = path.join(artifactDir, 'single_ownership_failure.png')
           await page.screenshot({ path: screenshotPath, fullPage: false })
           check.screenshot_path = screenshotPath
           console.log(`      📸 Screenshot: ${screenshotPath}`)
@@ -147,13 +163,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
           firstFailure = { check, invariant: result }
         }
       } else {
-        console.log('   ✅ All interactive elements keyboard reachable')
+        console.log('   ✅ Single ownership per domain maintained')
       }
     } catch (error) {
       console.error(`   ⚠️  Check failed with error: ${error}`)
       checks.push({
-        id: 'KEYBOARD_REACHABILITY',
-        name: 'Keyboard reachability check',
+        id: 'SINGLE_OWNERSHIP',
+        name: 'Single ownership check',
         passed: false,
         severity: 'HIGH',
       })
@@ -162,18 +178,18 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
     // Fail fast on HIGH severity
     if (firstFailure && firstFailure.check.severity === 'HIGH') {
       console.log('\n❌ FAIL FAST: HIGH severity violation detected')
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure.check, 'HIGH')
-      expect(false, `HIGH severity accessibility failure: ${firstFailure.check.name}`).toBe(true)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure.check, 'HIGH', initialDiagnostics, initialDOMState)
+      expect(false, `HIGH severity state integrity failure: ${firstFailure.check.name}`).toBe(true)
       return
     }
     
     // =========================================================================
-    // CHECK 2: Focus Indicators Visible (MEDIUM severity)
+    // CHECK 2: No Dual Writes (MEDIUM severity)
     // =========================================================================
-    console.log('\n🔍 Check 2: Focus indicators visible')
+    console.log('\n🔍 Check 2: No dual writes per action')
     
     try {
-      const result = await checkFocusIndicatorsVisible(page, context)
+      const result = await checkNoDualWrites(page, context)
       
       const check: CheckResult = {
         id: result.invariant_id,
@@ -187,13 +203,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
       checks.push(check)
       
       if (!result.passed) {
-        console.log(`   ⚠️  ${result.violations.length} focus indicator violation(s)`)
+        console.log(`   ⚠️  ${result.violations.length} dual-write violation(s)`)
         for (const v of result.violations.slice(0, 3)) {
-          console.log(`      • ${v.element_description}: ${v.reason}`)
+          console.log(`      • ${v.domain}: ${v.issue}`)
         }
         
         if (!firstFailure) {
-          const screenshotPath = path.join(artifactDir, 'focus_indicators_failure.png')
+          const screenshotPath = path.join(artifactDir, 'dual_writes_failure.png')
           await page.screenshot({ path: screenshotPath, fullPage: false })
           check.screenshot_path = screenshotPath
           console.log(`      📸 Screenshot: ${screenshotPath}`)
@@ -201,25 +217,25 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
           firstFailure = { check, invariant: result }
         }
       } else {
-        console.log('   ✅ All focusable elements have visible indicators')
+        console.log('   ✅ No dual-write patterns detected')
       }
     } catch (error) {
       console.error(`   ⚠️  Check failed with error: ${error}`)
       checks.push({
-        id: 'FOCUS_INDICATORS_VISIBLE',
-        name: 'Focus indicators check',
+        id: 'NO_DUAL_WRITES',
+        name: 'No dual writes check',
         passed: false,
         severity: 'MEDIUM',
       })
     }
     
     // =========================================================================
-    // CHECK 3: Dead Click Detection (HIGH severity)
+    // CHECK 3: Deprecated Store Detection (HIGH severity)
     // =========================================================================
-    console.log('\n🔍 Check 3: Dead click detection')
+    console.log('\n🔍 Check 3: No deprecated store usage')
     
     try {
-      const result = await checkDeadClicks(page, context)
+      const result = await checkDeprecatedStores(page, context)
       
       const check: CheckResult = {
         id: result.invariant_id,
@@ -233,13 +249,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
       checks.push(check)
       
       if (!result.passed) {
-        console.log(`   ❌ ${result.violations.length} dead-click violation(s)`)
+        console.log(`   ❌ ${result.violations.length} deprecated store usage(s)`)
         for (const v of result.violations.slice(0, 3)) {
-          console.log(`      • ${v.element_description}: ${v.reason}`)
+          console.log(`      • ${v.domain}: ${v.issue}`)
         }
         
         if (!firstFailure) {
-          const screenshotPath = path.join(artifactDir, 'dead_click_failure.png')
+          const screenshotPath = path.join(artifactDir, 'deprecated_stores_failure.png')
           await page.screenshot({ path: screenshotPath, fullPage: false })
           check.screenshot_path = screenshotPath
           console.log(`      📸 Screenshot: ${screenshotPath}`)
@@ -247,33 +263,33 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
           firstFailure = { check, invariant: result }
         }
       } else {
-        console.log('   ✅ No dead-click elements detected')
+        console.log('   ✅ No deprecated store usage detected')
       }
     } catch (error) {
       console.error(`   ⚠️  Check failed with error: ${error}`)
       checks.push({
-        id: 'DEAD_CLICK_DETECTION',
-        name: 'Dead click detection',
+        id: 'DEPRECATED_STORE_DETECTION',
+        name: 'Deprecated store detection',
         passed: false,
         severity: 'HIGH',
       })
     }
     
     // Fail fast on HIGH severity
-    if (firstFailure && firstFailure.check.severity === 'HIGH' && firstFailure.check.id === 'DEAD_CLICK_DETECTION') {
+    if (firstFailure && firstFailure.check.severity === 'HIGH' && firstFailure.check.id === 'DEPRECATED_STORE_DETECTION') {
       console.log('\n❌ FAIL FAST: HIGH severity violation detected')
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure.check, 'HIGH')
-      expect(false, `HIGH severity accessibility failure: ${firstFailure.check.name}`).toBe(true)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure.check, 'HIGH', initialDiagnostics, initialDOMState)
+      expect(false, `HIGH severity state integrity failure: ${firstFailure.check.name}`).toBe(true)
       return
     }
     
     // =========================================================================
-    // CHECK 4: Invisible Interactive Elements (MEDIUM severity)
+    // CHECK 4: State Transition Visibility (MEDIUM severity)
     // =========================================================================
-    console.log('\n🔍 Check 4: Invisible interactive elements')
+    console.log('\n🔍 Check 4: State transitions are visible')
     
     try {
-      const result = await checkInvisibleInteractive(page, context)
+      const result = await checkStateTransitionVisibility(page, context)
       
       const check: CheckResult = {
         id: result.invariant_id,
@@ -287,13 +303,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
       checks.push(check)
       
       if (!result.passed) {
-        console.log(`   ⚠️  ${result.violations.length} invisible interactive element(s)`)
+        console.log(`   ⚠️  ${result.violations.length} visibility violation(s)`)
         for (const v of result.violations.slice(0, 3)) {
-          console.log(`      • ${v.element_description}: ${v.reason}`)
+          console.log(`      • ${v.domain}: ${v.issue}`)
         }
         
         if (!firstFailure) {
-          const screenshotPath = path.join(artifactDir, 'invisible_interactive_failure.png')
+          const screenshotPath = path.join(artifactDir, 'transition_visibility_failure.png')
           await page.screenshot({ path: screenshotPath, fullPage: false })
           check.screenshot_path = screenshotPath
           console.log(`      📸 Screenshot: ${screenshotPath}`)
@@ -301,25 +317,25 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
           firstFailure = { check, invariant: result }
         }
       } else {
-        console.log('   ✅ No invisible interactive elements')
+        console.log('   ✅ State transitions are visible')
       }
     } catch (error) {
       console.error(`   ⚠️  Check failed with error: ${error}`)
       checks.push({
-        id: 'INVISIBLE_INTERACTIVE_DETECTION',
-        name: 'Invisible interactive elements check',
+        id: 'STATE_TRANSITION_VISIBILITY',
+        name: 'State transition visibility',
         passed: false,
         severity: 'MEDIUM',
       })
     }
     
     // =========================================================================
-    // CHECK 5: Cursor/Hitbox Match (MEDIUM severity)
+    // CHECK 5: Read-after-write Consistency (MEDIUM severity)
     // =========================================================================
-    console.log('\n🔍 Check 5: Cursor/hitbox alignment')
+    console.log('\n🔍 Check 5: Read-after-write consistency')
     
     try {
-      const result = await checkCursorHitboxMatch(page, context)
+      const result = await checkReadAfterWriteConsistency(page, context)
       
       const check: CheckResult = {
         id: result.invariant_id,
@@ -333,13 +349,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
       checks.push(check)
       
       if (!result.passed) {
-        console.log(`   ⚠️  ${result.violations.length} cursor/hitbox mismatch(es)`)
+        console.log(`   ⚠️  ${result.violations.length} consistency violation(s)`)
         for (const v of result.violations.slice(0, 3)) {
-          console.log(`      • ${v.element_description}: ${v.reason}`)
+          console.log(`      • ${v.domain}: ${v.issue}`)
         }
         
         if (!firstFailure) {
-          const screenshotPath = path.join(artifactDir, 'cursor_hitbox_failure.png')
+          const screenshotPath = path.join(artifactDir, 'read_after_write_failure.png')
           await page.screenshot({ path: screenshotPath, fullPage: false })
           check.screenshot_path = screenshotPath
           console.log(`      📸 Screenshot: ${screenshotPath}`)
@@ -347,59 +363,13 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
           firstFailure = { check, invariant: result }
         }
       } else {
-        console.log('   ✅ Cursor and hitbox alignment good')
+        console.log('   ✅ Read-after-write consistency maintained')
       }
     } catch (error) {
       console.error(`   ⚠️  Check failed with error: ${error}`)
       checks.push({
-        id: 'CURSOR_HITBOX_MATCH',
-        name: 'Cursor/hitbox match check',
-        passed: false,
-        severity: 'MEDIUM',
-      })
-    }
-    
-    // =========================================================================
-    // CHECK 6: Focus Trap Validation (MEDIUM severity)
-    // =========================================================================
-    console.log('\n🔍 Check 6: Focus trap validation')
-    
-    try {
-      const result = await checkFocusTrap(page, context)
-      
-      const check: CheckResult = {
-        id: result.invariant_id,
-        name: result.invariant_name,
-        passed: result.passed,
-        severity: 'MEDIUM',
-        violation_count: result.violations.length,
-        violations: result.violations,
-      }
-      
-      checks.push(check)
-      
-      if (!result.passed) {
-        console.log(`   ⚠️  ${result.violations.length} focus trap violation(s)`)
-        for (const v of result.violations.slice(0, 3)) {
-          console.log(`      • ${v.element_description}: ${v.reason}`)
-        }
-        
-        if (!firstFailure) {
-          const screenshotPath = path.join(artifactDir, 'focus_trap_failure.png')
-          await page.screenshot({ path: screenshotPath, fullPage: false })
-          check.screenshot_path = screenshotPath
-          console.log(`      📸 Screenshot: ${screenshotPath}`)
-          
-          firstFailure = { check, invariant: result }
-        }
-      } else {
-        console.log('   ✅ Focus trap validation passed')
-      }
-    } catch (error) {
-      console.error(`   ⚠️  Check failed with error: ${error}`)
-      checks.push({
-        id: 'FOCUS_TRAP_VALIDATION',
-        name: 'Focus trap validation',
+        id: 'READ_AFTER_WRITE_CONSISTENCY',
+        name: 'Read-after-write consistency',
         passed: false,
         severity: 'MEDIUM',
       })
@@ -413,23 +383,23 @@ test.describe('INTENT_020 — Accessibility & Interaction Sanity', () => {
       const severity = firstFailure.check.severity
       console.log('\n═══════════════════════════════════════════════════════════')
       if (severity === 'HIGH') {
-        console.log('  ❌ INTENT_020: ACCESSIBILITY CHECK FAILED (HIGH SEVERITY)')
+        console.log('  ❌ INTENT_030: STATE INTEGRITY CHECK FAILED (HIGH SEVERITY)')
       } else {
-        console.log('  ⚠️  INTENT_020: ACCESSIBILITY CHECK FAILED (MEDIUM SEVERITY)')
+        console.log('  ⚠️  INTENT_030: STATE INTEGRITY CHECK FAILED (MEDIUM SEVERITY)')
       }
       console.log('═══════════════════════════════════════════════════════════\n')
       
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure.check, severity)
+      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, firstFailure.check, severity, initialDiagnostics, initialDOMState)
       
-      expect(false, `Accessibility check failed: ${firstFailure.check.name}`).toBe(true)
+      expect(false, `State integrity check failed: ${firstFailure.check.name}`).toBe(true)
     } else {
       console.log('\n═══════════════════════════════════════════════════════════')
-      console.log('  ✅ INTENT_020: ALL ACCESSIBILITY CHECKS PASSED')
+      console.log('  ✅ INTENT_030: ALL STATE INTEGRITY CHECKS PASSED')
       console.log('═══════════════════════════════════════════════════════════\n')
       
-      await saveResultWithReport(artifactDir, 'VERIFIED_OK', checks)
+      await saveResultWithReport(artifactDir, 'VERIFIED_OK', checks, undefined, undefined, initialDiagnostics, initialDOMState)
       
-      expect(checks.every(c => c.passed), 'All accessibility checks should pass').toBe(true)
+      expect(checks.every(c => c.passed), 'All state integrity checks should pass').toBe(true)
     }
   })
 })
@@ -443,13 +413,15 @@ async function saveResultWithReport(
   verdict: 'VERIFIED_OK' | 'VERIFIED_NOT_OK',
   checks: CheckResult[],
   failedCheck?: CheckResult,
-  severity?: 'HIGH' | 'MEDIUM'
+  severity?: 'HIGH' | 'MEDIUM',
+  diagnostics?: StoreDiagnostics | null,
+  domSnapshot?: DOMStateSnapshot
 ) {
   const timestamp = new Date().toISOString()
   
   // Build result object
-  const result: AccessibilityResult = {
-    intent_id: 'INTENT_020',
+  const result: StateIntegrityResult = {
+    intent_id: 'INTENT_030',
     timestamp,
     verdict,
     severity,
@@ -461,15 +433,17 @@ async function saveResultWithReport(
       violation_count: failedCheck.violation_count || 0,
       first_violation: failedCheck.violations?.[0],
     } : undefined,
+    diagnostics,
+    dom_snapshot: domSnapshot,
   }
   
   // Save JSON result
-  const resultPath = path.join(artifactDir, 'intent_020_result.json')
+  const resultPath = path.join(artifactDir, 'intent_030_result.json')
   fs.writeFileSync(resultPath, JSON.stringify(result, null, 2))
   console.log(`💾 JSON result saved: ${resultPath}`)
   
   // Generate markdown report
-  const reportPath = path.join(artifactDir, 'intent_020_report.md')
+  const reportPath = path.join(artifactDir, 'intent_030_report.md')
   const reportContent = generateMarkdownReport(result, artifactDir)
   fs.writeFileSync(reportPath, reportContent)
   console.log(`📝 Markdown report saved: ${reportPath}`)
@@ -480,11 +454,11 @@ async function saveResultWithReport(
   fs.writeFileSync(resultPath, JSON.stringify(result, null, 2))
 }
 
-function generateMarkdownReport(result: AccessibilityResult, artifactDir: string): string {
+function generateMarkdownReport(result: StateIntegrityResult, artifactDir: string): string {
   const lines: string[] = []
   
   // Header
-  lines.push('# INTENT_020 — Accessibility & Interaction Report')
+  lines.push('# INTENT_030 — State & Store Integrity Report')
   lines.push('')
   lines.push(`**Generated:** ${result.timestamp}`)
   lines.push(`**Verdict:** ${result.verdict === 'VERIFIED_OK' ? '✅ PASS' : '❌ FAIL'}`)
@@ -500,9 +474,9 @@ function generateMarkdownReport(result: AccessibilityResult, artifactDir: string
   
   if (result.verdict === 'VERIFIED_OK') {
     // Success case
-    lines.push('## ✅ All Accessibility Checks Passed')
+    lines.push('## ✅ All State Integrity Checks Passed')
     lines.push('')
-    lines.push('The application passed all accessibility and interaction checks.')
+    lines.push('The application passed all state and store integrity checks.')
     lines.push('')
     lines.push('### Checks Performed')
     lines.push('')
@@ -511,7 +485,7 @@ function generateMarkdownReport(result: AccessibilityResult, artifactDir: string
     }
   } else {
     // Failure case - show ONE failure (fail-fast)
-    lines.push('## ❌ Accessibility Check Failed')
+    lines.push('## ❌ State Integrity Check Failed')
     lines.push('')
     
     const failedCheck = result.checks.find(c => !c.passed)
@@ -522,19 +496,17 @@ function generateMarkdownReport(result: AccessibilityResult, artifactDir: string
       lines.push(`**Violations:** ${failedCheck.violation_count || 0}`)
       lines.push('')
       
-      // Plain English explanation
+      // Violations
       if (failedCheck.violations && failedCheck.violations.length > 0) {
         lines.push('#### Violations Detected')
         lines.push('')
         
         for (const [idx, v] of failedCheck.violations.slice(0, 5).entries()) {
-          lines.push(`${idx + 1}. **${v.element_description}**`)
-          lines.push(`   - Reason: ${v.reason}`)
-          if (v.selector_hint) {
-            lines.push(`   - Selector: \`${v.selector_hint}\``)
-          }
-          if (v.bounds) {
-            lines.push(`   - Position: (${v.bounds.left.toFixed(0)}, ${v.bounds.top.toFixed(0)})`)
+          lines.push(`${idx + 1}. **Domain: ${v.domain}**`)
+          lines.push(`   - Issue: ${v.issue}`)
+          lines.push(`   - Details: ${v.details}`)
+          if (v.recommendation) {
+            lines.push(`   - Recommendation: ${v.recommendation}`)
           }
           lines.push('')
         }
@@ -554,6 +526,26 @@ function generateMarkdownReport(result: AccessibilityResult, artifactDir: string
         lines.push('')
       }
       
+      // Store diagnostics
+      if (result.diagnostics) {
+        lines.push('#### Store Diagnostics')
+        lines.push('')
+        lines.push('```json')
+        lines.push(JSON.stringify(result.diagnostics, null, 2))
+        lines.push('```')
+        lines.push('')
+      }
+      
+      // DOM snapshot
+      if (result.dom_snapshot) {
+        lines.push('#### DOM State Snapshot')
+        lines.push('')
+        lines.push('```json')
+        lines.push(JSON.stringify(result.dom_snapshot, null, 2))
+        lines.push('```')
+        lines.push('')
+      }
+      
       // Remediation advice
       lines.push('#### Recommended Actions')
       lines.push('')
@@ -565,42 +557,42 @@ function generateMarkdownReport(result: AccessibilityResult, artifactDir: string
   // Footer
   lines.push('---')
   lines.push('')
-  lines.push('*This report was generated by INTENT_020 — Accessibility & Interaction Sanity QC.*')
+  lines.push('*This report was generated by INTENT_030 — State & Store Integrity QC.*')
   
   return lines.join('\n')
 }
 
 function getRemediationAdvice(checkId: string): string {
   const advice: Record<string, string> = {
-    KEYBOARD_REACHABILITY: `
-- Ensure all interactive elements have \`tabIndex >= 0\` or are naturally focusable (button, a, input, etc.)
-- Remove \`tabIndex="-1"\` from elements that should be keyboard accessible
-- Use semantic HTML elements (button, a) instead of divs with click handlers
+    SINGLE_OWNERSHIP: `
+- Review component source to identify dual store reads
+- Consolidate state into single authoritative store per UI domain
+- Remove deprecated state attributes (data-has-sources, etc.)
+- Ensure components read from Zustand store, not local useState
 `,
-    FOCUS_INDICATORS_VISIBLE: `
-- Do not use \`outline: none\` without providing an alternative focus indicator
-- Use \`:focus\` styles with \`box-shadow\`, \`border\`, or \`background-color\` changes
-- Test keyboard navigation to verify focus is visible
+    NO_DUAL_WRITES: `
+- Identify action that mutates multiple stores
+- Refactor to single store update per action
+- Use derived state or selectors instead of duplicating data
+- Ensure store updates are atomic (all or nothing)
 `,
-    DEAD_CLICK_DETECTION: `
-- Ensure all buttons have click handlers attached (React onClick, addEventListener, etc.)
-- For links, ensure they have valid \`href\` attributes
-- Remove \`cursor: pointer\` from non-interactive elements
+    DEPRECATED_STORE_DETECTION: `
+- Remove isBurnInsEditorOpen usage, use isVisualPreviewModalOpen
+- Clear deprecated localStorage keys
+- Update components to use new store fields
+- Remove dual-state patterns (store + localStorage)
 `,
-    INVISIBLE_INTERACTIVE_DETECTION: `
-- Avoid \`opacity: 0\` on interactive elements unless they are truly hidden
-- Use \`display: none\` or \`visibility: hidden\` for hidden elements
-- Set \`pointer-events: none\` on invisible decorative overlays
+    STATE_TRANSITION_VISIBILITY: `
+- Add console.log or telemetry for state changes
+- Use Zustand middleware to log all store updates
+- Ensure state changes are explicit, not background polling
+- Review useEffect dependencies that may cause silent changes
 `,
-    CURSOR_HITBOX_MATCH: `
-- Ensure clickable area matches visual bounds
-- Use padding to increase clickable area for small elements
-- Avoid nested clickable elements with mismatched sizes
-`,
-    FOCUS_TRAP_VALIDATION: `
-- Modals must contain focusable elements
-- Implement focus trap using \`focusTrap\` library or similar
-- Test Tab/Shift+Tab navigation within modals
+    READ_AFTER_WRITE_CONSISTENCY: `
+- Ensure UI reads directly from store, not cached values
+- Remove stale selectors or memoization with incorrect dependencies
+- Verify React renders after store updates (useEffect deps)
+- Check for race conditions between store update and render
 `,
   }
   

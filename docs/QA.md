@@ -249,6 +249,86 @@ INTENT_020 is integrated into `run_qc_loop.mjs` Phase 4:
 - Produces exit code based on severity
 - Report included in QC_SUMMARY.md
 
+### INTENT_030 — State & Store Integrity
+
+**UI changes affecting state management MUST pass INTENT_030 before merge.**
+
+INTENT_030 is a structural guardrail that prevents state fragmentation bugs by enforcing architectural invariants:
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| Single ownership | HIGH | Each UI domain reads from ONE store only |
+| No dual writes | MEDIUM | Single action must not mutate multiple stores |
+| Deprecated store detection | HIGH | No writes to known deprecated stores |
+| State transition visibility | MEDIUM | Every action causes logged transition or measurable delta |
+| Read-after-write consistency | MEDIUM | UI indicators reflect store state within same tick/render |
+
+#### Property-Based State Invariants
+
+INTENT_030 validates store integrity using runtime inspection:
+
+| UI QC (INTENT_030) | State integrity check results |
+| Invariant | Description |
+|-----------|-------------|
+| SINGLE_OWNERSHIP | Sources read from sourceSelectionStore, presets from presetStore, etc. |
+| NO_DUAL_WRITES | No action mutates both sourceSelection AND v2Mode stores |
+| DEPRECATED_STORE_DETECTION | isBurnInsEditorOpen not used, no localStorage pollution |
+| STATE_TRANSITION_VISIBILITY | State changes are explicit, not silent background updates |
+| READ_AFTER_WRITE_CONSISTENCY | Source count in store matches DOM display immediately |
+
+These invariants prevent "UI looks right but state is wrong" bugs.
+
+#### Store Diagnostics
+
+INTENT_030 exposes stores for inspection via `window.__ZUSTAND_STORES__` (QC mode only):
+- Reads current store state without modification
+- Compares store state with DOM rendering
+- Detects store/UI consistency violations
+- Identifies deprecated patterns
+
+#### Exit Code Mapping
+
+| Severity | Exit Code | Meaning |
+|----------|-----------|---------|
+| PASS | 0 | All state integrity checks passed |
+| HIGH | 1 | Blocking failure — dual-write or deprecated store usage |
+| MEDIUM | 2 | Warning — consistency issue detected |
+
+#### HIGH Severity Conditions
+
+A failure is marked HIGH severity when:
+- Multiple stores own same UI domain (single ownership violation)
+- Writes to deprecated stores (isBurnInsEditorOpen, localStorage state)
+- These patterns reintroduce the state fragmentation bugs we've already fixed
+
+#### Running Locally
+
+```bash
+cd qa/verify/ui/visual_regression
+npx playwright test intent_030_state_integrity.spec.ts
+```
+
+Results are stored in:
+- `artifacts/ui/visual/<run>/intent_030_result.json` (structured data)
+- `artifacts/ui/visual/<run>/intent_030_report.md` (human-readable report)
+
+#### Integration with QC Loop
+
+INTENT_030 is integrated into `run_qc_loop.mjs` Phase 4:
+- Runs after INTENT_020 (accessibility gate)
+- Takes precedence over other QC decisions
+- Produces exit code based on severity
+- Report included in QC_SUMMARY.md
+
+#### Why This Matters
+
+Recent bugs were caused by:
+- UI reading from multiple sources (dual ownership)
+- Background state changes without transitions (silent mutations)
+- Deprecated store fields still being written (isBurnInsEditorOpen)
+
+INTENT_030 makes future UI expansion (Settings panel, Watch Folders, etc.) safe by ensuring state remains single-source-of-truth.
+
 ### Action-Scoped QC
 
 QC now reasons **per user action**, not just per screenshot. For each meaningful action (e.g., clicking "Create Job"):
