@@ -646,6 +646,20 @@ async function main() {
     console.log(`  Decision written to: ${decisionPath}`)
   }
   
+  // Generate consolidated QC_SUMMARY.md
+  if (artifactPath) {
+    try {
+      const { generateQCSummary, printQCSummary } = await import('./generate_qc_summary.mjs')
+      const { summaryPath, data } = generateQCSummary(artifactPath)
+      
+      console.log('')
+      printQCSummary(data)
+      console.log(`  📝 QC Summary: ${summaryPath}`)
+    } catch (err) {
+      console.error(`  ⚠️  Could not generate QC summary: ${err.message}`)
+    }
+  }
+  
   console.log('')
   console.log('═══════════════════════════════════════════════════════════════')
   console.log(`  QC LOOP COMPLETE — Exit Code: ${decision.exitCode}`)

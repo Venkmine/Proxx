@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "created": "2026-01-04T00:00:00.000Z",
+  "description": "Baseline layout metadata for INTENT_010 usability checks",
+  "checks": {
+    "duplicate_scrollbars": {
+      "check_id": "duplicate_scrollbars",
+      "check_name": "No duplicate scrollbars in left panel",
+      "expected": {
+        "max_nested_scrollables": 1,
+        "panel_selectors": [
+          "[data-testid=\"left-panel\"]",
+          "[data-testid=\"source-panel\"]",
+          "aside"
+        ]
+      }
+    },
+    "window_not_resizable": {
+      "check_id": "window_not_resizable",
+      "check_name": "App window is resizable",
+      "expected": {
+        "resizable": true,
+        "min_width": 800,
+        "min_height": 600
+      }
+    },
+    "buttons_clipped": {
+      "check_id": "buttons_clipped",
+      "check_name": "No buttons visually clipped at 1440x900",
+      "expected": {
+        "viewport": { "width": 1440, "height": 900 },
+        "clipped_count": 0
+      }
+    },
+    "horizontal_scrollbars": {
+      "check_id": "horizontal_scrollbars",
+      "check_name": "No horizontal scrollbars in main panels",
+      "expected": {
+        "panels_with_horizontal_scroll": 0,
+        "panel_selectors": [
+          "[data-testid=\"left-panel\"]",
+          "[data-testid=\"right-panel\"]",
+          "[data-testid=\"create-job-panel\"]",
+          "[data-testid=\"job-queue-panel\"]",
+          "main",
+          "aside"
+        ]
+      }
+    }
+  }
+}

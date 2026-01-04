@@ -26,6 +26,28 @@ import { test, expect } from './helpers'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import {
+  detectRegression,
+  generateRegressionSection,
+  isUpdateMode,
+  type RegressionResult,
+} from './intent_010_baseline'
+import {
+  runAllInvariants,
+  generateInvariantSection,
+  type InvariantResult,
+  type InvariantContext,
+} from './intent_010_invariants'
+import {
+  isHumanConfirmEnabled,
+  requestConfirmation,
+  createSession,
+  finalizeSession,
+  saveConfirmationSession,
+  generateConfirmationSection,
+  type ConfirmationSession,
+  type HumanConfirmation,
+} from './intent_010_human_confirm'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -74,6 +96,9 @@ interface UsabilityResult {
   failed_at?: string
   failure_payload?: FailurePayload
   report_path?: string
+  regressions?: RegressionResult[]
+  invariants?: InvariantResult[]
+  human_confirmations?: ConfirmationSession
 }
 
 // ============================================================================
@@ -107,17 +132,26 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
   test('verify layout sanity at 1440x900', async ({ page, visualCollector, app }) => {
     const artifactDir = visualCollector.artifactDir
     const checks: UsabilityCheck[] = []
+    const regressionResults: RegressionResult[] = []
+    const confirmSession = isHumanConfirmEnabled() ? createSession() : null
     // Use object wrapper to avoid TypeScript narrowing issues
     const state = {
-      state.firstFailure: null as UsabilityCheck | null,
-      state.windowIsResizable: true,
-      state.hasClippedButtons: false,
+      firstFailure: null as UsabilityCheck | null,
+      windowIsResizable: true,
+      hasClippedButtons: false,
     }
 
     console.log('\n═══════════════════════════════════════════════════════════')
     console.log('  INTENT_010 — Basic Usability & Layout Sanity')
     console.log('═══════════════════════════════════════════════════════════')
-    console.log(`  Artifact dir: ${artifactDir}\n`)
+    console.log(`  Artifact dir: ${artifactDir}`)
+    if (isUpdateMode()) {
+      console.log(`  ⚡ BASELINE UPDATE MODE: Will save current metrics as new baseline`)
+    }
+    if (isHumanConfirmEnabled()) {
+      console.log(`  👤 HUMAN CONFIRM MODE: Will pause on failures for review`)
+    }
+    console.log('')
 
     // Get viewport size once for all checks
     const viewport = await page.evaluate(() => ({
@@ -251,12 +285,38 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
       recordCheck('duplicate_scrollbars', 'No duplicate scrollbars in left panel', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
+    
+    // Baseline regression detection for check 1
+    const check1Metrics = {
+      nested_scrollable_count: checks[checks.length - 1]?.failure_payload?.raw_details?.nested_count ?? 0,
+    }
+    regressionResults.push(detectRegression('duplicate_scrollbars', check1Metrics, viewport))
 
     // FAIL FAST: Stop if first check failed
     if (state.firstFailure) {
-      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
-      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      // Request human confirmation if enabled
+      if (confirmSession) {
+        const confirmation = await requestConfirmation(
+          state.firstFailure.check_id,
+          state.firstFailure.name,
+          state.firstFailure.reason || 'Check failed',
+          state.firstFailure.screenshot
+        )
+        confirmSession.confirmations.push(confirmation)
+        
+        // If human accepted, continue (don't fail)
+        if (confirmation.human_response === 'ACCEPT') {
+          console.log('   ⏩ Human override: continuing despite failure')
+          state.firstFailure = null // Clear failure to continue
+        }
+      }
+      
+      if (state.firstFailure) {
+        const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+        const finalSession = confirmSession ? finalizeSession(confirmSession) : undefined
+        await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity, regressionResults, undefined, finalSession)
+        throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      }
     }
 
     // =========================================================================
@@ -320,12 +380,35 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
       recordCheck('window_not_resizable', 'App window is resizable', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
+    
+    // Baseline regression detection for check 2
+    const check2Metrics = {
+      resizable: state.windowIsResizable,
+    }
+    regressionResults.push(detectRegression('window_not_resizable', check2Metrics, viewport))
 
     // FAIL FAST
     if (state.firstFailure) {
-      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
-      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      if (confirmSession) {
+        const confirmation = await requestConfirmation(
+          state.firstFailure.check_id,
+          state.firstFailure.name,
+          state.firstFailure.reason || 'Check failed',
+          state.firstFailure.screenshot
+        )
+        confirmSession.confirmations.push(confirmation)
+        if (confirmation.human_response === 'ACCEPT') {
+          console.log('   ⏩ Human override: continuing despite failure')
+          state.firstFailure = null
+        }
+      }
+      
+      if (state.firstFailure) {
+        const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+        const finalSession = confirmSession ? finalizeSession(confirmSession) : undefined
+        await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity, regressionResults, undefined, finalSession)
+        throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      }
     }
 
     // =========================================================================
@@ -422,12 +505,36 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
       recordCheck('buttons_clipped', 'No buttons visually clipped at 1440x900', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
+    
+    // Baseline regression detection for check 3
+    const check3Metrics = {
+      clipped_count: state.hasClippedButtons ? 
+        (checks[checks.length - 1]?.failure_payload?.raw_details?.total_clipped ?? 1) : 0,
+    }
+    regressionResults.push(detectRegression('buttons_clipped', check3Metrics, viewport))
 
     // FAIL FAST
     if (state.firstFailure) {
-      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
-      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      if (confirmSession) {
+        const confirmation = await requestConfirmation(
+          state.firstFailure.check_id,
+          state.firstFailure.name,
+          state.firstFailure.reason || 'Check failed',
+          state.firstFailure.screenshot
+        )
+        confirmSession.confirmations.push(confirmation)
+        if (confirmation.human_response === 'ACCEPT') {
+          console.log('   ⏩ Human override: continuing despite failure')
+          state.firstFailure = null
+        }
+      }
+      
+      if (state.firstFailure) {
+        const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+        const finalSession = confirmSession ? finalizeSession(confirmSession) : undefined
+        await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity, regressionResults, undefined, finalSession)
+        throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      }
     }
 
     // =========================================================================
@@ -517,12 +624,58 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
       recordCheck('horizontal_scrollbars', 'No horizontal scrollbars in main panels', false, 
         `Error during check: ${(err as Error).message}`, screenshot)
     }
+    
+    // Baseline regression detection for check 4
+    const lastCheck = checks[checks.length - 1]
+    const check4Metrics = {
+      panels_with_horizontal_scroll: lastCheck?.failure_payload?.raw_details?.panels_affected?.length ?? 0,
+    }
+    regressionResults.push(detectRegression('horizontal_scrollbars', check4Metrics, viewport))
 
     // FAIL FAST (final check)
     if (state.firstFailure) {
-      const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
-      await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity)
-      throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      if (confirmSession) {
+        const confirmation = await requestConfirmation(
+          state.firstFailure.check_id,
+          state.firstFailure.name,
+          state.firstFailure.reason || 'Check failed',
+          state.firstFailure.screenshot
+        )
+        confirmSession.confirmations.push(confirmation)
+        if (confirmation.human_response === 'ACCEPT') {
+          console.log('   ⏩ Human override: continuing despite failure')
+          state.firstFailure = null
+        }
+      }
+      
+      if (state.firstFailure) {
+        const severity = determineSeverity(state.windowIsResizable, state.hasClippedButtons, state.firstFailure.check_id)
+        const finalSession = confirmSession ? finalizeSession(confirmSession) : undefined
+        await saveResultWithReport(artifactDir, 'VERIFIED_NOT_OK', checks, state.firstFailure, severity, regressionResults, undefined, finalSession)
+        throw new Error(`Usability check failed: ${state.firstFailure.name}`)
+      }
+    }
+
+    // =========================================================================
+    // PROPERTY-BASED INVARIANTS
+    // =========================================================================
+    console.log('\n🔒 Running property-based invariants...')
+    
+    const isE2EMode = process.env.E2E_MODE === '1' || process.env.CI === 'true'
+    const invariantContext: InvariantContext = {
+      viewport,
+      isE2EMode,
+    }
+    const invariantResults = await runAllInvariants(page, state.windowIsResizable, invariantContext)
+    
+    const invariantFailures = invariantResults.filter(r => !r.passed)
+    if (invariantFailures.length > 0) {
+      console.log(`   ⚠️  ${invariantFailures.length} invariant(s) violated:`)
+      for (const r of invariantFailures) {
+        console.log(`      - ${r.invariant_id}: ${r.violations.length} violation(s)`)
+      }
+    } else {
+      console.log('   ✅ All invariants hold')
     }
 
     // =========================================================================
@@ -532,7 +685,20 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
     console.log('  ✅ INTENT_010: ALL USABILITY CHECKS PASSED')
     console.log('═══════════════════════════════════════════════════════════\n')
     
-    await saveResultWithReport(artifactDir, 'VERIFIED_OK', checks, null, undefined)
+    // Print regression summary if any regressions detected
+    const regressions = regressionResults.filter(r => r.has_regression)
+    if (regressions.length > 0) {
+      console.log('⚠️  Regressions detected (even though all checks passed):')
+      for (const r of regressions) {
+        console.log(`   - ${r.check_id}: ${r.message}`)
+      }
+      console.log('')
+    }
+    
+    // Finalize confirmation session if enabled
+    const finalSession = confirmSession ? finalizeSession(confirmSession) : undefined
+    
+    await saveResultWithReport(artifactDir, 'VERIFIED_OK', checks, null, undefined, regressionResults, invariantResults, finalSession)
     
     expect(checks.every(c => c.passed), 'All usability checks should pass').toBe(true)
   })
@@ -543,18 +709,18 @@ test.describe('INTENT_010 — Basic Usability & Layout Sanity', () => {
 // ============================================================================
 
 function determineSeverity(
-  state.windowIsResizable: boolean, 
-  state.hasClippedButtons: boolean,
+  windowIsResizable: boolean, 
+  hasClippedButtons: boolean,
   failedCheckId: string
 ): Severity {
   // HIGH severity: non-resizable window AND clipped buttons
   // This is a critical usability issue - users cannot see buttons AND cannot resize to fix it
-  if (!state.windowIsResizable && state.hasClippedButtons) {
+  if (!windowIsResizable && hasClippedButtons) {
     return 'HIGH'
   }
   
   // HIGH severity if the specific check combo is met
-  if (failedCheckId === 'buttons_clipped' && !state.windowIsResizable) {
+  if (failedCheckId === 'buttons_clipped' && !windowIsResizable) {
     return 'HIGH'
   }
   
@@ -571,7 +737,10 @@ async function saveResultWithReport(
   verdict: 'VERIFIED_OK' | 'VERIFIED_NOT_OK', 
   checks: UsabilityCheck[],
   failedCheck: UsabilityCheck | null,
-  severity?: Severity
+  severity?: Severity,
+  regressionResults?: RegressionResult[],
+  invariantResults?: InvariantResult[],
+  confirmationSession?: ConfirmationSession
 ) {
   const timestamp = new Date().toISOString()
   
@@ -584,6 +753,9 @@ async function saveResultWithReport(
     checks,
     failed_at: failedCheck?.name,
     failure_payload: failedCheck?.failure_payload,
+    regressions: regressionResults,
+    invariants: invariantResults,
+    human_confirmations: confirmationSession,
   }
   
   // Save JSON result
@@ -703,6 +875,24 @@ function generateMarkdownReport(result: UsabilityResult, artifactDir: string): s
         lines.push('')
       }
     }
+  }
+  
+  // Regression section
+  if (result.regressions && result.regressions.length > 0) {
+    lines.push('')
+    lines.push(generateRegressionSection(result.regressions))
+  }
+  
+  // Invariant section
+  if (result.invariants && result.invariants.length > 0) {
+    lines.push('')
+    lines.push(generateInvariantSection(result.invariants))
+  }
+  
+  // Human confirmation section
+  if (result.human_confirmations) {
+    lines.push('')
+    lines.push(generateConfirmationSection(result.human_confirmations))
   }
   
   // Footer

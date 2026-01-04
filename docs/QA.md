@@ -127,17 +127,59 @@ A failure is marked HIGH severity when:
 - Window is non-resizable AND buttons are clipped
 - Users have no workaround (cannot resize to see clipped elements)
 
+#### Regression Prevention (Baseline Discipline)
+
+INTENT_010 maintains **metric baselines** to detect regressions even when checks still pass:
+
+- Baselines stored in `qa/qc_baselines/intent_010/`
+- Metric drift is flagged in reports
+- Update baselines with: `INTENT_010_UPDATE_BASELINE=1 npx playwright test intent_010_usability.spec.ts`
+
+#### Property-Based Invariants
+
+Beyond point checks, INTENT_010 validates **architectural invariants**:
+
+| Invariant | Description |
+|-----------|-------------|
+| PANELS_NEVER_CLIP_BUTTONS | Buttons must stay within parent panel bounds |
+| PANELS_NEVER_REQUIRE_HORIZONTAL_SCROLL | No panel should overflow horizontally |
+| WINDOW_RESIZABLE_UNLESS_E2E | Window must be resizable (except in E2E mode) |
+| NESTED_SCROLLABLES_LIMIT | Max 1 scrollable container per panel |
+
+These are expressed as properties, not hardcoded selectors, making them resilient to DOM changes.
+
+#### Human Confirmation Mode
+
+For ambiguous failures, enable human-in-the-loop confirmation:
+
+```bash
+INTENT_010_HUMAN_CONFIRM=1 npx playwright test intent_010_usability.spec.ts
+```
+
+When enabled:
+- Failures pause for human YES/NO review
+- Human responses are stored alongside automated results
+- ACCEPT overrides allow continuing despite automated failures
+- REJECT confirms the automated failure
+
 #### Enforcement
 
 1. **Pre-merge gate**: INTENT_010 runs in CI and blocks merge on HIGH severity
 2. **Fail-fast**: Only ONE failure is reported per run (fix sequentially)
 3. **Human-readable reports**: See `artifacts/ui/visual/<run>/intent_010_usability_report.md`
+4. **Consolidated summary**: See `artifacts/ui/visual/<run>/QC_SUMMARY.md`
 
 #### Running Locally
 
 ```bash
 cd qa/verify/ui/visual_regression
 npx playwright test intent_010_usability.spec.ts
+
+# With baseline update
+INTENT_010_UPDATE_BASELINE=1 npx playwright test intent_010_usability.spec.ts
+
+# With human confirmation
+INTENT_010_HUMAN_CONFIRM=1 npx playwright test intent_010_usability.spec.ts
 ```
 
 ### Action-Scoped QC
@@ -148,6 +190,30 @@ QC now reasons **per user action**, not just per screenshot. For each meaningful
 - Backend + UI correlation is required for judgement
 
 See [QC_ACTION_TRACE.md](./QC_ACTION_TRACE.md) for the action trace schema.
+
+### QC_SUMMARY.md — Consolidated Reporting
+
+Every QC run produces a **QC_SUMMARY.md** that consolidates all results:
+
+| Section | Contents |
+|---------|----------|
+| Executive Summary | SHIP / NO-SHIP / REVIEW recommendation |
+| UI QC (INTENT_010) | Usability check results |
+| Baseline Regressions | Metric drift from baselines |
+| Property Invariants | Invariant violations |
+| Human Confirmations | Human review decisions |
+| Playwright Execution | Test pass/fail counts |
+| GLM Visual Analysis | AI-based visual verification (if enabled) |
+
+The summary provides:
+- **Blockers**: Issues that prevent shipping (exit code 1)
+- **Warnings**: Non-blocking issues to review (exit code 2)
+- **SHIP recommendation** when all checks pass
+
+Generate manually:
+```bash
+node scripts/qc/generate_qc_summary.mjs --artifact-path <path>
+```
 
 ### UI Visual Verification (MANDATORY)
 
