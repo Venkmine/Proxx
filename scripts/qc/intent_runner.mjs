@@ -387,10 +387,15 @@ export function createActionDriver() {
         const initialJobCount = await page.locator('[data-job-id]').count()
         console.log(`      → Initial job count: ${initialJobCount}`)
         
-        // STEP 3: Click once (use testid for reliability, force click to bypass overlays)
+        // STEP 3: Click once (use testid for reliability)
         console.log('      → Create Job clicked')
         const submitButton = page.locator('[data-testid="job-submit-button"]')
-        await submitButton.click({ timeout: 10000, force: true })
+        
+        // Use page.evaluate to trigger click directly (more reliable for React)
+        await page.evaluate(() => {
+          const btn = document.querySelector('[data-testid="job-submit-button"]')
+          if (btn) btn.click()
+        })
         
         // STEP 4: Wait for ONE hard success signal
         console.log('      → Waiting for job creation evidence...')

@@ -212,6 +212,15 @@ async function main() {
   console.log('  Checking environment and dependencies...')
   console.log('')
   
+  // Create QC output directory (required for mock output directory selection)
+  const qcOutputDir = '/tmp/qc_output'
+  if (!fs.existsSync(qcOutputDir)) {
+    fs.mkdirSync(qcOutputDir, { recursive: true })
+    console.log(`  ✓ Created QC output directory: ${qcOutputDir}`)
+  } else {
+    console.log(`  ✓ QC output directory exists: ${qcOutputDir}`)
+  }
+  
   // Check GLM_API_KEY
   if (!process.env.GLM_API_KEY) {
     console.error('  ❌ BLOCKED: GLM_API_KEY not found')
