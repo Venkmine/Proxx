@@ -127,6 +127,24 @@ All visual verification derives from explicit human workflow intents defined in 
 
 Execution-scope actions (`system_processes_job`, `job_completes`) are **skipped** by the intent runner in UI QC mode. They are validated by INTENT_006.
 
+### Execution QC (INTENT_006)
+
+Execution QC runs separately via `run_execution_qc.mjs`:
+
+```bash
+# Run execution QC
+node scripts/qc/run_execution_qc.mjs --fixture single_proxy
+```
+
+Execution QC validates:
+- Output file exists
+- Output file size > 0
+- Output duration > 0
+- FFmpeg exit code = 0
+- Errors propagated correctly
+
+See [UI_WORKFLOW_INTENTS.md](./UI_WORKFLOW_INTENTS.md#intent_006) for full specification.
+
 ---
 
 ## Action-Scoped QC

@@ -460,15 +460,36 @@ This intent validates the **execution pipeline** — FFmpeg invocation, progress
 | Progress never reported | No observability |
 | Error swallowed silently | No error propagation |
 
+#### Execution Evidence Schema
+
+Execution QC validates these evidence requirements:
+
+| Evidence | Type | Requirement |
+|----------|------|-------------|
+| `output_exists` | boolean | Output file was created |
+| `output_size_bytes` | number | File size > 0 |
+| `output_duration_seconds` | number | Media duration > 0 |
+| `exit_code` | number | FFmpeg exit code = 0 |
+| `error_propagated` | boolean | Errors surfaced correctly |
+
 #### Invocation
 
 ```bash
-# Run execution QC only (no UI)
-node scripts/qc/run_execution_qc.mjs --job-id <id>
+# Run execution QC with default fixture
+node scripts/qc/run_execution_qc.mjs
 
-# Or with test fixture
+# Run with specific fixture
 node scripts/qc/run_execution_qc.mjs --fixture single_proxy
+
+# Output result to JSON
+node scripts/qc/run_execution_qc.mjs --output /tmp/exec_qc_result.json
 ```
+
+#### Available Fixtures
+
+| Fixture | Description |
+|---------|-------------|
+| `single_proxy` | Generate a single ProRes proxy from test media |
 
 ---
 
