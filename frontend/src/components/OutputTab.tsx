@@ -1,20 +1,22 @@
 /**
- * OutputTab — UI Skeleton (NO BEHAVIOR)
+ * OutputTab — Local-Only Interactive Skeleton
  * 
- * ⚠️ STRUCTURE ONLY — NO LOGIC, NO VALIDATION, NO WIRING
+ * ⚠️ LOCAL STATE ONLY — NO VALIDATION, NO BACKEND, NO SIDE EFFECTS
  * 
- * This is pure DOM structure for the Output configuration panel.
- * Three horizontal columns + one full-width preview row.
+ * Minimal interaction affordances with component-local state.
+ * NO props drilling, NO stores, NO external effects.
  * 
- * DELIBERATELY MISSING (by design):
- * - ❌ Validation messages
- * - ❌ Auto-folder creation
- * - ❌ Tooltips
- * - ❌ Preset editing
- * - ❌ Advanced options
- * - ❌ Animations
+ * INTERACTION SCOPE:
+ * - ✓ Click output directory button (visual feedback only)
+ * - ✓ Type into filename input (local state only)
+ * - ✓ Toggle delivery options (checkbox/radio only)
+ * - ❌ NO validation
+ * - ❌ NO backend calls
+ * - ❌ NO filesystem operations
+ * - ❌ NO auto-folder creation
+ * - ❌ NO filename templating
  * 
- * LAYOUT INVARIANTS (enforced by INTENT_010 + INTENT_040):
+ * LAYOUT INVARIANTS (enforced by INTENT_010 + INTENT_050):
  * - No horizontal scrollbars at 1440×900
  * - No clipped buttons
  * - All three columns visible without scrolling
@@ -36,32 +38,43 @@
  * └────────────────────────────────────────────┘
  */
 
+import { useState } from 'react'
+
 export interface OutputTabProps {
-  /** Currently selected output path (display only) */
+  /** Initial output path (defaults only, not controlled) */
   outputPath?: string
-  /** Container format (display only) */
+  /** Initial container format (defaults only, not controlled) */
   containerFormat?: string
-  /** Filename template string (display only) */
+  /** Initial filename template (defaults only, not controlled) */
   filenameTemplate?: string
-  /** Delivery type from Settings (display only) */
+  /** Initial delivery type (defaults only, not controlled) */
   deliveryType?: 'proxy' | 'delivery'
   /** Active preset name (display only) */
   presetName?: string
   /** Compatibility warning message (display only) */
   compatWarning?: string
-  /** Preview filename (display only) */
-  previewFilename?: string
 }
 
 export function OutputTab({
-  outputPath = '/path/to/output',
-  containerFormat = 'mov',
-  filenameTemplate = '{source_name}_proxy',
-  deliveryType = 'proxy',
+  outputPath: initialOutputPath = '/path/to/output',
+  containerFormat: initialContainerFormat = 'mov',
+  filenameTemplate: initialFilenameTemplate = '{source_name}_proxy',
+  deliveryType: initialDeliveryType = 'proxy',
   presetName = 'No preset selected',
   compatWarning,
-  previewFilename = 'PROJECT_SCENE_TAKE_v01.mov',
 }: OutputTabProps) {
+  // Local-only state (never synced to props or stores)
+  const [outputPath, setOutputPath] = useState(initialOutputPath)
+  const [containerFormat, setContainerFormat] = useState(initialContainerFormat)
+  const [filenameTemplate, setFilenameTemplate] = useState(initialFilenameTemplate)
+  const [deliveryType, setDeliveryType] = useState<'proxy' | 'delivery'>(initialDeliveryType)
+  
+  // Visual-only button click handler
+  const handleBrowseClick = () => {
+    // NO filesystem operations, NO backend calls
+    // Just visual feedback via console (dev-only)
+    console.log('[OutputTab] Browse button clicked (local-only, no action)')
+  }
   return (
     <div
       data-testid="output-tab"
@@ -122,6 +135,7 @@ export function OutputTab({
 
           <button
             data-testid="output-browse-button"
+            onClick={handleBrowseClick}
             style={{
               width: '100%',
               padding: '0.5rem 0.75rem',
@@ -135,26 +149,41 @@ export function OutputTab({
               transition: 'background 0.15s',
               marginBottom: '0.5rem',
             }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'
+            }}
           >
             Select Output Folder
           </button>
 
-          <div
-            data-testid="output-path-display"
+          <input
+            data-testid="output-path-input"
+            type="text"
+            value={outputPath}
+            onChange={(e) => setOutputPath(e.target.value)}
+            placeholder="/path/to/output"
             style={{
+              width: '100%',
               padding: '0.5rem',
               fontSize: '0.6875rem',
-              color: 'var(--text-muted)',
+              color: 'var(--text-primary)',
               background: 'rgba(0, 0, 0, 0.3)',
               border: '1px solid var(--border-primary)',
               borderRadius: '4px',
               fontFamily: 'var(--font-mono)',
-              wordBreak: 'break-all',
               marginBottom: '0.5rem',
+              outline: 'none',
             }}
-          >
-            {outputPath}
-          </div>
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border-primary)'
+            }}
+          />
 
           <div data-testid="output-path-status">
             {/* Placeholder for validation state */}
@@ -192,18 +221,31 @@ export function OutputTab({
             >
               Container
             </label>
-            <div
+            <select
+              value={containerFormat}
+              onChange={(e) => setContainerFormat(e.target.value)}
               style={{
+                width: '100%',
                 padding: '0.5rem',
                 fontSize: '0.6875rem',
                 color: 'var(--text-primary)',
                 background: 'rgba(0, 0, 0, 0.3)',
                 border: '1px solid var(--border-primary)',
                 borderRadius: '4px',
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-primary)'
               }}
             >
-              {containerFormat}
-            </div>
+              <option value="mov">MOV</option>
+              <option value="mp4">MP4</option>
+              <option value="mxf">MXF</option>
+            </select>
           </div>
 
           <div data-testid="output-filename-template">
@@ -217,8 +259,13 @@ export function OutputTab({
             >
               Filename Template
             </label>
-            <div
+            <input
+              type="text"
+              value={filenameTemplate}
+              onChange={(e) => setFilenameTemplate(e.target.value)}
+              placeholder="{source_name}_proxy"
               style={{
+                width: '100%',
                 padding: '0.5rem',
                 fontSize: '0.6875rem',
                 color: 'var(--text-primary)',
@@ -226,10 +273,15 @@ export function OutputTab({
                 border: '1px solid var(--border-primary)',
                 borderRadius: '4px',
                 fontFamily: 'var(--font-mono)',
+                outline: 'none',
               }}
-            >
-              {filenameTemplate}
-            </div>
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-primary)'
+              }}
+            />
           </div>
         </section>
 
@@ -258,23 +310,52 @@ export function OutputTab({
               style={{
                 fontSize: '0.6875rem',
                 color: 'var(--text-dim)',
-                marginBottom: '0.25rem',
+                marginBottom: '0.5rem',
               }}
             >
               Type
             </div>
-            <div
-              style={{
-                padding: '0.5rem',
-                fontSize: '0.6875rem',
-                color: 'var(--text-primary)',
-                background: 'rgba(0, 0, 0, 0.3)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: '4px',
-                textTransform: 'capitalize',
-              }}
-            >
-              {deliveryType}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="delivery-type"
+                  value="proxy"
+                  checked={deliveryType === 'proxy'}
+                  onChange={(e) => setDeliveryType(e.target.value as 'proxy' | 'delivery')}
+                  style={{ cursor: 'pointer' }}
+                />
+                Proxy
+              </label>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="delivery-type"
+                  value="delivery"
+                  checked={deliveryType === 'delivery'}
+                  onChange={(e) => setDeliveryType(e.target.value as 'proxy' | 'delivery')}
+                  style={{ cursor: 'pointer' }}
+                />
+                Delivery
+              </label>
             </div>
           </div>
 
@@ -361,7 +442,8 @@ export function OutputTab({
             wordBreak: 'break-all',
           }}
         >
-          {previewFilename}
+          {/* Simple preview: template + container (NO real templating logic) */}
+          {filenameTemplate}.{containerFormat}
         </code>
       </section>
     </div>
