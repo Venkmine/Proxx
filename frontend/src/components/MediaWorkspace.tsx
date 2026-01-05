@@ -20,6 +20,7 @@
  * NO nested scroll traps. NO fixed heights.
  */
 
+import { useState } from 'react'
 import { CreateJobPanel } from './CreateJobPanel'
 import { SourceMetadataPanel } from './SourceMetadataPanel'
 import { OutputTab } from './OutputTab'
@@ -120,6 +121,19 @@ export function MediaWorkspace({
   hasSubmitIntent = false,
   v2JobSpecSubmitted = false,
 }: MediaWorkspaceProps) {
+  // Output tab state (lifted from OutputTab component)
+  const [outputPath, setOutputPath] = useState('/path/to/output')
+  const [containerFormat, setContainerFormat] = useState('mov')
+  const [filenameTemplate, setFilenameTemplate] = useState('{source_name}_proxy')
+  const [deliveryType, setDeliveryType] = useState<'proxy' | 'delivery'>('proxy')
+
+  // Browse button handler (visual feedback only)
+  const handleBrowseClick = () => {
+    // NO filesystem operations, NO backend calls
+    // Just visual feedback via console (dev-only)
+    console.log('[MediaWorkspace] Browse button clicked (local-only, no action)')
+  }
+
   return (
     <div
       style={{
@@ -192,8 +206,18 @@ export function MediaWorkspace({
         />
       </div>
 
-      {/* Output Tab — Output configuration (skeleton only) */}
-      <OutputTab />
+      {/* Output Tab — Output configuration (controlled by parent state) */}
+      <OutputTab
+        outputPath={outputPath}
+        onOutputPathChange={setOutputPath}
+        containerFormat={containerFormat}
+        onContainerFormatChange={setContainerFormat}
+        filenameTemplate={filenameTemplate}
+        onFilenameTemplateChange={setFilenameTemplate}
+        deliveryType={deliveryType}
+        onDeliveryTypeChange={setDeliveryType}
+        onBrowseClick={handleBrowseClick}
+      />
 
       {/* Metadata Panel — Always visible below content */}
       <SourceMetadataPanel

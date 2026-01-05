@@ -1,15 +1,15 @@
 /**
- * OutputTab — Local-Only Interactive Skeleton
+ * OutputTab — Controlled Component (State Lifted to Parent)
  * 
- * ⚠️ LOCAL STATE ONLY — NO VALIDATION, NO BACKEND, NO SIDE EFFECTS
+ * ⚠️ FULLY CONTROLLED — NO LOCAL STATE, NO VALIDATION, NO SIDE EFFECTS
  * 
- * Minimal interaction affordances with component-local state.
- * NO props drilling, NO stores, NO external effects.
+ * All state managed by parent (MediaWorkspace).
+ * Props drive UI, callbacks notify parent of changes.
  * 
  * INTERACTION SCOPE:
- * - ✓ Click output directory button (visual feedback only)
- * - ✓ Type into filename input (local state only)
- * - ✓ Toggle delivery options (checkbox/radio only)
+ * - ✓ Click output directory button (callback only)
+ * - ✓ Type into filename input (controlled via props)
+ * - ✓ Toggle delivery options (controlled via props)
  * - ❌ NO validation
  * - ❌ NO backend calls
  * - ❌ NO filesystem operations
@@ -38,17 +38,25 @@
  * └────────────────────────────────────────────┘
  */
 
-import { useState } from 'react'
-
 export interface OutputTabProps {
-  /** Initial output path (defaults only, not controlled) */
-  outputPath?: string
-  /** Initial container format (defaults only, not controlled) */
-  containerFormat?: string
-  /** Initial filename template (defaults only, not controlled) */
-  filenameTemplate?: string
-  /** Initial delivery type (defaults only, not controlled) */
-  deliveryType?: 'proxy' | 'delivery'
+  /** Current output path value (controlled) */
+  outputPath: string
+  /** Output path change handler */
+  onOutputPathChange: (path: string) => void
+  /** Container format value (controlled) */
+  containerFormat: string
+  /** Container format change handler */
+  onContainerFormatChange: (format: string) => void
+  /** Filename template value (controlled) */
+  filenameTemplate: string
+  /** Filename template change handler */
+  onFilenameTemplateChange: (template: string) => void
+  /** Delivery type value (controlled) */
+  deliveryType: 'proxy' | 'delivery'
+  /** Delivery type change handler */
+  onDeliveryTypeChange: (type: 'proxy' | 'delivery') => void
+  /** Browse button click handler */
+  onBrowseClick: () => void
   /** Active preset name (display only) */
   presetName?: string
   /** Compatibility warning message (display only) */
@@ -56,25 +64,19 @@ export interface OutputTabProps {
 }
 
 export function OutputTab({
-  outputPath: initialOutputPath = '/path/to/output',
-  containerFormat: initialContainerFormat = 'mov',
-  filenameTemplate: initialFilenameTemplate = '{source_name}_proxy',
-  deliveryType: initialDeliveryType = 'proxy',
+  outputPath,
+  onOutputPathChange,
+  containerFormat,
+  onContainerFormatChange,
+  filenameTemplate,
+  onFilenameTemplateChange,
+  deliveryType,
+  onDeliveryTypeChange,
+  onBrowseClick,
   presetName = 'No preset selected',
   compatWarning,
 }: OutputTabProps) {
-  // Local-only state (never synced to props or stores)
-  const [outputPath, setOutputPath] = useState(initialOutputPath)
-  const [containerFormat, setContainerFormat] = useState(initialContainerFormat)
-  const [filenameTemplate, setFilenameTemplate] = useState(initialFilenameTemplate)
-  const [deliveryType, setDeliveryType] = useState<'proxy' | 'delivery'>(initialDeliveryType)
-  
-  // Visual-only button click handler
-  const handleBrowseClick = () => {
-    // NO filesystem operations, NO backend calls
-    // Just visual feedback via console (dev-only)
-    console.log('[OutputTab] Browse button clicked (local-only, no action)')
-  }
+  // Fully controlled component - all state managed by parent
   return (
     <div
       data-testid="output-tab"
@@ -135,7 +137,7 @@ export function OutputTab({
 
           <button
             data-testid="output-browse-button"
-            onClick={handleBrowseClick}
+            onClick={onBrowseClick}
             style={{
               width: '100%',
               padding: '0.5rem 0.75rem',
@@ -163,7 +165,7 @@ export function OutputTab({
             data-testid="output-path-input"
             type="text"
             value={outputPath}
-            onChange={(e) => setOutputPath(e.target.value)}
+            onChange={(e) => onOutputPathChange(e.target.value)}
             placeholder="/path/to/output"
             style={{
               width: '100%',
@@ -223,7 +225,7 @@ export function OutputTab({
             </label>
             <select
               value={containerFormat}
-              onChange={(e) => setContainerFormat(e.target.value)}
+              onChange={(e) => onContainerFormatChange(e.target.value)}
               style={{
                 width: '100%',
                 padding: '0.5rem',
@@ -262,7 +264,7 @@ export function OutputTab({
             <input
               type="text"
               value={filenameTemplate}
-              onChange={(e) => setFilenameTemplate(e.target.value)}
+              onChange={(e) => onFilenameTemplateChange(e.target.value)}
               placeholder="{source_name}_proxy"
               style={{
                 width: '100%',
@@ -331,7 +333,7 @@ export function OutputTab({
                   name="delivery-type"
                   value="proxy"
                   checked={deliveryType === 'proxy'}
-                  onChange={(e) => setDeliveryType(e.target.value as 'proxy' | 'delivery')}
+                  onChange={(e) => onDeliveryTypeChange(e.target.value as 'proxy' | 'delivery')}
                   style={{ cursor: 'pointer' }}
                 />
                 Proxy
@@ -351,7 +353,7 @@ export function OutputTab({
                   name="delivery-type"
                   value="delivery"
                   checked={deliveryType === 'delivery'}
-                  onChange={(e) => setDeliveryType(e.target.value as 'proxy' | 'delivery')}
+                  onChange={(e) => onDeliveryTypeChange(e.target.value as 'proxy' | 'delivery')}
                   style={{ cursor: 'pointer' }}
                 />
                 Delivery
