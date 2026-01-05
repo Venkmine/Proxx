@@ -22,6 +22,7 @@
 
 import { CreateJobPanel } from './CreateJobPanel'
 import { SourceMetadataPanel } from './SourceMetadataPanel'
+import { OutputTab } from './OutputTab'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import type { DeliverSettings } from './DeliverControlPanel'
 import { SourceSelectionState } from '../stores/sourceSelectionStore'
@@ -190,6 +191,9 @@ export function MediaWorkspace({
           v2JobSpecSubmitted={v2JobSpecSubmitted}
         />
       </div>
+
+      {/* Output Tab — Output configuration (skeleton only) */}
+      <OutputTab />
 
       {/* Metadata Panel — Always visible below content */}
       <SourceMetadataPanel

@@ -37,6 +37,8 @@ export { NativeSourceSelector } from './NativeSourceSelector'
 export { SourceList } from './SourceList'
 export { SourceMetadataPanel } from './SourceMetadataPanel'
 export { PreflightErrorBanner } from './PreflightErrorBanner'
+export { OutputTab } from './OutputTab'
+export type { OutputTabProps } from './OutputTab'
 
 // ============================================================================
 // PREFLIGHT VALIDATION

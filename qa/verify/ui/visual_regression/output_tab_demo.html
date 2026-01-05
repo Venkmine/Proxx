@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Output Tab — Skeleton Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --text-dim: #475569;
+      --bg-secondary: rgba(26, 32, 44, 0.8);
+      --border-primary: rgba(148, 163, 184, 0.2);
+      --button-primary-bg: #3b82f6;
+      --status-warning-fg: #eab308;
+      --font-mono: 'SF Mono', 'Monaco', 'Cascadia Code', 'Courier New', monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica', 'Arial', sans-serif;
+    }
+    
+    body {
+      font-family: var(--font-sans);
+      background: #0a0b0d;
+      color: var(--text-primary);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    
+    .demo-container {
+      width: 480px;
+      height: 700px;
+      border: 2px solid var(--border-primary);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+    
+    .demo-info {
+      position: fixed;
+      top: 2rem;
+      right: 2rem;
+      background: rgba(26, 32, 44, 0.95);
+      border: 1px solid var(--border-primary);
+      border-radius: 8px;
+      padding: 1.5rem;
+      max-width: 300px;
+    }
+    
+    .demo-info h1 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+    
+    .demo-info p {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 0.5rem;
+    }
+    
+    .demo-info ul {
+      list-style: none;
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+    
+    .demo-info li {
+      padding: 0.25rem 0;
+    }
+    
+    .demo-info li::before {
+      content: '✓ ';
+      color: #10b981;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-info">
+    <h1>Output Tab Skeleton</h1>
+    <p>Pure structure — no behavior, no validation, no wiring.</p>
+    <p><strong>Width:</strong> 480px (left panel)</p>
+    <p><strong>Height:</strong> 700px (demo container)</p>
+    
+    <ul>
+      <li>3 columns (equal width)</li>
+      <li>Full-width preview row</li>
+      <li>All test IDs present</li>
+      <li>No horizontal scroll</li>
+      <li>No clipped buttons</li>
+    </ul>
+  </div>
+  
+  <div class="demo-container" id="root"></div>
+  
+  <script type="module">
+    // Render OutputTab skeleton
+    const root = document.getElementById('root');
+    
+    const outputTab = document.createElement('div');
+    outputTab.setAttribute('data-testid', 'output-tab');
+    outputTab.style.cssText = 'display: flex; flex-direction: column; height: 100%; overflow: hidden; background: rgba(20, 24, 32, 0.6);';
+    
+    // Header
+    const header = document.createElement('div');
+    header.style.cssText = 'padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-primary); background-color: var(--bg-secondary);';
+    const headerTitle = document.createElement('h2');
+    headerTitle.style.cssText = 'margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.02em;';
+    headerTitle.textContent = 'OUTPUT';
+    header.appendChild(headerTitle);
+    
+    // Three columns
+    const columnsContainer = document.createElement('div');
+    columnsContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; padding: 1rem; border-bottom: 1px solid var(--border-primary);';
+    
+    // Column 1: Destination
+    const col1 = document.createElement('section');
+    col1.setAttribute('data-testid', 'output-destination');
+    col1.innerHTML = `
+      <h3 style="margin: 0 0 0.75rem 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Destination</h3>
+      <button data-testid="output-browse-button" style="width: 100%; padding: 0.5rem 0.75rem; font-size: 0.6875rem; font-weight: 500; color: var(--text-primary); background: rgba(59, 130, 246, 0.1); border: 1px solid var(--border-primary); border-radius: 4px; cursor: pointer; margin-bottom: 0.5rem;">Select Output Folder</button>
+      <div data-testid="output-path-display" style="padding: 0.5rem; font-size: 0.6875rem; color: var(--text-muted); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-primary); border-radius: 4px; font-family: var(--font-mono); word-break: break-all; margin-bottom: 0.5rem;">/Users/username/projects/output</div>
+      <div data-testid="output-path-status"></div>
+    `;
+    
+    // Column 2: File Identity
+    const col2 = document.createElement('section');
+    col2.setAttribute('data-testid', 'output-identity');
+    col2.innerHTML = `
+      <h3 style="margin: 0 0 0.75rem 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">File</h3>
+      <div data-testid="output-container-select" style="margin-bottom: 0.75rem;">
+        <label style="display: block; font-size: 0.6875rem; color: var(--text-dim); margin-bottom: 0.25rem;">Container</label>
+        <div style="padding: 0.5rem; font-size: 0.6875rem; color: var(--text-primary); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-primary); border-radius: 4px;">mov</div>
+      </div>
+      <div data-testid="output-filename-template">
+        <label style="display: block; font-size: 0.6875rem; color: var(--text-dim); margin-bottom: 0.25rem;">Filename Template</label>
+        <div style="padding: 0.5rem; font-size: 0.6875rem; color: var(--text-primary); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-primary); border-radius: 4px; font-family: var(--font-mono);">{source_name}_proxy</div>
+      </div>
+    `;
+    
+    // Column 3: Delivery
+    const col3 = document.createElement('section');
+    col3.setAttribute('data-testid', 'output-delivery');
+    col3.innerHTML = `
+      <h3 style="margin: 0 0 0.75rem 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Delivery</h3>
+      <div data-testid="output-type" style="margin-bottom: 0.75rem;">
+        <div style="font-size: 0.6875rem; color: var(--text-dim); margin-bottom: 0.25rem;">Type</div>
+        <div style="padding: 0.5rem; font-size: 0.6875rem; color: var(--text-primary); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-primary); border-radius: 4px; text-transform: capitalize;">proxy</div>
+      </div>
+      <div data-testid="output-preset-summary" style="margin-bottom: 0.75rem;">
+        <div style="font-size: 0.6875rem; color: var(--text-dim); margin-bottom: 0.25rem;">Preset</div>
+        <div style="padding: 0.5rem; font-size: 0.6875rem; color: var(--text-muted); background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-primary); border-radius: 4px;">ProRes Proxy 1920×1080</div>
+      </div>
+      <div data-testid="output-compat-warning"></div>
+    `;
+    
+    columnsContainer.appendChild(col1);
+    columnsContainer.appendChild(col2);
+    columnsContainer.appendChild(col3);
+    
+    // Preview row
+    const preview = document.createElement('section');
+    preview.setAttribute('data-testid', 'output-filename-preview');
+    preview.style.cssText = 'padding: 1rem; background: rgba(0, 0, 0, 0.2);';
+    preview.innerHTML = `
+      <h4 style="margin: 0 0 0.5rem 0; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Filename Preview</h4>
+      <code data-testid="output-preview-text" style="display: block; padding: 0.75rem; font-size: 0.875rem; color: var(--text-primary); background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-primary); border-radius: 4px; font-family: var(--font-mono); word-break: break-all;">PROJECT_SCENE_TAKE_v01.mov</code>
+    `;
+    
+    // Assemble
+    outputTab.appendChild(header);
+    outputTab.appendChild(columnsContainer);
+    outputTab.appendChild(preview);
+    
+    root.appendChild(outputTab);
+  </script>
+</body>
+</html>
