@@ -323,6 +323,7 @@ async function createWindow() {
     center: isE2ETest, // Force center in test mode
     minWidth: 1280,
     minHeight: 800,
+    show: false, // Don't show until ready
     resizable: true, // Always resizable for user workflow flexibility
     fullscreen: false,
     maximizable: true, // Always maximizable for user workflow flexibility
@@ -344,6 +345,16 @@ async function createWindow() {
   // Log final bounds on creation
   const bounds = win.getBounds();
   writeLog('INFO', `Window created: ${bounds.width}x${bounds.height} at (${bounds.x}, ${bounds.y})`);
+  
+  // Show window when ready, maximized for workstation-class UX (unless E2E test)
+  win.once('ready-to-show', () => {
+    if (!isE2ETest) {
+      // Maximize for production/dev use (Resolve-style launch)
+      win.maximize();
+    }
+    win.show();
+    writeLog('INFO', isE2ETest ? 'Window shown (E2E test mode)' : 'Window shown maximized');
+  });
   
   // DEBUG: Log preload errors
   win.webContents.on('console-message', (event, level, message) => {

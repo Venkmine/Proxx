@@ -696,10 +696,10 @@ export function MonitorSurface({
               /* Fallback: Text-based logo if image fails */
               <span
                 style={{
-                  fontSize: '2rem',
+                  fontSize: '3rem',
                   fontFamily: 'var(--font-sans)',
                   fontWeight: 300,
-                  letterSpacing: '0.2em',
+                  letterSpacing: '0.35em',
                   color: 'var(--text-dim)',
                   opacity: 0.25,
                   textTransform: 'uppercase',
