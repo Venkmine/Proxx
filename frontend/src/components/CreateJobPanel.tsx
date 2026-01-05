@@ -12,9 +12,11 @@
  * 
  * LAYOUT (STRICT VERTICAL ORDER):
  * 1. SOURCE - Input paths, file discovery summary
- * 2. OUTPUT - Output path, storage warnings
- * 3. PROCESSING (collapsed by default) - Profile, burn-in, LUT, engine
- * 4. PREFLIGHT SUMMARY (mandatory, always visible)
+ * 2. PROCESSING (collapsed by default) - Profile, burn-in, LUT, engine
+ * 3. PREFLIGHT SUMMARY (mandatory, always visible)
+ * 
+ * NOTE: Output/Delivery configuration is in the CENTER BOTTOM PANEL (Delivery tab),
+ * not in the left panel. This panel is SOURCES ONLY.
  * 
  * SUBMIT RULES:
  * - If ANY ❌ exists: Submit button is HIDDEN
@@ -126,15 +128,10 @@ interface CreateJobPanelProps {
   selectedLutId?: string | null
   onLutChange?: (lutId: string | null) => void
   
-  // Output directory
-  outputDirectory: string
-  onOutputDirectoryChange: (dir: string) => void
-  onSelectFolderClick: () => void
-  
-  // Favorites
-  pathFavorites: string[]
-  onAddFavorite: (path: string) => void
-  onRemoveFavorite: (path: string) => void
+  // Favorites (kept for future use if needed)
+  pathFavorites?: string[]
+  onAddFavorite?: (path: string) => void
+  onRemoveFavorite?: (path: string) => void
   
   // Actions
   onCreateJob: () => void
@@ -257,9 +254,6 @@ export function CreateJobPanel({
   luts = [],
   selectedLutId = null,
   onLutChange,
-  outputDirectory,
-  onOutputDirectoryChange,
-  onSelectFolderClick,
   pathFavorites,
   onAddFavorite,
   onRemoveFavorite,
@@ -279,12 +273,9 @@ export function CreateJobPanel({
   const [showPathPrompt, setShowPathPrompt] = useState(false)
   const [pathPromptValue, setPathPromptValue] = useState('')
   
-  // UX TRUTHFULNESS: Output directory validation only shown on Create Job click
-  const [outputDirValidationTriggered, setOutputDirValidationTriggered] = useState(false)
-  const [outputDirError, setOutputDirError] = useState<string | null>(null)
+  // Output directory validation removed - now handled in Delivery panel (center bottom)
 
   const isDesignMode = workspaceMode === 'design'
-  const favoriteOptions = pathFavorites.map(p => ({ value: p, label: p }))
 
   // Compute preflight checks if not provided externally
   const computedPreflightChecks = useMemo<PreflightCheck[]>(() => {
@@ -330,42 +321,7 @@ export function CreateJobPanel({
       })
     }
 
-    // Output validation — UX TRUTHFULNESS: Only validate after user attempts to create job
-    // This prevents showing "Output directory required" on app load or during browsing
-    if (outputDirValidationTriggered) {
-      if (!outputDirectory) {
-        checks.push({
-          id: 'output-required',
-          label: 'Output Directory',
-          status: 'fail',
-          message: 'Output directory is required',
-        })
-      } else if (!isAbsolutePath(outputDirectory)) {
-        checks.push({
-          id: 'output-absolute',
-          label: 'Output Directory',
-          status: 'fail',
-          message: 'Output directory must be an absolute path',
-          detail: outputDirectory,
-        })
-      } else {
-        checks.push({
-          id: 'output-valid',
-          label: 'Output Directory',
-          status: 'pass',
-          message: outputDirectory,
-        })
-      }
-    } else if (outputDirectory && isAbsolutePath(outputDirectory)) {
-      // Show pass status only if output is already set and valid
-      checks.push({
-        id: 'output-valid',
-        label: 'Output Directory',
-        status: 'pass',
-        message: outputDirectory,
-      })
-    }
-    // If not triggered and no output dir, don't show any output validation error
+    // Output validation removed - now handled in Delivery panel (center bottom)
 
     // Engine availability
     const selectedEngineInfo = engines.find(e => e.type === selectedEngine)
@@ -415,8 +371,6 @@ export function CreateJobPanel({
     return checks
   }, [
     selectedFiles,
-    outputDirectory,
-    outputDirValidationTriggered,
     engines,
     selectedEngine,
     fileDiscovery,
@@ -435,7 +389,7 @@ export function CreateJobPanel({
     return {
       sourceCount: selectedFiles.length,
       sourcePaths: selectedFiles,
-      outputDirectory: outputDirectory || '(not set)',
+      outputDirectory: '(see Delivery panel)',
       proxyProfile: profile?.name || selectedProxyProfileId || 'Default',
       engine: engine?.name || selectedEngine || 'FFmpeg',
       burnInRecipe: burnIn?.name,
@@ -443,7 +397,6 @@ export function CreateJobPanel({
     }
   }, [
     selectedFiles,
-    outputDirectory,
     proxyProfiles,
     selectedProxyProfileId,
     burnInRecipes,
@@ -774,116 +727,9 @@ export function CreateJobPanel({
       </Section>
 
       {/* ================================================================= */}
-      {/* SECTION 2: OUTPUT */}
-      {/* ================================================================= */}
-      <Section title="Output" testId="section-output">
-        <div>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '0.6875rem',
-              fontWeight: 500,
-              color: outputDirError ? 'var(--status-error-fg, #ef4444)' : 'var(--text-muted)',
-              marginBottom: '0.25rem',
-              fontFamily: 'var(--font-sans)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.03em',
-            }}
-          >
-            Output Directory *
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <input
-              type="text"
-              value={outputDirectory}
-              onChange={(e) => {
-                onOutputDirectoryChange(e.target.value)
-                // Clear error when user starts typing
-                if (outputDirError) {
-                  setOutputDirError(null)
-                }
-              }}
-              placeholder="/Users/yourname/OUTPUT"
-              disabled={loading}
-              data-testid="output-directory-input"
-              style={{
-                flex: 1,
-                padding: '0.5rem 0.75rem',
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono)',
-                backgroundColor: 'var(--input-bg)',
-                border: outputDirError 
-                  ? '1px solid var(--status-error-fg, #ef4444)' 
-                  : '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-                outline: 'none',
-              }}
-            />
-            {hasElectron && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onSelectFolderClick}
-                disabled={loading}
-              >
-                Browse...
-              </Button>
-            )}
-          </div>
-
-          {/* Inline error message for output directory */}
-          {outputDirError && (
-            <div
-              data-testid="output-dir-error"
-              style={{
-                marginTop: '0.375rem',
-                padding: '0.375rem 0.5rem',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.6875rem',
-                color: 'var(--status-error-fg, #ef4444)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-              }}
-            >
-              <span>✕</span>
-              {outputDirError}
-            </div>
-          )}
-
-          {/* Favorites */}
-          {pathFavorites.length > 0 && (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.375rem' }}>
-              <Select
-                value=""
-                onChange={(val) => val && onOutputDirectoryChange(val)}
-                options={favoriteOptions}
-                placeholder="Favorites..."
-                disabled={loading}
-                size="sm"
-              />
-            </div>
-          )}
-          
-          {outputDirectory && !pathFavorites.includes(outputDirectory) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onAddFavorite(outputDirectory)}
-              style={{ marginTop: '0.25rem', fontSize: '0.625rem' }}
-            >
-              ★ Save as favorite
-            </Button>
-          )}
-        </div>
-      </Section>
-
-      {/* ================================================================= */}
-      {/* SECTION 3: ENGINE (read-only display) */}
+      {/* SECTION 2: ENGINE (read-only display) */}
       {/* Processing settings (codec/container/audio) are in Settings panel */}
+      {/* Output/Delivery configuration is in the CENTER BOTTOM PANEL */}
       {/* ================================================================= */}
       <Section
         title="Execution Engine"
@@ -925,43 +771,6 @@ export function CreateJobPanel({
       {/* Rendering is gated by appMode — no red errors on initial launch */}
       {/* ================================================================= */}
       
-      {/* Phase E3: Welcoming idle state - show when no sources selected */}
-      {appMode === 'idle' && selectedFiles.length === 0 && (
-        <div
-          data-testid="idle-welcome-message"
-          style={{
-            marginTop: '0.75rem',
-            padding: '1.5rem 1.25rem',
-            background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
-            borderRadius: 'var(--radius)',
-            textAlign: 'center',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.875rem',
-              fontFamily: 'var(--font-sans)',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-              marginBottom: '0.375rem',
-            }}
-          >
-            Welcome to Proxx
-          </div>
-          <div
-            style={{
-              fontSize: '0.75rem',
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-secondary)',
-              lineHeight: 1.5,
-            }}
-          >
-            Select files or folders to begin
-          </div>
-        </div>
-      )}
-      
       <PreflightSummary 
         checks={computedPreflightChecks} 
         loading={preflightLoading}
@@ -981,16 +790,7 @@ export function CreateJobPanel({
           disabled={isDesignMode || v2JobSpecSubmitted}
           hasSubmitIntent={hasSubmitIntent}
           onValidationTrigger={() => {
-            // UX TRUTHFULNESS: Trigger output directory validation only on submit attempt
-            setOutputDirValidationTriggered(true)
-            // Check for output directory error
-            if (!outputDirectory) {
-              setOutputDirError('Output directory is required')
-            } else if (!isAbsolutePath(outputDirectory)) {
-              setOutputDirError('Output directory must be an absolute path')
-            } else {
-              setOutputDirError(null)
-            }
+            // Output directory validation removed - now in Delivery panel
           }}
         />
       </div>

@@ -661,7 +661,7 @@ export function MonitorSurface({
           }}
         >
         {/* ============================================ */}
-        {/* STATE: IDLE — Logo branding */}
+        {/* STATE: IDLE — Central Create Job CTA */}
         {/* ============================================ */}
         {state === 'idle' && (
           <div
@@ -670,10 +670,13 @@ export function MonitorSurface({
               position: 'absolute',
               inset: 0,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
+              gap: '2rem',
             }}
           >
+            {/* Logo (dimmed background) */}
             {!logoError ? (
               <img
                 src="/branding/awaire-logo.png"
@@ -706,6 +709,45 @@ export function MonitorSurface({
                 Forge
               </span>
             )}
+            
+            {/* Central Create Job CTA */}
+            <button
+              data-testid="monitor-create-job-cta"
+              onClick={() => {
+                console.log('[MonitorSurface] Create Job CTA clicked (intent only)')
+              }}
+              style={{
+                padding: '1rem 2rem',
+                fontSize: '1.125rem',
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(37, 99, 235, 0.12) 100%)',
+                border: '2px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: 'var(--radius)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.18) 0%, rgba(37, 99, 235, 0.18) 100%)'
+                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(37, 99, 235, 0.12) 100%)'
+                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)'
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.outline = '2px solid rgba(59, 130, 246, 0.8)'
+                e.currentTarget.style.outlineOffset = '2px'
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.outline = 'none'
+                e.currentTarget.style.outlineOffset = '0px'
+              }}
+            >
+              Create Job
+            </button>
           </div>
         )}
 
