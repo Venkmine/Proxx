@@ -84,6 +84,57 @@ QA explicitly checks that:
 
 A UI that *appears* to work but lies is a QA failure.
 
+---
+
+### Delivery as Single Source of Truth
+
+**The Delivery panel is the singular, authoritative source for all output delivery configuration.**
+
+This is an architectural truth, not a suggestion:
+
+* **Delivery configuration exists in exactly one UI location**
+* **Sources define what to process**
+* **Delivery defines where and how output is delivered**
+* **Queue orchestrates execution**
+
+The mental model is:
+
+```
+Sources → Delivery → Queue
+```
+
+Any UI element that appears to control output delivery but exists outside the Delivery panel is a **QA failure**.
+
+#### QA Enforcement
+
+Duplicate or ambiguous delivery controls are violations:
+
+* ❌ **Multiple UI locations claiming to control output paths**
+* ❌ **Settings that override Delivery configuration**
+* ❌ **Implicit delivery behavior that bypasses Delivery intent**
+* ❌ **Hidden delivery state not visible in Delivery panel**
+
+This rule exists to prevent:
+- Users configuring delivery in multiple places with conflicting intent
+- Silent delivery behavior that contradicts explicit Delivery settings
+- State fragmentation where "output" means different things in different contexts
+
+#### Why This Matters
+
+The previous "Output" mental model created ambiguity:
+- Was "output" a source attribute, job attribute, or delivery attribute?
+- Could multiple UI panels claim authority over output configuration?
+- How would conflicts between competing output controls resolve?
+
+The **Delivery single-source-of-truth** model eliminates ambiguity:
+- Sources have NO delivery authority
+- Delivery has COMPLETE delivery authority
+- No other panel can override Delivery intent
+
+This is a **guardrail**, not a feature. It prevents architectural regression.
+
+---
+
 ### Intent-Driven QC
 
 **QC is intent-driven, not component-driven.**
