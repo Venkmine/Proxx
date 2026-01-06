@@ -79,22 +79,30 @@ class TestJobCreationContract:
         assert request.deliver_settings.output_dir is None
         # The endpoint MUST reject this - tested in integration tests
     
-    def test_job_creation_fails_without_preset(self, valid_source_file, temp_output_dir):
+    def test_job_creation_allows_manual_configuration_without_preset(self, valid_source_file, temp_output_dir):
         """
-        CONTRACT: Job creation MUST fail if no preset is specified.
+        CONTRACT: Job creation ALLOWS manual configuration without preset.
         
-        Preset is required to determine encoding parameters.
+        As of Phase 6, presets are optional. Jobs can be created with:
+        - settings_preset_id (preferred)
+        - preset_id (legacy)
+        - deliver_settings directly (manual configuration)
         """
         from app.routes.control import CreateJobRequest, DeliverSettingsRequest
-        from pydantic import ValidationError
         
-        # Attempt to create request without preset_id
-        with pytest.raises(ValidationError):
-            CreateJobRequest(
-                source_paths=[valid_source_file],
-                # preset_id omitted - should fail
-                deliver_settings=DeliverSettingsRequest(output_dir=temp_output_dir)
-            )
+        # Create request without preset - should succeed with deliver_settings
+        request = CreateJobRequest(
+            source_paths=[valid_source_file],
+            # No preset_id or settings_preset_id
+            deliver_settings=DeliverSettingsRequest(output_dir=temp_output_dir)
+        )
+        
+        # Contract: preset is optional
+        assert request.preset_id is None
+        assert request.settings_preset_id is None
+        # But deliver_settings must be provided
+        assert request.deliver_settings is not None
+        assert request.deliver_settings.output_dir == temp_output_dir
     
     def test_job_creation_succeeds_with_all_requirements(self, valid_source_file, temp_output_dir):
         """

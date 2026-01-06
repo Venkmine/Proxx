@@ -1,0 +1,121 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - img "Awaire"
+    - generic [ref=e6]:
+      - button "Minimize" [ref=e7] [cursor=pointer]:
+        - img [ref=e8]
+      - button "Maximize" [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+      - button "Close" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+  - banner [ref=e16]:
+    - generic [ref=e17]:
+      - img "Awaire"
+      - generic [ref=e18]:
+        - generic [ref=e19]: ● Connected
+        - generic [ref=e20]: Alpha
+        - button "V2 OFF" [ref=e21] [cursor=pointer]
+  - generic [ref=e23]:
+    - complementary [ref=e24]:
+      - generic [ref=e25]:
+        - heading "Sources" [level=2] [ref=e27]
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - heading "Create Job" [level=2] [ref=e31]
+            - button "Clear" [ref=e33] [cursor=pointer]
+          - generic [ref=e34]:
+            - heading "Source" [level=3] [ref=e37]
+            - generic [ref=e39]:
+              - generic [ref=e40]: Input Path(s) *
+              - button "Select Files..." [ref=e42] [cursor=pointer]
+    - main [ref=e43]:
+      - generic [ref=e49]: Forge
+      - generic [ref=e52]:
+        - heading "Delivery" [level=2] [ref=e54]
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - heading "Delivery Destination" [level=3] [ref=e57]
+            - button "Select Delivery Folder" [ref=e58] [cursor=pointer]
+            - textbox "/path/to/output" [ref=e59]
+          - generic [ref=e60]:
+            - heading "File" [level=3] [ref=e61]
+            - generic [ref=e62]:
+              - generic [ref=e63]: Container
+              - combobox [ref=e64] [cursor=pointer]:
+                - option "MOV" [selected]
+                - option "MP4"
+                - option "MXF"
+            - generic [ref=e65]:
+              - generic [ref=e66]: Filename Template
+              - 'textbox "{source_name}_proxy" [ref=e67]'
+          - generic [ref=e68]:
+            - heading "Delivery" [level=3] [ref=e69]
+            - generic [ref=e70]:
+              - generic [ref=e71]: Type
+              - generic [ref=e72]:
+                - generic [ref=e73] [cursor=pointer]:
+                  - radio "Proxy" [checked] [ref=e74]
+                  - text: Proxy
+                - generic [ref=e75] [cursor=pointer]:
+                  - radio "Delivery" [ref=e76]
+                  - text: Delivery
+            - generic [ref=e77]:
+              - generic [ref=e78]: Preset
+              - generic [ref=e79]: No preset selected
+        - generic [ref=e80]:
+          - heading "Filename Preview" [level=4] [ref=e81]
+          - code [ref=e82]: "{source_name}_proxy.mov"
+    - complementary [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - generic [ref=e86]:
+            - generic [ref=e87]: Filter
+            - button "All" [ref=e88] [cursor=pointer]
+            - button "Running" [ref=e89] [cursor=pointer]
+            - button "Queued" [ref=e90] [cursor=pointer]
+            - button "Pending" [ref=e91] [cursor=pointer]
+            - button "Completed" [ref=e92] [cursor=pointer]
+            - button "Failed" [ref=e93] [cursor=pointer]
+            - button "Skipped" [ref=e94] [cursor=pointer]
+            - button "Cancelled" [ref=e95] [cursor=pointer]
+            - generic [ref=e96]:
+              - button "⊞" [ref=e97] [cursor=pointer]
+              - button "⊟" [ref=e98] [cursor=pointer]
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - textbox "Search files..." [ref=e101]
+              - generic: 🔍
+            - generic [ref=e102]:
+              - button "All Time" [ref=e103] [cursor=pointer]
+              - button "Today" [ref=e104] [cursor=pointer]
+              - button "Yesterday" [ref=e105] [cursor=pointer]
+              - button "Last 7 Days" [ref=e106] [cursor=pointer]
+        - generic [ref=e107]:
+          - heading "Queue (0)" [level=3] [ref=e108]
+          - generic [ref=e109]: Execution engines are determined automatically per job.
+          - button "📝 Create Job" [disabled] [ref=e111]
+        - generic [ref=e113]:
+          - img "Awaire"
+          - generic [ref=e114]: No jobs in queue
+          - generic [ref=e115]: Add files in the left panel and click "Add to Queue"
+  - contentinfo [ref=e116]:
+    - generic [ref=e117]:
+      - generic [ref=e118]: ALPHA
+      - generic [ref=e119]: Basic
+    - generic [ref=e120]:
+      - generic [ref=e121]: FFmpeg ✓
+      - generic [ref=e122]: Resolve —
+    - generic [ref=e123]:
+      - link "Docs" [ref=e124] [cursor=pointer]:
+        - /url: https://docs.awaire.io/proxy
+      - link "Support" [ref=e125] [cursor=pointer]:
+        - /url: https://awaire.io/support
+  - generic [ref=e126]:
+    - generic [ref=e127]:
+      - generic [ref=e128]: Status
+      - button "Details" [ref=e129] [cursor=pointer]
+    - generic [ref=e131]: No status messages
+```

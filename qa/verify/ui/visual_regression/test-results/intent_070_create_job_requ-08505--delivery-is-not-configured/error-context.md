@@ -1,0 +1,158 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - img "Awaire"
+    - generic [ref=e6]:
+      - button "Minimize" [ref=e7] [cursor=pointer]:
+        - img [ref=e8]
+      - button "Maximize" [ref=e10] [cursor=pointer]:
+        - img [ref=e11]
+      - button "Close" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+  - banner [ref=e16]:
+    - generic [ref=e17]:
+      - img "Awaire"
+      - generic [ref=e18]:
+        - generic [ref=e19]: ● Connected
+        - generic [ref=e20]: Alpha
+        - button "V2 OFF" [ref=e21] [cursor=pointer]
+  - generic [ref=e23]:
+    - complementary [ref=e24]:
+      - generic [ref=e25]:
+        - heading "Sources" [level=2] [ref=e27]
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - heading "Create Job" [level=2] [ref=e31]
+            - button "Clear" [ref=e33] [cursor=pointer]
+          - generic [ref=e34]:
+            - generic [ref=e36]:
+              - heading "Source" [level=3] [ref=e37]
+              - generic [ref=e38]: 1 file
+            - generic [ref=e39]:
+              - generic [ref=e40]:
+                - generic [ref=e41]: Input Path(s) *
+                - button "Select Files..." [active] [ref=e43] [cursor=pointer]
+              - generic [ref=e45]:
+                - generic [ref=e46]: /Users/leon.grant/projects/Proxx/artifacts/v2/20251228T160555/v2_smoke_v2_smoke_test_000.mp4
+                - button "×" [ref=e47] [cursor=pointer]
+        - generic [ref=e49]: Metadata available after preflight
+    - main [ref=e50]:
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e57]: Playback Ready
+          - generic: v2_smoke_v2_smoke_test_000.mp4
+          - button "▶ Preview" [ref=e59] [cursor=pointer]:
+            - generic [ref=e60]: ▶
+            - text: Preview
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e69]:
+              - 'generic "Recording TC — Single click: cycle modes | Double click: edit" [ref=e70] [cursor=pointer]': 00:00:00:00
+              - generic "Recording timecode from 00:00:00:00" [ref=e71]: REC
+            - generic [ref=e73]: 00:00:03:00
+          - slider "Scrub timeline (drag to seek)" [ref=e76] [cursor=pointer]: "0"
+          - generic [ref=e77]:
+            - generic [ref=e78]:
+              - button "⏮" [ref=e79] [cursor=pointer]
+              - button "<" [ref=e80] [cursor=pointer]
+            - button "Play (Space or L)" [ref=e81] [cursor=pointer]:
+              - img [ref=e82]
+            - generic [ref=e84]:
+              - button ">" [ref=e85] [cursor=pointer]
+              - button "⏭" [ref=e86] [cursor=pointer]
+            - generic [ref=e87]:
+              - button "Mute (M)" [ref=e88] [cursor=pointer]:
+                - img [ref=e89]
+              - 'slider "Volume: 100%" [ref=e93] [cursor=pointer]': "100"
+            - 'generic "Jog: drag left/right to scrub" [ref=e95]':
+              - img [ref=e96]
+            - 'button "Loop: OFF" [ref=e100] [cursor=pointer]':
+              - img [ref=e101]
+      - generic [ref=e105]:
+        - heading "Delivery" [level=2] [ref=e107]
+        - generic [ref=e108]:
+          - generic [ref=e109]:
+            - heading "Delivery Destination" [level=3] [ref=e110]
+            - button "Select Delivery Folder" [ref=e111] [cursor=pointer]
+            - textbox "/path/to/output" [ref=e112]
+          - generic [ref=e113]:
+            - heading "File" [level=3] [ref=e114]
+            - generic [ref=e115]:
+              - generic [ref=e116]: Container
+              - combobox [ref=e117] [cursor=pointer]:
+                - option "MOV" [selected]
+                - option "MP4"
+                - option "MXF"
+            - generic [ref=e118]:
+              - generic [ref=e119]: Filename Template
+              - 'textbox "{source_name}_proxy" [ref=e120]'
+          - generic [ref=e121]:
+            - heading "Delivery" [level=3] [ref=e122]
+            - generic [ref=e123]:
+              - generic [ref=e124]: Type
+              - generic [ref=e125]:
+                - generic [ref=e126] [cursor=pointer]:
+                  - radio "Proxy" [checked] [ref=e127]
+                  - text: Proxy
+                - generic [ref=e128] [cursor=pointer]:
+                  - radio "Delivery" [ref=e129]
+                  - text: Delivery
+            - generic [ref=e130]:
+              - generic [ref=e131]: Preset
+              - generic [ref=e132]: No preset selected
+        - generic [ref=e133]:
+          - heading "Filename Preview" [level=4] [ref=e134]
+          - code [ref=e135]: "{source_name}_proxy.mov"
+    - complementary [ref=e136]:
+      - generic [ref=e137]:
+        - generic [ref=e138]:
+          - generic [ref=e139]:
+            - generic [ref=e140]: Filter
+            - button "All" [ref=e141] [cursor=pointer]
+            - button "Running" [ref=e142] [cursor=pointer]
+            - button "Queued" [ref=e143] [cursor=pointer]
+            - button "Pending" [ref=e144] [cursor=pointer]
+            - button "Completed" [ref=e145] [cursor=pointer]
+            - button "Failed" [ref=e146] [cursor=pointer]
+            - button "Skipped" [ref=e147] [cursor=pointer]
+            - button "Cancelled" [ref=e148] [cursor=pointer]
+            - generic [ref=e149]:
+              - button "⊞" [ref=e150] [cursor=pointer]
+              - button "⊟" [ref=e151] [cursor=pointer]
+          - generic [ref=e152]:
+            - generic [ref=e153]:
+              - textbox "Search files..." [ref=e154]
+              - generic: 🔍
+            - generic [ref=e155]:
+              - button "All Time" [ref=e156] [cursor=pointer]
+              - button "Today" [ref=e157] [cursor=pointer]
+              - button "Yesterday" [ref=e158] [cursor=pointer]
+              - button "Last 7 Days" [ref=e159] [cursor=pointer]
+        - generic [ref=e160]:
+          - heading "Queue (0)" [level=3] [ref=e161]
+          - generic [ref=e162]: Execution engines are determined automatically per job.
+          - button "📝 Create Job" [disabled] [ref=e164]
+        - generic [ref=e166]:
+          - img "Awaire"
+          - generic [ref=e167]: No jobs in queue
+          - generic [ref=e168]: Add files in the left panel and click "Add to Queue"
+  - contentinfo [ref=e169]:
+    - generic [ref=e170]:
+      - generic [ref=e171]: ALPHA
+      - generic [ref=e172]: Basic
+    - generic [ref=e173]:
+      - generic [ref=e174]: FFmpeg ✓
+      - generic [ref=e175]: Resolve —
+    - generic [ref=e176]:
+      - link "Docs" [ref=e177] [cursor=pointer]:
+        - /url: https://docs.awaire.io/proxy
+      - link "Support" [ref=e178] [cursor=pointer]:
+        - /url: https://awaire.io/support
+  - generic [ref=e179]:
+    - generic [ref=e180]:
+      - generic [ref=e181]: Status
+      - button "Details" [ref=e182] [cursor=pointer]
+    - generic [ref=e184]: No status messages
+```
