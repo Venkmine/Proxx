@@ -3,6 +3,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
+import {
+  startWatchFolder,
+  stopWatchFolder,
+  stopAllWatchers,
+  type WatchFolderConfig,
+} from './watchFolderService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -544,6 +550,21 @@ function setupIpcHandlers() {
   ipcMain.on('app:quit', () => {
     app.quit();
   });
+  
+  // Watch Folders V1: IPC handlers for file watching
+  ipcMain.handle('watch-folder:start', (_event, config: WatchFolderConfig) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow) {
+      startWatchFolder(config, mainWindow)
+      return { success: true }
+    }
+    return { success: false, error: 'No main window found' }
+  })
+  
+  ipcMain.handle('watch-folder:stop', (_event, id: string) => {
+    stopWatchFolder(id)
+    return { success: true }
+  })
 }
 
 // Phase 20: Application menu with Preferences, About, Undo/Redo
@@ -740,6 +761,9 @@ app.on('window-all-closed', () => {
   writeLog('INFO', '🚪 [APP EVENT] window-all-closed triggered')
   writeLog('INFO', `   Platform: ${process.platform}`)
   writeLog('INFO', `   Will quit: ${process.platform !== 'darwin' ? 'YES' : 'NO (macOS behavior)'}`)
+  
+  // Stop all watch folders before quitting
+  stopAllWatchers()
   
   if (process.platform !== 'darwin') {
     writeLog('INFO', '   Calling app.quit()...')

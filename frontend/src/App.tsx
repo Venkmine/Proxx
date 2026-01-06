@@ -68,6 +68,9 @@ import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 // Source Selection Store: Authoritative source selection state
 import { useSourceSelectionStore } from './stores/sourceSelectionStore'
+// Watch Folders V1: Recursive monitoring
+import { useWatchFolders } from './hooks/useWatchFolders'
+import { useWatchFolderIntegration } from './hooks/useWatchFolderIntegration'
 import { registerStoresForQC } from './stores/qcRegistry'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'
@@ -409,6 +412,28 @@ function App() {
   
   // Alpha: Client-side preset management (localStorage)
   const presetManager = usePresets()
+  
+  // Watch Folders V1: Recursive monitoring (localStorage registry)
+  const {
+    watchFolders,
+    events: watchFolderEvents,
+    isFileProcessed,
+    markFileProcessed,
+    logEvent: logWatchFolderEvent,
+  } = useWatchFolders()
+  
+  // Watch Folders V1: Integrate file detection with job queue
+  useWatchFolderIntegration({
+    watchFolders,
+    presets: presetManager.presets,
+    isFileProcessed,
+    markFileProcessed,
+    logEvent: logWatchFolderEvent,
+    onEnqueueJob: useCallback((jobSpec: JobSpec) => {
+      console.log('[APP] Watch folder enqueuing job:', jobSpec.job_id)
+      setQueuedJobSpecs(prev => [...prev, jobSpec])
+    }, []),
+  })
   
   // Legacy: Backend presets (kept for backwards compatibility with existing backend)
   const [backendPresets, setBackendPresets] = useState<PresetInfo[]>([])

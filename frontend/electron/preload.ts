@@ -87,5 +87,17 @@ if (E2E_TEST && QC_TEST_FILE) {
     showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
     // Audit mode flag (dev/test-only)
     isAuditMode: () => E2E_AUDIT_MODE,
+    // Watch Folders V1: Recursive monitoring
+    startWatchFolder: (config: any) => ipcRenderer.invoke('watch-folder:start', config),
+    stopWatchFolder: (id: string) => ipcRenderer.invoke('watch-folder:stop', id),
+    onWatchFolderFileDetected: (callback: (event: any) => void) => {
+      ipcRenderer.on('watch-folder:file-detected', (_event, data) => callback(data))
+    },
+    onWatchFolderFileRejected: (callback: (event: any) => void) => {
+      ipcRenderer.on('watch-folder:file-rejected', (_event, data) => callback(data))
+    },
+    onWatchFolderError: (callback: (event: any) => void) => {
+      ipcRenderer.on('watch-folder:error', (_event, data) => callback(data))
+    },
   });
 }

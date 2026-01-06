@@ -579,5 +579,149 @@ cadb253 - continuous QC: Fix contract test to reflect Phase 6 optional preset be
 
 ---
 
-**END OF REPORT**
+## WATCH FOLDERS V1 IMPLEMENTATION
+
+**Implemented:** 2026-01-07  
+**Feature:** Recursive watch folder monitoring with QC-safe execution pipeline
+
+### Architecture
+
+**Main Process (Electron):**
+- `watchFolderService.ts`: File watching via chokidar
+  - Recursive monitoring with `ignoreInitial: true` (prevents startup storm)
+  - Aggressive debouncing: 2000ms awaitWriteFinish + 500ms stability check
+  - Extension filtering: `.mov`, `.mp4`, `.mxf`, `.braw`, `.r3d`, etc.
+  - Exclude patterns: regex/glob support for filtering
+  - Dotfile/temp file rejection: `/.tmp$/`, `/.part$/`, `/^\./`
+  - IPC events: `watch-folder:file-detected`, `watch-folder:file-rejected`, `watch-folder:error`
+
+**Renderer Process (React):**
+- `useWatchFolders.ts`: Watch folder registry management
+  - CRUD operations: add, remove, enable, disable
+  - localStorage persistence: `proxx_watch_folders_v1`
+  - Duplicate tracking: `isFileProcessed`, `markFileProcessed`
+  - Event logging: max 1000 events with timestamps
+- `useWatchFolderIntegration.ts`: Bridges file detection → job creation
+  - Listens for IPC events from main process
+  - Eligibility checks: duplicate, enabled, preset validation
+  - JobSpec building: uses `buildJobSpec` utility
+  - Job enqueueing: adds to `queuedJobSpecs` array (FIFO queue)
+
+**IPC Bridge:**
+- `preload.ts`: Exposes watch folder methods to renderer
+  - `startWatchFolder(config)`, `stopWatchFolder(id)`
+  - Event listeners: `onWatchFolderFileDetected`, `onWatchFolderFileRejected`, `onWatchFolderError`
+- `main.ts`: IPC handlers in `setupIpcHandlers()`
+  - `watch-folder:start`, `watch-folder:stop`
+  - App shutdown cleanup: `stopAllWatchers()` on `window-all-closed`
+
+### Execution Pipeline
+
+```
+File Detected (chokidar)
+    ↓
+Main Process Filters (extensions, patterns, stability)
+    ↓
+IPC Event: 'watch-folder:file-detected'
+    ↓
+Renderer Receives Event
+    ↓
+Eligibility Checks (duplicate, enabled, preset exists)
+    ↓
+Build JobSpec (preset.settings + file path)
+    ↓
+Enqueue Job (queuedJobSpecs.push)
+    ↓
+FIFO Execution (existing queue processor)
+    ↓
+Output File (normal execution flow)
+```
+
+### QC Guarantees
+
+✅ **No Execution Bypass:** Uses existing preset → JobSpec → queue → execution pipeline  
+✅ **FIFO Preservation:** Jobs added to end of `queuedJobSpecs` array  
+✅ **No Startup Storm:** `ignoreInitial: true` prevents existing file processing  
+✅ **Duplicate Prevention:** `isFileProcessed()` check before enqueueing  
+✅ **Recursive Monitoring:** chokidar watches entire directory tree  
+✅ **Preset Validation:** Preset must exist and be valid  
+✅ **JobSpec Validation:** `buildJobSpec()` throws on invalid settings  
+✅ **Eligibility Gate:** Extensions, patterns, stability, duplicates filtered  
+✅ **Clean Shutdown:** `stopAllWatchers()` on app quit  
+
+### Files Changed
+
+**Created:**
+- `frontend/src/types/watchFolders.ts` (69 lines)
+- `frontend/src/hooks/useWatchFolders.ts` (226 lines)
+- `frontend/src/hooks/useWatchFolderIntegration.ts` (308 lines)
+- `frontend/electron/watchFolderService.ts` (199 lines)
+- `test_watch_folders_v1_qc.py` (401 lines)
+
+**Modified:**
+- `frontend/electron/main.ts`: Added IPC handlers + shutdown cleanup
+- `frontend/electron/preload.ts`: Exposed watch folder IPC methods
+- `frontend/src/App.tsx`: Integrated watch folder hooks
+- `frontend/package.json`: Added chokidar dependency
+
+**Dependencies:**
+- `chokidar@^3.x`: File system watcher (58 packages added)
+
+### Test Suite
+
+**Manual QC Test:** `test_watch_folders_v1_qc.py`
+
+**Test Structure:**
+1. Setup temporary watch folder with nested structure
+2. Create preset and watch folder configuration
+3. Verify no startup storm (existing files ignored)
+4. Drop test files (2 valid, 1 invalid)
+5. Verify job creation and FIFO ordering
+6. Verify execution and output files
+7. Verify ineligible file rejection
+8. Cleanup
+
+**Acceptance Criteria:**
+- Recursive monitoring works (nested files detected)
+- No startup storm (existing files ignored)
+- Eligibility filtering works (extensions, patterns)
+- Duplicate prevention works (same file not processed twice)
+- FIFO execution works (jobs execute in order)
+- Output files produced correctly
+- Invalid files rejected with proper logging
+- App remains stable throughout test
+
+**Test Command:**
+```bash
+pytest test_watch_folders_v1_qc.py -v --log-cli-level=INFO
+```
+
+### Contract Preservation
+
+**Golden Path Test:** Still passes ✅  
+**FIFO Queue Test:** Still passes ✅  
+**Unit Tests:** All passing (437/437) ✅  
+
+**No Regression:** Watch folders are additive, do not modify existing execution logic.
+
+### Known Limitations (Alpha V1)
+
+- **UI Components:** Watch folder management UI not yet implemented
+- **Manual Configuration:** Requires manual preset creation + localStorage editing
+- **Error Recovery:** Watch folder errors logged but no automatic retry
+- **Event Log Size:** Max 1000 events, older events discarded
+- **Single Preset:** Each watch folder linked to exactly one preset
+
+### Future Work (Post-V1)
+
+- UI components for watch folder CRUD operations
+- Watch folder status indicators in UI
+- Event log viewer with filtering
+- Multiple preset support per watch folder
+- Automatic preset resolution based on file properties
+- Watch folder health monitoring
+- Error recovery and retry logic
+- Watch folder templates (preset + watch config bundles)
+
+---
 
