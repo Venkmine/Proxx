@@ -10,6 +10,7 @@
  * SCOPE:
  * - ✓ Maps Output state → JobSpec structure
  * - ✓ Generates job_id and timestamps
+ * - ✓ Derives execution engine requirements from sources
  * - ✓ Fail-fast on missing required fields
  * - ❌ NO validation (delegated to backend)
  * - ❌ NO backend calls
@@ -32,6 +33,8 @@
  * - Required fields enforced at build time
  * - Deterministic output for same inputs
  */
+
+import { deriveExecutionEngines } from './deriveExecutionEngines'
 
 export interface OutputState {
   /** Ordered list of source file paths */
@@ -91,6 +94,13 @@ export interface JobSpec {
   lut_applied: boolean
   /** LUT engine used (null for now) */
   lut_engine: string | null
+  /** Execution engine requirements (derived from source formats) */
+  execution_engines: {
+    /** FFmpeg engine is required */
+    use_ffmpeg: boolean
+    /** DaVinci Resolve engine is required */
+    use_resolve: boolean
+  }
 }
 
 export class JobSpecBuildError extends Error {
@@ -173,6 +183,17 @@ export function buildJobSpec(outputState: OutputState): JobSpec {
   }
   
   // =================================================================
+  // Derive Execution Engine Requirements
+  // =================================================================
+  
+  // Convert sources to SourceMetadata format for engine derivation
+  const sourceMetadata = outputState.sources.map(path => ({ path }))
+  
+  // Derive which engines this job requires
+  // This will throw if sources array is empty (already validated above)
+  const engineRequirements = deriveExecutionEngines(sourceMetadata)
+  
+  // =================================================================
   // JobSpec Construction
   // =================================================================
   
@@ -214,6 +235,12 @@ export function buildJobSpec(outputState: OutputState): JobSpec {
     lut_id: null,
     lut_applied: false,
     lut_engine: null,
+    
+    // Execution engine requirements (derived from source formats)
+    execution_engines: {
+      use_ffmpeg: engineRequirements.useFFmpeg,
+      use_resolve: engineRequirements.useResolve,
+    },
   }
   
   return jobSpec
