@@ -54,23 +54,7 @@ import type { Preset } from './usePresets'
 import type { JobSpec } from '../utils/buildJobSpec'
 import { buildJobSpec } from '../utils/buildJobSpec'
 
-// Extend window.electron type to include watch folder methods
-declare global {
-  interface Window {
-    electron?: {
-      openFiles?: () => Promise<string[]>
-      openFolder?: () => Promise<string>
-      openFilesOrFolders?: () => Promise<string[]>
-      showItemInFolder?: (filePath: string) => Promise<void>
-      isAuditMode?: () => boolean
-      startWatchFolder?: (config: any) => Promise<void>
-      stopWatchFolder?: (id: string) => Promise<void>
-      onWatchFolderFileDetected?: (callback: (event: any) => void) => void
-      onWatchFolderFileRejected?: (callback: (event: any) => void) => void
-      onWatchFolderError?: (callback: (event: any) => void) => void
-    }
-  }
-}
+// Note: window.electron type is declared in App.tsx to avoid duplicate declarations
 
 export interface UseWatchFolderIntegrationOptions {
   /** Array of watch folders from useWatchFolders */

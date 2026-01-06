@@ -81,7 +81,7 @@ export function NativeSourceSelector({
     }
 
     try {
-      const result = await window.electron.openFiles()
+      const result = await window.electron?.openFiles?.()
       if (result && result.length > 0) {
         onFilesSelected(result)
       }
@@ -101,7 +101,7 @@ export function NativeSourceSelector({
     }
 
     try {
-      const result = await window.electron.openFolder()
+      const result = await window.electron?.openFolder?.()
       if (result) {
         onFolderSelected(result)
       }

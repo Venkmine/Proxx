@@ -144,18 +144,25 @@ function isJobTerminal(status: string): boolean {
 
 // Electron IPC types
 // INC-003: Added openFilesOrFolders for combined file+folder selection
+// Watch Folders V1: Added watch folder IPC methods
 declare global {
   interface Window {
     electron?: {
-      openFiles: () => Promise<string[]>
-      openFolder: () => Promise<string | null>
+      openFiles?: () => Promise<string[]>
+      openFolder?: () => Promise<string>
       /** INC-003: Select files AND/OR folders together. Does NOT auto-expand directories. */
-      openFilesOrFolders: () => Promise<string[]>
-      showItemInFolder: (filePath: string) => Promise<void>
+      openFilesOrFolders?: () => Promise<string[]>
+      showItemInFolder?: (filePath: string) => Promise<void>
       /** Open a path in the default application (for AttachProxiesInfoPanel) */
       openPath?: (path: string) => void
       /** Check if audit mode is enabled (exposes unsupported features for testing) */
-      isAuditMode: () => boolean
+      isAuditMode?: () => boolean
+      // Watch Folders V1: IPC methods for recursive monitoring
+      startWatchFolder?: (config: any) => Promise<void>
+      stopWatchFolder?: (id: string) => Promise<void>
+      onWatchFolderFileDetected?: (callback: (event: any) => void) => void
+      onWatchFolderFileRejected?: (callback: (event: any) => void) => void
+      onWatchFolderError?: (callback: (event: any) => void) => void
     }
   }
 }
@@ -1815,8 +1822,9 @@ function App() {
     }
     try {
       console.log('[App] Calling window.electron.openFiles()...')
-      const paths = await window.electron!.openFiles()
+      const paths = await window.electron?.openFiles?.()
       console.log('[App] openFiles returned:', paths)
+      if (!paths) return
       if (paths.length > 0) {
         console.log('[App] Paths non-empty, updating source selection store...')
         // SINGLE SOURCE OF TRUTH: Write ONLY to useSourceSelectionStore
@@ -1883,7 +1891,7 @@ function App() {
       return
     }
     try {
-      const path = await window.electron!.openFolder()
+      const path = await window.electron?.openFolder?.()
       if (path) {
         setOutputDirectory(path)
       }
@@ -1895,7 +1903,7 @@ function App() {
   const revealInFolder = async (filePath: string) => {
     if (!hasElectron) return
     try {
-      await window.electron!.showItemInFolder(filePath)
+      await window.electron?.showItemInFolder?.(filePath)
     } catch (err) {
       setError(`Failed to reveal file: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
