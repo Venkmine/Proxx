@@ -50,6 +50,7 @@ import type { DeliverSettings, SelectionContext } from './components/DeliverCont
 import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
 import * as statusMessages from './utils/statusMessages'
+import { buildJobSpec, type JobSpec } from './utils/buildJobSpec'
 // Alpha: Copilot imports hidden (dev feature)
 // import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
 // V1 OBSERVABILITY: Debug panel for UI event log (DEV only)
@@ -274,6 +275,9 @@ function App() {
   const [jobOrder, setJobOrder] = useState<string[]>([]) // Frontend-only ordering
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
+  
+  // Created JobSpec (UI representation only, no execution)
+  const [createdJobSpec, setCreatedJobSpec] = useState<JobSpec | null>(null)
   
   // DOGFOOD FIX: Idempotency guards for job operations
   // React state updates are async, so rapid clicks can trigger duplicate operations
@@ -1280,6 +1284,43 @@ function App() {
   }
 
   // ============================================
+  // Create Job — JobSpec Builder (UI Representation Only)
+  // ============================================
+  // Builds JobSpec from Output tab state and creates a single queue entry.
+  // NO EXECUTION: This is purely UI representation. No backend calls, no progress, no workers.
+  // REPLACE MODE: Only one job exists at a time. Creating a new job replaces the old one.
+  
+  const handleCreateJob = useCallback(() => {
+    try {
+      // Build JobSpec from current Output tab state
+      const jobSpec = buildJobSpec({
+        sources: selectedFiles,
+        outputPath: outputDirectory,
+        containerFormat,
+        filenameTemplate,
+        deliveryType: outputDeliveryType,
+      })
+      
+      // Store JobSpec (replaces any existing job)
+      setCreatedJobSpec(jobSpec)
+      
+      // Log success
+      console.log('[Create Job] JobSpec created:', jobSpec.job_id)
+      addStatusLogEntry({
+        id: `create-job-${Date.now()}`,
+        level: 'info',
+        message: `Job ${jobSpec.job_id} created with ${jobSpec.sources.length} source(s)`,
+        timestamp: new Date(),
+      })
+    } catch (err) {
+      // Show error if JobSpec builder fails (e.g., missing required fields)
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+      setError(`Failed to create job: ${errorMsg}`)
+      console.error('[Create Job] Failed:', errorMsg)
+    }
+  }, [selectedFiles, outputDirectory, containerFormat, filenameTemplate, outputDeliveryType, addStatusLogEntry])
+
+  // ============================================
   // Phase 16: New Job Actions (Start, Pause, Delete)
   // ============================================
 
@@ -2171,10 +2212,87 @@ function App() {
   // Include any jobs not in the order list (new jobs)
   const unorderedJobs = jobs.filter(j => !jobOrder.includes(j.id))
   const allOrderedJobs = [...orderedJobs, ...unorderedJobs]
+  
+  // V2: Inject created JobSpec as a visible queue entry (UI representation only)
+  // If createdJobSpec exists, convert it to a JobSummary and prepend to the list
+  const jobsWithCreatedSpec = useMemo(() => {
+    if (!createdJobSpec) return allOrderedJobs
+    
+    // Convert JobSpec to JobSummary format for queue rendering
+    const jobSummary: JobSummary = {
+      id: createdJobSpec.job_id,
+      status: 'PENDING',  // UI-only status
+      created_at: createdJobSpec.created_at,
+      started_at: null,
+      completed_at: null,
+      total_tasks: createdJobSpec.sources.length,
+      completed_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      running_count: 0,
+      queued_count: createdJobSpec.sources.length,
+      warning_count: 0,
+    }
+    
+    // REPLACE MODE: Only one job at a time
+    return [jobSummary]
+  }, [allOrderedJobs, createdJobSpec])
+  
+  // V2: Synthesize JobDetail for created JobSpec (for rendering source names and settings)
+  const jobDetailsWithCreatedSpec = useMemo(() => {
+    if (!createdJobSpec) return jobDetails
+    
+    const detail: JobDetail = {
+      id: createdJobSpec.job_id,
+      status: 'PENDING',
+      created_at: createdJobSpec.created_at,
+      started_at: null,
+      completed_at: null,
+      total_tasks: createdJobSpec.sources.length,
+      completed_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      running_count: 0,
+      queued_count: createdJobSpec.sources.length,
+      warning_count: 0,
+      tasks: createdJobSpec.sources.map((sourcePath, index) => ({
+        id: `${createdJobSpec.job_id}-task-${index}`,
+        source_path: sourcePath,
+        status: 'QUEUED',
+        started_at: null,
+        completed_at: null,
+        failure_reason: null,
+        warnings: [],
+        resolution: null,
+        codec: null,
+        frame_rate: null,
+        duration: null,
+        audio_channels: null,
+        color_space: null,
+        raw_type: null,
+        output_path: null,
+        progress_percent: 0,
+        eta_seconds: null,
+        encode_fps: null,
+        phase: null,
+        thumbnail: null,
+      })),
+      settings_summary: {
+        codec: createdJobSpec.codec,
+        container: createdJobSpec.container,
+        resolution: createdJobSpec.resolution,
+      },
+    }
+    
+    // REPLACE MODE: Only one job at a time
+    const newDetails = new Map<string, JobDetail>()
+    newDetails.set(createdJobSpec.job_id, detail)
+    return newDetails
+  }, [jobDetails, createdJobSpec])
 
   // Apply global filters and search
   const filteredJobs = useMemo(() => {
-    return allOrderedJobs.filter(job => {
+    return jobsWithCreatedSpec.filter(job => {
       // Status filter
       if (globalStatusFilters.size > 0) {
         const jobStatus = job.status.toUpperCase()
@@ -2190,7 +2308,7 @@ function App() {
       
       // Search filter (searches clip paths in job details)
       if (searchQuery.trim()) {
-        const detail = jobDetails.get(job.id)
+        const detail = jobDetailsWithCreatedSpec.get(job.id)
         if (detail) {
           const query = searchQuery.toLowerCase()
           const hasMatch = detail.tasks.some(task => 
@@ -2202,7 +2320,7 @@ function App() {
       
       return true
     })
-  }, [allOrderedJobs, globalStatusFilters, dateFilter, searchQuery, jobDetails])
+  }, [jobsWithCreatedSpec, globalStatusFilters, dateFilter, searchQuery, jobDetailsWithCreatedSpec])
 
   // Compute status counts for filter bar
   const statusCounts = useMemo(() => {
@@ -2584,9 +2702,7 @@ function App() {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={() => {
-                      console.log('[Queue Panel] Create Job clicked (presence-only, no behavior)')
-                    }}
+                    onClick={handleCreateJob}
                     data-testid="create-job-button"
                     title="Add job to queue"
                   >
@@ -2647,7 +2763,7 @@ function App() {
                       color: 'var(--text-muted)',
                     }}
                   >
-                    {allOrderedJobs.length === 0 ? (
+                    {jobsWithCreatedSpec.length === 0 ? (
                       <>
                         <img
                           src="/branding/awaire-logo.png"
@@ -2686,7 +2802,7 @@ function App() {
                   </div>
                 ) : (
                   filteredJobs.map((job, index) => {
-                    const detail = jobDetails.get(job.id)
+                    const detail = jobDetailsWithCreatedSpec.get(job.id)
                     // Trust Stabilisation: Build settings summary for queue export intent visibility
                     const settingsSummary = detail?.settings_summary ? {
                       codec: detail.settings_summary.codec,
