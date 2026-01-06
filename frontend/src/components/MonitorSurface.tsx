@@ -1045,48 +1045,7 @@ export function MonitorSurface({
               </div>
             )}
 
-            {/* Bottom-left metadata overlay — shown in video playback mode */}
-            {canPlaybackNow && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '4.5rem',
-                  left: '1rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.25rem',
-                  padding: '0.5rem 0.625rem',
-                  background: 'rgba(0, 0, 0, 0.65)',
-                  borderRadius: '4px',
-                  backdropFilter: 'blur(8px)',
-                  opacity: 0.9,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '0.75rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-primary)',
-                    fontWeight: 500,
-                  }}
-                >
-                  {sourceMetadata.filename || 'Unknown source'}
-                </span>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '0.75rem',
-                    fontSize: '0.625rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  {sourceMetadata.codec && <span>{sourceMetadata.codec}</span>}
-                  {sourceMetadata.resolution && <span>{sourceMetadata.resolution}</span>}
-                  {sourceMetadata.fps && <span>{sourceMetadata.fps}</span>}
-                </div>
-              </div>
-            )}
+            {/* Filename overlay removed - now displayed in player header */}
 
             {/* RAW Preview Disclaimer (shown when generating video for RAW) */}
             {isRaw && tieredPreview?.videoLoading && previewMode === 'video' && (
@@ -1388,6 +1347,7 @@ export function MonitorSurface({
             enabled={transportEnabled}
             sourceTimecodeStart={sourceMetadata?.sourceTimecodeStart}
             hasSourceTimecode={sourceMetadata?.hasSourceTimecode}
+            filename={sourceMetadata?.filename}
             // Clip navigation (v3)
             currentClip={currentClip}
             totalClips={totalClips}

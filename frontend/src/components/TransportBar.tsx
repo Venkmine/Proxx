@@ -88,6 +88,8 @@ interface TransportBarProps {
   sourceTimecodeStart?: string | number | null
   /** Whether source timecode is available from metadata */
   hasSourceTimecode?: boolean
+  /** Source filename to display in header */
+  filename?: string | null
   
   // Clip Navigation (v3)
   /** Current clip info */
@@ -520,15 +522,15 @@ const TIMECODE_MODES: {
   },
   { 
     id: 'preview', 
-    label: 'Record TC', 
+    label: 'Recording TC', 
     shortLabel: 'REC',
-    tooltip: 'Record timecode from preview proxy playback'
+    tooltip: 'Recording timecode from 00:00:00:00'
   },
   { 
     id: 'counter', 
-    label: 'Preview', 
-    shortLabel: 'PREV',
-    tooltip: 'Preview timecode position'
+    label: 'Preview Mode', 
+    shortLabel: '',  // No label - implicit preview mode (dim indicator)
+    tooltip: 'Preview mode (implicit - click to cycle)'
   },
 ]
 
@@ -604,6 +606,7 @@ export function TransportBar({
   enabled = true,
   sourceTimecodeStart,
   hasSourceTimecode = false,
+  filename,
   // Clip navigation (v3)
   currentClip,
   totalClips,
@@ -686,6 +689,13 @@ export function TransportBar({
   
   // Track hover state for timecode
   const [timecodeHovered, setTimecodeHovered] = useState(false)
+  
+  // Editable timecode state
+  const [isEditingTimecode, setIsEditingTimecode] = useState(false)
+  const [timecodeInput, setTimecodeInput] = useState('')
+  
+  // Loop toggle state
+  const [loopEnabled, setLoopEnabled] = useState(false)
   
   // Parse source timecode offset
   const sourceOffset = useMemo(() => 
@@ -904,7 +914,7 @@ export function TransportBar({
     }
   }, [videoRef, clock.isPlaying, playbackRate])
   
-  // Rotate timecode mode on click (SRC -> REC -> PREV -> SRC)
+  // Rotate timecode mode on click (SRC -> REC -> PREVIEW -> SRC)
   const handleRotateTimecode = useCallback(() => {
     const availableModes = TIMECODE_MODES.filter(mode => {
       // Skip source mode if no source timecode available
@@ -918,6 +928,65 @@ export function TransportBar({
     setTimecodeRotateIndex(nextIndex)
     setTimecodeMode(availableModes[nextIndex].id)
   }, [timecodeRotateIndex, hasSourceTimecode])
+  
+  // Double-click timecode to enter edit mode
+  const handleTimecodeDoubleClick = useCallback(() => {
+    setIsEditingTimecode(true)
+    setTimecodeInput(displayedTimecode)
+  }, [displayedTimecode])
+  
+  // Handle timecode input change
+  const handleTimecodeInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setTimecodeInput(e.target.value)
+  }, [])
+  
+  // Handle timecode input submission
+  const handleTimecodeInputSubmit = useCallback(() => {
+    const video = videoRef.current
+    if (!video) {
+      setIsEditingTimecode(false)
+      return
+    }
+    
+    // Parse timecode input (format: HH:MM:SS:FF)
+    const match = timecodeInput.match(/^(\d{2}):(\d{2}):(\d{2}):(\d{2})$/)
+    if (match) {
+      const [_, h, m, s, f] = match
+      const hours = parseInt(h, 10)
+      const minutes = parseInt(m, 10)
+      const seconds = parseInt(s, 10)
+      const frames = parseInt(f, 10)
+      
+      // Convert to seconds
+      const totalSeconds = hours * 3600 + minutes * 60 + seconds + frames / fps
+      
+      // Jump to that time
+      video.currentTime = Math.max(0, Math.min(duration, totalSeconds))
+    }
+    
+    setIsEditingTimecode(false)
+  }, [timecodeInput, videoRef, fps, duration])
+  
+  // Handle timecode input key down (Enter/Escape)
+  const handleTimecodeInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleTimecodeInputSubmit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setIsEditingTimecode(false)
+    }
+  }, [handleTimecodeInputSubmit])
+  
+  // Loop toggle handler
+  const handleLoopToggle = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    
+    const newLoopState = !loopEnabled
+    setLoopEnabled(newLoopState)
+    video.loop = newLoopState
+  }, [videoRef, loopEnabled])
   
   // Handle timecode mode change
   const handleTimecodeModeChange = useCallback((mode: TimecodeMode) => {
@@ -1094,39 +1163,67 @@ export function TransportBar({
   return (
     <div style={styles.wrapper} data-testid="transport-bar">
       {/* ======================================== */}
-      {/* PLAYER HEADER ROW: TC | Jobs | Duration */}
+      {/* PLAYER HEADER ROW: Filename | TC | Duration */}
       {/* ======================================== */}
       <div style={styles.headerRow} data-testid="transport-header">
-        {/* Left: Rotating Timecode with Status Indicator */}
+        {/* Left: Filename (contextual metadata) + Timecode with Status Indicator */}
         <div style={styles.headerLeft}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            <span 
+          {filename && (
+            <span
               style={{
-                ...styles.timecode,
-                ...(timecodeHovered ? styles.timecodeHover : {}),
+                fontSize: '0.75rem',
+                fontFamily: 'var(--font-mono, monospace)',
+                color: 'var(--text-dim, #6b7280)',
+                marginRight: '0.75rem',
+                opacity: 0.7,
               }}
-              onClick={handleRotateTimecode}
-              onMouseEnter={() => setTimecodeHovered(true)}
-              onMouseLeave={() => setTimecodeHovered(false)}
-              title={`${currentModeConfig.label} — Click to cycle modes`}
-              data-testid="transport-timecode-rotating"
+              title={filename}
+              data-testid="transport-filename"
             >
-              {displayedTimecode}
+              {filename}
             </span>
-            <span style={styles.timecodeStatus} title={currentModeConfig.tooltip}>
-              {currentModeConfig.shortLabel}
-            </span>
-          </div>
-        </div>
-        
-        {/* Center: Job Selector Dropdown (disabled placeholder) */}
-        <div style={styles.headerCenter}>
-          <div 
-            style={styles.jobsDropdown}
-            title="Job selector (currently disabled)"
-            data-testid="transport-jobs-dropdown"
-          >
-            Jobs
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            {!isEditingTimecode ? (
+              <>
+                <span 
+                  style={{
+                    ...styles.timecode,
+                    ...(timecodeHovered ? styles.timecodeHover : {}),
+                  }}
+                  onClick={handleRotateTimecode}
+                  onDoubleClick={handleTimecodeDoubleClick}
+                  onMouseEnter={() => setTimecodeHovered(true)}
+                  onMouseLeave={() => setTimecodeHovered(false)}
+                  title={`${currentModeConfig.label} — Single click: cycle modes | Double click: edit`}
+                  data-testid="transport-timecode-rotating"
+                >
+                  {displayedTimecode}
+                </span>
+                <span style={styles.timecodeStatus} title={currentModeConfig.tooltip}>
+                  {currentModeConfig.shortLabel || (
+                    <span style={{ opacity: 0.4, fontSize: '0.625rem' }}>●</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <input
+                type="text"
+                value={timecodeInput}
+                onChange={handleTimecodeInputChange}
+                onKeyDown={handleTimecodeInputKeyDown}
+                onBlur={handleTimecodeInputSubmit}
+                autoFocus
+                style={{
+                  ...styles.timecode,
+                  minWidth: '140px',
+                  outline: '2px solid var(--accent-primary, #3b82f6)',
+                  outlineOffset: '2px',
+                }}
+                placeholder="HH:MM:SS:FF"
+                data-testid="transport-timecode-input"
+              />
+            )}
           </div>
         </div>
         
@@ -1282,6 +1379,91 @@ export function TransportBar({
             }}
           />
         </div>
+        
+        {/* Jog Control - Simple drag scrub */}
+        <div
+          data-testid="transport-jog-control"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            marginLeft: '0.75rem',
+          }}
+        >
+          <div
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '2px solid rgba(255, 255, 255, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: enabled ? 'ew-resize' : 'not-allowed',
+              opacity: enabled ? 1 : 0.4,
+              position: 'relative',
+            }}
+            title={enabled ? "Jog: drag left/right to scrub" : "Jog unavailable"}
+            onMouseDown={(e) => {
+              if (!enabled) return
+              e.preventDefault()
+              const startX = e.clientX
+              const startTime = videoRef.current?.currentTime || 0
+              
+              const handleMouseMove = (moveEvent: MouseEvent) => {
+                const video = videoRef.current
+                if (!video) return
+                
+                const deltaX = moveEvent.clientX - startX
+                const sensitivity = 0.05 // seconds per pixel
+                const newTime = startTime + (deltaX * sensitivity)
+                video.currentTime = Math.max(0, Math.min(duration, newTime))
+              }
+              
+              const handleMouseUp = () => {
+                window.removeEventListener('mousemove', handleMouseMove)
+                window.removeEventListener('mouseup', handleMouseUp)
+              }
+              
+              window.addEventListener('mousemove', handleMouseMove)
+              window.addEventListener('mouseup', handleMouseUp)
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" opacity="0.7">
+              <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <circle cx="10" cy="6" r="1.5" />
+              <circle cx="10" cy="14" r="1.5" />
+            </svg>
+          </div>
+        </div>
+        
+        {/* Loop Toggle */}
+        <button
+          onClick={enabled ? handleLoopToggle : undefined}
+          disabled={!enabled}
+          style={{
+            ...styles.button,
+            marginLeft: '0.5rem',
+            background: loopEnabled 
+              ? 'rgba(59, 130, 246, 0.2)' 
+              : 'rgba(255, 255, 255, 0.04)',
+            border: loopEnabled 
+              ? '1px solid rgba(59, 130, 246, 0.4)' 
+              : '1px solid transparent',
+            color: loopEnabled 
+              ? 'var(--accent-primary, #3b82f6)' 
+              : 'var(--text-secondary, #9ca3af)',
+            ...disabledButtonStyle,
+          }}
+          title={enabled 
+            ? (loopEnabled ? "Loop: ON (will repeat playback)" : "Loop: OFF")
+            : "Loop unavailable"}
+          data-testid="transport-loop-toggle"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M13 4.5V2l3 3-3 3V5.5H6v-1h7zM3 11.5V14l-3-3 3-3v2.5h7v1H3z" opacity={loopEnabled ? 1 : 0.6} />
+          </svg>
+        </button>
         
         {/* Playback Disabled Label - shown when controls are visible but playback unavailable */}
         {playbackDisabledLabel && (
