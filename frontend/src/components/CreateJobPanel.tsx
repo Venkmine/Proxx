@@ -323,30 +323,10 @@ export function CreateJobPanel({
 
     // Output validation removed - now handled in Delivery panel (center bottom)
 
-    // Engine availability
-    const selectedEngineInfo = engines.find(e => e.type === selectedEngine)
-    if (!selectedEngineInfo) {
-      checks.push({
-        id: 'engine-selected',
-        label: 'Execution Engine',
-        status: 'fail',
-        message: 'No execution engine selected',
-      })
-    } else if (!selectedEngineInfo.available) {
-      checks.push({
-        id: 'engine-available',
-        label: 'Execution Engine',
-        status: 'fail',
-        message: `${selectedEngineInfo.name} is not available`,
-      })
-    } else {
-      checks.push({
-        id: 'engine-valid',
-        label: 'Execution Engine',
-        status: 'pass',
-        message: selectedEngineInfo.name,
-      })
-    }
+    // Execution Engine removed from preflight checks
+    // Truth: Engine is undetermined until a job exists
+    // Engine routing happens per-job based on source format inspection
+    // Engine indicators appear in Queue area as job-scoped presence
 
     // Design mode check
     if (isDesignMode) {

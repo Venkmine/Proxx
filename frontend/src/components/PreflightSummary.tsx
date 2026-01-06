@@ -2,12 +2,13 @@
  * PreflightSummary - Mandatory preflight check display for job creation.
  * 
  * This component aggregates ALL validation checks before job submission:
- * - Engine availability (FFmpeg/Resolve)
  * - Resolve edition (Studio required for certain features)
  * - Worker availability vs license limits
- * - Routing validity (source → engine compatibility)
  * - Output writability
  * - Burn-in + LUT validity
+ * 
+ * Note: Execution engine is NOT a preflight requirement.
+ * Engine routing happens per-job based on source format inspection.
  * 
  * Each check has exactly three states:
  * - ✔ Pass: Green, job can proceed
