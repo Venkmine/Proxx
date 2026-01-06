@@ -1,12 +1,26 @@
 """
 Backend Integration Test: RAW Encode Matrix
 
-Tests ALL supported file formats in forge-tests/samples/RAW:
-- Detects RAW vs non-RAW formats
-- Routes to correct engine (Resolve for RAW, FFmpeg for non-RAW)
-- Creates jobs via backend API directly (no Electron/Playwright)
-- Verifies job execution completes
-- Validates output files exist with non-zero size
+Two test modes:
+
+1. SMOKE TEST (default):
+   - Uses ONE representative RAW file
+   - Proves RAW → Resolve execution path works
+   - Fast: completes in seconds
+   - Runs automatically in CI/default pytest
+
+2. EXHAUSTIVE MATRIX TEST (opt-in):
+   - Tests ALL files in forge-tests/samples/RAW
+   - Full format coverage (BRAW, R3D, ARRI, Canon, DNG, etc.)
+   - Slow: 10+ minutes with 77+ files
+   - Marked with @pytest.mark.matrix and @pytest.mark.slow
+   - Run explicitly: pytest -m matrix
+
+When to run the matrix test:
+- Before releases
+- When changing RAW detection logic
+- When adding new RAW format support
+- When modifying engine routing
 
 This is a BACKEND integration test, not a UI E2E test.
 Uses TestClient - no running server or Electron required.
@@ -152,8 +166,141 @@ def output_dir():
 class TestRawEncodeMatrix:
     """Backend integration tests for RAW encode matrix."""
     
+    @pytest.mark.integration
+    def test_smoke_raw_execution(self, test_client, raw_samples_dir, output_dir):
+        """
+        SMOKE TEST: Verify RAW → Resolve execution path works with ONE file.
+        
+        This is the default fast test that runs in CI and normal pytest runs.
+        Uses a single BRAW file to prove:
+        - RAW detection works
+        - Resolve engine routing works
+        - Job creation/execution succeeds
+        - Output file is created
+        
+        For exhaustive format coverage, run the matrix test:
+        pytest -m matrix
+        """
+        # Use first available BRAW file as smoke test
+        test_file = None
+        for ext in ['.braw', '.r3d', '.R3D']:
+            candidates = list(raw_samples_dir.rglob(f'*{ext}'))
+            if candidates:
+                test_file = candidates[0]
+                break
+        
+        if test_file is None:
+            pytest.skip("No RAW files found for smoke test")
+        
+        print(f"\n🔥 SMOKE TEST: Testing RAW execution with {test_file.name}")
+        print(f"   Format: RAW")
+        print(f"   Engine: resolve")
+        print(f"   Path: {test_file}")
+        
+        # Create unique output dir
+        temp_output = Path(tempfile.mkdtemp(prefix='proxx-smoke-'))
+        
+        try:
+            # Create job payload
+            payload = {
+                "source_paths": [str(test_file)],
+                "engine": "resolve",
+                "deliver_settings": {
+                    "output_dir": str(temp_output),
+                    "video": {"codec": "prores_proxy"},
+                    "audio": {"codec": "pcm_s16le"},
+                    "file": {
+                        "container": "mov",
+                        "naming_template": "{source_name}_smoke"
+                    }
+                }
+            }
+            
+            # Create job
+            start_time = time.time()
+            response = test_client.post("/control/jobs/create", json=payload)
+            assert response.status_code == 200, f"Job creation failed: {response.text}"
+            
+            job_data = response.json()
+            assert "job_id" in job_data, "Response missing job_id"
+            job_id = job_data["job_id"]
+            print(f"   ✓ Job created: {job_id}")
+            
+            # Start the job
+            start_response = test_client.post(f"/control/jobs/{job_id}/start")
+            assert start_response.status_code == 200, f"Start failed: {start_response.text}"
+            print(f"   ✓ Job started")
+            
+            # Poll for completion
+            max_attempts = 120
+            attempts = 0
+            final_status = None
+            
+            while attempts < max_attempts:
+                job_response = test_client.get(f"/monitor/jobs/{job_id}")
+                if job_response.status_code == 200:
+                    job_info = job_response.json()
+                    status = job_info.get("status", "UNKNOWN").upper()
+                    
+                    if attempts == 0:
+                        print(f"   📊 Initial status: {status}")
+                    
+                    if status in ['COMPLETED', 'FAILED', 'ERROR']:
+                        final_status = status
+                        break
+                
+                time.sleep(0.5)
+                attempts += 1
+            
+            duration = time.time() - start_time
+            
+            # Assert success
+            assert final_status == 'COMPLETED', f"Job status: {final_status}, Time: {duration:.1f}s"
+            print(f"   ✓ Job completed in {duration:.1f}s")
+            
+            # Verify output
+            output_files = list(temp_output.glob('*.mov')) + list(temp_output.glob('*.mp4'))
+            assert len(output_files) > 0, "No output files created"
+            
+            output_file = output_files[0]
+            assert output_file.exists(), f"Output file missing: {output_file}"
+            
+            file_size = output_file.stat().st_size
+            assert file_size > 0, "Output file is empty"
+            
+            print(f"   ✓ Output: {output_file.name} ({file_size / 1024 / 1024:.2f} MB)")
+            print(f"\n✅ SMOKE TEST PASSED: RAW → Resolve execution works")
+            
+        finally:
+            import shutil
+            if temp_output.exists():
+                shutil.rmtree(temp_output)
+    
+    @pytest.mark.slow
+    @pytest.mark.matrix
+    @pytest.mark.integration
     def test_encode_all_files(self, test_client, test_files, output_dir):
-        """Test encoding for all discovered files with correct engine routing."""
+        """
+        EXHAUSTIVE MATRIX TEST: Test ALL files with correct engine routing.
+        
+        This test is OPT-IN ONLY due to its duration (10+ minutes for 77+ files).
+        
+        To run: pytest -m matrix
+        
+        Why opt-in:
+        - 77+ files covering BRAW, R3D, ARRI, Canon RAW, DNG, ProRes RAW, etc.
+        - Each file requires job creation, execution, and validation
+        - Total runtime: 10-15 minutes
+        - Not needed for typical development iteration
+        
+        When to run:
+        - Before releases (full format regression check)
+        - When changing RAW detection logic (verify all formats still work)
+        - When adding new RAW format support (ensure compatibility)
+        - When modifying engine routing (verify Resolve vs FFmpeg decisions)
+        
+        Default pytest runs use test_smoke_raw_execution instead (single file, seconds).
+        """
         
         results = []
         

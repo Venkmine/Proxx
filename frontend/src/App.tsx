@@ -285,14 +285,14 @@ function App() {
   // V2 PHASE 4: SEMANTIC SEPARATION OF JOB CREATION
   // ============================================
   // preparedJobSpec = JobSpec built by "Create Job" button (not yet queued)
-  // queuedJobSpec = JobSpec added to queue by "Add to Queue" button
+  // queuedJobSpecs = FIFO queue of JobSpecs added by "Add to Queue" button
   // 
   // INTENTIONAL DESIGN:
   // - Create Job ONLY builds JobSpec, does NOT touch queue
   // - Add to Queue ONLY adds to queue, triggered by explicit user action
-  // - One job policy: only one prepared, only one queued (Phase 4 simplification)
+  // - FIFO queue: jobs execute in insertion order, one at a time
   const [preparedJobSpec, setPreparedJobSpec] = useState<JobSpec | null>(null)
-  const [queuedJobSpec, setQueuedJobSpec] = useState<JobSpec | null>(null)
+  const [queuedJobSpecs, setQueuedJobSpecs] = useState<JobSpec[]>([])
   
   // DOGFOOD FIX: Idempotency guards for job operations
   // React state updates are async, so rapid clicks can trigger duplicate operations
@@ -1116,6 +1116,46 @@ function App() {
     fetchEngines()  // Phase 16
   }, [])
 
+  // ============================================
+  // FIFO Execution Loop - Automatic Job Sequencing
+  // ============================================
+  // INVARIANT: One job executing at a time
+  // BEHAVIOR: When no job is running AND queue has jobs → start first job
+  // DEQUEUE: When job completes → remove from queue → start next job
+  useEffect(() => {
+    // Check if any job is currently running
+    const hasRunningJob = jobs.some(j => j.status.toUpperCase() === 'RUNNING')
+    
+    // If job is running OR queue is empty → do nothing
+    if (hasRunningJob || queuedJobSpecs.length === 0) {
+      return
+    }
+    
+    // Get first job in FIFO queue
+    const nextJobSpec = queuedJobSpecs[0]
+    
+    // Check if this job has already been started (is in backend jobs list)
+    const jobAlreadyStarted = jobs.some(j => j.id === nextJobSpec.job_id)
+    
+    if (jobAlreadyStarted) {
+      // Job was started but is no longer running (completed or failed)
+      // Remove from queue and continue to next
+      console.log(`[FIFO] Dequeuing completed job: ${nextJobSpec.job_id}`)
+      setQueuedJobSpecs(prev => prev.slice(1))
+      return
+    }
+    
+    // Start next job in queue
+    console.log(`[FIFO] Starting next queued job: ${nextJobSpec.job_id}`)
+    
+    // Call startJob directly (it's defined above)
+    const executeStart = async () => {
+      await startJob(nextJobSpec.job_id)
+    }
+    executeStart()
+    
+  }, [jobs, queuedJobSpecs])  // eslint-disable-line react-hooks/exhaustive-deps
+
   // Persist outputDirectory to localStorage when it changes
   useEffect(() => {
     if (outputDirectory) {
@@ -1338,12 +1378,12 @@ function App() {
   }, [selectedFiles, outputDirectory, containerFormat, filenameTemplate, outputDeliveryType, addStatusLogEntry])
   
   // ============================================
-  // Add to Queue — Queue Insertion Handler
+  // Add to Queue — Queue Insertion Handler (FIFO)
   // ============================================
   // SEMANTIC CONTRACT:
-  // - Takes prepared JobSpec and adds it to queue
+  // - Takes prepared JobSpec and appends it to FIFO queue
   // - Clears preparedJobSpec after queuing
-  // - Replaces any existing queued job (one job policy)
+  // - Preserves insertion order (FIFO execution)
   
   const handleAddToQueue = useCallback(() => {
     if (!preparedJobSpec) {
@@ -1351,8 +1391,8 @@ function App() {
       return
     }
     
-    // Add to queue
-    setQueuedJobSpec(preparedJobSpec)
+    // Append to FIFO queue
+    setQueuedJobSpecs(prev => [...prev, preparedJobSpec])
     
     // Clear prepared state
     setPreparedJobSpec(null)
@@ -2260,87 +2300,91 @@ function App() {
   const unorderedJobs = jobs.filter(j => !jobOrder.includes(j.id))
   const allOrderedJobs = [...orderedJobs, ...unorderedJobs]
   
-  // V2 PHASE 4: Inject QUEUED JobSpec as a visible queue entry
-  // IMPORTANT: Only queuedJobSpec appears in queue, NOT preparedJobSpec
+  // V2 PHASE 4: Inject QUEUED JobSpecs as visible queue entries (FIFO)
+  // IMPORTANT: Only queuedJobSpecs appear in queue, NOT preparedJobSpec
   // preparedJobSpec is invisible until explicitly queued via "Add to Queue"
   const jobsWithQueuedSpec = useMemo(() => {
-    if (!queuedJobSpec) return allOrderedJobs
+    if (queuedJobSpecs.length === 0) return allOrderedJobs
     
-    // Convert JobSpec to JobSummary format for queue rendering
-    const jobSummary: JobSummary = {
-      id: queuedJobSpec.job_id,
+    // Convert each JobSpec to JobSummary format for queue rendering
+    const queuedJobSummaries: JobSummary[] = queuedJobSpecs.map(jobSpec => ({
+      id: jobSpec.job_id,
       status: 'PENDING',  // UI-only status (frozen, no auto-updates)
-      created_at: queuedJobSpec.created_at,
+      created_at: jobSpec.created_at,
       started_at: null,
       completed_at: null,
-      total_tasks: queuedJobSpec.sources.length,
+      total_tasks: jobSpec.sources.length,
       completed_count: 0,
       failed_count: 0,
       skipped_count: 0,
       running_count: 0,
-      queued_count: queuedJobSpec.sources.length,
+      queued_count: jobSpec.sources.length,
       warning_count: 0,
-    }
+    }))
     
-    // ONE JOB POLICY: Only one queued job at a time (Phase 4 simplification)
-    return [jobSummary]
-  }, [allOrderedJobs, queuedJobSpec])
+    // FIFO QUEUE: Queued jobs appear in insertion order
+    return [...queuedJobSummaries, ...allOrderedJobs]
+  }, [allOrderedJobs, queuedJobSpecs])
   
-  // V2 PHASE 4: Synthesize JobDetail for queued JobSpec (for rendering source names and settings)
+  // V2 PHASE 4: Synthesize JobDetail for queued JobSpecs (for rendering source names and settings)
   const jobDetailsWithQueuedSpec = useMemo(() => {
-    if (!queuedJobSpec) return jobDetails
+    if (queuedJobSpecs.length === 0) return jobDetails
     
-    const detail: JobDetail = {
-      id: queuedJobSpec.job_id,
-      status: 'PENDING',  // Frozen status (no auto-updates, no timers, no effects)
-      created_at: queuedJobSpec.created_at,
-      started_at: null,
-      completed_at: null,
-      total_tasks: queuedJobSpec.sources.length,
-      completed_count: 0,
-      failed_count: 0,
-      skipped_count: 0,
-      running_count: 0,
-      queued_count: queuedJobSpec.sources.length,
-      warning_count: 0,
-      tasks: queuedJobSpec.sources.map((sourcePath, index) => ({
-        id: `${queuedJobSpec.job_id}-task-${index}`,
-        source_path: sourcePath,
-        status: 'QUEUED',  // Frozen (no auto-updates)
+    const newDetails = new Map<string, JobDetail>(jobDetails)
+    
+    // Create JobDetail for each queued JobSpec
+    for (const jobSpec of queuedJobSpecs) {
+      const detail: JobDetail = {
+        id: jobSpec.job_id,
+        status: 'PENDING',  // Frozen status (no auto-updates, no timers, no effects)
+        created_at: jobSpec.created_at,
         started_at: null,
         completed_at: null,
-        failure_reason: null,
-        warnings: [],
-        resolution: null,
-        codec: null,
-        frame_rate: null,
-        duration: null,
-        audio_channels: null,
-        color_space: null,
-        raw_type: null,
-        output_path: null,
-        progress_percent: 0,
-        eta_seconds: null,
-        encode_fps: null,
-        phase: null,
-        thumbnail: null,
-      })),
-      settings_summary: {
-        codec: queuedJobSpec.codec,
-        container: queuedJobSpec.container,
-        resolution: queuedJobSpec.resolution,
-      },
-      execution_engines: {
-        use_ffmpeg: queuedJobSpec.execution_engines.use_ffmpeg,
-        use_resolve: queuedJobSpec.execution_engines.use_resolve,
-      },
+        total_tasks: jobSpec.sources.length,
+        completed_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        running_count: 0,
+        queued_count: jobSpec.sources.length,
+        warning_count: 0,
+        tasks: jobSpec.sources.map((sourcePath, index) => ({
+          id: `${jobSpec.job_id}-task-${index}`,
+          source_path: sourcePath,
+          status: 'QUEUED',  // Frozen (no auto-updates)
+          started_at: null,
+          completed_at: null,
+          failure_reason: null,
+          warnings: [],
+          resolution: null,
+          codec: null,
+          frame_rate: null,
+          duration: null,
+          audio_channels: null,
+          color_space: null,
+          raw_type: null,
+          output_path: null,
+          progress_percent: 0,
+          eta_seconds: null,
+          encode_fps: null,
+          phase: null,
+          thumbnail: null,
+        })),
+        settings_summary: {
+          codec: jobSpec.codec,
+          container: jobSpec.container,
+          resolution: jobSpec.resolution,
+        },
+        execution_engines: {
+          use_ffmpeg: jobSpec.execution_engines.use_ffmpeg,
+          use_resolve: jobSpec.execution_engines.use_resolve,
+        },
+      }
+      
+      newDetails.set(jobSpec.job_id, detail)
     }
     
-    // ONE JOB POLICY: Only one queued job at a time
-    const newDetails = new Map<string, JobDetail>()
-    newDetails.set(queuedJobSpec.job_id, detail)
     return newDetails
-  }, [jobDetails, queuedJobSpec])
+  }, [jobDetails, queuedJobSpecs])
 
   // Apply global filters and search
   const filteredJobs = useMemo(() => {
@@ -2795,22 +2839,46 @@ function App() {
                       {selectedClipIds.size} clip(s)
                     </span>
                   )}
-                  {/* Render Jobs button - starts all pending jobs */}
-                  {jobs.filter(j => j.status.toUpperCase() === 'PENDING').length > 0 && (
+                  {/* FIFO Queue: Start All button - manually trigger queue execution */}
+                  {/* Visible when: queue has jobs AND no job is currently running */}
+                  {queuedJobSpecs.length > 0 && !jobs.some(j => j.status.toUpperCase() === 'RUNNING') && (
                     <Button
                       variant="primary"
                       size="sm"
                       onClick={async () => {
-                        // Start all pending jobs
-                        const pendingJobs = jobs.filter(j => j.status.toUpperCase() === 'PENDING')
-                        for (const job of pendingJobs) {
+                        // FIFO will automatically start the first job
+                        // This button is just a manual trigger if needed
+                        if (queuedJobSpecs.length > 0) {
+                          const firstJob = queuedJobSpecs[0]
+                          await startJob(firstJob.job_id)
+                        }
+                      }}
+                      disabled={loading}
+                      data-testid="start-queue-btn"
+                      title="Start processing queue (jobs will execute in order)"
+                    >
+                      ▶ Start Queue ({queuedJobSpecs.length} job{queuedJobSpecs.length !== 1 ? 's' : ''})
+                    </Button>
+                  )}
+                  {/* Render Jobs button - starts all pending backend jobs (non-queued) */}
+                  {jobs.filter(j => j.status.toUpperCase() === 'PENDING' && !queuedJobSpecs.some(q => q.job_id === j.id)).length > 0 && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={async () => {
+                        // Start all pending backend jobs that are NOT in our FIFO queue
+                        const pendingBackendJobs = jobs.filter(j => 
+                          j.status.toUpperCase() === 'PENDING' && 
+                          !queuedJobSpecs.some(q => q.job_id === j.id)
+                        )
+                        for (const job of pendingBackendJobs) {
                           await startJob(job.id)
                         }
                       }}
                       disabled={loading}
                       data-testid="render-jobs-btn"
                     >
-                      ▶ Render Jobs ({jobs.filter(j => j.status.toUpperCase() === 'PENDING').length})
+                      ▶ Render Jobs ({jobs.filter(j => j.status.toUpperCase() === 'PENDING' && !queuedJobSpecs.some(q => q.job_id === j.id)).length})
                     </Button>
                   )}
                   {/* V1 Hardening: Clear completed jobs button */}
