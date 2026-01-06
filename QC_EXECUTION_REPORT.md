@@ -1,6 +1,6 @@
 # QC EXECUTION REPORT
 
-**Generated:** 2026-01-06T22:20:00Z  
+**Generated:** 2026-01-06T23:15:00Z  
 **Mode:** Continuous QC Execution  
 **Objective:** Run everything, identify gaps, fix blockers, achieve real render
 
@@ -17,10 +17,76 @@ The system can successfully:
 - Create jobs via UI
 - Execute real FFmpeg renders
 - Produce valid output files
+- Detect FFmpeg hardware capabilities (NEW)
 
 **Blocking Issues:** 0  
 **Non-Blocking Issues:** 0 (RESOLVED)  
 **Stubbed/Fake Components:** 2 (QC-only, not production)
+
+---
+
+## NEW FEATURES ADDED
+
+### FFmpeg Hardware Capability Detection (2026-01-06)
+
+**Purpose:** Introspection only - detect what FFmpeg can do without changing execution behavior
+
+**Components Added:**
+- `backend/execution/ffmpegCapabilities.py` - Detection module
+- `backend/execution/__init__.py` - Module exports
+- `backend/tests/test_ffmpeg_capabilities.py` - Unit tests (11 tests, all passing)
+- Integration into `DiagnosticsInfo` model
+- Integration into `JobDetail` API response
+- Frontend diagnostics panel display
+
+**Detection Capabilities:**
+- Hardware acceleration methods (hwaccels): cuda, videotoolbox, nvdec, vaapi, etc.
+- GPU encoders: h264_nvenc, hevc_nvenc, av1_nvenc, h264_videotoolbox, etc.
+- CPU encoders: prores_ks, libx264, libx265
+- Explicit ProRes GPU assertion: Always False (ProRes has no GPU encoder in FFmpeg)
+
+**Integration Points:**
+- Backend: Diagnostics captured at report generation time
+- API: Exposed via `/api/jobs/{job_id}` endpoint
+- Reports: Included in text/CSV/JSON job reports
+- Frontend: Read-only display in Diagnostics panel (Alpha feature flag gated)
+
+**Critical Assertions:**
+- ❌ ProRes GPU support is ALWAYS False (hard-coded, verified in tests)
+- Detection errors handled gracefully with safe fallbacks
+- FFmpeg capabilities cached per process (hardware doesn't change while running)
+
+**Does NOT change:**
+- Execution paths
+- Encoding flags
+- Preset behavior
+- Performance settings
+- Decision making
+
+**Example Output:**
+```json
+{
+  "hwaccels": ["videotoolbox"],
+  "encoders": {
+    "gpu": ["h264_videotoolbox", "hevc_videotoolbox"],
+    "cpu": ["prores_ks", "libx264", "libx265"]
+  },
+  "prores_gpu_supported": false
+}
+```
+
+**Tests:**
+- `test_detect_hwaccels_macos` ✅
+- `test_detect_hwaccels_linux_cuda` ✅
+- `test_detect_hwaccels_none` ✅
+- `test_detect_encoders_gpu` ✅
+- `test_detect_encoders_cpu` ✅
+- `test_prores_gpu_always_false` ✅
+- `test_prores_never_in_gpu_encoders` ✅
+- `test_no_gpu_system` ✅
+- `test_detect_hwaccels_error_handling` ✅
+- `test_detect_encoders_error_handling` ✅
+- `test_detect_ffmpeg_capabilities_full` ✅
 
 ---
 

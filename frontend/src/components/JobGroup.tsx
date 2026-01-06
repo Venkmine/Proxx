@@ -127,6 +127,15 @@ interface JobGroupProps {
     outputDirectory?: string
     settings?: DeliverSettings
     lastError?: string | null
+    ffmpegCapabilities?: {
+      hwaccels?: string[]
+      encoders?: {
+        gpu?: string[]
+        cpu?: string[]
+      }
+      prores_gpu_supported?: boolean
+      error?: string
+    } | null
   }
 }
 
@@ -1012,6 +1021,7 @@ export function JobGroup({
                     totalTasks: totalTasks,
                     failedCount: failedCount,
                     completedCount: completedCount,
+                    ffmpegCapabilities: diagnostics?.ffmpegCapabilities,
                   }}
                   enabled={true}
                 />

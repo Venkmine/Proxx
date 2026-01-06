@@ -185,6 +185,42 @@ def write_text_report(report: JobReport, output_dir: Path) -> Path:
                 f.write(f"Resolve path:     {report.diagnostics.resolve_path}\n")
                 f.write(f"Resolve version:  {report.diagnostics.resolve_version or 'unknown'}\n")
                 f.write(f"Resolve Studio:   {report.diagnostics.resolve_studio}\n")
+            
+            # FFmpeg capabilities
+            if report.diagnostics.ffmpeg_capabilities:
+                caps = report.diagnostics.ffmpeg_capabilities
+                f.write("\nFFmpeg Capabilities:\n")
+                
+                # Hardware acceleration
+                hwaccels = caps.get("hwaccels", [])
+                if hwaccels:
+                    f.write(f"  GPU Decode:     {', '.join(hwaccels)}\n")
+                else:
+                    f.write("  GPU Decode:     None available\n")
+                
+                # GPU encoders
+                gpu_encoders = caps.get("encoders", {}).get("gpu", [])
+                if gpu_encoders:
+                    f.write(f"  GPU Encode:     {', '.join(gpu_encoders)}\n")
+                else:
+                    f.write("  GPU Encode:     None available\n")
+                
+                # CPU encoders
+                cpu_encoders = caps.get("encoders", {}).get("cpu", [])
+                if cpu_encoders:
+                    f.write(f"  CPU Encode:     {', '.join(cpu_encoders)}\n")
+                
+                # ProRes GPU assertion
+                prores_gpu = caps.get("prores_gpu_supported", False)
+                f.write(f"  ProRes GPU:     {'YES (unexpected!)' if prores_gpu else 'NO (expected - CPU only)'}\n")
+                
+                # Detection error
+                if "error" in caps:
+                    f.write(f"  Detection Error: {caps['error']}\n")
+                
+                f.write("\nNOTE: Detection only - does not affect execution behavior.\n")
+                f.write("FFmpeg GPU ≠ Resolve GPU. ProRes is always CPU in FFmpeg.\n")
+            
             f.write("\n")
 
             # Clip details

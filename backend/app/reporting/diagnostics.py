@@ -8,7 +8,7 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 def get_python_version() -> str:
@@ -83,4 +83,31 @@ def get_resolve_info() -> dict:
             "version": "unknown",
             "studio": None,
             "error": str(e),
+        }
+
+
+def get_ffmpeg_capabilities() -> Dict[str, Any]:
+    """
+    Detect FFmpeg hardware capabilities.
+    
+    Returns dict with:
+    - hwaccels: List of hardware acceleration methods
+    - encoders: Dict with 'gpu' and 'cpu' encoder lists
+    - prores_gpu_supported: Always False (explicit limitation)
+    - error: Error message if detection failed (optional)
+    
+    Note:
+        This is DETECTION ONLY - it does not change execution behavior.
+        GPU decode ≠ GPU encode. ProRes has no GPU encoder in FFmpeg.
+    """
+    try:
+        from execution.ffmpegCapabilities import detect_ffmpeg_capabilities
+        return detect_ffmpeg_capabilities()
+    except Exception as e:
+        # Return safe fallback on detection error
+        return {
+            "hwaccels": [],
+            "encoders": {"gpu": [], "cpu": []},
+            "prores_gpu_supported": False,
+            "error": f"Detection failed: {e}",
         }

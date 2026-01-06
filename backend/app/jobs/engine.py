@@ -1155,11 +1155,14 @@ class JobEngine:
             get_os_version,
             get_hostname,
             get_resolve_info,
+            get_ffmpeg_capabilities,
         )
         from ..reporting.writers import write_reports
         
         # Capture diagnostics
         resolve_info = get_resolve_info()
+        ffmpeg_caps = get_ffmpeg_capabilities()
+        
         diagnostics = DiagnosticsInfo(
             proxx_version=get_proxx_version(),
             python_version=get_python_version(),
@@ -1168,6 +1171,7 @@ class JobEngine:
             resolve_path=resolve_info.get("path"),
             resolve_version=resolve_info.get("version"),
             resolve_studio=resolve_info.get("studio"),
+            ffmpeg_capabilities=ffmpeg_caps,
         )
         
         # Build ClipReports with execution metadata

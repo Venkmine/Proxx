@@ -292,7 +292,36 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         warning_count=job.warning_count,
         tasks=task_details,
         settings_summary=settings_summary,  # Trust Stabilisation: Export intent visibility
+        ffmpeg_capabilities=_get_ffmpeg_capabilities_cached(),  # Hardware capabilities (detection only)
     )
+
+
+# Cache FFmpeg capabilities to avoid repeated detection
+_ffmpeg_capabilities_cache: Optional[dict] = None
+
+def _get_ffmpeg_capabilities_cached() -> Optional[dict]:
+    """
+    Get FFmpeg capabilities with caching.
+    
+    Capabilities are detected once and cached for the lifetime of the process.
+    This is safe because hardware doesn't change while the app is running.
+    """
+    global _ffmpeg_capabilities_cache
+    
+    if _ffmpeg_capabilities_cache is None:
+        try:
+            from app.reporting.diagnostics import get_ffmpeg_capabilities
+            _ffmpeg_capabilities_cache = get_ffmpeg_capabilities()
+        except Exception as e:
+            # Return safe fallback on error
+            _ffmpeg_capabilities_cache = {
+                "hwaccels": [],
+                "encoders": {"gpu": [], "cpu": []},
+                "prores_gpu_supported": False,
+                "error": f"Detection failed: {e}",
+            }
+    
+    return _ffmpeg_capabilities_cache
 
 
 def get_job_reports(registry: JobRegistry, job_id: str, output_dir: Optional[str] = None) -> JobReportsResponse:

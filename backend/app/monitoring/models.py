@@ -139,6 +139,9 @@ class JobDetail(BaseModel):
     # Trust Stabilisation: Settings summary for queue export intent visibility
     # Shows what will be produced, not just that a job exists
     settings_summary: Optional[dict] = None  # {preset_name, codec, container, resolution}
+    
+    # FFmpeg Capabilities (detection only, read-only)
+    ffmpeg_capabilities: Optional[dict] = None  # {hwaccels, encoders, prores_gpu_supported}
 
 
 class ReportReference(BaseModel):

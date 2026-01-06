@@ -125,6 +125,17 @@ interface JobDiagnosticsData {
   sourcePresetFingerprint?: string | null
   /** Phase 7B: Scope of preset (user or workspace) */
   sourcePresetScope?: PresetScope | null
+  
+  // FFmpeg capabilities (detection only)
+  ffmpegCapabilities?: {
+    hwaccels?: string[]
+    encoders?: {
+      gpu?: string[]
+      cpu?: string[]
+    }
+    prores_gpu_supported?: boolean
+    error?: string
+  } | null
 }
 
 interface JobDiagnosticsPanelProps {
@@ -407,6 +418,91 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
                   {JSON.stringify(data.settings, null, 2)}
                 </pre>
               )}
+            </div>
+          )}
+          
+          {/* FFmpeg Hardware Capabilities (read-only detection) */}
+          {data.ffmpegCapabilities && (
+            <div
+              style={{
+                marginTop: '0.5rem',
+                paddingTop: '0.5rem',
+                borderTop: '1px solid var(--border-secondary, #333)',
+              }}
+            >
+              <div
+                style={{
+                  color: 'var(--text-dim, #666)',
+                  fontSize: '0.6875rem',
+                  marginBottom: '0.375rem',
+                  fontWeight: 500,
+                }}
+              >
+                FFmpeg Hardware Capabilities
+              </div>
+              
+              {/* GPU Decode */}
+              <DiagnosticRow
+                label="GPU Decode"
+                value={
+                  data.ffmpegCapabilities.hwaccels && data.ffmpegCapabilities.hwaccels.length > 0
+                    ? data.ffmpegCapabilities.hwaccels.join(', ')
+                    : 'None available'
+                }
+              />
+              
+              {/* GPU Encode */}
+              <DiagnosticRow
+                label="GPU Encode"
+                value={
+                  data.ffmpegCapabilities.encoders?.gpu && data.ffmpegCapabilities.encoders.gpu.length > 0
+                    ? data.ffmpegCapabilities.encoders.gpu.join(', ')
+                    : 'None available'
+                }
+              />
+              
+              {/* ProRes GPU (always NO) */}
+              <DiagnosticRow
+                label="ProRes GPU"
+                value={
+                  data.ffmpegCapabilities.prores_gpu_supported
+                    ? '❌ YES (unexpected!)'
+                    : '❌ NO (CPU only in FFmpeg)'
+                }
+              />
+              
+              {/* Detection error */}
+              {data.ffmpegCapabilities.error && (
+                <div
+                  style={{
+                    marginTop: '0.25rem',
+                    padding: '0.375rem',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    fontSize: '0.625rem',
+                    color: 'var(--status-failed-fg, #ef4444)',
+                  }}
+                >
+                  Detection Error: {data.ffmpegCapabilities.error}
+                </div>
+              )}
+              
+              {/* Informational note */}
+              <div
+                style={{
+                  marginTop: '0.375rem',
+                  padding: '0.375rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  fontSize: '0.625rem',
+                  lineHeight: 1.4,
+                  color: 'var(--text-muted, #888)',
+                }}
+              >
+                ℹ️ Detection only — does not affect execution behavior.
+                <br />
+                FFmpeg GPU ≠ Resolve GPU. ProRes always uses CPU in FFmpeg.
+              </div>
             </div>
           )}
         </div>

@@ -186,11 +186,11 @@ export function startWatchFolder(
     })
   })
 
-  watcher.on('error', (error) => {
+  watcher.on('error', (error: unknown) => {
     console.error('[WatchService] Watcher error:', error)
     mainWindow.webContents.send('watch-folder:error', {
       watch_folder_id: config.id,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     })
   })
 

@@ -6,7 +6,7 @@ These models do NOT modify or persist job state—they are read-only views.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,7 +73,7 @@ class DiagnosticsInfo(BaseModel):
     """
     System and environment diagnostics captured at report time.
     
-    Includes Proxx version, Python/OS versions, Resolve info, etc.
+    Includes Proxx version, Python/OS versions, Resolve info, FFmpeg capabilities, etc.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -90,6 +90,9 @@ class DiagnosticsInfo(BaseModel):
     resolve_path: Optional[str] = None
     resolve_version: Optional[str] = None
     resolve_studio: Optional[bool] = None
+
+    # FFmpeg capabilities (detection only, does not affect execution)
+    ffmpeg_capabilities: Optional[Dict[str, Any]] = None
 
     # Timestamp
     generated_at: datetime = Field(default_factory=datetime.now)
