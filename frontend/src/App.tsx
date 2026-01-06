@@ -35,6 +35,8 @@ import {
   JobResult,
 } from './components/MonitorSurface'
 import { WorkspaceLayout } from './components/WorkspaceLayout'
+import { CenterBottomPanel } from './components/CenterBottomPanel'
+import { OutputTab } from './components/OutputTab'
 import { AppFooter } from './components/AppFooter'
 import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
@@ -527,6 +529,22 @@ function App() {
   
   // Phase 8B: Queue diagnostics clarity - is any job currently running?
   const hasAnyJobRunning = jobs.some(job => job.status.toUpperCase() === 'RUNNING')
+
+  // ============================================
+  // OUTPUT TAB STATE (Center Bottom Panel)
+  // ============================================
+  // State lifted to App.tsx for OutputTab rendering in center bottom panel
+  const [outputPath, setOutputPath] = useState('/path/to/output')
+  const [containerFormat, setContainerFormat] = useState('mov')
+  const [filenameTemplate, setFilenameTemplate] = useState('{source_name}_proxy')
+  const [outputDeliveryType, setOutputDeliveryType] = useState<'proxy' | 'delivery'>('proxy')
+
+  // Browse button handler (visual feedback only)
+  const handleOutputBrowseClick = useCallback(() => {
+    // NO filesystem operations, NO backend calls
+    // Just visual feedback via console (dev-only)
+    console.log('[App] Output browse button clicked (local-only, no action)')
+  }, [])
 
   // ============================================
   // APP MODE — Centralized State Machine
@@ -2437,7 +2455,7 @@ function App() {
         {/* 3-Zone Rigid Layout */}
         <WorkspaceLayout
           leftZone={
-            /* LEFT ZONE: MediaWorkspace - Sources + Output + Processing + Create Job */
+            /* LEFT ZONE: MediaWorkspace - Sources ONLY (no output/delivery controls) */
             <MediaWorkspace
               selectedFiles={selectedFiles}
               onFilesChange={setSelectedFiles}
@@ -2454,9 +2472,6 @@ function App() {
               }))}
               selectedSettingsPresetId={presetManager.selectedPresetId}
               onSettingsPresetChange={(id) => presetManager.selectPreset(id)}
-              outputDirectory={outputDirectory}
-              onOutputDirectoryChange={setOutputDirectory}
-              onSelectFolderClick={selectOutputFolder}
               pathFavorites={pathFavorites}
               onAddFavorite={addPathFavorite}
               onRemoveFavorite={removePathFavorite}
@@ -2469,7 +2484,7 @@ function App() {
                 // PROBLEM #4 FIX: Clear preview state when clearing sources
                 // SINGLE SOURCE OF TRUTH: Clear useSourceSelectionStore
                 useSourceSelectionStore.getState().clearAll()
-                setOutputDirectory('')
+                // outputDirectory NOT cleared here - it lives in Delivery panel now
                 currentPreviewSource.current = null
                 tieredPreview.reset()
               }}
@@ -2498,6 +2513,22 @@ function App() {
               isFirstClip={clipNavigationInfo?.isFirstClip ?? true}
               isLastClip={clipNavigationInfo?.isLastClip ?? true}
             />
+          }
+          centerBottomZone={
+            /* CENTER BOTTOM ZONE: OutputTab — Output configuration panel */
+            <CenterBottomPanel minHeight={200}>
+              <OutputTab
+                outputPath={outputPath}
+                onOutputPathChange={setOutputPath}
+                containerFormat={containerFormat}
+                onContainerFormatChange={setContainerFormat}
+                filenameTemplate={filenameTemplate}
+                onFilenameTemplateChange={setFilenameTemplate}
+                deliveryType={outputDeliveryType}
+                onDeliveryTypeChange={setOutputDeliveryType}
+                onBrowseClick={handleOutputBrowseClick}
+              />
+            </CenterBottomPanel>
           }
           rightZone={
             /* RIGHT ZONE: Queue ONLY (Phase F: Settings moved to left panel) */
@@ -2538,6 +2569,18 @@ function App() {
                   Queue ({filteredJobs.length})
                 </h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {/* Create Job button - SINGLE AUTHORITY LOCATION */}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      console.log('[Queue Panel] Create Job clicked (presence-only, no behavior)')
+                    }}
+                    data-testid="create-job-button"
+                    title="Add job to queue"
+                  >
+                    + Create Job
+                  </Button>
                   {selectedClipIds.size > 0 && (
                     <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
                       {selectedClipIds.size} clip(s)

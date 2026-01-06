@@ -779,21 +779,9 @@ export function CreateJobPanel({
       />
 
       {/* ================================================================= */}
-      {/* SUBMIT BUTTON */}
+      {/* SUBMIT BUTTON — REMOVED */}
+      {/* Create Job authority unified to right panel (Queue area) */}
       {/* ================================================================= */}
-      <div style={{ marginTop: '1rem' }}>
-        <JobSubmitButton
-          preflightChecks={computedPreflightChecks}
-          jobSummary={jobSummary}
-          onSubmit={onCreateJob}
-          loading={loading}
-          disabled={isDesignMode || v2JobSpecSubmitted}
-          hasSubmitIntent={hasSubmitIntent}
-          onValidationTrigger={() => {
-            // Output directory validation removed - now in Delivery panel
-          }}
-        />
-      </div>
     </div>
   )
 }
