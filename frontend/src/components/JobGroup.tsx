@@ -445,6 +445,45 @@ export function JobGroup({
 
         <StatusBadge status={status} size="md" />
         
+        {/* Engine Status Indicators - Presence-only scaffold */}
+        {/* NO detection, NO highlighting, NO behavior - structural placement only */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.375rem',
+            alignItems: 'center',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '0.625rem',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-dim)',
+              padding: '0.125rem 0.375rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-secondary)',
+            }}
+            title="FFmpeg may be used by this job"
+          >
+            FFmpeg
+          </div>
+          <div
+            style={{
+              fontSize: '0.625rem',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-dim)',
+              padding: '0.125rem 0.375rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-secondary)',
+            }}
+            title="Resolve may be used by this job"
+          >
+            Resolve
+          </div>
+        </div>
+        
         {/* Phase 8B: Queue diagnostics clarity - explain why job is waiting */}
         {normalizedStatus === 'PENDING' && hasOtherJobRunning && (
           <span

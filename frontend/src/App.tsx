@@ -2568,6 +2568,17 @@ function App() {
                 >
                   Queue ({filteredJobs.length})
                 </h3>
+                {/* Engine Status Microcopy - establishes correct mental model */}
+                <div
+                  style={{
+                    fontSize: '0.625rem',
+                    color: 'var(--text-dim)',
+                    fontStyle: 'italic',
+                    marginTop: '0.25rem',
+                  }}
+                >
+                  Execution engines are determined automatically per job.
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   {/* Create Job button - SINGLE AUTHORITY LOCATION */}
                   <Button

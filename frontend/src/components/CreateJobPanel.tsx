@@ -727,9 +727,10 @@ export function CreateJobPanel({
       </Section>
 
       {/* ================================================================= */}
-      {/* SECTION 2: ENGINE (read-only display) */}
+      {/* SECTION 2: ENGINE (neutralized - engine is job-scoped) */}
       {/* Processing settings (codec/container/audio) are in Settings panel */}
       {/* Output/Delivery configuration is in the CENTER BOTTOM PANEL */}
+      {/* Execution engine indicators now live in Queue area per job */}
       {/* ================================================================= */}
       <Section
         title="Execution Engine"
@@ -745,13 +746,13 @@ export function CreateJobPanel({
         >
           <div
             style={{
-              fontSize: '0.75rem',
+              fontSize: '0.625rem',
               fontFamily: 'var(--font-sans)',
-              color: 'var(--text-primary)',
-              fontWeight: 500,
+              color: 'var(--text-dim)',
+              lineHeight: 1.4,
             }}
           >
-            {engines.find(e => e.type === selectedEngine)?.name || selectedEngine || 'FFmpeg'}
+            Execution engine is determined automatically per job based on source format.
           </div>
           <div
             style={{
@@ -761,7 +762,7 @@ export function CreateJobPanel({
               marginTop: '0.25rem',
             }}
           >
-            Configure codec & container in Settings \u2192
+            Engine indicators will appear in the Queue area.
           </div>
         </div>
       </Section>
