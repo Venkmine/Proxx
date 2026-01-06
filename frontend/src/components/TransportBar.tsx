@@ -1045,6 +1045,52 @@ export function TransportBar({
     pointerEvents: 'none' as const,
   } : {}
   
+  // CSS for custom scrubber styles (extracted to help TypeScript parser)
+  const scrubberCSS = `
+    input[type="range"][data-testid="transport-scrubber"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: linear-gradient(
+        to right,
+        var(--accent-primary, #3b82f6) 0%,
+        var(--accent-primary, #3b82f6) var(--progress, 0%),
+        rgba(255, 255, 255, 0.1) var(--progress, 0%),
+        rgba(255, 255, 255, 0.1) 100%
+      );
+      border-radius: 2px;
+      height: 12px;
+    }
+    input[type="range"][data-testid="transport-scrubber"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 4px;
+      height: 20px;
+      border-radius: 2px;
+      background: #fff;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      margin-top: -4px;
+    }
+    input[type="range"][data-testid="transport-scrubber"]::-moz-range-thumb {
+      width: 4px;
+      height: 20px;
+      border-radius: 2px;
+      background: #fff;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    }
+    input[type="range"][data-testid="transport-scrubber"]:focus {
+      outline: none;
+    }
+    input[type="range"][data-testid="transport-scrubber"]:hover::-webkit-slider-thumb {
+      background: #e5e7eb;
+    }
+    input[type="range"][data-testid="transport-scrubber"]:hover::-moz-range-thumb {
+      background: #e5e7eb;
+    }
+  `
+  
   return (
     <div style={styles.wrapper} data-testid="transport-bar">
       {/* ======================================== */}
@@ -1256,79 +1302,7 @@ export function TransportBar({
       </div>
       
       {/* Custom scrubber styles for NLE-like timeline appearance */}
-      <style>{`
-          </span>
-        )}
-        
-        {/* Playback Disabled Label - shown when controls are visible but playback unavailable */}
-        {playbackDisabledLabel && (
-          <span 
-            style={{
-              ...styles.proxyLabel,
-              background: 'rgba(234, 179, 8, 0.15)',
-              color: 'var(--text-warning, #eab308)',
-              border: '1px solid rgba(234, 179, 8, 0.3)',
-            }}
-            title={playbackDisabledLabel}
-            data-testid="transport-playback-disabled-label"
-          >
-            {playbackDisabledLabel}
-          </span>
-        )}
-        
-        {/* Proxy Label - only show when playback is enabled */}
-        {!playbackDisabledLabel && (
-          <span style={styles.proxyLabel} title="You are viewing a preview proxy, not source media">
-            Preview Proxy
-          </span>
-        )}
-      </div>
-      
-      {/* Custom scrubber styles for NLE-like timeline appearance */}
-      <style>{`
-        input[type="range"][data-testid="transport-scrubber"] {
-          -webkit-appearance: none;
-          appearance: none;
-          background: linear-gradient(
-            to right,
-            var(--accent-primary, #3b82f6) 0%,
-            var(--accent-primary, #3b82f6) var(--progress, 0%),
-            rgba(255, 255, 255, 0.1) var(--progress, 0%),
-            rgba(255, 255, 255, 0.1) 100%
-          );
-          border-radius: 2px;
-          height: 12px;
-        }
-        input[type="range"][data-testid="transport-scrubber"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 4px;
-          height: 20px;
-          border-radius: 2px;
-          background: #fff;
-          cursor: pointer;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-          margin-top: -4px;
-        }
-        input[type="range"][data-testid="transport-scrubber"]::-moz-range-thumb {
-          width: 4px;
-          height: 20px;
-          border-radius: 2px;
-          background: #fff;
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-        }
-        input[type="range"][data-testid="transport-scrubber"]:focus {
-          outline: none;
-        }
-        input[type="range"][data-testid="transport-scrubber"]:hover::-webkit-slider-thumb {
-          background: #e5e7eb;
-        }
-        input[type="range"][data-testid="transport-scrubber"]:hover::-moz-range-thumb {
-          background: #e5e7eb;
-        }
-      `}</style>
+      <style dangerouslySetInnerHTML={{ __html: scrubberCSS }} />
     </div>
   )
 }
