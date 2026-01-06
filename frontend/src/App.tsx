@@ -281,8 +281,18 @@ function App() {
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
   
-  // Created JobSpec (UI representation only, no execution)
-  const [createdJobSpec, setCreatedJobSpec] = useState<JobSpec | null>(null)
+  // ============================================
+  // V2 PHASE 4: SEMANTIC SEPARATION OF JOB CREATION
+  // ============================================
+  // preparedJobSpec = JobSpec built by "Create Job" button (not yet queued)
+  // queuedJobSpec = JobSpec added to queue by "Add to Queue" button
+  // 
+  // INTENTIONAL DESIGN:
+  // - Create Job ONLY builds JobSpec, does NOT touch queue
+  // - Add to Queue ONLY adds to queue, triggered by explicit user action
+  // - One job policy: only one prepared, only one queued (Phase 4 simplification)
+  const [preparedJobSpec, setPreparedJobSpec] = useState<JobSpec | null>(null)
+  const [queuedJobSpec, setQueuedJobSpec] = useState<JobSpec | null>(null)
   
   // DOGFOOD FIX: Idempotency guards for job operations
   // React state updates are async, so rapid clicks can trigger duplicate operations
@@ -1289,11 +1299,13 @@ function App() {
   }
 
   // ============================================
-  // Create Job — JobSpec Builder (UI Representation Only)
+  // Create Job — JobSpec Builder ONLY (No Queue Mutation)
   // ============================================
-  // Builds JobSpec from Output tab state and creates a single queue entry.
-  // NO EXECUTION: This is purely UI representation. No backend calls, no progress, no workers.
-  // REPLACE MODE: Only one job exists at a time. Creating a new job replaces the old one.
+  // SEMANTIC CONTRACT:
+  // - Builds JobSpec from Output tab state
+  // - Stores in preparedJobSpec (NOT in queue)
+  // - NO EXECUTION, NO QUEUE INSERTION
+  // - Replaces any existing prepared job (one job policy)
   
   const handleCreateJob = useCallback(() => {
     try {
@@ -1306,15 +1318,15 @@ function App() {
         deliveryType: outputDeliveryType,
       })
       
-      // Store JobSpec (replaces any existing job)
-      setCreatedJobSpec(jobSpec)
+      // Store as PREPARED JobSpec (not queued yet)
+      setPreparedJobSpec(jobSpec)
       
       // Log success
-      console.log('[Create Job] JobSpec created:', jobSpec.job_id)
+      console.log('[Create Job] JobSpec prepared (not queued):', jobSpec.job_id)
       addStatusLogEntry({
         id: `create-job-${Date.now()}`,
         level: 'info',
-        message: `Job ${jobSpec.job_id} created with ${jobSpec.sources.length} source(s)`,
+        message: `Job ${jobSpec.job_id} prepared with ${jobSpec.sources.length} source(s) — ready to queue`,
         timestamp: new Date(),
       })
     } catch (err) {
@@ -1324,6 +1336,36 @@ function App() {
       console.error('[Create Job] Failed:', errorMsg)
     }
   }, [selectedFiles, outputDirectory, containerFormat, filenameTemplate, outputDeliveryType, addStatusLogEntry])
+  
+  // ============================================
+  // Add to Queue — Queue Insertion Handler
+  // ============================================
+  // SEMANTIC CONTRACT:
+  // - Takes prepared JobSpec and adds it to queue
+  // - Clears preparedJobSpec after queuing
+  // - Replaces any existing queued job (one job policy)
+  
+  const handleAddToQueue = useCallback(() => {
+    if (!preparedJobSpec) {
+      console.warn('[Add to Queue] No prepared JobSpec to queue')
+      return
+    }
+    
+    // Add to queue
+    setQueuedJobSpec(preparedJobSpec)
+    
+    // Clear prepared state
+    setPreparedJobSpec(null)
+    
+    // Log queue insertion
+    console.log('[Add to Queue] JobSpec queued:', preparedJobSpec.job_id)
+    addStatusLogEntry({
+      id: `queue-job-${Date.now()}`,
+      level: 'success',
+      message: `Job ${preparedJobSpec.job_id} added to queue`,
+      timestamp: new Date(),
+    })
+  }, [preparedJobSpec, addStatusLogEntry])
 
   // ============================================
   // Phase 16: New Job Actions (Start, Pause, Delete)
@@ -2218,52 +2260,53 @@ function App() {
   const unorderedJobs = jobs.filter(j => !jobOrder.includes(j.id))
   const allOrderedJobs = [...orderedJobs, ...unorderedJobs]
   
-  // V2: Inject created JobSpec as a visible queue entry (UI representation only)
-  // If createdJobSpec exists, convert it to a JobSummary and prepend to the list
-  const jobsWithCreatedSpec = useMemo(() => {
-    if (!createdJobSpec) return allOrderedJobs
+  // V2 PHASE 4: Inject QUEUED JobSpec as a visible queue entry
+  // IMPORTANT: Only queuedJobSpec appears in queue, NOT preparedJobSpec
+  // preparedJobSpec is invisible until explicitly queued via "Add to Queue"
+  const jobsWithQueuedSpec = useMemo(() => {
+    if (!queuedJobSpec) return allOrderedJobs
     
     // Convert JobSpec to JobSummary format for queue rendering
     const jobSummary: JobSummary = {
-      id: createdJobSpec.job_id,
-      status: 'PENDING',  // UI-only status
-      created_at: createdJobSpec.created_at,
+      id: queuedJobSpec.job_id,
+      status: 'PENDING',  // UI-only status (frozen, no auto-updates)
+      created_at: queuedJobSpec.created_at,
       started_at: null,
       completed_at: null,
-      total_tasks: createdJobSpec.sources.length,
+      total_tasks: queuedJobSpec.sources.length,
       completed_count: 0,
       failed_count: 0,
       skipped_count: 0,
       running_count: 0,
-      queued_count: createdJobSpec.sources.length,
+      queued_count: queuedJobSpec.sources.length,
       warning_count: 0,
     }
     
-    // REPLACE MODE: Only one job at a time
+    // ONE JOB POLICY: Only one queued job at a time (Phase 4 simplification)
     return [jobSummary]
-  }, [allOrderedJobs, createdJobSpec])
+  }, [allOrderedJobs, queuedJobSpec])
   
-  // V2: Synthesize JobDetail for created JobSpec (for rendering source names and settings)
-  const jobDetailsWithCreatedSpec = useMemo(() => {
-    if (!createdJobSpec) return jobDetails
+  // V2 PHASE 4: Synthesize JobDetail for queued JobSpec (for rendering source names and settings)
+  const jobDetailsWithQueuedSpec = useMemo(() => {
+    if (!queuedJobSpec) return jobDetails
     
     const detail: JobDetail = {
-      id: createdJobSpec.job_id,
-      status: 'PENDING',
-      created_at: createdJobSpec.created_at,
+      id: queuedJobSpec.job_id,
+      status: 'PENDING',  // Frozen status (no auto-updates, no timers, no effects)
+      created_at: queuedJobSpec.created_at,
       started_at: null,
       completed_at: null,
-      total_tasks: createdJobSpec.sources.length,
+      total_tasks: queuedJobSpec.sources.length,
       completed_count: 0,
       failed_count: 0,
       skipped_count: 0,
       running_count: 0,
-      queued_count: createdJobSpec.sources.length,
+      queued_count: queuedJobSpec.sources.length,
       warning_count: 0,
-      tasks: createdJobSpec.sources.map((sourcePath, index) => ({
-        id: `${createdJobSpec.job_id}-task-${index}`,
+      tasks: queuedJobSpec.sources.map((sourcePath, index) => ({
+        id: `${queuedJobSpec.job_id}-task-${index}`,
         source_path: sourcePath,
-        status: 'QUEUED',
+        status: 'QUEUED',  // Frozen (no auto-updates)
         started_at: null,
         completed_at: null,
         failure_reason: null,
@@ -2283,25 +2326,25 @@ function App() {
         thumbnail: null,
       })),
       settings_summary: {
-        codec: createdJobSpec.codec,
-        container: createdJobSpec.container,
-        resolution: createdJobSpec.resolution,
+        codec: queuedJobSpec.codec,
+        container: queuedJobSpec.container,
+        resolution: queuedJobSpec.resolution,
       },
       execution_engines: {
-        use_ffmpeg: createdJobSpec.execution_engines.use_ffmpeg,
-        use_resolve: createdJobSpec.execution_engines.use_resolve,
+        use_ffmpeg: queuedJobSpec.execution_engines.use_ffmpeg,
+        use_resolve: queuedJobSpec.execution_engines.use_resolve,
       },
     }
     
-    // REPLACE MODE: Only one job at a time
+    // ONE JOB POLICY: Only one queued job at a time
     const newDetails = new Map<string, JobDetail>()
-    newDetails.set(createdJobSpec.job_id, detail)
+    newDetails.set(queuedJobSpec.job_id, detail)
     return newDetails
-  }, [jobDetails, createdJobSpec])
+  }, [jobDetails, queuedJobSpec])
 
   // Apply global filters and search
   const filteredJobs = useMemo(() => {
-    return jobsWithCreatedSpec.filter(job => {
+    return jobsWithQueuedSpec.filter(job => {
       // Status filter
       if (globalStatusFilters.size > 0) {
         const jobStatus = job.status.toUpperCase()
@@ -2317,7 +2360,7 @@ function App() {
       
       // Search filter (searches clip paths in job details)
       if (searchQuery.trim()) {
-        const detail = jobDetailsWithCreatedSpec.get(job.id)
+        const detail = jobDetailsWithQueuedSpec.get(job.id)
         if (detail) {
           const query = searchQuery.toLowerCase()
           const hasMatch = detail.tasks.some(task => 
@@ -2329,7 +2372,7 @@ function App() {
       
       return true
     })
-  }, [jobsWithCreatedSpec, globalStatusFilters, dateFilter, searchQuery, jobDetailsWithCreatedSpec])
+  }, [jobsWithQueuedSpec, globalStatusFilters, dateFilter, searchQuery, jobDetailsWithQueuedSpec])
 
   // Compute status counts for filter bar
   const statusCounts = useMemo(() => {
@@ -2707,16 +2750,46 @@ function App() {
                   Execution engines are determined automatically per job.
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {/* Create Job button - SINGLE AUTHORITY LOCATION */}
+                  {/* V2 PHASE 4: Create Job button - BUILDS JobSpec ONLY, does NOT queue */}
+                  {/* DISABLED when: no sources, no output folder, or required fields missing */}
                   <Button
                     variant="primary"
                     size="sm"
                     onClick={handleCreateJob}
+                    disabled={
+                      selectedFiles.length === 0 || 
+                      !outputDirectory || 
+                      outputDirectory === '(not set)' ||
+                      (!outputDirectory.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(outputDirectory))
+                    }
                     data-testid="create-job-button"
-                    title="Add job to queue"
+                    title={
+                      selectedFiles.length === 0 
+                        ? 'Select source files to create job'
+                        : !outputDirectory || outputDirectory === '(not set)'
+                        ? 'Set output directory to create job'
+                        : (!outputDirectory.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(outputDirectory))
+                        ? 'Output directory must be an absolute path'
+                        : 'Build JobSpec from current settings'
+                    }
                   >
-                    + Create Job
+                    {preparedJobSpec ? '🔄 Rebuild Job' : '📝 Create Job'}
                   </Button>
+                  
+                  {/* V2 PHASE 4: Add to Queue button - QUEUES the prepared JobSpec */}
+                  {/* ONLY visible when a prepared JobSpec exists */}
+                  {preparedJobSpec && (
+                    <Button
+                      variant="success"
+                      size="sm"
+                      onClick={handleAddToQueue}
+                      data-testid="add-to-queue-button"
+                      title="Add prepared job to queue"
+                    >
+                      ➕ Add to Queue
+                    </Button>
+                  )}
+                  
                   {selectedClipIds.size > 0 && (
                     <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
                       {selectedClipIds.size} clip(s)
@@ -2772,7 +2845,7 @@ function App() {
                       color: 'var(--text-muted)',
                     }}
                   >
-                    {jobsWithCreatedSpec.length === 0 ? (
+                    {jobsWithQueuedSpec.length === 0 ? (
                       <>
                         <img
                           src="/branding/awaire-logo.png"
@@ -2811,7 +2884,7 @@ function App() {
                   </div>
                 ) : (
                   filteredJobs.map((job, index) => {
-                    const detail = jobDetailsWithCreatedSpec.get(job.id)
+                    const detail = jobDetailsWithQueuedSpec.get(job.id)
                     // Trust Stabilisation: Build settings summary for queue export intent visibility
                     const settingsSummary = detail?.settings_summary ? {
                       codec: detail.settings_summary.codec,
