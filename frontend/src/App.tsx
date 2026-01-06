@@ -224,6 +224,11 @@ interface JobDetail {
     container?: string
     resolution?: string
   }
+  // V2: Execution engine requirements (from JobSpec)
+  execution_engines?: {
+    use_ffmpeg: boolean
+    use_resolve: boolean
+  }
 }
 
 interface PresetInfo {
@@ -2282,6 +2287,10 @@ function App() {
         container: createdJobSpec.container,
         resolution: createdJobSpec.resolution,
       },
+      execution_engines: {
+        use_ffmpeg: createdJobSpec.execution_engines.use_ffmpeg,
+        use_resolve: createdJobSpec.execution_engines.use_resolve,
+      },
     }
     
     // REPLACE MODE: Only one job at a time
@@ -2809,6 +2818,8 @@ function App() {
                       resolution: detail.settings_summary.resolution,
                       container: detail.settings_summary.container,
                     } : undefined
+                    // V2: Execution engine requirements for indicator lights
+                    const executionEngines = detail?.execution_engines
                     return (
                       <JobGroup
                         key={job.id}
@@ -2827,6 +2838,7 @@ function App() {
                         warningCount={job.warning_count}
                         tasks={detail?.tasks || []}
                         settingsSummary={settingsSummary}
+                        executionEngines={executionEngines}
                         isSelected={selectedJobId === job.id}
                         isExpanded={isJobExpanded(job.id, job.total_tasks, job.status)}
                         isHighlighted={highlightedJobId === job.id}

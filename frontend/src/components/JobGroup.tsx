@@ -77,6 +77,12 @@ interface JobGroupProps {
   // Alpha: Settings summary for the job
   settingsSummary?: JobSettingsSummary
   
+  // V2: Execution engine requirements for indicator lights
+  executionEngines?: {
+    use_ffmpeg: boolean
+    use_resolve: boolean
+  }
+  
   // Interaction
   isSelected?: boolean
   isExpanded?: boolean  // Phase 4B: Controlled collapse state
@@ -140,6 +146,7 @@ export function JobGroup({
   warningCount,
   tasks,
   settingsSummary,
+  executionEngines,
   isSelected = false,
   isExpanded = true,  // Phase 4B: Default to expanded for backwards compatibility
   onToggleExpand,
@@ -637,6 +644,99 @@ export function JobGroup({
             {settingsSummary.resolution && settingsSummary.resolution !== 'Source' && (
               <span>• {settingsSummary.resolution}</span>
             )}
+          </div>
+        )}
+
+        {/* V2: Execution Engine Indicators - Shows which engines this job requires */}
+        {executionEngines && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              fontSize: '0.625rem',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+            }}
+            title="Required execution engines for this job"
+          >
+            {/* FFmpeg indicator */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                padding: '0.125rem 0.375rem',
+                backgroundColor: executionEngines.use_ffmpeg 
+                  ? 'rgba(34, 197, 94, 0.15)'  // Green background when required
+                  : 'rgba(71, 85, 105, 0.15)',  // Gray when not required
+                borderRadius: 'var(--radius-sm)',
+                border: `1px solid ${executionEngines.use_ffmpeg 
+                  ? 'rgba(34, 197, 94, 0.3)' 
+                  : 'rgba(71, 85, 105, 0.3)'}`,
+              }}
+            >
+              {/* Light indicator */}
+              <div
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: executionEngines.use_ffmpeg 
+                    ? '#22c55e'  // Bright green when required
+                    : '#475569',  // Gray when not required
+                  boxShadow: executionEngines.use_ffmpeg 
+                    ? '0 0 4px rgba(34, 197, 94, 0.6)' 
+                    : 'none',
+                }}
+              />
+              <span style={{ 
+                color: executionEngines.use_ffmpeg 
+                  ? 'var(--text-primary)' 
+                  : 'var(--text-dim)',
+              }}>
+                FFmpeg
+              </span>
+            </div>
+
+            {/* Resolve indicator */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                padding: '0.125rem 0.375rem',
+                backgroundColor: executionEngines.use_resolve 
+                  ? 'rgba(239, 68, 68, 0.15)'  // Red background when required
+                  : 'rgba(71, 85, 105, 0.15)',  // Gray when not required
+                borderRadius: 'var(--radius-sm)',
+                border: `1px solid ${executionEngines.use_resolve 
+                  ? 'rgba(239, 68, 68, 0.3)' 
+                  : 'rgba(71, 85, 105, 0.3)'}`,
+              }}
+            >
+              {/* Light indicator */}
+              <div
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: executionEngines.use_resolve 
+                    ? '#ef4444'  // Bright red when required
+                    : '#475569',  // Gray when not required
+                  boxShadow: executionEngines.use_resolve 
+                    ? '0 0 4px rgba(239, 68, 68, 0.6)' 
+                    : 'none',
+                }}
+              />
+              <span style={{ 
+                color: executionEngines.use_resolve 
+                  ? 'var(--text-primary)' 
+                  : 'var(--text-dim)',
+              }}>
+                Resolve
+              </span>
+            </div>
           </div>
         )}
 
