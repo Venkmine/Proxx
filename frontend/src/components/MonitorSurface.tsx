@@ -559,6 +559,23 @@ export function MonitorSurface({
             )}
           </div>
 
+          {/* Center: Filename (contextual metadata) */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: '0.75rem',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-dim, #6b7280)',
+              opacity: 0.7,
+              pointerEvents: 'none',
+            }}
+            data-testid="monitor-filename"
+          >
+            {sourceMetadata?.filename || ''}
+          </div>
+
           {/* Right: Preview Menu Button */}
           <div data-testid="preview-menu-container" style={{ position: 'relative', zIndex: 9999 }}>
             <button

@@ -529,8 +529,8 @@ const TIMECODE_MODES: {
   { 
     id: 'counter', 
     label: 'Preview Mode', 
-    shortLabel: '',  // No label - implicit preview mode (dim indicator)
-    tooltip: 'Preview mode (implicit - click to cycle)'
+    shortLabel: '',  // No text label - icon only
+    tooltip: 'Preview mode'
   },
 ]
 
@@ -658,7 +658,8 @@ export function TransportBar({
     } catch {
       // localStorage not available
     }
-    return 'preview'
+    // Default: SRC if available, otherwise preview (REC)
+    return hasSourceTimecode ? 'source' : 'preview'
   })
   
   // Timecode mode dropdown state
@@ -1166,23 +1167,8 @@ export function TransportBar({
       {/* PLAYER HEADER ROW: Filename | TC | Duration */}
       {/* ======================================== */}
       <div style={styles.headerRow} data-testid="transport-header">
-        {/* Left: Filename (contextual metadata) + Timecode with Status Indicator */}
+        {/* Left: Timecode with Status Indicator */}
         <div style={styles.headerLeft}>
-          {filename && (
-            <span
-              style={{
-                fontSize: '0.75rem',
-                fontFamily: 'var(--font-mono, monospace)',
-                color: 'var(--text-dim, #6b7280)',
-                marginRight: '0.75rem',
-                opacity: 0.7,
-              }}
-              title={filename}
-              data-testid="transport-filename"
-            >
-              {filename}
-            </span>
-          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
             {!isEditingTimecode ? (
               <>

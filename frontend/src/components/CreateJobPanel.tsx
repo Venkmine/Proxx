@@ -707,57 +707,10 @@ export function CreateJobPanel({
       </Section>
 
       {/* ================================================================= */}
-      {/* SECTION 2: ENGINE (neutralized - engine is job-scoped) */}
-      {/* Processing settings (codec/container/audio) are in Settings panel */}
+      {/* SECTION 2: SETTINGS */}
+      {/* Processing settings (codec/container/audio) */}
       {/* Output/Delivery configuration is in the CENTER BOTTOM PANEL */}
-      {/* Execution engine indicators now live in Queue area per job */}
       {/* ================================================================= */}
-      <Section
-        title="Execution Engine"
-        testId="engine-section"
-      >
-        <div
-          style={{
-            padding: '0.5rem 0.75rem',
-            background: 'rgba(0, 0, 0, 0.15)',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-secondary)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.625rem',
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-dim)',
-              lineHeight: 1.4,
-            }}
-          >
-            Execution engine is determined automatically per job based on source format.
-          </div>
-          <div
-            style={{
-              fontSize: '0.625rem',
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-dim)',
-              marginTop: '0.25rem',
-            }}
-          >
-            Engine indicators will appear in the Queue area.
-          </div>
-        </div>
-      </Section>
-
-      {/* ================================================================= */}
-      {/* SECTION 4: PREFLIGHT SUMMARY (mandatory, always visible) */}
-      {/* Rendering is gated by appMode — no red errors on initial launch */}
-      {/* ================================================================= */}
-      
-      <PreflightSummary 
-        checks={computedPreflightChecks} 
-        loading={preflightLoading}
-        appMode={appMode}
-        hasSubmitIntent={hasSubmitIntent}
-      />
 
       {/* ================================================================= */}
       {/* SUBMIT BUTTON — REMOVED */}
