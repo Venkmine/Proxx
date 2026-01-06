@@ -618,34 +618,40 @@ export function JobGroup({
 
         {/* Trust Stabilisation: Settings Summary - Shows export intent (what will be produced) */}
         {/* Format: Preset name or "Manual" · Codec Container · Resolution */}
-        {settingsSummary && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              fontSize: '0.6875rem',
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-              padding: '0.25rem 0.5rem',
-              backgroundColor: 'rgba(51, 65, 85, 0.2)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-            title="Output settings for this job"
-          >
-            {/* Codec + Container (e.g., "ProRes Proxy · MOV") */}
-            {settingsSummary.codec && (
-              <span>
-                {settingsSummary.codec}
-                {settingsSummary.container && ` · ${settingsSummary.container.toUpperCase()}`}
+        {settingsSummary && (() => {
+          const settingsText = [
+            settingsSummary.codec,
+            settingsSummary.container?.toUpperCase(),
+            settingsSummary.resolution && settingsSummary.resolution !== 'Source' ? settingsSummary.resolution : null,
+          ].filter(Boolean).join(' · ')
+          return (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                fontSize: '0.6875rem',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                padding: '0.25rem 0.5rem',
+                backgroundColor: 'rgba(51, 65, 85, 0.2)',
+                borderRadius: 'var(--radius-sm)',
+                maxWidth: '200px',
+                minWidth: 0,
+              }}
+              title={`Output settings: ${settingsText}`}
+            >
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {settingsText}
               </span>
-            )}
-            {/* Resolution (e.g., "1920×1080") */}
-            {settingsSummary.resolution && settingsSummary.resolution !== 'Source' && (
-              <span>• {settingsSummary.resolution}</span>
-            )}
-          </div>
-        )}
+            </div>
+          )
+        })()}
 
         {/* V2: Execution Engine Indicators - Shows which engines this job requires */}
         {executionEngines && (
@@ -740,15 +746,15 @@ export function JobGroup({
           </div>
         )}
 
-        {/* Clip count */}
+        {/* Clip count - explicit label */}
         <div
           style={{
-            fontSize: '0.75rem',
+            fontSize: '0.6875rem',
             color: 'var(--text-muted)',
             fontFamily: 'var(--font-mono)',
           }}
         >
-          {totalTasks} clip{totalTasks !== 1 ? 's' : ''}
+          Clips: {totalTasks}
         </div>
 
         {/* Trust Stabilisation: Always-visible action buttons in header */}
@@ -818,35 +824,6 @@ export function JobGroup({
               ⏹ Stop
             </button>
           )}
-          {/* Delete button for non-running jobs */}
-          {showDelete && onDelete && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete()
-              }}
-              disabled={loading}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border-secondary)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '0.25rem 0.5rem',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '0.6875rem',
-                fontFamily: 'var(--font-sans)',
-                color: 'var(--text-muted)',
-                opacity: loading ? 0.5 : 0.8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                transition: 'all 0.15s',
-                whiteSpace: 'nowrap',
-              }}
-              title="Remove this job from queue"
-            >
-              ✕
-            </button>
-          )}
         </div>
       </div>
 
@@ -882,13 +859,14 @@ export function JobGroup({
                 backgroundColor: 'rgba(59, 130, 246, 0.02)',
               }}
             >
-              {/* Stat Boxes */}
+              {/* Stat Boxes - Single Row Layout */}
               <div
                 style={{
                   display: 'flex',
-                  gap: '0.5rem',
+                  gap: '0.375rem',
                   marginBottom: '0.75rem',
-                  flexWrap: 'wrap',
+                  flexWrap: 'nowrap',
+                  overflow: 'hidden',
                 }}
               >
                 <StatBox
@@ -963,17 +941,6 @@ export function JobGroup({
                   </Button>
                 )}
                 {/* REMOVED: Retry Failed and Requeue buttons - violate golden path */}
-                {showDelete && (
-                  <Button
-                    data-testid="btn-job-delete"
-                    variant="destructive"
-                    size="sm"
-                    onClick={onDelete}
-                    disabled={loading}
-                  >
-                    🗑 Delete
-                  </Button>
-                )}
                 {/* Alpha: Edit Settings button for PENDING jobs */}
                 {normalizedStatus === 'PENDING' && onEditSettings && (
                   <Button
@@ -984,6 +951,18 @@ export function JobGroup({
                     title="Edit output settings for this job"
                   >
                     ✏ Edit Settings
+                  </Button>
+                )}
+                {/* Delete button - moved from header to associate with job content */}
+                {showDelete && onDelete && (
+                  <Button
+                    data-testid="btn-job-delete"
+                    variant="destructive"
+                    size="sm"
+                    onClick={onDelete}
+                    disabled={loading}
+                  >
+                    🗑 Delete
                   </Button>
                 )}
                 {/* V1: Non-functional Settings button removed - onRebindPreset only selects job with no action */}

@@ -226,15 +226,6 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
           ▶
         </span>
         <span style={{ fontWeight: 500 }}>Diagnostics</span>
-        <span
-          style={{
-            marginLeft: 'auto',
-            fontSize: '0.6875rem',
-            opacity: 0.7,
-          }}
-        >
-          {data.jobId.slice(0, 8)}
-        </span>
       </button>
       
       {/* Expanded content */}
