@@ -1,8 +1,11 @@
 /**
- * INTENT_050 — Output Tab Layout Skeleton Invariants
+ * INTENT_050 — Delivery Panel Layout Skeleton Invariants
  * 
- * Validates the pure structural layout of the Output Tab component.
+ * Validates the pure structural layout of the Delivery Panel component (center bottom).
  * NO BEHAVIOR TESTING — this is DOM, layout, and test ID verification only.
+ * 
+ * USER-FACING LABEL: "DELIVERY" (not "Output")
+ * LOCATION: Center bottom panel (below player/preview)
  * 
  * LAYOUT INVARIANTS (enforced by this test):
  * 1. No horizontal scrollbars at 1440×900
@@ -31,11 +34,11 @@ const STANDARD_VIEWPORT = { width: 1440, height: 900 }
 const MINIMUM_VIEWPORT = { width: 1280, height: 768 }
 
 // ============================================================================
-// HELPER: Render OutputTab in isolation
+// HELPER: Render Delivery Panel (OutputTab component) in isolation
 // ============================================================================
 
 async function renderOutputTabInIsolation(page: Page) {
-  // Create a minimal test harness to render OutputTab
+  // Create a minimal test harness to render Delivery Panel
   await page.setContent(`
     <!DOCTYPE html>
     <html>
@@ -168,7 +171,7 @@ async function renderOutputTabInIsolation(page: Page) {
 // TESTS
 // ============================================================================
 
-test.describe('INTENT_050: Output Tab Layout Skeleton', () => {
+test.describe('INTENT_050: Delivery Panel Layout Skeleton', () => {
   test('INVARIANT_050_001: All structural test IDs present', async ({ page }) => {
     await page.setViewportSize(STANDARD_VIEWPORT)
     await renderOutputTabInIsolation(page)

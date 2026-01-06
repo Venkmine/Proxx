@@ -172,21 +172,53 @@ const styles = {
     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
   } as React.CSSProperties,
   
+  // Player header row: TC (left), Jobs (center), Duration (right)
+  headerRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0.5rem 0.75rem',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    minHeight: '36px',
+  } as React.CSSProperties,
+  
+  headerLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.375rem',
+    flex: '0 0 auto',
+  } as React.CSSProperties,
+  
+  headerCenter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: '1 1 auto',
+  } as React.CSSProperties,
+  
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.375rem',
+    flex: '0 0 auto',
+  } as React.CSSProperties,
+  
   // Timeline scrubber row (above controls)
   scrubberRow: {
     display: 'flex',
     alignItems: 'center',
-    padding: '0.375rem 0.75rem 0.25rem',  // Reduced top padding
+    padding: '0.375rem 0.75rem 0.25rem',
     gap: '0.5rem',
   } as React.CSSProperties,
   
-  // Main controls row
+  // Main controls row - centered
   container: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '0.5rem',
-    padding: '0.25rem 0.75rem 0.375rem',  // Reduced bottom padding
-    minHeight: '40px',  // Reduced from 44px to reclaim space
+    padding: '0.25rem 0.75rem 0.375rem',
+    minHeight: '40px',
   } as React.CSSProperties,
   
   controlGroup: {
@@ -228,13 +260,6 @@ const styles = {
     background: 'var(--accent-primary, #3b82f6)',
   } as React.CSSProperties,
   
-  timecodeContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.375rem',
-    padding: '0 0.5rem',
-  } as React.CSSProperties,
-  
   timecode: {
     fontFamily: 'var(--font-mono, "SF Mono", "Monaco", monospace)',
     fontSize: '0.8125rem',
@@ -242,23 +267,44 @@ const styles = {
     letterSpacing: '0.02em',
     fontVariantNumeric: 'tabular-nums',
     cursor: 'pointer',
-    padding: '0.25rem 0.375rem',
-    borderRadius: '3px',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '4px',
     transition: 'background 0.15s',
+    background: 'rgba(255, 255, 255, 0.06)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
   } as React.CSSProperties,
   
   timecodeHover: {
-    background: 'rgba(255, 255, 255, 0.08)',
+    background: 'rgba(255, 255, 255, 0.12)',
   } as React.CSSProperties,
   
-  timecodeSeparator: {
-    color: 'var(--text-dim, #6b7280)',
-    margin: '0 0.125rem',
-  } as React.CSSProperties,
-  
-  timecodeDuration: {
+  timecodeStatus: {
+    fontSize: '0.5625rem',
+    fontFamily: 'var(--font-mono, "SF Mono", monospace)',
     color: 'var(--text-muted, #9ca3af)',
-    cursor: 'default',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    fontWeight: 600,
+  } as React.CSSProperties,
+  
+  jobsDropdown: {
+    padding: '0.375rem 0.75rem',
+    background: 'rgba(255, 255, 255, 0.06)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+    fontFamily: 'var(--font-sans, system-ui)',
+    color: 'var(--text-secondary, #9ca3af)',
+    cursor: 'not-allowed',
+    opacity: 0.5,
+  } as React.CSSProperties,
+  
+  durationDisplay: {
+    fontFamily: 'var(--font-mono, "SF Mono", "Monaco", monospace)',
+    fontSize: '0.75rem',
+    color: 'var(--text-muted, #9ca3af)',
+    letterSpacing: '0.02em',
+    fontVariantNumeric: 'tabular-nums',
   } as React.CSSProperties,
   
   timecodeModeSelector: {
@@ -454,30 +500,6 @@ const styles = {
     opacity: 0.35,
     cursor: 'not-allowed',
   } as React.CSSProperties,
-  
-  clipIndicator: {
-    fontSize: '0.625rem',
-    fontFamily: 'var(--font-mono, "SF Mono", monospace)',
-    color: 'var(--text-muted, #9ca3af)',
-    padding: '0 0.5rem',
-    whiteSpace: 'nowrap',
-  } as React.CSSProperties,
-  
-  copiedToast: {
-    position: 'fixed',
-    bottom: '80px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    padding: '0.5rem 1rem',
-    background: 'rgba(16, 185, 129, 0.9)',
-    color: '#fff',
-    borderRadius: '4px',
-    fontSize: '0.75rem',
-    fontFamily: 'var(--font-sans, system-ui)',
-    fontWeight: 500,
-    zIndex: 1000,
-    pointerEvents: 'none',
-  } as React.CSSProperties,
 }
 
 // ============================================================================
@@ -494,19 +516,19 @@ const TIMECODE_MODES: {
     id: 'source', 
     label: 'Source TC', 
     shortLabel: 'SRC',
-    tooltip: 'Source timecode from media metadata.\nMay not align with proxy playback position.'
+    tooltip: 'Source timecode from media metadata'
   },
   { 
     id: 'preview', 
-    label: 'Preview TC', 
-    shortLabel: 'PREV',
-    tooltip: 'Timecode derived from preview proxy playback.\nRepresents approximate position in media.'
+    label: 'Record TC', 
+    shortLabel: 'REC',
+    tooltip: 'Record timecode from preview proxy playback'
   },
   { 
     id: 'counter', 
-    label: 'Counter', 
-    shortLabel: 'CTR',
-    tooltip: 'Simple counter from 00:00:00:00.\nCounts elapsed playback time.'
+    label: 'Preview', 
+    shortLabel: 'PREV',
+    tooltip: 'Preview timecode position'
   },
 ]
 
@@ -639,6 +661,9 @@ export function TransportBar({
   // Timecode mode dropdown state
   const [showTimecodeDropdown, setShowTimecodeDropdown] = useState(false)
   
+  // Rotating timecode mode index (for click cycling)
+  const [timecodeRotateIndex, setTimecodeRotateIndex] = useState(0)
+  
   // Jump interval state - persist to localStorage (V1 Hardening: persist across sessions)
   const [jumpInterval, setJumpInterval] = useState<typeof JUMP_INTERVALS[0]>(() => {
     try {
@@ -655,9 +680,6 @@ export function TransportBar({
   
   // Jump interval dropdown state
   const [showJumpIntervalDropdown, setShowJumpIntervalDropdown] = useState(false)
-  
-  // Copy feedback state
-  const [showCopiedToast, setShowCopiedToast] = useState(false)
   
   // Playback speed for J/K/L shuttle
   const [playbackRate, setPlaybackRate] = useState(1)
@@ -882,16 +904,20 @@ export function TransportBar({
     }
   }, [videoRef, clock.isPlaying, playbackRate])
   
-  // Copy timecode to clipboard
-  const handleCopyTimecode = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(displayedTimecode)
-      setShowCopiedToast(true)
-      setTimeout(() => setShowCopiedToast(false), 1500)
-    } catch {
-      // Clipboard API not available
-    }
-  }, [displayedTimecode])
+  // Rotate timecode mode on click (SRC -> REC -> PREV -> SRC)
+  const handleRotateTimecode = useCallback(() => {
+    const availableModes = TIMECODE_MODES.filter(mode => {
+      // Skip source mode if no source timecode available
+      if (mode.id === 'source' && !hasSourceTimecode) return false
+      return true
+    })
+    
+    if (availableModes.length === 0) return
+    
+    const nextIndex = (timecodeRotateIndex + 1) % availableModes.length
+    setTimecodeRotateIndex(nextIndex)
+    setTimecodeMode(availableModes[nextIndex].id)
+  }, [timecodeRotateIndex, hasSourceTimecode])
   
   // Handle timecode mode change
   const handleTimecodeModeChange = useCallback((mode: TimecodeMode) => {
@@ -1021,7 +1047,52 @@ export function TransportBar({
   
   return (
     <div style={styles.wrapper} data-testid="transport-bar">
-      {/* Timeline Scrubber Row — Above controls (NLE-style) */}
+      {/* ======================================== */}
+      {/* PLAYER HEADER ROW: TC | Jobs | Duration */}
+      {/* ======================================== */}
+      <div style={styles.headerRow} data-testid="transport-header">
+        {/* Left: Rotating Timecode with Status Indicator */}
+        <div style={styles.headerLeft}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <span 
+              style={{
+                ...styles.timecode,
+                ...(timecodeHovered ? styles.timecodeHover : {}),
+              }}
+              onClick={handleRotateTimecode}
+              onMouseEnter={() => setTimecodeHovered(true)}
+              onMouseLeave={() => setTimecodeHovered(false)}
+              title={`${currentModeConfig.label} — Click to cycle modes`}
+              data-testid="transport-timecode-rotating"
+            >
+              {displayedTimecode}
+            </span>
+            <span style={styles.timecodeStatus} title={currentModeConfig.tooltip}>
+              {currentModeConfig.shortLabel}
+            </span>
+          </div>
+        </div>
+        
+        {/* Center: Job Selector Dropdown (disabled placeholder) */}
+        <div style={styles.headerCenter}>
+          <div 
+            style={styles.jobsDropdown}
+            title="Job selector (currently disabled)"
+            data-testid="transport-jobs-dropdown"
+          >
+            Jobs
+          </div>
+        </div>
+        
+        {/* Right: Duration */}
+        <div style={styles.headerRight}>
+          <span style={styles.durationDisplay} data-testid="transport-duration">
+            {durationTimecode}
+          </span>
+        </div>
+      </div>
+      
+      {/* Timeline Scrubber Row */}
       <div style={styles.scrubberRow}>
         <div style={styles.scrubberContainer}>
           {/* Tick marks layer */}
@@ -1060,28 +1131,8 @@ export function TransportBar({
         </div>
       </div>
       
-      {/* Main Controls Row */}
+      {/* Main Controls Row - Centered Transport Controls */}
       <div style={styles.container}>
-        {/* Clip Navigation: [ |<< ] */}
-        {(onPreviousClip || onNextClip) && (
-          <div style={styles.controlGroup}>
-            <button
-              onClick={onPreviousClip}
-              disabled={isFirstClip}
-              style={{
-                ...styles.clipNavButton,
-                ...(isFirstClip ? styles.clipNavButtonDisabled : {}),
-              }}
-              title={isFirstClip 
-                ? 'At first clip in job' 
-                : 'Previous clip (Cmd+←)'}
-              data-testid="transport-prev-clip"
-            >
-              <PrevClipIcon />
-            </button>
-          </div>
-        )}
-        
         {/* Frame Step and Jump Controls: [ ⏮ ] [ < ] [ Play ] [ > ] [ ⏭ ] */}
         <div style={styles.controlGroup}>
           <button
@@ -1142,147 +1193,6 @@ export function TransportBar({
           </button>
         </div>
         
-        {/* Clip Navigation: [ >>| ] */}
-        {(onPreviousClip || onNextClip) && (
-          <div style={styles.controlGroup}>
-            <button
-              onClick={onNextClip}
-              disabled={isLastClip}
-              style={{
-                ...styles.clipNavButton,
-                ...(isLastClip ? styles.clipNavButtonDisabled : {}),
-              }}
-              title={isLastClip 
-                ? 'At last clip in job' 
-                : 'Next clip (Cmd+→)'}
-              data-testid="transport-next-clip"
-            >
-              <NextClipIcon />
-            </button>
-          </div>
-        )}
-        
-        {/* Spacer */}
-        <div style={{ width: '0.5rem' }} />
-        
-        {/* Jump Interval Selector */}
-        <div style={{ position: 'relative' }}>
-          <button
-            style={styles.jumpIntervalSelector}
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowJumpIntervalDropdown(!showJumpIntervalDropdown)
-            }}
-            title="Select jump interval for < and > buttons"
-            data-testid="transport-jump-interval-selector"
-          >
-            <span>Jump:</span>
-            <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>
-              {jumpInterval.label}
-            </span>
-            <ChevronDownIcon />
-          </button>
-          
-          {showJumpIntervalDropdown && (
-            <div style={styles.jumpIntervalDropdown} onClick={(e) => e.stopPropagation()}>
-              {JUMP_INTERVALS.map((interval) => {
-                const isActive = interval.id === jumpInterval.id
-                return (
-                  <button
-                    key={interval.id}
-                    style={{
-                      ...styles.jumpIntervalOption,
-                      ...(isActive ? styles.jumpIntervalOptionActive : {}),
-                    }}
-                    onClick={() => handleJumpIntervalChange(interval)}
-                  >
-                    <span>{interval.label}</span>
-                    {isActive && <span>✓</span>}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-        
-        {/* Spacer */}
-        <div style={{ width: '0.5rem' }} />
-        
-        {/* Timecode Mode Selector */}
-        <div style={{ position: 'relative' }}>
-          <button
-            style={styles.timecodeModeSelector}
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowTimecodeDropdown(!showTimecodeDropdown)
-            }}
-            title={currentModeConfig.tooltip}
-            data-testid="transport-tc-mode-selector"
-          >
-            {currentModeConfig.shortLabel}
-            <ChevronDownIcon />
-          </button>
-          
-          {showTimecodeDropdown && (
-            <div style={styles.timecodeModeDropdown} onClick={(e) => e.stopPropagation()}>
-              {TIMECODE_MODES.map((mode) => {
-                const isDisabled = mode.id === 'source' && !hasSourceTimecode
-                const isActive = mode.id === timecodeMode
-                return (
-                  <button
-                    key={mode.id}
-                    style={{
-                      ...styles.timecodeModeOption,
-                      ...(isActive ? styles.timecodeModeOptionActive : {}),
-                      ...(isDisabled ? styles.timecodeModeOptionDisabled : {}),
-                    }}
-                    onClick={() => handleTimecodeModeChange(mode.id)}
-                    disabled={isDisabled}
-                    title={isDisabled ? 'Source timecode not available in metadata' : mode.tooltip}
-                  >
-                    <span style={{
-                      fontSize: '0.75rem',
-                      fontFamily: 'var(--font-sans)',
-                      color: isActive ? 'var(--accent-primary, #3b82f6)' : 'var(--text-primary)',
-                      fontWeight: isActive ? 600 : 400,
-                    }}>
-                      {mode.label}
-                    </span>
-                    <span style={{
-                      fontSize: '0.625rem',
-                      fontFamily: 'var(--font-sans)',
-                      color: 'var(--text-dim)',
-                    }}>
-                      {mode.tooltip.split('\n')[0]}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-        
-        {/* Timecode Display */}
-        <div style={styles.timecodeContainer}>
-          <span 
-            style={{
-              ...styles.timecode,
-              ...(timecodeHovered ? styles.timecodeHover : {}),
-            }}
-            onClick={handleCopyTimecode}
-            onMouseEnter={() => setTimecodeHovered(true)}
-            onMouseLeave={() => setTimecodeHovered(false)}
-            title="Click to copy timecode"
-            data-testid="transport-timecode"
-          >
-            {displayedTimecode}
-          </span>
-          <span style={styles.timecodeSeparator}>/</span>
-          <span style={{ ...styles.timecode, ...styles.timecodeDuration }}>
-            {durationTimecode}
-          </span>
-        </div>
-        
         {/* Volume Control — Speaker icon + horizontal slider */}
         <div
           data-testid="transport-volume-control"
@@ -1291,6 +1201,7 @@ export function TransportBar({
             alignItems: 'center',
             gap: '0.375rem',
             padding: '0 0.375rem',
+            marginLeft: '1rem',
           }}
         >
           <button
@@ -1326,13 +1237,26 @@ export function TransportBar({
           />
         </div>
         
-        {/* Clip Indicator (X of Y) - only show when in multi-clip job */}
-        {currentClip && totalClips && totalClips > 1 && (
+        {/* Playback Disabled Label - shown when controls are visible but playback unavailable */}
+        {playbackDisabledLabel && (
           <span 
-            style={styles.clipIndicator}
-            title={`Clip ${currentClip.index + 1} of ${totalClips}`}
+            style={{
+              ...styles.proxyLabel,
+              background: 'rgba(234, 179, 8, 0.15)',
+              color: 'var(--text-warning, #eab308)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+              marginLeft: '1rem',
+            }}
+            title={playbackDisabledLabel}
+            data-testid="transport-playback-disabled-label"
           >
-            {currentClip.index + 1} / {totalClips}
+            {playbackDisabledLabel}
+          </span>
+        )}
+      </div>
+      
+      {/* Custom scrubber styles for NLE-like timeline appearance */}
+      <style>{`
           </span>
         )}
         
@@ -1359,13 +1283,6 @@ export function TransportBar({
           </span>
         )}
       </div>
-      
-      {/* Copied Toast */}
-      {showCopiedToast && (
-        <div style={styles.copiedToast}>
-          Timecode copied
-        </div>
-      )}
       
       {/* Custom scrubber styles for NLE-like timeline appearance */}
       <style>{`

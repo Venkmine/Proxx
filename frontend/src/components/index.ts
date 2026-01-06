@@ -85,6 +85,7 @@ export { VisualPreviewModal } from './VisualPreviewModal'
 // Phase 24: 4-Region Persistent Workspace Layout
 export { WorkspaceLayout } from './WorkspaceLayout'
 export { VisualPreviewWorkspace } from './VisualPreviewWorkspace'
+export { CenterBottomPanel } from './CenterBottomPanel'
 
 // Alpha: Preview & Processing Feedback
 export { PreviewPanel } from './PreviewPanel'

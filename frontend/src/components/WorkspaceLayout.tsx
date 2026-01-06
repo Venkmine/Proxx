@@ -55,6 +55,8 @@ interface WorkspaceLayoutProps {
   leftZone: ReactNode
   /** Center zone content (MonitorSurface ONLY - no settings, no forms) */
   centerZone: ReactNode
+  /** Center bottom zone content (OutputTab, Timeline, etc.) */
+  centerBottomZone?: ReactNode
   /** Right zone content (Queue ONLY - no settings tab) */
   rightZone: ReactNode
 }
@@ -66,6 +68,7 @@ interface WorkspaceLayoutProps {
 export function WorkspaceLayout({
   leftZone,
   centerZone,
+  centerBottomZone,
   rightZone,
 }: WorkspaceLayoutProps) {
   // Phase F: Simplified to queue-only right panel - no tabs needed
@@ -99,7 +102,7 @@ export function WorkspaceLayout({
         {leftZone}
       </aside>
 
-      {/* CENTER ZONE — Full-bleed Monitor Surface, fills remaining space */}
+      {/* CENTER ZONE — Vertical split: Player + Center Bottom Panel */}
       <main
         data-testid="center-zone"
         style={{
@@ -107,16 +110,38 @@ export function WorkspaceLayout({
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
-          /* NOTE: overflow visible to allow preview menu to float above adjacent panels */
-          overflow: 'visible',
-          position: 'relative',
-          /* True black background for monitor surface — no card styling */
+          overflow: 'hidden',
+          /* True black background for monitor surface */
           background: '#0a0b0d',
-          /* No padding — monitor fills edge-to-edge */
-          padding: 0,
         }}
       >
-        {centerZone}
+        {/* Top: Player / Preview Area */}
+        <div
+          data-testid="center-player-area"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            /* NOTE: overflow visible to allow preview menu to float above adjacent panels */
+            overflow: 'visible',
+            position: 'relative',
+          }}
+        >
+          {centerZone}
+        </div>
+
+        {/* Bottom: Center Bottom Panel (OutputTab, etc.) */}
+        {centerBottomZone && (
+          <div
+            data-testid="center-bottom-area"
+            style={{
+              flexShrink: 0,
+            }}
+          >
+            {centerBottomZone}
+          </div>
+        )}
       </main>
 
       {/* RIGHT ZONE — IMMUTABLE 420px, Queue ONLY (Phase F: No tabs) */}

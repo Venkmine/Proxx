@@ -23,7 +23,6 @@
 import { useState } from 'react'
 import { CreateJobPanel } from './CreateJobPanel'
 import { SourceMetadataPanel } from './SourceMetadataPanel'
-import { OutputTab } from './OutputTab'
 import type { WorkspaceMode } from '../stores/workspaceModeStore'
 import type { DeliverSettings } from './DeliverControlPanel'
 import { SourceSelectionState } from '../stores/sourceSelectionStore'
@@ -65,19 +64,14 @@ interface MediaWorkspaceProps {
   selectedSettingsPresetId: string | null
   onSettingsPresetChange: (presetId: string | null) => void
   
-  // Output directory
-  outputDirectory: string
-  onOutputDirectoryChange: (dir: string) => void
-  onSelectFolderClick: () => void
+  // Favorites (kept for potential future use)
+  pathFavorites?: string[]
+  onAddFavorite?: (path: string) => void
+  onRemoveFavorite?: (path: string) => void
   
-  // Favorites
-  pathFavorites: string[]
-  onAddFavorite: (path: string) => void
-  onRemoveFavorite: (path: string) => void
-  
-  folderFavorites: string[]
-  onAddFolderFavorite: (path: string) => void
-  onRemoveFolderFavorite: (path: string) => void
+  folderFavorites?: string[]
+  onAddFolderFavorite?: (path: string) => void
+  onRemoveFolderFavorite?: (path: string) => void
   
   // Actions
   onCreateJob: () => void
@@ -106,9 +100,6 @@ export function MediaWorkspace({
   settingsPresets,
   selectedSettingsPresetId,
   onSettingsPresetChange,
-  outputDirectory,
-  onOutputDirectoryChange,
-  onSelectFolderClick,
   pathFavorites,
   onAddFavorite,
   onRemoveFavorite,
@@ -121,19 +112,6 @@ export function MediaWorkspace({
   hasSubmitIntent = false,
   v2JobSpecSubmitted = false,
 }: MediaWorkspaceProps) {
-  // Output tab state (lifted from OutputTab component)
-  const [outputPath, setOutputPath] = useState('/path/to/output')
-  const [containerFormat, setContainerFormat] = useState('mov')
-  const [filenameTemplate, setFilenameTemplate] = useState('{source_name}_proxy')
-  const [deliveryType, setDeliveryType] = useState<'proxy' | 'delivery'>('proxy')
-
-  // Browse button handler (visual feedback only)
-  const handleBrowseClick = () => {
-    // NO filesystem operations, NO backend calls
-    // Just visual feedback via console (dev-only)
-    console.log('[MediaWorkspace] Browse button clicked (local-only, no action)')
-  }
-
   return (
     <div
       style={{
@@ -188,9 +166,6 @@ export function MediaWorkspace({
           settingsPresets={settingsPresets}
           selectedSettingsPresetId={selectedSettingsPresetId}
           onSettingsPresetChange={onSettingsPresetChange}
-          outputDirectory={outputDirectory}
-          onOutputDirectoryChange={onOutputDirectoryChange}
-          onSelectFolderClick={onSelectFolderClick}
           pathFavorites={pathFavorites}
           onAddFavorite={onAddFavorite}
           onRemoveFavorite={onRemoveFavorite}
@@ -205,19 +180,6 @@ export function MediaWorkspace({
           v2JobSpecSubmitted={v2JobSpecSubmitted}
         />
       </div>
-
-      {/* Output Tab — Output configuration (controlled by parent state) */}
-      <OutputTab
-        outputPath={outputPath}
-        onOutputPathChange={setOutputPath}
-        containerFormat={containerFormat}
-        onContainerFormatChange={setContainerFormat}
-        filenameTemplate={filenameTemplate}
-        onFilenameTemplateChange={setFilenameTemplate}
-        deliveryType={deliveryType}
-        onDeliveryTypeChange={setDeliveryType}
-        onBrowseClick={handleBrowseClick}
-      />
 
       {/* Metadata Panel — Always visible below content */}
       <SourceMetadataPanel

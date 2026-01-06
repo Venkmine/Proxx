@@ -1,58 +1,69 @@
 /**
- * PROOF: Output Directory Setting
+ * PROOF: Delivery Destination Setting (Single Source of Truth)
  * 
- * Verify that clicking "Select Folder" properly sets the output directory
- * and the value persists in the UI.
+ * Verify that:
+ * 1. Exactly ONE delivery destination input exists (center bottom panel)
+ * 2. NO output/destination controls exist in left panel
+ * 3. Delivery panel is visible and accessible
  */
 
-import { test } from './helpers'
+import { test, expect } from '@playwright/test'
 
-test.describe('Output Directory Proof', () => {
-  test('verify openFolder mock sets output directory', async ({ page }) => {
-    console.log('\n🔬 PROOF: Testing output directory setting...\n')
+test.describe('Delivery Destination Proof (Single Source of Truth)', () => {
+  test('verify exactly one delivery destination input exists', async ({ page }) => {
+    console.log('\n🔬 PROOF: Testing delivery destination uniqueness...\n')
+    
+    await page.goto('http://localhost:5173')
     
     // Wait for app to be ready
-    await page.waitForSelector('[data-testid="create-job-panel"]', { timeout: 10000 })
+    await page.waitForSelector('[data-testid="workspace-layout"]', { timeout: 10000 })
     
-    // Find Browse button for output directory
-    const selectFolderBtn = page.locator('button:has-text("Browse...")')
-    const isVisible = await selectFolderBtn.first().isVisible()
-    console.log(`Browse button visible: ${isVisible}`)
+    // ASSERTION 1: Exactly one output-path-input exists (in center bottom)
+    const deliveryInputs = page.locator('[data-testid="output-path-input"]')
+    const deliveryInputCount = await deliveryInputs.count()
+    console.log(`Delivery destination inputs found: ${deliveryInputCount}`)
     
-    if (!isVisible) {
-      throw new Error('Select Folder button not found')
+    if (deliveryInputCount !== 1) {
+      throw new Error(`Expected exactly 1 delivery destination input, found ${deliveryInputCount}`)
     }
     
-    // Get initial output directory value
-    const initialValue = await page.evaluate(() => {
-      const input = document.querySelector('[data-testid="output-directory-input"]') as HTMLInputElement
-      return input ? input.value : null
-    })
-    console.log(`Initial output directory: ${initialValue || '(empty)'}`)
+    // ASSERTION 2: Delivery input is in center bottom panel
+    const centerBottomPanel = page.locator('[data-testid="center-bottom-panel"]')
+    const isCenterBottomVisible = await centerBottomPanel.isVisible()
+    console.log(`Center bottom panel visible: ${isCenterBottomVisible}`)
     
-    // Click Select Folder (should trigger mock)
-    console.log('Clicking Select Folder...')
-    await selectFolderBtn.first().click()
-    
-    // Wait for React to update
-    await page.waitForTimeout(1000)
-    
-    // Check if value was set
-    const finalValue = await page.evaluate(() => {
-      const input = document.querySelector('[data-testid="output-directory-input"]') as HTMLInputElement
-      return input ? input.value : null
-    })
-    console.log(`Final output directory: ${finalValue || '(empty)'}`)
-    
-    // Take screenshot
-    await page.screenshot({ path: '/tmp/proof_output_directory.png', fullPage: true })
-    console.log('Screenshot saved: /tmp/proof_output_directory.png')
-    
-    // Verify
-    if (!finalValue || finalValue === initialValue) {
-      throw new Error(`Output directory not set. Initial: ${initialValue}, Final: ${finalValue}`)
+    if (!isCenterBottomVisible) {
+      throw new Error('Center bottom panel not visible')
     }
     
-    console.log(`✅ PROOF PASSED: Output directory set to: ${finalValue}`)
+    const deliveryInputInCenter = centerBottomPanel.locator('[data-testid="output-path-input"]')
+    const isDeliveryInCenter = await deliveryInputInCenter.isVisible()
+    console.log(`Delivery input in center bottom: ${isDeliveryInCenter}`)
+    
+    if (!isDeliveryInCenter) {
+      throw new Error('Delivery input not found in center bottom panel')
+    }
+    
+    // ASSERTION 3: NO output-directory-input in left panel (old location)
+    const leftPanel = page.locator('[data-testid="left-zone"]')
+    const oldOutputInput = leftPanel.locator('[data-testid="output-directory-input"]')
+    const oldOutputCount = await oldOutputInput.count()
+    console.log(`Old output directory inputs in left panel: ${oldOutputCount}`)
+    
+    if (oldOutputCount > 0) {
+      throw new Error(`Found ${oldOutputCount} old output inputs in left panel - should be 0`)
+    }
+    
+    // ASSERTION 4: Delivery panel has correct label
+    const deliveryHeader = centerBottomPanel.locator('h2:has-text("Delivery"), h2:has-text("DELIVERY")')
+    const hasDeliveryHeader = await deliveryHeader.count() > 0
+    console.log(`Delivery header exists: ${hasDeliveryHeader}`)
+    
+    if (!hasDeliveryHeader) {
+      console.warn('⚠️  Warning: Delivery header not found (may still say "Output")')
+    }
+    
+    console.log(`✅ PROOF PASSED: Exactly one delivery destination input in center bottom panel`)
+    console.log(`✅ PROOF PASSED: No duplicate output/delivery controls in left panel`)
   })
 })

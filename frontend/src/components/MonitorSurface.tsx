@@ -533,7 +533,8 @@ export function MonitorSurface({
                         : previewMode
               } 
             />
-            {canPlaybackNow && (
+            {/* Zoom indicator disabled - double-click still works */}
+            {canPlaybackNow && false && (
               <div
                 style={{
                   padding: '0.25rem 0.5rem',

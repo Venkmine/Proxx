@@ -1,6 +1,8 @@
 /**
  * OutputTab — Controlled Component (State Lifted to Parent)
  * 
+ * USER-FACING LABEL: "DELIVERY" (not "Output")
+ * 
  * ⚠️ FULLY CONTROLLED — NO LOCAL STATE, NO VALIDATION, NO SIDE EFFECTS
  * 
  * All state managed by parent (MediaWorkspace).
@@ -24,7 +26,7 @@
  * 
  * STRUCTURE:
  * ┌────────────────────────────────────────────┐
- * │ OUTPUT                                     │
+ * │ DELIVERY                                   │
  * ├────────────────────────────────────────────┤
  * │                                            │
  * │ ┌────────────┐ ┌────────────┐ ┌──────────┐ │
@@ -106,7 +108,7 @@ export function OutputTab({
             letterSpacing: '0.02em',
           }}
         >
-          Output
+          Delivery
         </h2>
       </div>
 
@@ -132,7 +134,7 @@ export function OutputTab({
               letterSpacing: '0.05em',
             }}
           >
-            Destination
+            Delivery Destination
           </h3>
 
           <button
@@ -158,7 +160,7 @@ export function OutputTab({
               e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'
             }}
           >
-            Select Output Folder
+            Select Delivery Folder
           </button>
 
           <input

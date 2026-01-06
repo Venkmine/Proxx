@@ -174,7 +174,7 @@ export function PreflightSummary({ checks, loading = false, appMode = 'ready', h
           fontFamily: 'var(--font-sans)',
           color: 'var(--text-secondary)',
         }}>
-          Preflight: {passCount} pass · {warningCount} warn · {failCount} fail
+          Job Readiness: {passCount} pass · {warningCount} warn · {failCount} fail
         </span>
       </div>
     )
@@ -231,7 +231,7 @@ export function PreflightSummary({ checks, loading = false, appMode = 'ready', h
             letterSpacing: '-0.01em',
           }}
         >
-          {isConfiguringMode ? 'Setup Required' : 'Preflight Summary'}
+          {isConfiguringMode ? 'Setup Required' : 'Job Readiness'}
         </h3>
         <span
           style={{
