@@ -3080,11 +3080,9 @@ function App() {
                             throw new Error(normalized.message)
                           }
                           const result = await response.json()
-                          addStatusLogEntry({
-                            timestamp: new Date(),
-                            message: result.message || 'Execution started',
-                            type: 'success'
-                          })
+                          addStatusLogEntry(statusMessages.executionStarted(
+                            jobs.filter(j => j.status.toUpperCase() === 'PENDING').length
+                          ))
                           await fetchJobs()
                         } catch (err) {
                           setError(err instanceof Error ? err.message : 'Failed to start execution')

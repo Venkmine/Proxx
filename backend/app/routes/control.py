@@ -1729,14 +1729,19 @@ async def start_execution_endpoint(request: Request):
             )
         
         logger.info(f"[MANUAL_EXEC] Starting execution of {len(pending_jobs)} PENDING job(s)")
+        logger.info(f"[TRACE:API:START] ═══ EXECUTION TRIGGERED VIA UI ═══")
+        logger.info(f"[TRACE:API:START] Pending jobs: {[j.id[:8] for j in pending_jobs]}")
         
         # Enqueue all PENDING jobs in FIFO order
         for job in pending_jobs:
             scheduler.enqueue_job(job.id)
+            logger.info(f"[TRACE:API:ENQUEUE] Job {job.id[:8]} enqueued")
         
         # Start the first job (others will execute in sequence)
         first_job = pending_jobs[0]
+        logger.info(f"[TRACE:API:ACQUIRE] Acquiring execution slot for {first_job.id[:8]}")
         queue_position = scheduler.acquire_execution(first_job.id)
+        logger.info(f"[TRACE:API:ACQUIRE] Queue position: {queue_position}")
         
         if queue_position:
             # Get preset if bound
@@ -1748,22 +1753,28 @@ async def start_execution_endpoint(request: Request):
                     preset_id = None
             
             logger.info(f"[MANUAL_EXEC] Starting first job: {first_job.id}")
+            logger.info(f"[TRACE:API:THREAD] Spawning execution thread for job {first_job.id[:8]}")
+            logger.info(f"[TRACE:API:THREAD] Preset: {preset_id or '(none)'}")
             
             # Execute the first job (in background thread to not block API)
             import threading
             def execute_async():
                 try:
+                    logger.info(f"[TRACE:THREAD:START] ═══ THREAD EXECUTING {first_job.id[:8]} ═══")
                     job_engine.execute_job(
                         job=first_job,
                         global_preset_id=preset_id,
                         preset_registry=preset_registry,
                         generate_reports=True,
                     )
+                    logger.info(f"[TRACE:THREAD:DONE] Job {first_job.id[:8]} execution completed")
                 finally:
                     scheduler.release_execution(first_job.id)
+                    logger.info(f"[TRACE:THREAD:RELEASE] Released execution slot for {first_job.id[:8]}")
             
             thread = threading.Thread(target=execute_async, daemon=True)
             thread.start()
+            logger.info(f"[TRACE:API:THREAD] Thread started for job {first_job.id[:8]}")
         
         return OperationResponse(
             success=True,

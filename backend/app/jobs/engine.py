@@ -607,14 +607,23 @@ class JobEngine:
         import logging
         logger = logging.getLogger(__name__)
         
+        logger.info(f"[TRACE:TASK:ENTRY] ═══ _execute_task CALLED ═══")
+        logger.info(f"[TRACE:TASK:ENTRY] Task ID: {task.id}")
+        logger.info(f"[TRACE:TASK:ENTRY] Source: {task.source_path}")
+        logger.info(f"[TRACE:TASK:ENTRY] Output: {task.output_path}")
+        logger.info(f"[TRACE:TASK:ENTRY] Job engine: {job.engine or '(none)'}")
+        
         # Phase 16.1: Use engine if bound to job
         if job.engine and self.engine_registry:
             from ..execution.base import EngineType
             from ..execution.resolved_params import ResolvedPresetParams, DEFAULT_H264_PARAMS
             
+            logger.info(f"[TRACE:TASK:ENGINE] Engine registry present, attempting to get engine")
             try:
                 engine_type = EngineType(job.engine)
+                logger.info(f"[TRACE:TASK:ENGINE] Engine type: {engine_type}")
                 engine = self.engine_registry.get_available_engine(engine_type)
+                logger.info(f"[TRACE:TASK:ENGINE] Engine acquired: {engine.name}")
                 
                 # Alpha: Resolve params from preset or job settings
                 resolved_params = None
@@ -685,13 +694,21 @@ class JobEngine:
                         f"(ETA: {progress_info.eta_seconds or 'N/A'}s)"
                     )
                 
-                return engine.run_clip(
+                logger.info(f"[TRACE:TASK:RUN] ═══ CALLING engine.run_clip ═══")
+                logger.info(f"[TRACE:TASK:RUN] Engine: {engine.name}")
+                logger.info(f"[TRACE:TASK:RUN] Task ID: {task.id}")
+                logger.info(f"[TRACE:TASK:RUN] Output path: {task.output_path}")
+                logger.info(f"[TRACE:TASK:RUN] Resolved params: {resolved_params.preset_id}")
+                result = engine.run_clip(
                     task=task,
                     resolved_params=resolved_params,
                     output_path=task.output_path,  # Already resolved, stored on task
                     watermark_text=watermark_text,
                     on_progress=on_progress_callback,
                 )
+                logger.info(f"[TRACE:TASK:RUN] engine.run_clip returned: {result.status}")
+                logger.info(f"[TRACE:TASK:RUN] Output from engine: {result.output_path}")
+                return result
             except Exception as e:
                 # If engine execution fails, return a failed result
                 from ..execution.results import ExecutionResult, ExecutionStatus
@@ -869,12 +886,17 @@ class JobEngine:
         logger = logging.getLogger(__name__)
         trace_mgr = get_trace_manager()
         
+        logger.info(f"[TRACE:PROCESS:ENTRY] ═══ _process_job CALLED ═══")
+        logger.info(f"[TRACE:PROCESS:ENTRY] Job ID: {job.id}")
+        logger.info(f"[TRACE:PROCESS:ENTRY] Preset: {global_preset_id}")
+        
         # Track ExecutionResults for reporting (Phase 8)
         execution_results: Dict[str, "ExecutionResult"] = {}
         
         # Log engine info
         engine_name = job.engine or "resolve (legacy)"
         logger.info(f"Processing job {job.id} with engine: {engine_name}")
+        logger.info(f"[TRACE:PROCESS:ENGINE] Using engine: {engine_name}")
         
         # Phase 16.4: Resolve ALL output paths BEFORE any execution starts
         # This ensures paths are computed once and stored on tasks
@@ -963,7 +985,11 @@ class JobEngine:
             )
             
             # Transition task to RUNNING
+            logger.info(f"[TRACE:PROCESS:TASK] ═══ EXECUTING TASK {task.id} ═══")
+            logger.info(f"[TRACE:PROCESS:TASK] Source: {task.source_path}")
+            logger.info(f"[TRACE:PROCESS:TASK] Output: {task.output_path or '(not resolved)'}")
             self.update_task_status(task, TaskStatus.RUNNING)
+            logger.info(f"[TRACE:PROCESS:TASK] Task transitioned to RUNNING")
             
             # Record clip start event
             job.event_recorder.record(
@@ -973,6 +999,7 @@ class JobEngine:
             )
             
             # Execute single clip via engine
+            logger.info(f"[TRACE:PROCESS:EXECUTE] Calling _execute_task for {task.id}")
             result = self._execute_task(
                 task=task,
                 job=job,
@@ -980,6 +1007,8 @@ class JobEngine:
                 preset_registry=preset_registry,
                 output_base_dir=output_base_dir,
             )
+            logger.info(f"[TRACE:PROCESS:EXECUTE] _execute_task returned status: {result.status}")
+            logger.info(f"[TRACE:PROCESS:EXECUTE] Output path: {result.output_path}")
             
             # Store result for reporting (Phase 8)
             execution_results[task.id] = result
@@ -1151,6 +1180,12 @@ class JobEngine:
         import logging
         logger = logging.getLogger(__name__)
         
+        logger.info(f"[TRACE:ENGINE:ENTRY] ═══ JobEngine.execute_job CALLED ═══")
+        logger.info(f"[TRACE:ENGINE:ENTRY] Job ID: {job.id}")
+        logger.info(f"[TRACE:ENGINE:ENTRY] Job status: {job.status}")
+        logger.info(f"[TRACE:ENGINE:ENTRY] Tasks: {len(job.tasks)} total, {len([t for t in job.tasks if t.status == TaskStatus.QUEUED])} queued")
+        logger.info(f"[TRACE:ENGINE:ENTRY] Global preset: {global_preset_id or '(none)'}")
+        
         # Alpha: Preset is optional - resolve if available
         effective_preset_id = None
         
@@ -1199,15 +1234,19 @@ class JobEngine:
                 raise ValueError(f"Engine not available: {e}")
         
         # Start the job
+        logger.info(f"[TRACE:ENGINE:START] Starting job {job.id[:8]}")
         self.start_job(job)
+        logger.info(f"[TRACE:ENGINE:START] Job {job.id[:8]} transitioned to RUNNING")
         
         # Process all tasks
+        logger.info(f"[TRACE:ENGINE:PROCESS] Calling _process_job for {job.id[:8]}")
         execution_results = self._process_job(
             job=job,
             global_preset_id=effective_preset_id,
             preset_registry=preset_registry,
             output_base_dir=output_base_dir,
         )
+        logger.info(f"[TRACE:ENGINE:PROCESS] _process_job returned {len(execution_results)} results")
         
         # Generate reports if requested
         if generate_reports:

@@ -56,6 +56,18 @@ export function jobStarted(jobId: string, clipCount: number): StatusLogEntry {
 }
 
 /**
+ * Manual execution started via Start Execution button.
+ */
+export function executionStarted(pendingJobCount: number): StatusLogEntry {
+  const jobText = pendingJobCount === 1 ? '1 job' : `${pendingJobCount} jobs`
+  return createEntry(
+    'success',
+    `Execution started for ${jobText}`,
+    `Jobs will execute in FIFO order`
+  )
+}
+
+/**
  * Job execution resumed after pause or recovery.
  */
 export function jobResumed(jobId: string): StatusLogEntry {

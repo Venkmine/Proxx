@@ -646,6 +646,12 @@ class FFmpegEngine(ExecutionEngine):
                 f"This is a bug in the caller - presets must be resolved before reaching engine."
             )
         
+        logger.info(f"[TRACE:FFMPEG:ENTRY] ═══ FFmpegEngine.run_clip CALLED ═══")
+        logger.info(f"[TRACE:FFMPEG:ENTRY] Task ID: {task.id}")
+        logger.info(f"[TRACE:FFMPEG:ENTRY] Source: {task.source_path}")
+        logger.info(f"[TRACE:FFMPEG:ENTRY] Output: {output_path}")
+        logger.info(f"[TRACE:FFMPEG:ENTRY] Codec: {resolved_params.video_codec}")
+        
         start_time = datetime.now()
         source_path_str = task.source_path
         
@@ -671,12 +677,14 @@ class FFmpegEngine(ExecutionEngine):
         
         # Build command
         try:
+            logger.info(f"[TRACE:FFMPEG:BUILD] Building FFmpeg command")
             cmd = self._build_ffmpeg_command(
                 source_path=source_path_str,
                 output_path=output_path,
                 resolved_params=resolved_params,
                 watermark_text=watermark_text,
             )
+            logger.info(f"[TRACE:FFMPEG:BUILD] Command built: {' '.join(cmd[:5])}... ({len(cmd)} args)")
         except Exception as e:
             return ExecutionResult(
                 status=ExecutionStatus.FAILED,
@@ -690,6 +698,8 @@ class FFmpegEngine(ExecutionEngine):
         # Log the command for audit
         cmd_string = " ".join(cmd)
         logger.info(f"[FFmpeg] Executing: {cmd_string}")
+        logger.info(f"[TRACE:FFMPEG:EXEC] ═══ SPAWNING FFmpeg SUBPROCESS ═══")
+        logger.info(f"[TRACE:FFMPEG:EXEC] Full command: {cmd_string}")
         
         # Initialize progress parser
         duration = task.duration if task.duration else 0.0
@@ -757,6 +767,9 @@ class FFmpegEngine(ExecutionEngine):
             end_time = datetime.now()
             
             logger.info(f"[FFmpeg] PID {process.pid} exited with code {exit_code}")
+            logger.info(f"[TRACE:FFMPEG:DONE] ═══ FFmpeg COMPLETED ═══")
+            logger.info(f"[TRACE:FFMPEG:DONE] Exit code: {exit_code}")
+            logger.info(f"[TRACE:FFMPEG:DONE] Duration: {(end_time - start_time).total_seconds():.1f}s")
             
             # Log full stderr for debugging (before truncation)
             if stderr:
