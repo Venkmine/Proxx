@@ -51,7 +51,10 @@ function getJobDisplayFields(job: JobView) {
  */
 function JobRow({ job, onClick }: JobRowProps) {
   const fields = getJobDisplayFields(job);
-  const hasError = fields.final_status === "failed" || fields.final_status === "error";
+  const status = fields.final_status.toLowerCase();
+  const isHighPriority = status === "running" || status === "failed" || status === "blocked";
+  const isComplete = status === "completed";
+  const isQueued = status === "queued" || status === "pending";
   
   const handleClick = () => {
     onClick(job.job_id);
@@ -64,23 +67,32 @@ function JobRow({ job, onClick }: JobRowProps) {
     }
   };
   
+  // Compact status badge (just icon + state name)
+  const statusBadgeText = fields.final_status.toUpperCase();
+  
   return (
     <tr
-      className={`job-row ${hasError ? "job-row--error" : ""}`}
+      className={`job-row job-row--${status} ${isHighPriority ? "job-row--priority" : ""}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
       role="button"
       aria-label={`View job ${fields.job_id}`}
+      data-job-id={fields.job_id}
     >
-      <td className="job-cell job-cell--id">{fields.job_id}</td>
-      <td className="job-cell job-cell--status">
-        <span className="status-icon">{fields.status_icon}</span>
-        {fields.final_status_formatted}
+      <td className="job-cell job-cell--id" title={fields.job_id}>{fields.job_id}</td>
+      <td className="job-cell job-cell--status" data-testid="job-status">
+        <span className={`status-badge status-badge--${status}`}>
+          <span className="status-badge__icon">{fields.status_icon}</span>
+          <span className="status-badge__text">{statusBadgeText}</span>
+        </span>
       </td>
-      <td className="job-cell job-cell--profile">{fields.proxy_profile}</td>
-      <td className="job-cell job-cell--engine">{fields.engine_used}</td>
-      <td className="job-cell job-cell--created">{fields.created_at}</td>
+      <td className="job-cell job-cell--engine" title={fields.engine_used}>
+        {fields.engine_used !== "(none)" ? fields.engine_used : "—"}
+      </td>
+      <td className="job-cell job-cell--profile" title={fields.proxy_profile}>
+        {fields.proxy_profile !== "(none)" ? fields.proxy_profile : "—"}
+      </td>
       <td className="job-cell job-cell--annotations">{fields.annotation_count}</td>
     </tr>
   );
@@ -175,12 +187,11 @@ export function JobsList({ onJobClick, className = "" }: JobsListProps) {
       <table className="jobs-table">
         <thead>
           <tr>
-            <th className="jobs-table__header">Job ID</th>
-            <th className="jobs-table__header">Status</th>
-            <th className="jobs-table__header">Proxy Profile</th>
-            <th className="jobs-table__header">Engine</th>
-            <th className="jobs-table__header">Created</th>
-            <th className="jobs-table__header">Annotations</th>
+            <th className="jobs-table__header jobs-table__header--id">ID</th>
+            <th className="jobs-table__header jobs-table__header--status">State</th>
+            <th className="jobs-table__header jobs-table__header--engine">Engine</th>
+            <th className="jobs-table__header jobs-table__header--profile">Profile</th>
+            <th className="jobs-table__header jobs-table__header--annotations">Notes</th>
           </tr>
         </thead>
         <tbody>
