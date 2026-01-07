@@ -148,6 +148,9 @@ class JobDetail(BaseModel):
     
     # Execution Outcome (read-only classification, explains what happened)
     execution_outcome: Optional[dict] = None  # {job_state, failure_types, summary}
+    
+    # Execution Events Timeline (QC observability)
+    execution_events: Optional[List[dict]] = None  # [{event_type, timestamp, clip_id, message}]
 
 
 class ReportReference(BaseModel):

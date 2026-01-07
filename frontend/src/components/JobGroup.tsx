@@ -168,6 +168,12 @@ interface JobGroupProps {
       }> | null
       error?: string
     } | null
+    executionEvents?: Array<{
+      event_type: string
+      timestamp: string
+      clip_id?: string | null
+      message?: string | null
+    }> | null
   }
 }
 
@@ -1056,6 +1062,7 @@ export function JobGroup({
                     ffmpegCapabilities: diagnostics?.ffmpegCapabilities,
                     executionPolicy: diagnostics?.executionPolicy,
                     executionOutcome: diagnostics?.executionOutcome,
+                    executionEvents: diagnostics?.executionEvents,
                   }}
                   enabled={true}
                 />

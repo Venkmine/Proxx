@@ -172,6 +172,14 @@ interface JobDiagnosticsData {
     }> | null
     error?: string
   } | null
+  
+  // Execution event timeline (QC observability)
+  executionEvents?: Array<{
+    event_type: string
+    timestamp: string
+    clip_id?: string | null
+    message?: string | null
+  }> | null
 }
 
 interface JobDiagnosticsPanelProps {
@@ -918,6 +926,149 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
               </div>
             </div>
           )}
+        </div>
+      )}
+      
+      {/* Execution Event Timeline (QC Observability) */}
+      {data.executionEvents && data.executionEvents.length > 0 && (
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem',
+            backgroundColor: 'var(--panel-bg-secondary, rgba(255, 255, 255, 0.03))',
+            borderRadius: 'var(--radius-md, 8px)',
+            border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+          }}
+        >
+          <h4
+            style={{
+              margin: 0,
+              marginBottom: '0.625rem',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              color: 'var(--text-dim, #666)',
+            }}
+          >
+            Execution Timeline
+          </h4>
+          
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.375rem',
+              maxHeight: '300px',
+              overflowY: 'auto',
+              padding: '0.25rem',
+            }}
+          >
+            {data.executionEvents.map((event, index) => {
+              // Format event type for display
+              const eventLabel = event.event_type
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ')
+              
+              // Determine color based on event type
+              let eventColor = 'var(--text-secondary, #999)'
+              if (event.event_type.includes('FAILED') || event.event_type.includes('ERROR')) {
+                eventColor = '#ef4444'
+              } else if (event.event_type.includes('COMPLETED') || event.event_type.includes('PASSED')) {
+                eventColor = '#22c55e'
+              } else if (event.event_type.includes('STARTED') || event.event_type.includes('QUEUED')) {
+                eventColor = '#3b82f6'
+              } else if (event.event_type.includes('COLLISION') || event.event_type.includes('CANCELLED')) {
+                eventColor = '#f59e0b'
+              }
+              
+              return (
+                <div
+                  key={index}
+                  style={{
+                    padding: '0.375rem 0.5rem',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    borderLeft: `3px solid ${eventColor}`,
+                    fontSize: '0.625rem',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: '0.5rem',
+                      marginBottom: '0.125rem',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: eventColor,
+                      }}
+                    >
+                      {eventLabel}
+                    </span>
+                    <span
+                      style={{
+                        color: 'var(--text-dim, #666)',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: '0.5625rem',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {formatTimestamp(event.timestamp)}
+                    </span>
+                  </div>
+                  
+                  {event.clip_id && (
+                    <div
+                      style={{
+                        color: 'var(--text-muted, #888)',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: '0.5625rem',
+                        marginBottom: '0.125rem',
+                      }}
+                    >
+                      Clip: {event.clip_id.slice(0, 8)}...
+                    </div>
+                  )}
+                  
+                  {event.message && (
+                    <div
+                      style={{
+                        color: 'var(--text-secondary, #999)',
+                        fontSize: '0.5625rem',
+                      }}
+                    >
+                      {event.message}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          
+          {/* Informational note */}
+          <div
+            style={{
+              marginTop: '0.5rem',
+              padding: '0.375rem',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              borderRadius: 'var(--radius-sm, 4px)',
+              fontSize: '0.625rem',
+              lineHeight: 1.4,
+              color: 'var(--text-muted, #888)',
+            }}
+          >
+            ℹ️ This timeline shows <strong>what happened</strong> during execution.
+            <br />
+            Events are recorded in order. This is not telemetry—it is truth.
+          </div>
         </div>
       )}
     </div>

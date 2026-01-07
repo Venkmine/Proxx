@@ -924,3 +924,86 @@ pytest test_watch_folders_v1_qc.py -v --log-cli-level=INFO
 
 ---
 
+
+---
+
+## EXECUTION EVENT TIMELINE (2026-01-08)
+
+**Purpose:** Deterministic, ordered record of execution events per job for QC observability
+
+**Components Added:**
+- `backend/execution/executionEvents.py` - Event model and recorder
+- `backend/tests/execution/test_execution_events.py` - Unit tests (22 tests covering all scenarios)
+- Integration into `DiagnosticsInfo` model
+- Integration into `JobDetail` API response
+- Frontend execution timeline display in Diagnostics panel
+
+**Event Types:**
+
+Job lifecycle:
+- JOB_CREATED
+- VALIDATION_STARTED, VALIDATION_PASSED, VALIDATION_FAILED
+- EXECUTION_STARTED, EXECUTION_PAUSED, EXECUTION_RESUMED
+- EXECUTION_CANCELLED, EXECUTION_COMPLETED, EXECUTION_FAILED
+
+Clip lifecycle:
+- CLIP_QUEUED, CLIP_STARTED
+- CLIP_ENCODING, CLIP_VERIFYING
+- CLIP_COMPLETED, CLIP_FAILED, CLIP_SKIPPED
+
+Path resolution:
+- OUTPUT_RESOLVED, OUTPUT_COLLISION
+
+Recovery:
+- JOB_RECOVERY_REQUIRED
+
+**Event Structure:**
+```json
+{
+  "event_type": "clip_completed",
+  "timestamp": "2026-01-08T12:34:56.789Z",
+  "clip_id": "abc123...",
+  "message": "Clip completed successfully"
+}
+```
+
+**Hard Rules:**
+1. ✅ Events are append-only, immutable
+2. ✅ Event capture NEVER gates execution
+3. ✅ Event failure NEVER halts execution
+4. ✅ Events are persisted with diagnostics
+5. ✅ Events are read-only in the UI
+6. ✅ Timeline is deterministic (same input → same event sequence shape)
+
+**Guarantees:**
+- **Ordering:** Events are recorded in chronological order
+- **Immutability:** Once recorded, events cannot be modified
+- **Completeness:** Partial failures still emit full timeline
+- **Determinism:** Same job inputs produce same event structure
+
+**Why This Is Not Telemetry:**
+This is not analytics or metrics. This is **truth**—a deterministic record of what happened during execution, in order, for debugging and QC validation. Events explain behavior without changing it.
+
+**Non-Goals (Explicitly NOT Implemented):**
+- ❌ Event filtering or collapsing in UI
+- ❌ Event-based triggers or automation
+- ❌ Event sampling or throttling
+- ❌ Remote event streaming
+- ❌ Event retention policies
+
+**Frontend Display:**
+- Simple, ordered list (top → bottom = earliest → latest)
+- Shows: timestamp, event label, clip context, message
+- No controls, no filters, no collapse-by-default
+- Color-coded by event type (success=green, error=red, info=blue, warning=orange)
+
+**Test Coverage:**
+- ✅ Events emitted in correct order
+- ✅ Partial failures produce complete timeline
+- ✅ Clip failures produce CLIP_FAILED events
+- ✅ COMPLETE / PARTIAL / FAILED jobs all have timelines
+- ✅ Timeline determinism (same input → same event sequence shape)
+- ✅ Event recording never raises exceptions
+- ✅ Events are immutable once recorded
+- ✅ Events included in diagnostics export
+

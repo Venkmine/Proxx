@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from ..execution.base import EngineType
+    from execution.executionEvents import ExecutionEventRecorder
 
 # DeliverSettings is the canonical settings type (Phase 17)
 # Legacy JobSettings alias maintained in settings.py for migration
@@ -250,6 +251,18 @@ class Job(BaseModel):
     
     # Clip tasks
     tasks: List[ClipTask] = Field(default_factory=list)
+    
+    # Execution event timeline (QC observability)
+    # Transient field: not persisted, recreated on job load
+    _event_recorder: Optional["ExecutionEventRecorder"] = None
+    
+    @property
+    def event_recorder(self) -> "ExecutionEventRecorder":
+        """Get or create event recorder for this job."""
+        if self._event_recorder is None:
+            from execution.executionEvents import ExecutionEventRecorder
+            self._event_recorder = ExecutionEventRecorder()
+        return self._event_recorder
     
     # Summary counts (computed from tasks)
     @property

@@ -292,6 +292,23 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         # Silently fail on outcome derivation - not critical for API response
         pass
     
+    # Capture execution events from job timeline
+    execution_events = None
+    try:
+        events = job.event_recorder.get_events()
+        execution_events = [
+            {
+                "event_type": event.event_type.value,
+                "timestamp": event.timestamp.isoformat(),
+                "clip_id": event.clip_id,
+                "message": event.message,
+            }
+            for event in events
+        ]
+    except Exception:
+        # Silently fail if event recording is unavailable
+        pass
+    
     return JobDetail(
         id=job.id,
         status=job.status,
@@ -309,6 +326,7 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         settings_summary=settings_summary,  # Trust Stabilisation: Export intent visibility
         ffmpeg_capabilities=_get_ffmpeg_capabilities_cached(),  # Hardware capabilities (detection only)
         execution_outcome=execution_outcome,  # Execution outcome classification
+        execution_events=execution_events,  # Execution event timeline (QC observability)
     )
 
 

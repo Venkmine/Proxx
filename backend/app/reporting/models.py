@@ -13,6 +13,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.jobs.models import Job, ClipTask, JobStatus, TaskStatus
 
 
+class ExecutionEventSummary(BaseModel):
+    """
+    Immutable execution event for reporting.
+    
+    Simplified view of ExecutionEvent for diagnostics.
+    """
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    event_type: str  # ExecutionEventType value
+    timestamp: str  # ISO format timestamp
+    clip_id: Optional[str] = None
+    message: Optional[str] = None
+
+
 class ClipReport(BaseModel):
     """
     Immutable report for a single clip task.
@@ -74,7 +89,8 @@ class DiagnosticsInfo(BaseModel):
     System and environment diagnostics captured at report time.
     
     Includes Proxx version, Python/OS versions, Resolve info, FFmpeg capabilities,
-    execution policy explanation, and execution outcome classification.
+    execution policy explanation, execution outcome classification, and execution
+    event timeline.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -100,6 +116,9 @@ class DiagnosticsInfo(BaseModel):
 
     # Execution outcome (read-only classification, does not affect execution)
     execution_outcome: Optional[Dict[str, Any]] = None
+    
+    # Execution event timeline (QC observability)
+    execution_events: List[ExecutionEventSummary] = Field(default_factory=list)
 
     # Timestamp
     generated_at: datetime = Field(default_factory=datetime.now)

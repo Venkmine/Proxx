@@ -3043,6 +3043,7 @@ function App() {
                       ffmpegCapabilities: detail.ffmpeg_capabilities ?? null,
                       executionPolicy: detail.execution_policy ?? null,
                       executionOutcome: detail.execution_outcome ?? null,
+                      executionEvents: detail.execution_events ?? null,
                     } : undefined
                     return (
                       <JobGroup

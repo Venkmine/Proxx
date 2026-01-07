@@ -174,6 +174,13 @@ class JobEngine:
         # Create the job with engine binding
         job = Job(tasks=tasks, engine=engine)
         
+        # Record job creation event
+        from execution.executionEvents import ExecutionEventType
+        job.event_recorder.record(
+            ExecutionEventType.JOB_CREATED,
+            message=f"Job created with {len(tasks)} clips, engine={engine or 'unspecified'}"
+        )
+        
         return job
     
     def bind_preset(
@@ -220,6 +227,7 @@ class JobEngine:
             InvalidStateTransitionError: If job is not in PENDING state
         """
         import logging
+        from execution.executionEvents import ExecutionEventType
         logger = logging.getLogger(__name__)
         logger.info(f"[LIFECYCLE] start_job() called for job {job.id}, current status: {job.status.value}")
         
@@ -229,6 +237,12 @@ class JobEngine:
         job.status = JobStatus.RUNNING
         job.started_at = datetime.now()
         logger.info(f"[LIFECYCLE] Job {job.id} transitioned: {old_status.value} -> RUNNING at {job.started_at.isoformat()}")
+        
+        # Record execution start event
+        job.event_recorder.record(
+            ExecutionEventType.EXECUTION_STARTED,
+            message=f"Job execution started"
+        )
     
     def pause_job(self, job: Job) -> None:
         """
@@ -243,9 +257,16 @@ class JobEngine:
         Raises:
             InvalidStateTransitionError: If job is not in RUNNING state
         """
+        from execution.executionEvents import ExecutionEventType
         validate_job_transition(job.status, JobStatus.PAUSED)
         
         job.status = JobStatus.PAUSED
+        
+        # Record pause event
+        job.event_recorder.record(
+            ExecutionEventType.EXECUTION_PAUSED,
+            message="Job execution paused"
+        )
     
     def resume_job(self, job: Job) -> None:
         """
@@ -262,9 +283,16 @@ class JobEngine:
         Raises:
             InvalidStateTransitionError: If job is not in PAUSED or RECOVERY_REQUIRED state
         """
+        from execution.executionEvents import ExecutionEventType
         validate_job_transition(job.status, JobStatus.RUNNING)
         
         job.status = JobStatus.RUNNING
+        
+        # Record resume event
+        job.event_recorder.record(
+            ExecutionEventType.EXECUTION_RESUMED,
+            message="Job execution resumed"
+        )
     
     def cancel_job(self, job: Job, reason: str = "Cancelled by user") -> None:
         """
@@ -300,6 +328,13 @@ class JobEngine:
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now()
         logger.info(f"[LIFECYCLE] Job {job.id} transitioned: {old_status.value} -> CANCELLED at {job.completed_at.isoformat()}")
+        
+        # Record cancellation event
+        from execution.executionEvents import ExecutionEventType
+        job.event_recorder.record(
+            ExecutionEventType.EXECUTION_CANCELLED,
+            message=reason
+        )
     
     def retry_failed_clips(
         self,
@@ -513,6 +548,12 @@ class JobEngine:
                 f"[COMPLETION] Job {job.id} finalized as {final_status.value} at {job.completed_at.isoformat()}. "
                 f"Verified outputs: {verified_outputs}/{len(job.tasks)}"
             )
+            # Record execution completed event
+            from execution.executionEvents import ExecutionEventType
+            job.event_recorder.record(
+                ExecutionEventType.EXECUTION_COMPLETED,
+                message=f"Job completed successfully ({verified_outputs}/{len(job.tasks)} outputs verified)"
+            )
         elif final_status == JobStatus.FAILED:
             job.completed_at = datetime.now()
             failed_tasks = [t for t in job.tasks if t.status == TaskStatus.FAILED]
@@ -521,6 +562,12 @@ class JobEngine:
                 f"[COMPLETION] Job {job.id} finalized as FAILED at {job.completed_at.isoformat()}. "
                 f"Failed tasks: {len(failed_tasks)}/{len(job.tasks)}. "
                 f"Reasons: {reasons[:3]}"  # Log first 3 reasons
+            )
+            # Record execution failed event
+            from execution.executionEvents import ExecutionEventType
+            job.event_recorder.record(
+                ExecutionEventType.EXECUTION_FAILED,
+                message=f"Job failed ({len(failed_tasks)}/{len(job.tasks)} clips failed)"
             )
     
     # Execution stubs for Phase 5+ integration
@@ -816,6 +863,7 @@ class JobEngine:
             NamingInvariantViolation,
             CompletionInvariantViolation,
         )
+        from execution.executionEvents import ExecutionEventType
         import logging
         
         logger = logging.getLogger(__name__)
@@ -899,10 +947,30 @@ class JobEngine:
                         TaskStatus.FAILED,
                         failure_reason=str(e),
                     )
+                    # Record naming failure event
+                    job.event_recorder.record(
+                        ExecutionEventType.OUTPUT_COLLISION,
+                        clip_id=task.id,
+                        message=str(e)
+                    )
                     continue  # Skip to next task (warn-and-continue)
+            
+            # Record clip queued event (before starting)
+            job.event_recorder.record(
+                ExecutionEventType.CLIP_QUEUED,
+                clip_id=task.id,
+                message=f"Clip queued: {Path(task.source_path).name}"
+            )
             
             # Transition task to RUNNING
             self.update_task_status(task, TaskStatus.RUNNING)
+            
+            # Record clip start event
+            job.event_recorder.record(
+                ExecutionEventType.CLIP_STARTED,
+                clip_id=task.id,
+                message=f"Clip started"
+            )
             
             # Execute single clip via engine
             result = self._execute_task(
@@ -930,7 +998,14 @@ class JobEngine:
             
             if result.status in success_statuses:
                 # CRITICAL: Verify output file exists on disk before marking COMPLETED
-                output_verified = False
+                outp# Record clip completed event
+                    job.event_recorder.record(
+                        ExecutionEventType.CLIP_COMPLETED,
+                        clip_id=task.id,
+                        message=f"Clip completed successfully"
+                    )
+                    
+                    ut_verified = False
                 output_size = None
                 if result.output_path:
                     output_verified = Path(result.output_path).is_file()
@@ -947,6 +1022,13 @@ class JobEngine:
                         final_status="COMPLETED",
                         warnings=result.warnings,
                         output_file_exists=True,
+                    # Record clip failed event
+                    job.event_recorder.record(
+                        ExecutionEventType.CLIP_FAILED,
+                        clip_id=task.id,
+                        message=failure_msg
+                    )
+                    
                         output_file_size=output_size,
                     )
                     
@@ -956,6 +1038,13 @@ class JobEngine:
                             TaskStatus.COMPLETED,
                             warnings=result.warnings,
                         )
+                # Record clip failed event (cancellation is a type of failure)
+                job.event_recorder.record(
+                    ExecutionEventType.CLIP_FAILED,
+                    clip_id=task.id,
+                    message=result.failure_reason or "Cancelled by operator"
+                )
+                
                     else:
                         self.update_task_status(task, TaskStatus.COMPLETED)
                 else:
@@ -985,6 +1074,13 @@ class JobEngine:
                 
                 # V1 OBSERVABILITY: Record cancellation
                 trace_mgr.record_completion(
+                # Record clip failed event
+                job.event_recorder.record(
+                    ExecutionEventType.CLIP_FAILED,
+                    clip_id=task.id,
+                    message=result.failure_reason or "Unknown execution failure"
+                )
+                
                     trace=trace,
                     final_status="CANCELLED",
                     failure_reason=result.failure_reason or "Cancelled by operator",
@@ -1179,6 +1275,18 @@ class JobEngine:
             clip_results=None  # Could pass clip_reports for detailed analysis
         )
         
+        # Capture execution events from job
+        from ..reporting.models import ExecutionEventSummary
+        execution_events = [
+            ExecutionEventSummary(
+                event_type=event.event_type.value,
+                timestamp=event.timestamp.isoformat(),
+                clip_id=event.clip_id,
+                message=event.message,
+            )
+            for event in job.event_recorder.get_events()
+        ]
+        
         diagnostics = DiagnosticsInfo(
             proxx_version=get_proxx_version(),
             python_version=get_python_version(),
@@ -1190,6 +1298,7 @@ class JobEngine:
             ffmpeg_capabilities=ffmpeg_caps,
             execution_policy=execution_policy,
             execution_outcome=execution_outcome,
+            execution_events=execution_events,
         )
         
         # Build ClipReports with execution metadata
