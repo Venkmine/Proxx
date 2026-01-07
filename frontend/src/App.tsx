@@ -71,6 +71,8 @@ import { useSourceSelectionStore } from './stores/sourceSelectionStore'
 // Watch Folders V1: Recursive monitoring
 import { useWatchFolders } from './hooks/useWatchFolders'
 import { useWatchFolderIntegration } from './hooks/useWatchFolderIntegration'
+import { WatchFoldersPanel } from './components/WatchFoldersPanel'
+import type { WatchFolder } from './types/watchFolders'
 import { registerStoresForQC } from './stores/qcRegistry'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'
@@ -468,9 +470,17 @@ function App() {
   const {
     watchFolders,
     events: watchFolderEvents,
+    watchFolderErrors,
     isFileProcessed,
     markFileProcessed,
     logEvent: logWatchFolderEvent,
+    addWatchFolder,
+    removeWatchFolder,
+    enableWatchFolder,
+    disableWatchFolder,
+    updateWatchFolder,
+    setWatchFolderError,
+    clearWatchFolderError,
   } = useWatchFolders()
   
   // Watch Folders V1: Integrate file detection with job queue
@@ -480,11 +490,112 @@ function App() {
     isFileProcessed,
     markFileProcessed,
     logEvent: logWatchFolderEvent,
+    setWatchFolderError,
+    clearWatchFolderError,
     onEnqueueJob: useCallback((jobSpec: JobSpec) => {
       console.log('[APP] Watch folder enqueuing job:', jobSpec.job_id)
       setQueuedJobSpecs(prev => [...prev, jobSpec])
     }, []),
   })
+  
+  // Watch Folders: Wrapper functions that handle IPC calls
+  const handleAddWatchFolder = useCallback((config: Omit<WatchFolder, 'id'>) => {
+    const id = addWatchFolder(config)
+    
+    // Start watching if enabled
+    if (config.enabled && hasElectron && window.electron?.startWatchFolder) {
+      const watchFolderConfig = {
+        id,
+        path: config.path,
+        enabled: config.enabled,
+        recursive: config.recursive,
+        preset_id: config.preset_id,
+        include_extensions: config.include_extensions,
+        exclude_patterns: config.exclude_patterns,
+      }
+      window.electron.startWatchFolder(watchFolderConfig).catch(err => {
+        console.error('[APP] Failed to start watch folder:', err)
+        setWatchFolderError(id, `Failed to start: ${err.message || String(err)}`)
+      })
+    }
+    
+    return id
+  }, [addWatchFolder, setWatchFolderError, hasElectron])
+  
+  const handleRemoveWatchFolder = useCallback((id: string) => {
+    // Stop watching first
+    if (hasElectron && window.electron?.stopWatchFolder) {
+      window.electron.stopWatchFolder(id).catch(err => {
+        console.error('[APP] Failed to stop watch folder:', err)
+      })
+    }
+    
+    removeWatchFolder(id)
+  }, [removeWatchFolder, hasElectron])
+  
+  const handleEnableWatchFolder = useCallback((id: string) => {
+    enableWatchFolder(id)
+    
+    // Start watching
+    if (hasElectron && window.electron?.startWatchFolder) {
+      const wf = watchFolders.find(w => w.id === id)
+      if (wf) {
+        const watchFolderConfig = {
+          id: wf.id,
+          path: wf.path,
+          enabled: true,
+          recursive: wf.recursive,
+          preset_id: wf.preset_id,
+          include_extensions: wf.include_extensions,
+          exclude_patterns: wf.exclude_patterns,
+        }
+        window.electron.startWatchFolder(watchFolderConfig).catch(err => {
+          console.error('[APP] Failed to start watch folder:', err)
+          setWatchFolderError(id, `Failed to start: ${err.message || String(err)}`)
+        })
+      }
+    }
+  }, [enableWatchFolder, watchFolders, setWatchFolderError, hasElectron])
+  
+  const handleDisableWatchFolder = useCallback((id: string) => {
+    disableWatchFolder(id)
+    
+    // Stop watching
+    if (hasElectron && window.electron?.stopWatchFolder) {
+      window.electron.stopWatchFolder(id).catch(err => {
+        console.error('[APP] Failed to stop watch folder:', err)
+      })
+    }
+    
+    // Clear any errors
+    clearWatchFolderError(id)
+  }, [disableWatchFolder, clearWatchFolderError, hasElectron])
+  
+  const handleUpdateWatchFolder = useCallback((id: string, updates: Partial<Omit<WatchFolder, 'id'>>) => {
+    updateWatchFolder(id, updates)
+    
+    // Restart watcher if enabled
+    const wf = watchFolders.find(w => w.id === id)
+    if (wf?.enabled && hasElectron && window.electron?.startWatchFolder && window.electron?.stopWatchFolder) {
+      // Stop and restart
+      window.electron.stopWatchFolder(id).then(() => {
+        const updatedWf = { ...wf, ...updates }
+        const watchFolderConfig = {
+          id: updatedWf.id,
+          path: updatedWf.path,
+          enabled: updatedWf.enabled,
+          recursive: updatedWf.recursive,
+          preset_id: updatedWf.preset_id,
+          include_extensions: updatedWf.include_extensions,
+          exclude_patterns: updatedWf.exclude_patterns,
+        }
+        return window.electron!.startWatchFolder!(watchFolderConfig)
+      }).catch(err => {
+        console.error('[APP] Failed to restart watch folder:', err)
+        setWatchFolderError(id, `Failed to restart: ${err.message || String(err)}`)
+      })
+    }
+  }, [updateWatchFolder, watchFolders, setWatchFolderError, hasElectron])
   
   // Legacy: Backend presets (kept for backwards compatibility with existing backend)
   const [backendPresets, setBackendPresets] = useState<PresetInfo[]>([])
@@ -512,6 +623,17 @@ function App() {
 
   // Drag state for job reordering (not file drag & drop)
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
+  
+  // Watch Folders panel visibility (collapsed by default)
+  const [watchFoldersPanelCollapsed, setWatchFoldersPanelCollapsed] = useState(() => {
+    const saved = localStorage.getItem('awaire_watch_folders_panel_collapsed')
+    return saved ? JSON.parse(saved) : true
+  })
+  
+  // Persist watch folders panel collapsed state
+  useEffect(() => {
+    localStorage.setItem('awaire_watch_folders_panel_collapsed', JSON.stringify(watchFoldersPanelCollapsed))
+  }, [watchFoldersPanelCollapsed])
   
   // ============================================
   // DRAG & DROP REMOVED FOR HONESTY
@@ -1191,6 +1313,30 @@ function App() {
     fetchPresets()
     fetchEngines()  // Phase 16
   }, [])
+  
+  // Watch Folders: Re-enable watch folders on startup
+  useEffect(() => {
+    if (!hasElectron || !window.electron?.startWatchFolder) return
+    
+    // Start all enabled watch folders
+    for (const wf of watchFolders) {
+      if (wf.enabled) {
+        const watchFolderConfig = {
+          id: wf.id,
+          path: wf.path,
+          enabled: wf.enabled,
+          recursive: wf.recursive,
+          preset_id: wf.preset_id,
+          include_extensions: wf.include_extensions,
+          exclude_patterns: wf.exclude_patterns,
+        }
+        window.electron.startWatchFolder(watchFolderConfig).catch(err => {
+          console.error('[APP] Failed to start watch folder on startup:', err)
+          setWatchFolderError(wf.id, `Failed to start: ${err.message || String(err)}`)
+        })
+      }
+    }
+  }, []) // Only run once on mount (empty dependency array)
 
   // ============================================
   // FIFO Execution Loop - Automatic Job Sequencing
@@ -3043,7 +3189,6 @@ function App() {
                       ffmpegCapabilities: detail.ffmpeg_capabilities ?? null,
                       executionPolicy: detail.execution_policy ?? null,
                       executionOutcome: detail.execution_outcome ?? null,
-                      executionEvents: detail.execution_events ?? null,
                     } : undefined
                     return (
                       <JobGroup
@@ -3101,6 +3246,53 @@ function App() {
                       />
                     )
                   })
+                )}
+              </div>
+              
+              {/* Watch Folders Panel — Collapsible section below queue */}
+              <div
+                style={{
+                  borderTop: '1px solid var(--border-primary)',
+                  background: 'var(--surface-primary)',
+                }}
+              >
+                <button
+                  onClick={() => setWatchFoldersPanelCollapsed(!watchFoldersPanelCollapsed)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    background: 'var(--surface-secondary)',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span>Watch Folders ({watchFolders.length})</span>
+                  <span style={{ transform: watchFoldersPanelCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
+                    ▼
+                  </span>
+                </button>
+                
+                {!watchFoldersPanelCollapsed && (
+                  <div style={{ height: '400px', overflow: 'hidden' }}>
+                    <WatchFoldersPanel
+                      watchFolders={watchFolders}
+                      presets={presetManager.presets}
+                      watchFolderEvents={watchFolderEvents}
+                      watchFolderErrors={watchFolderErrors}
+                      onAddWatchFolder={handleAddWatchFolder}
+                      onUpdateWatchFolder={handleUpdateWatchFolder}
+                      onRemoveWatchFolder={handleRemoveWatchFolder}
+                      onEnableWatchFolder={handleEnableWatchFolder}
+                      onDisableWatchFolder={handleDisableWatchFolder}
+                      onClearError={clearWatchFolderError}
+                    />
+                  </div>
                 )}
               </div>
             </div>

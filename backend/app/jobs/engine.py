@@ -998,14 +998,7 @@ class JobEngine:
             
             if result.status in success_statuses:
                 # CRITICAL: Verify output file exists on disk before marking COMPLETED
-                outp# Record clip completed event
-                    job.event_recorder.record(
-                        ExecutionEventType.CLIP_COMPLETED,
-                        clip_id=task.id,
-                        message=f"Clip completed successfully"
-                    )
-                    
-                    ut_verified = False
+                output_verified = False
                 output_size = None
                 if result.output_path:
                     output_verified = Path(result.output_path).is_file()
@@ -1016,19 +1009,19 @@ class JobEngine:
                     # Output exists - task is truly COMPLETED
                     logger.info(f"[COMPLETION] Task {task.id} output verified: {result.output_path}")
                     
+                    # Record clip completed event
+                    job.event_recorder.record(
+                        ExecutionEventType.CLIP_COMPLETED,
+                        clip_id=task.id,
+                        message=f"Clip completed successfully"
+                    )
+                    
                     # V1 OBSERVABILITY: Record successful completion
                     trace_mgr.record_completion(
                         trace=trace,
                         final_status="COMPLETED",
                         warnings=result.warnings,
                         output_file_exists=True,
-                    # Record clip failed event
-                    job.event_recorder.record(
-                        ExecutionEventType.CLIP_FAILED,
-                        clip_id=task.id,
-                        message=failure_msg
-                    )
-                    
                         output_file_size=output_size,
                     )
                     
@@ -1038,13 +1031,6 @@ class JobEngine:
                             TaskStatus.COMPLETED,
                             warnings=result.warnings,
                         )
-                # Record clip failed event (cancellation is a type of failure)
-                job.event_recorder.record(
-                    ExecutionEventType.CLIP_FAILED,
-                    clip_id=task.id,
-                    message=result.failure_reason or "Cancelled by operator"
-                )
-                
                     else:
                         self.update_task_status(task, TaskStatus.COMPLETED)
                 else:
@@ -1054,6 +1040,13 @@ class JobEngine:
                     # ======================================================
                     failure_msg = f"Output file not found: {result.output_path}"
                     logger.error(f"[COMPLETION] Task {task.id} FAILED: {failure_msg}")
+                    
+                    # Record clip failed event
+                    job.event_recorder.record(
+                        ExecutionEventType.CLIP_FAILED,
+                        clip_id=task.id,
+                        message=failure_msg
+                    )
                     
                     # V1 OBSERVABILITY: Record completion invariant violation
                     trace_mgr.record_completion(
@@ -1072,15 +1065,15 @@ class JobEngine:
                 # Cancelled by operator - mark as failed with reason
                 logger.info(f"[COMPLETION] Task {task.id} cancelled")
                 
-                # V1 OBSERVABILITY: Record cancellation
-                trace_mgr.record_completion(
-                # Record clip failed event
+                # Record clip failed event (cancellation is a type of failure)
                 job.event_recorder.record(
                     ExecutionEventType.CLIP_FAILED,
                     clip_id=task.id,
-                    message=result.failure_reason or "Unknown execution failure"
+                    message=result.failure_reason or "Cancelled by operator"
                 )
                 
+                # V1 OBSERVABILITY: Record cancellation
+                trace_mgr.record_completion(
                     trace=trace,
                     final_status="CANCELLED",
                     failure_reason=result.failure_reason or "Cancelled by operator",
@@ -1094,6 +1087,13 @@ class JobEngine:
             else:
                 # ExecutionStatus.FAILED
                 logger.error(f"[COMPLETION] Task {task.id} FAILED: {result.failure_reason}")
+                
+                # Record clip failed event
+                job.event_recorder.record(
+                    ExecutionEventType.CLIP_FAILED,
+                    clip_id=task.id,
+                    message=result.failure_reason or "Unknown execution failure"
+                )
                 
                 # V1 OBSERVABILITY: Record execution failure
                 trace_mgr.record_completion(

@@ -903,21 +903,127 @@ pytest test_watch_folders_v1_qc.py -v --log-cli-level=INFO
 
 **No Regression:** Watch folders are additive, do not modify existing execution logic.
 
-### Known Limitations (Alpha V1)
+---
 
-- **UI Components:** Watch folder management UI not yet implemented
-- **Manual Configuration:** Requires manual preset creation + localStorage editing
-- **Error Recovery:** Watch folder errors logged but no automatic retry
+## WATCH FOLDERS UI (PHASE 2)
+
+**Implemented:** 2026-01-07  
+**Feature:** First-class watch folder management UI with visibility and control
+
+### Architecture
+
+**New Components:**
+- `WatchFoldersPanel.tsx`: Main UI component for watch folder management
+  - Collapsible panel in right zone (below queue)
+  - CRUD operations: Add, Edit, Remove, Enable/Disable
+  - Status display: OK, DISABLED, ERROR with color coding
+  - Error visibility: Persistent error messages with manual clear
+  - Activity tracking: Job count and last activity timestamp
+  - Form validation: Path and preset required, extension/pattern parsing
+
+**Enhanced State Management:**
+- `useWatchFolders.ts`: Added error tracking
+  - `watchFolderErrors`: Map of watch folder ID → error message
+  - `setWatchFolderError()`: Set error for specific watch folder
+  - `clearWatchFolderError()`: Clear error for specific watch folder
+- `useWatchFolderIntegration.ts`: Integrated error tracking
+  - Errors from IPC events stored in state
+  - Errors displayed in UI until user clears them
+
+**App Integration:**
+- `App.tsx`: Watch Folders Panel integrated into right zone
+  - Collapsible section below job queue
+  - Wrapper functions for IPC calls (start/stop watching)
+  - Auto-restart watch folders on app startup
+  - Persistent collapsed state via localStorage
+
+### Status Semantics
+
+**OK:**
+- Watch folder is enabled
+- No errors detected
+- Actively monitoring filesystem
+- Green indicator (●)
+
+**DISABLED:**
+- Explicitly disabled by user
+- Not monitoring filesystem
+- Can be re-enabled without data loss
+- Gray/dimmed appearance
+
+**ERROR:**
+- Failed to initialize or start watching
+- Error message displayed persistently
+- Must be manually cleared or fixed
+- Red border and error panel
+- Does NOT auto-retry or auto-clear
+
+### UI Features
+
+**Watch Folder List:**
+- Path display with ellipsis and tooltip
+- Enabled/Disabled state toggle
+- Associated preset name (resolved from preset ID)
+- Job count created (from events log)
+- Last activity timestamp (relative, e.g. "2h ago")
+- Current status badge (OK/DISABLED/ERROR)
+
+**CRUD Operations:**
+- **Add:** Form with path, preset, extensions, exclude patterns
+- **Edit:** Update path, preset, or filters
+- **Remove:** Delete watch folder (confirmation required)
+- **Enable/Disable:** Toggle watching state (calls IPC)
+
+**Error Display:**
+- Error message shown in collapsible error panel
+- "Clear" button to dismiss error
+- Errors do NOT auto-clear on subsequent success
+- User must take explicit action
+
+**Form Validation:**
+- Path and preset are required
+- Extensions parsed from comma-separated list
+- Exclude patterns parsed from comma-separated list
+- Empty path or missing preset rejected with alert
+
+### QC Guarantees
+
+✅ **No Execution Logic Changes:** UI only exposes existing watch folder functionality  
+✅ **IPC Safety:** All watch folder operations go through IPC handlers  
+✅ **Error Visibility:** Errors cannot hide, must be manually cleared  
+✅ **Preset Validation:** Preset must exist in preset manager  
+✅ **State Persistence:** Watch folder config stored in localStorage  
+✅ **Startup Recovery:** Enabled watch folders auto-restart on app launch  
+✅ **Status Clarity:** Three distinct states with clear meanings  
+✅ **FIFO Preservation:** Jobs still enqueue via existing integration  
+✅ **No Silent Actions:** All state changes are user-initiated  
+
+### Files Changed
+
+**Created:**
+- `frontend/src/components/WatchFoldersPanel.tsx` (570+ lines)
+
+**Modified:**
+- `frontend/src/hooks/useWatchFolders.ts`: Added error tracking (30 lines)
+- `frontend/src/hooks/useWatchFolderIntegration.ts`: Integrated error state (15 lines)
+- `frontend/src/App.tsx`: Integrated panel + IPC wrappers (120 lines)
+- `QC_EXECUTION_REPORT.md`: Updated documentation (this section)
+
+### Known Limitations (Alpha V1 + Phase 2)
+
+- **Manual Path Entry:** No filesystem browser (text input only)
 - **Event Log Size:** Max 1000 events, older events discarded
 - **Single Preset:** Each watch folder linked to exactly one preset
+- **No Bulk Operations:** Must enable/disable watch folders individually
 
-### Future Work (Post-V1)
+### Future Work (Post-Phase 2)
 
-- UI components for watch folder CRUD operations
-- Watch folder status indicators in UI
-- Event log viewer with filtering
+- Filesystem browser for path selection
+- Event log viewer with filtering in UI
 - Multiple preset support per watch folder
-- Automatic preset resolution based on file properties
+- Bulk enable/disable operations
+- Activity statistics and charts
+```
 - Watch folder health monitoring
 - Error recovery and retry logic
 - Watch folder templates (preset + watch config bundles)

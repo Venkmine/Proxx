@@ -15,107 +15,124 @@
     - generic [ref=e17]:
       - img "Awaire"
       - generic [ref=e18]:
-        - generic [ref=e19]: ● Connected
+        - generic [ref=e19]: ○ Disconnected
         - generic [ref=e20]: Alpha
         - button "V2 OFF" [ref=e21] [cursor=pointer]
-  - generic [ref=e23]:
-    - complementary [ref=e24]:
-      - generic [ref=e25]:
-        - heading "Sources" [level=2] [ref=e27]
-        - generic [ref=e29]:
-          - generic [ref=e30]:
-            - heading "Create Job" [level=2] [ref=e31]
-            - button "Clear" [ref=e33] [cursor=pointer]
-          - generic [ref=e34]:
-            - heading "Source" [level=3] [ref=e37]
-            - generic [ref=e39]:
-              - generic [ref=e40]: Input Path(s) *
-              - button "Select Files..." [ref=e42] [cursor=pointer]
-    - main [ref=e43]:
-      - generic [ref=e49]: Forge
-      - generic [ref=e52]:
-        - heading "Delivery" [level=2] [ref=e54]
-        - generic [ref=e55]:
-          - generic [ref=e56]:
-            - heading "Delivery Destination" [level=3] [ref=e57]
-            - button "Select Delivery Folder" [ref=e58] [cursor=pointer]
-            - textbox "/path/to/output" [ref=e59]
-          - generic [ref=e60]:
-            - heading "File" [level=3] [ref=e61]
-            - generic [ref=e62]:
-              - generic [ref=e63]: Container
-              - combobox [ref=e64] [cursor=pointer]:
+  - generic [ref=e22]:
+    - generic [ref=e23]: "Failed to fetch jobs: Failed to fetch"
+    - button "Dismiss" [ref=e24] [cursor=pointer]
+  - generic [ref=e26]:
+    - complementary [ref=e27]:
+      - generic [ref=e28]:
+        - heading "Sources" [level=2] [ref=e30]
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - heading "Create Job" [level=2] [ref=e34]
+            - button "Clear" [ref=e36] [cursor=pointer]
+          - generic [ref=e37]:
+            - heading "Source" [level=3] [ref=e40]
+            - generic [ref=e42]:
+              - generic [ref=e43]: Input Path(s) *
+              - button "Select Files..." [ref=e45] [cursor=pointer]
+    - main [ref=e46]:
+      - generic [ref=e52]: Forge
+      - generic [ref=e55]:
+        - heading "Delivery" [level=2] [ref=e57]
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - heading "Delivery Destination" [level=3] [ref=e60]
+            - button "Select Delivery Folder" [ref=e61] [cursor=pointer]
+            - textbox "/path/to/output" [ref=e62]
+          - generic [ref=e63]:
+            - heading "File" [level=3] [ref=e64]
+            - generic [ref=e65]:
+              - generic [ref=e66]: Container
+              - combobox [ref=e67] [cursor=pointer]:
                 - option "MOV" [selected]
                 - option "MP4"
                 - option "MXF"
-            - generic [ref=e65]:
-              - generic [ref=e66]: Filename Template
-              - 'textbox "{source_name}_proxy" [ref=e67]'
-          - generic [ref=e68]:
-            - heading "Delivery" [level=3] [ref=e69]
-            - generic [ref=e70]:
-              - generic [ref=e71]: Type
-              - generic [ref=e72]:
-                - generic [ref=e73] [cursor=pointer]:
-                  - radio "Proxy" [checked] [ref=e74]
+            - generic [ref=e68]:
+              - generic [ref=e69]: Filename Template
+              - 'textbox "{source_name}_proxy" [ref=e70]'
+          - generic [ref=e71]:
+            - heading "Delivery" [level=3] [ref=e72]
+            - generic [ref=e73]:
+              - generic [ref=e74]: Type
+              - generic [ref=e75]:
+                - generic [ref=e76] [cursor=pointer]:
+                  - radio "Proxy" [checked] [ref=e77]
                   - text: Proxy
-                - generic [ref=e75] [cursor=pointer]:
-                  - radio "Delivery" [ref=e76]
+                - generic [ref=e78] [cursor=pointer]:
+                  - radio "Delivery" [ref=e79]
                   - text: Delivery
-            - generic [ref=e77]:
-              - generic [ref=e78]: Preset
-              - generic [ref=e79]: No preset selected
-        - generic [ref=e80]:
-          - heading "Filename Preview" [level=4] [ref=e81]
-          - code [ref=e82]: "{source_name}_proxy.mov"
-    - complementary [ref=e83]:
-      - generic [ref=e84]:
-        - generic [ref=e85]:
-          - generic [ref=e86]:
-            - generic [ref=e87]: Filter
-            - button "All" [ref=e88] [cursor=pointer]
-            - button "Running" [ref=e89] [cursor=pointer]
-            - button "Queued" [ref=e90] [cursor=pointer]
-            - button "Pending" [ref=e91] [cursor=pointer]
-            - button "Completed" [ref=e92] [cursor=pointer]
-            - button "Failed" [ref=e93] [cursor=pointer]
-            - button "Skipped" [ref=e94] [cursor=pointer]
-            - button "Cancelled" [ref=e95] [cursor=pointer]
-            - generic [ref=e96]:
-              - button "⊞" [ref=e97] [cursor=pointer]
-              - button "⊟" [ref=e98] [cursor=pointer]
-          - generic [ref=e99]:
-            - generic [ref=e100]:
-              - textbox "Search files..." [ref=e101]
+            - generic [ref=e80]:
+              - generic [ref=e81]: Preset
+              - generic [ref=e82]: No preset selected
+        - generic [ref=e83]:
+          - heading "Filename Preview" [level=4] [ref=e84]
+          - code [ref=e85]: "{source_name}_proxy.mov"
+    - complementary [ref=e86]:
+      - generic [ref=e87]:
+        - generic [ref=e88]:
+          - generic [ref=e89]:
+            - generic [ref=e90]: Filter
+            - button "All" [ref=e91] [cursor=pointer]
+            - button "Running" [ref=e92] [cursor=pointer]
+            - button "Queued" [ref=e93] [cursor=pointer]
+            - button "Pending" [ref=e94] [cursor=pointer]
+            - button "Completed" [ref=e95] [cursor=pointer]
+            - button "Failed" [ref=e96] [cursor=pointer]
+            - button "Skipped" [ref=e97] [cursor=pointer]
+            - button "Cancelled" [ref=e98] [cursor=pointer]
+            - generic [ref=e99]:
+              - button "⊞" [ref=e100] [cursor=pointer]
+              - button "⊟" [ref=e101] [cursor=pointer]
+          - generic [ref=e102]:
+            - generic [ref=e103]:
+              - textbox "Search files..." [ref=e104]
               - generic: 🔍
-            - generic [ref=e102]:
-              - button "All Time" [ref=e103] [cursor=pointer]
-              - button "Today" [ref=e104] [cursor=pointer]
-              - button "Yesterday" [ref=e105] [cursor=pointer]
-              - button "Last 7 Days" [ref=e106] [cursor=pointer]
-        - generic [ref=e107]:
-          - heading "Queue (0)" [level=3] [ref=e108]
-          - generic [ref=e109]: Execution engines are determined automatically per job.
-          - button "📝 Create Job" [disabled] [ref=e111]
-        - generic [ref=e113]:
+            - generic [ref=e105]:
+              - button "All Time" [ref=e106] [cursor=pointer]
+              - button "Today" [ref=e107] [cursor=pointer]
+              - button "Yesterday" [ref=e108] [cursor=pointer]
+              - button "Last 7 Days" [ref=e109] [cursor=pointer]
+        - generic [ref=e110]:
+          - heading "Queue (0)" [level=3] [ref=e111]
+          - generic [ref=e112]: Execution engines are determined automatically per job.
+          - button "📝 Create Job" [disabled] [ref=e114]
+        - generic [ref=e116]:
           - img "Awaire"
-          - generic [ref=e114]: No jobs in queue
-          - generic [ref=e115]: Add files in the left panel and click "Add to Queue"
-  - contentinfo [ref=e116]:
-    - generic [ref=e117]:
-      - generic [ref=e118]: ALPHA
-      - generic [ref=e119]: Basic
+          - generic [ref=e117]: No jobs in queue
+          - generic [ref=e118]: Add files in the left panel and click "Add to Queue"
+  - contentinfo [ref=e119]:
     - generic [ref=e120]:
-      - generic [ref=e121]: FFmpeg ✓
-      - generic [ref=e122]: Resolve —
+      - generic [ref=e121]: ALPHA
+      - generic [ref=e122]: Basic
     - generic [ref=e123]:
-      - link "Docs" [ref=e124] [cursor=pointer]:
+      - generic [ref=e124]: FFmpeg ✓
+      - generic [ref=e125]: Resolve —
+    - generic [ref=e126]:
+      - link "Docs" [ref=e127] [cursor=pointer]:
         - /url: https://docs.awaire.io/proxy
-      - link "Support" [ref=e125] [cursor=pointer]:
+      - link "Support" [ref=e128] [cursor=pointer]:
         - /url: https://awaire.io/support
-  - generic [ref=e126]:
-    - generic [ref=e127]:
-      - generic [ref=e128]: Status
-      - button "Details" [ref=e129] [cursor=pointer]
-    - generic [ref=e131]: No status messages
+  - generic [ref=e129] [cursor=pointer]:
+    - generic [ref=e130]:
+      - img "Awaire"
+      - generic [ref=e131]: ALPHA
+    - generic [ref=e132]:
+      - generic [ref=e133]:
+        - generic [ref=e134]: FFmpeg
+        - generic [ref=e135]: Available
+      - generic [ref=e136]:
+        - generic [ref=e137]: DaVinci Resolve
+        - generic [ref=e138]: Not Connected
+    - generic [ref=e139]: "Basic: Camera RAW formats not supported"
+    - button "Continue →" [ref=e140]
+    - generic [ref=e141]: Backend not connected — click Continue to proceed
+  - generic [ref=e142]:
+    - generic [ref=e143]:
+      - generic [ref=e144]: Status
+      - button "Details" [ref=e145] [cursor=pointer]
+    - generic [ref=e147]: No status messages
 ```

@@ -75,6 +75,10 @@ export interface UseWatchFolderIntegrationOptions {
   }) => void
   /** Callback to enqueue a job (adds to queuedJobSpecs array) */
   onEnqueueJob: (jobSpec: JobSpec) => void
+  /** Callback to set watch folder error */
+  setWatchFolderError?: (id: string, error: string) => void
+  /** Callback to clear watch folder error */
+  clearWatchFolderError?: (id: string) => void
 }
 
 /**
@@ -88,6 +92,8 @@ export function useWatchFolderIntegration(options: UseWatchFolderIntegrationOpti
     markFileProcessed,
     logEvent,
     onEnqueueJob,
+    setWatchFolderError,
+    clearWatchFolderError,
   } = options
   
   // Use refs to avoid re-registering event listeners
@@ -97,6 +103,8 @@ export function useWatchFolderIntegration(options: UseWatchFolderIntegrationOpti
   const markFileProcessedRef = useRef(markFileProcessed)
   const logEventRef = useRef(logEvent)
   const onEnqueueJobRef = useRef(onEnqueueJob)
+  const setWatchFolderErrorRef = useRef(setWatchFolderError)
+  const clearWatchFolderErrorRef = useRef(clearWatchFolderError)
   
   // Update refs when dependencies change
   useEffect(() => {
@@ -118,6 +126,14 @@ export function useWatchFolderIntegration(options: UseWatchFolderIntegrationOpti
   useEffect(() => {
     logEventRef.current = logEvent
   }, [logEvent])
+  
+  useEffect(() => {
+    setWatchFolderErrorRef.current = setWatchFolderError
+  }, [setWatchFolderError])
+  
+  useEffect(() => {
+    clearWatchFolderErrorRef.current = clearWatchFolderError
+  }, [clearWatchFolderError])
   
   useEffect(() => {
     onEnqueueJobRef.current = onEnqueueJob

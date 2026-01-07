@@ -78,6 +78,8 @@ export interface UseWatchFoldersReturn {
   watchFolders: WatchFolder[]
   /** Recent events */
   events: WatchFolderEvent[]
+  /** Watch folder errors (map of watch folder ID to error message) */
+  watchFolderErrors: Map<string, string>
   /** Add new watch folder */
   addWatchFolder: (config: Omit<WatchFolder, 'id'>) => string
   /** Remove watch folder */
@@ -98,11 +100,16 @@ export interface UseWatchFoldersReturn {
   clearEvents: () => void
   /** Clear processed files registry */
   clearProcessedFiles: () => void
+  /** Set error for watch folder */
+  setWatchFolderError: (id: string, error: string) => void
+  /** Clear error for watch folder */
+  clearWatchFolderError: (id: string) => void
 }
 
 export function useWatchFolders(): UseWatchFoldersReturn {
   const [registry, setRegistry] = useState<WatchFolderRegistry>(loadRegistry)
   const [events, setEvents] = useState<WatchFolderEvent[]>(loadEvents)
+  const [watchFolderErrors, setWatchFolderErrors] = useState<Map<string, string>>(new Map())
 
   // Persist registry changes
   useEffect(() => {
@@ -240,11 +247,30 @@ export function useWatchFolders(): UseWatchFoldersReturn {
     console.log('[WatchFolders] Cleared processed files registry')
   }, [])
 
+  const setWatchFolderError = useCallback((id: string, error: string) => {
+    setWatchFolderErrors((prev) => {
+      const next = new Map(prev)
+      next.set(id, error)
+      return next
+    })
+    console.error('[WatchFolders] Error for watch folder:', id, error)
+  }, [])
+
+  const clearWatchFolderError = useCallback((id: string) => {
+    setWatchFolderErrors((prev) => {
+      const next = new Map(prev)
+      next.delete(id)
+      return next
+    })
+    console.log('[WatchFolders] Cleared error for watch folder:', id)
+  }, [])
+
   const watchFolders = Object.values(registry.folders)
 
   return {
     watchFolders,
     events,
+    watchFolderErrors,
     addWatchFolder,
     removeWatchFolder,
     enableWatchFolder,
@@ -255,5 +281,7 @@ export function useWatchFolders(): UseWatchFoldersReturn {
     logEvent,
     clearEvents,
     clearProcessedFiles,
+    setWatchFolderError,
+    clearWatchFolderError,
   }
 }
