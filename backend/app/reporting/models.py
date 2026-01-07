@@ -74,7 +74,7 @@ class DiagnosticsInfo(BaseModel):
     System and environment diagnostics captured at report time.
     
     Includes Proxx version, Python/OS versions, Resolve info, FFmpeg capabilities,
-    and execution policy explanation.
+    execution policy explanation, and execution outcome classification.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -97,6 +97,9 @@ class DiagnosticsInfo(BaseModel):
 
     # Execution policy (read-only explanation, does not affect execution)
     execution_policy: Optional[Dict[str, Any]] = None
+
+    # Execution outcome (read-only classification, does not affect execution)
+    execution_outcome: Optional[Dict[str, Any]] = None
 
     # Timestamp
     generated_at: datetime = Field(default_factory=datetime.now)

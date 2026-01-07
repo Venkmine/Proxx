@@ -239,6 +239,50 @@ interface JobDetail {
     use_ffmpeg: boolean
     use_resolve: boolean
   }
+  // FFmpeg capabilities (read-only detection)
+  ffmpeg_capabilities?: {
+    hwaccels?: string[]
+    encoders?: {
+      gpu?: string[]
+      cpu?: string[]
+    }
+    prores_gpu_supported?: boolean
+    error?: string
+  }
+  // Execution policy (read-only explanation, V2 only)
+  execution_policy?: {
+    execution_class?: string
+    primary_engine?: string
+    blocking_reasons?: string[]
+    capability_summary?: {
+      gpu_decode?: boolean
+      gpu_encode?: boolean
+      prores_gpu_supported?: boolean
+    }
+    alternatives?: Array<{
+      engine?: string
+      codec?: string
+      tradeoff?: string
+    }>
+    confidence?: string
+    error?: string
+  }
+  // Execution outcome (read-only classification)
+  execution_outcome?: {
+    job_state?: string
+    total_clips?: number
+    success_clips?: number
+    failed_clips?: number
+    skipped_clips?: number
+    failure_types?: string[]
+    summary?: string
+    clip_failures?: Array<{
+      task_id?: string
+      failure_type?: string
+      failure_reason?: string
+    }> | null
+    error?: string
+  }
 }
 
 interface PresetInfo {
@@ -2994,6 +3038,12 @@ function App() {
                     } : undefined
                     // V2: Execution engine requirements for indicator lights
                     const executionEngines = detail?.execution_engines
+                    // Diagnostics for JobDiagnosticsPanel (Alpha-only)
+                    const diagnostics = detail ? {
+                      ffmpegCapabilities: detail.ffmpeg_capabilities ?? null,
+                      executionPolicy: detail.execution_policy ?? null,
+                      executionOutcome: detail.execution_outcome ?? null,
+                    } : undefined
                     return (
                       <JobGroup
                         key={job.id}
@@ -3013,6 +3063,7 @@ function App() {
                         tasks={detail?.tasks || []}
                         settingsSummary={settingsSummary}
                         executionEngines={executionEngines}
+                        diagnostics={diagnostics}
                         isSelected={selectedJobId === job.id}
                         isExpanded={isJobExpanded(job.id, job.total_tasks, job.status)}
                         isHighlighted={highlightedJobId === job.id}

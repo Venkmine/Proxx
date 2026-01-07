@@ -1157,6 +1157,7 @@ class JobEngine:
             get_resolve_info,
             get_ffmpeg_capabilities,
             get_execution_policy,
+            get_execution_outcome,
         )
         from ..reporting.writers import write_reports
         
@@ -1169,6 +1170,15 @@ class JobEngine:
         # Note: In V2, we'd derive this from job.jobspec if available
         # For now, execution_policy remains None for V1 jobs
         
+        # Derive execution outcome from job results (read-only classification)
+        execution_outcome = get_execution_outcome(
+            total_clips=job.total_tasks,
+            success_clips=job.completed_count,
+            failed_clips=job.failed_count,
+            skipped_clips=job.skipped_count,
+            clip_results=None  # Could pass clip_reports for detailed analysis
+        )
+        
         diagnostics = DiagnosticsInfo(
             proxx_version=get_proxx_version(),
             python_version=get_python_version(),
@@ -1179,6 +1189,7 @@ class JobEngine:
             resolve_studio=resolve_info.get("studio"),
             ffmpeg_capabilities=ffmpeg_caps,
             execution_policy=execution_policy,
+            execution_outcome=execution_outcome,
         )
         
         # Build ClipReports with execution metadata

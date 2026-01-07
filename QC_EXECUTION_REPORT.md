@@ -1,6 +1,6 @@
 # QC EXECUTION REPORT
 
-**Generated:** 2026-01-06T23:15:00Z  
+**Generated:** 2026-01-08T00:00:00Z  
 **Mode:** Continuous QC Execution  
 **Objective:** Run everything, identify gaps, fix blockers, achieve real render
 
@@ -17,7 +17,9 @@ The system can successfully:
 - Create jobs via UI
 - Execute real FFmpeg renders
 - Produce valid output files
-- Detect FFmpeg hardware capabilities (NEW)
+- Detect FFmpeg hardware capabilities
+- Explain execution policy (read-only)
+- Classify execution outcomes (read-only)
 
 **Blocking Issues:** 0  
 **Non-Blocking Issues:** 0 (RESOLVED)  
@@ -26,6 +28,48 @@ The system can successfully:
 ---
 
 ## NEW FEATURES ADDED
+
+### Execution Outcome Classification (2026-01-08)
+
+**Purpose:** Classify job and clip failures deterministically for unattended execution observability
+
+**Components Added:**
+- `backend/execution/failureTypes.py` - Failure taxonomy module (read-only)
+- `backend/tests/test_failure_types.py` - Unit tests (22 tests, all passing in <0.1s)
+- Integration into `DiagnosticsInfo` model
+- Integration into `JobDetail` API response
+- Frontend execution outcome display in Diagnostics panel
+
+**Failure Taxonomy:**
+- **Job States:** COMPLETE, PARTIAL, FAILED, BLOCKED
+- **Clip Failure Types:** DECODE_FAILED, ENCODE_FAILED, UNSUPPORTED_MEDIA, INVALID_INPUT, OUTPUT_WRITE_FAILED, TIMEOUT, TOOL_CRASH, VALIDATION_FAILED, UNKNOWN
+
+**Execution Outcome Report:**
+Provides deterministic classification of:
+- Job-level state (complete vs partial vs failed)
+- Clip breakdown (success, failed, skipped counts)
+- Failure types encountered
+- Human-readable summary
+
+**Hard Rules:**
+1. ✅ Classification happens AFTER execution completes
+2. ✅ Pure functions with zero side effects
+3. ✅ Does NOT trigger retries
+4. ✅ Does NOT change execution behavior
+5. ✅ Pattern-based heuristics for failure classification
+6. ✅ Job can be PARTIAL (some clips succeeded, some failed)
+7. ✅ BLOCKED state for validation failures that prevent execution
+
+**Non-Goals (Explicitly NOT Implemented):**
+- ❌ Automatic retry logic
+- ❌ Auto-recovery
+- ❌ Execution policy modification
+- ❌ User-triggered actions based on classification
+
+**Why No Auto-Recovery?**
+Per INTENT.md invariant #7: "Diagnostics are read-only." Unattended execution requires human visibility, not automatic recovery that masks root causes.
+
+---
 
 ### Execution Policy Layer (2026-01-07)
 

@@ -155,6 +155,23 @@ interface JobDiagnosticsData {
     confidence?: string
     error?: string
   } | null
+  
+  // Execution outcome (read-only classification)
+  executionOutcome?: {
+    job_state?: string
+    total_clips?: number
+    success_clips?: number
+    failed_clips?: number
+    skipped_clips?: number
+    failure_types?: string[]
+    summary?: string
+    clip_failures?: Array<{
+      task_id?: string
+      failure_type?: string
+      failure_reason?: string
+    }> | null
+    error?: string
+  } | null
 }
 
 interface JobDiagnosticsPanelProps {
@@ -734,6 +751,170 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
                 ℹ️ This explains <strong>why</strong> the job executes this way.
                 <br />
                 It does <strong>not</strong> control or change execution behavior.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Execution Outcome (Read-Only Classification) */}
+      {data.executionOutcome && (
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem',
+            backgroundColor: 'var(--panel-bg-secondary, rgba(255, 255, 255, 0.03))',
+            borderRadius: 'var(--radius-md, 8px)',
+            border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+          }}
+        >
+          <h4
+            style={{
+              margin: 0,
+              marginBottom: '0.625rem',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              color: 'var(--text-dim, #666)',
+            }}
+          >
+            Execution Outcome (Read-Only)
+          </h4>
+          
+          {data.executionOutcome.error ? (
+            <div
+              style={{
+                padding: '0.375rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderRadius: 'var(--radius-sm, 4px)',
+                fontSize: '0.625rem',
+                color: 'var(--status-failed-fg, #ef4444)',
+              }}
+            >
+              Outcome derivation failed: {data.executionOutcome.error}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {/* Job State Badge */}
+              {data.executionOutcome.job_state && (
+                <div style={{ display: 'flex', gap: '0.5rem', lineHeight: 1.4 }}>
+                  <span style={{ color: 'var(--text-dim, #666)', minWidth: '85px', flexShrink: 0 }}>
+                    Job State:
+                  </span>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      fontSize: '0.625rem',
+                      fontWeight: 600,
+                      backgroundColor:
+                        data.executionOutcome.job_state === 'COMPLETE'
+                          ? 'rgba(34, 197, 94, 0.15)'
+                          : data.executionOutcome.job_state === 'PARTIAL'
+                            ? 'rgba(251, 191, 36, 0.15)'
+                            : data.executionOutcome.job_state === 'BLOCKED'
+                              ? 'rgba(156, 163, 175, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
+                      color:
+                        data.executionOutcome.job_state === 'COMPLETE'
+                          ? '#22c55e'
+                          : data.executionOutcome.job_state === 'PARTIAL'
+                            ? '#fbbf24'
+                            : data.executionOutcome.job_state === 'BLOCKED'
+                              ? '#9ca3af'
+                              : '#ef4444',
+                    }}
+                  >
+                    {data.executionOutcome.job_state}
+                  </span>
+                </div>
+              )}
+              
+              {/* Summary */}
+              {data.executionOutcome.summary && (
+                <DiagnosticRow
+                  label="Summary"
+                  value={data.executionOutcome.summary}
+                />
+              )}
+              
+              {/* Clip Breakdown */}
+              <div
+                style={{
+                  marginTop: '0.5rem',
+                  padding: '0.375rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  fontSize: '0.625rem',
+                  lineHeight: 1.4,
+                }}
+              >
+                <div style={{ color: 'var(--text-dim, #666)', marginBottom: '0.25rem' }}>
+                  Clip Breakdown:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                  <span>Total: {data.executionOutcome.total_clips ?? 0}</span>
+                  <span style={{ color: '#22c55e' }}>
+                    ✅ Success: {data.executionOutcome.success_clips ?? 0}
+                  </span>
+                  <span style={{ color: '#ef4444' }}>
+                    ❌ Failed: {data.executionOutcome.failed_clips ?? 0}
+                  </span>
+                  <span style={{ color: '#9ca3af' }}>
+                    ⏭️ Skipped: {data.executionOutcome.skipped_clips ?? 0}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Failure Types */}
+              {data.executionOutcome.failure_types && data.executionOutcome.failure_types.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '0.5rem',
+                    padding: '0.375rem',
+                    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    fontSize: '0.625rem',
+                  }}
+                >
+                  <div style={{ color: 'var(--text-dim, #666)', marginBottom: '0.25rem' }}>
+                    Failure Types:
+                  </div>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: '1.25rem',
+                      fontSize: '0.625rem',
+                      lineHeight: 1.5,
+                      color: 'var(--text-secondary, #999)',
+                    }}
+                  >
+                    {data.executionOutcome.failure_types.map((type, i) => (
+                      <li key={i} style={{ marginBottom: '0.25rem' }}>
+                        {type.replace(/_/g, ' ')}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {/* Informational note */}
+              <div
+                style={{
+                  marginTop: '0.5rem',
+                  padding: '0.375rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  fontSize: '0.625rem',
+                  lineHeight: 1.4,
+                  color: 'var(--text-muted, #888)',
+                }}
+              >
+                ℹ️ This classifies <strong>what happened</strong> after execution.
+                <br />
+                It does <strong>not</strong> trigger retries or change behavior.
               </div>
             </div>
           )}

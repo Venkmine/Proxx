@@ -277,6 +277,21 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
             'resolution': resolution,
         }
     
+    # Derive execution outcome (read-only classification)
+    execution_outcome = None
+    try:
+        from app.reporting.diagnostics import get_execution_outcome
+        execution_outcome = get_execution_outcome(
+            total_clips=job.total_tasks,
+            success_clips=job.completed_count,
+            failed_clips=job.failed_count,
+            skipped_clips=job.skipped_count,
+            clip_results=None  # Could pass task details for per-clip failure analysis
+        )
+    except Exception:
+        # Silently fail on outcome derivation - not critical for API response
+        pass
+    
     return JobDetail(
         id=job.id,
         status=job.status,
@@ -293,6 +308,7 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         tasks=task_details,
         settings_summary=settings_summary,  # Trust Stabilisation: Export intent visibility
         ffmpeg_capabilities=_get_ffmpeg_capabilities_cached(),  # Hardware capabilities (detection only)
+        execution_outcome=execution_outcome,  # Execution outcome classification
     )
 
 

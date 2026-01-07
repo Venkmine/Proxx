@@ -145,6 +145,9 @@ class JobDetail(BaseModel):
     
     # Execution Policy (read-only explanation, V2 only)
     execution_policy: Optional[dict] = None  # {execution_class, blocking_reasons, alternatives}
+    
+    # Execution Outcome (read-only classification, explains what happened)
+    execution_outcome: Optional[dict] = None  # {job_state, failure_types, summary}
 
 
 class ReportReference(BaseModel):

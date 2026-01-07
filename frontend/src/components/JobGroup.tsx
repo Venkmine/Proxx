@@ -136,6 +136,38 @@ interface JobGroupProps {
       prores_gpu_supported?: boolean
       error?: string
     } | null
+    executionPolicy?: {
+      execution_class?: string
+      primary_engine?: string
+      blocking_reasons?: string[]
+      capability_summary?: {
+        gpu_decode?: boolean
+        gpu_encode?: boolean
+        prores_gpu_supported?: boolean
+      }
+      alternatives?: Array<{
+        engine?: string
+        codec?: string
+        tradeoff?: string
+      }>
+      confidence?: string
+      error?: string
+    } | null
+    executionOutcome?: {
+      job_state?: string
+      total_clips?: number
+      success_clips?: number
+      failed_clips?: number
+      skipped_clips?: number
+      failure_types?: string[]
+      summary?: string
+      clip_failures?: Array<{
+        task_id?: string
+        failure_type?: string
+        failure_reason?: string
+      }> | null
+      error?: string
+    } | null
   }
 }
 
@@ -1022,6 +1054,8 @@ export function JobGroup({
                     failedCount: failedCount,
                     completedCount: completedCount,
                     ffmpegCapabilities: diagnostics?.ffmpegCapabilities,
+                    executionPolicy: diagnostics?.executionPolicy,
+                    executionOutcome: diagnostics?.executionOutcome,
                   }}
                   enabled={true}
                 />

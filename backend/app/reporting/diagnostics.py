@@ -153,3 +153,63 @@ def get_execution_policy(jobspec: "JobSpec") -> Dict[str, Any]:
             "confidence": "low",
             "error": str(e)
         }
+
+
+def get_execution_outcome(
+    total_clips: int,
+    success_clips: int,
+    failed_clips: int,
+    skipped_clips: int,
+    clip_results: Optional[list] = None
+) -> Dict[str, Any]:
+    """
+    Derive execution outcome from clip results.
+    
+    Classifies job outcome (COMPLETE, PARTIAL, FAILED, BLOCKED) and identifies
+    failure types for observability in unattended execution.
+    
+    Args:
+        total_clips: Total number of clips in the job
+        success_clips: Number of clips that completed successfully
+        failed_clips: Number of clips that failed
+        skipped_clips: Number of clips that were skipped
+        clip_results: Optional list of per-clip result dicts with "failure_reason"
+        
+    Returns:
+        Execution outcome dict with:
+        - job_state: COMPLETE | PARTIAL | FAILED | BLOCKED
+        - total_clips, success_clips, failed_clips, skipped_clips
+        - failure_types: List of distinct failure classifications
+        - summary: Human-readable one-line summary
+        - clip_failures: Optional per-clip failure details
+        
+    Note:
+        This is READ-ONLY diagnostic classification. It does NOT:
+        - Change execution behavior
+        - Trigger retries
+        - Modify job state
+        - Alter execution policy
+    """
+    try:
+        from execution.failureTypes import derive_execution_outcome
+        outcome = derive_execution_outcome(
+            total_clips=total_clips,
+            success_clips=success_clips,
+            failed_clips=failed_clips,
+            skipped_clips=skipped_clips,
+            clip_results=clip_results
+        )
+        return outcome.to_dict()
+    except Exception as e:
+        # Return safe fallback on error
+        return {
+            "job_state": "UNKNOWN",
+            "total_clips": total_clips,
+            "success_clips": success_clips,
+            "failed_clips": failed_clips,
+            "skipped_clips": skipped_clips,
+            "failure_types": [],
+            "summary": f"Outcome derivation failed: {e}",
+            "clip_failures": None,
+            "error": str(e)
+        }
