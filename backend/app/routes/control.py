@@ -2064,3 +2064,82 @@ async def get_queue_status():
         queued_job_ids=queued_ids,
         queue_length=len(queued_ids),
     )
+
+
+# =============================================================================
+# Execution Summary & Export (Phase 4 QC)
+# =============================================================================
+
+@router.get("/jobs/{job_id}/execution-summary")
+async def get_execution_summary_endpoint(
+    job_id: str,
+    request: Request,
+    format: Literal["json", "text"] = "json",
+    redact_paths: bool = False
+):
+    """
+    Export execution summary for debugging/handoff/archival.
+    
+    Phase 4 QC: Read-only, deterministic summary of job execution.
+    Includes metadata, inputs, outputs, outcome, timeline, environment.
+    
+    Must NOT modify execution behavior. Explicit operator action only.
+    
+    Args:
+        job_id: The UUID of the job to export
+        format: Export format - "json" or "text"
+        redact_paths: Whether to redact absolute paths for privacy
+        
+    Returns:
+        JSON summary or plain text summary
+        
+    Raises:
+        404: If the job ID does not exist
+    """
+    from execution.executionSummary import create_execution_summary, export_execution_summary
+    from execution.executionPolicy import ExecutionPolicy
+    from execution.jobLifecycle import derive_job_execution_outcome
+    
+    registry = request.app.state.job_registry
+    job = registry.get_job(job_id)
+    
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    
+    try:
+        # Get execution events from job's event recorder
+        execution_events = []
+        if job._event_recorder is not None:
+            execution_events = job._event_recorder.get_all_events()
+        
+        # Derive execution outcome from job lifecycle
+        execution_outcome = derive_job_execution_outcome(job)
+        
+        # Get execution policy (default policy for now)
+        # TODO: If per-job execution policies are added in future, fetch from job
+        execution_policy = ExecutionPolicy.default()
+        
+        # Create summary
+        summary = create_execution_summary(
+            job=job,
+            execution_events=execution_events,
+            execution_outcome=execution_outcome,
+            execution_policy=execution_policy,
+            redact_paths=redact_paths
+        )
+        
+        # Export in requested format
+        if format == "text":
+            text_content = export_execution_summary(summary, format="text")
+            from fastapi.responses import PlainTextResponse
+            return PlainTextResponse(content=text_content, media_type="text/plain")
+        else:
+            # JSON format
+            json_content = export_execution_summary(summary, format="json")
+            from fastapi.responses import JSONResponse
+            import json
+            return JSONResponse(content=json.loads(json_content))
+            
+    except Exception as e:
+        logger.error(f"Failed to generate execution summary for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate execution summary: {e}")

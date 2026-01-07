@@ -1071,6 +1071,155 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
           </div>
         </div>
       )}
+      
+      {/* Export Execution Summary (Phase 4 QC) */}
+      <div
+        style={{
+          marginTop: '1rem',
+          padding: '0.75rem',
+          backgroundColor: 'var(--panel-bg-secondary, rgba(255, 255, 255, 0.03))',
+          borderRadius: 'var(--radius-md, 8px)',
+          border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+        }}
+      >
+        <h4
+          style={{
+            margin: 0,
+            marginBottom: '0.625rem',
+            fontSize: '0.6875rem',
+            fontWeight: 600,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            color: 'var(--text-dim, #666)',
+          }}
+        >
+          Export Execution Summary
+        </h4>
+        
+        <div
+          style={{
+            fontSize: '0.625rem',
+            lineHeight: 1.5,
+            color: 'var(--text-secondary, #999)',
+            marginBottom: '0.75rem',
+          }}
+        >
+          Export a complete, deterministic summary of this job's execution for debugging, handoff, or archival.
+          Includes metadata, inputs, outputs, outcome, timeline, and environment information.
+        </div>
+        
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+          }}
+        >
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch(`/control/jobs/${data.jobId}/execution-summary?format=json`)
+                if (!response.ok) {
+                  throw new Error(`Export failed: ${response.statusText}`)
+                }
+                const summary = await response.json()
+                const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `proxx_job_${data.jobId}_summary.json`
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                URL.revokeObjectURL(url)
+              } catch (error) {
+                console.error('Export JSON failed:', error)
+                alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+              }
+            }}
+            style={{
+              flex: 1,
+              padding: '0.5rem 0.75rem',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: 'var(--radius-sm, 4px)',
+              color: '#3b82f6',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
+            }}
+          >
+            📄 Export JSON
+          </button>
+          
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch(`/control/jobs/${data.jobId}/execution-summary?format=text`)
+                if (!response.ok) {
+                  throw new Error(`Export failed: ${response.statusText}`)
+                }
+                const text = await response.text()
+                const blob = new Blob([text], { type: 'text/plain' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `proxx_job_${data.jobId}_summary.txt`
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                URL.revokeObjectURL(url)
+              } catch (error) {
+                console.error('Export text failed:', error)
+                alert(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+              }
+            }}
+            style={{
+              flex: 1,
+              padding: '0.5rem 0.75rem',
+              backgroundColor: 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: 'var(--radius-sm, 4px)',
+              color: '#22c55e',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+            }}
+          >
+            📝 Export Text
+          </button>
+        </div>
+        
+        {/* Informational note */}
+        <div
+          style={{
+            marginTop: '0.5rem',
+            padding: '0.375rem',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderRadius: 'var(--radius-sm, 4px)',
+            fontSize: '0.625rem',
+            lineHeight: 1.4,
+            color: 'var(--text-muted, #888)',
+          }}
+        >
+          ℹ️ Export is <strong>read-only</strong> and does not modify execution behavior.
+          <br />
+          Summary is deterministic: same job → same output every time.
+        </div>
+      </div>
     </div>
   )
 }

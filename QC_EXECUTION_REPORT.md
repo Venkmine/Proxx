@@ -29,6 +29,60 @@ The system can successfully:
 
 ## NEW FEATURES ADDED
 
+### Execution Summary & Export (Phase 4, 2026-01-08)
+
+**Purpose:** Export complete, deterministic execution summary for debugging, handoff, or archival
+
+**Components Added:**
+- `backend/execution/executionSummary.py` - Summary schema and export functions (read-only)
+- `backend/app/routes/control.py` - GET `/control/jobs/{job_id}/execution-summary` endpoint
+- `frontend/src/components/JobDiagnosticsPanel.tsx` - Export buttons in Diagnostics panel
+- `backend/tests/test_execution_summary.py` - QC tests (18 tests covering all cases)
+
+**Execution Summary Schema:**
+Includes complete job information:
+- **Metadata:** Job ID, engine, status, timestamps, preset info
+- **Inputs:** Source file list, total clip count, settings snapshot
+- **Outputs:** Output directory, completed files, failed/skipped files
+- **Outcome:** Job state, success/failed/skipped counts, failure types, summary
+- **Timeline:** Execution events in chronological order with timestamps
+- **Environment:** Python version, platform, FFmpeg capabilities, execution policy
+
+**Export Formats:**
+- **JSON:** Machine-readable, structured data for programmatic analysis
+- **TEXT:** Human-readable, 80-character formatted, sectioned report
+
+**Usage:**
+1. Job completes (success or failure)
+2. User opens Diagnostics panel
+3. User clicks "Export JSON" or "Export Text"
+4. Browser downloads: `proxx_job_{job_id}_summary.{json|txt}`
+
+**Hard Rules:**
+1. ✅ Read-only - does NOT modify job or execution behavior
+2. ✅ Deterministic - same job → same summary every time
+3. ✅ Explicit operator action - no auto-export
+4. ✅ Complete - includes all diagnostic information
+5. ✅ Path redaction support for privacy
+6. ✅ Fast (<1s) - no FFmpeg invocation, no file I/O during generation
+
+**API Endpoint:**
+```
+GET /control/jobs/{job_id}/execution-summary?format=json|text&redact_paths=false
+```
+
+**Non-Goals (Explicitly NOT Implemented):**
+- ❌ Automatic export on job completion
+- ❌ Scheduled/batch export
+- ❌ Retry logic triggered by export
+- ❌ Execution behavior modification
+- ❌ Remote telemetry transmission
+
+**Why No Auto-Export?**
+Per INTENT.md: Operator must explicitly trigger all actions. Auto-export would violate determinism and create unexpected file I/O.
+
+---
+
 ### Execution Outcome Classification (2026-01-08)
 
 **Purpose:** Classify job and clip failures deterministically for unattended execution observability
