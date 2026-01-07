@@ -83,6 +83,9 @@ interface JobGroupProps {
     use_resolve: boolean
   }
   
+  // Lifecycle state (derived, read-only)
+  lifecycleState?: string  // IDLE | QUEUED | VALIDATING | RUNNING | COMPLETE | PARTIAL | FAILED | BLOCKED | CANCELLED
+  
   // Interaction
   isSelected?: boolean
   isExpanded?: boolean  // Phase 4B: Controlled collapse state
@@ -194,6 +197,7 @@ export function JobGroup({
   tasks,
   settingsSummary,
   executionEngines,
+  lifecycleState,
   isSelected = false,
   isExpanded = true,  // Phase 4B: Default to expanded for backwards compatibility
   onToggleExpand,
@@ -498,6 +502,27 @@ export function JobGroup({
         </div>
 
         <StatusBadge status={status} size="md" />
+        
+        {/* Lifecycle State Badge (derived from execution truth) */}
+        {lifecycleState && (
+          <div
+            style={{
+              fontSize: '0.6875rem',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+              padding: '0.1875rem 0.5rem',
+              background: 'rgba(255, 255, 255, 0.03)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.02em',
+            }}
+            title="Derived from execution timeline and outcome"
+          >
+            {lifecycleState}
+          </div>
+        )}
         
         {/* Engine Status Indicators - Presence-only scaffold */}
         {/* NO detection, NO highlighting, NO behavior - structural placement only */}

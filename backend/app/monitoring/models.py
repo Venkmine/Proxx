@@ -151,6 +151,9 @@ class JobDetail(BaseModel):
     
     # Execution Events Timeline (QC observability)
     execution_events: Optional[List[dict]] = None  # [{event_type, timestamp, clip_id, message}]
+    
+    # Lifecycle State (derived UI projection, NOT stored)
+    lifecycle_state: Optional[str] = None  # IDLE | QUEUED | VALIDATING | RUNNING | COMPLETE | PARTIAL | FAILED | BLOCKED | CANCELLED
 
 
 class ReportReference(BaseModel):

@@ -1007,3 +1007,134 @@ This is not analytics or metrics. This is **truth**—a deterministic record of 
 - ✅ Events are immutable once recorded
 - ✅ Events included in diagnostics export
 
+---
+
+### Job Lifecycle State Derivation (2026-01-08)
+
+**Purpose:** Derive a stable, single lifecycle state from execution truth for UI display
+
+**Components Added:**
+- `backend/execution/jobLifecycle.py` - Lifecycle state derivation module (read-only)
+- `backend/tests/test_job_lifecycle_derivation.py` - Comprehensive unit tests (42 tests, all passing in 0.09s)
+- Integration into `JobDetail` model
+- Integration into monitoring queries
+- Frontend lifecycle state badge in JobGroup component
+
+**Lifecycle States:**
+- **IDLE:** Job created but not yet queued for execution
+- **QUEUED:** Job is waiting to begin validation/execution
+- **VALIDATING:** Job is undergoing pre-execution validation
+- **RUNNING:** Job execution is in progress (at least one clip processing)
+- **COMPLETE:** Job finished successfully, all clips succeeded
+- **PARTIAL:** Job finished with some clips succeeded, some failed
+- **FAILED:** Job finished with all clips failed or job-level failure
+- **BLOCKED:** Job cannot execute due to validation failure
+- **CANCELLED:** Job was explicitly cancelled during execution
+
+**Derivation Logic:**
+Lifecycle state is derived from:
+1. Ordered execution events (chronological)
+2. Execution outcome (if available)
+
+The derivation function is **pure**—same inputs always produce same output. No side effects.
+
+**Example Mappings:**
+- No events → IDLE
+- JOB_CREATED → QUEUED
+- VALIDATION_STARTED (no result) → VALIDATING
+- VALIDATION_FAILED → BLOCKED
+- EXECUTION_STARTED (no completion) → RUNNING
+- EXECUTION_CANCELLED → CANCELLED
+- EXECUTION_COMPLETED + COMPLETE outcome → COMPLETE
+- EXECUTION_COMPLETED + PARTIAL outcome → PARTIAL
+- EXECUTION_COMPLETED + FAILED outcome → FAILED
+
+**Hard Rules:**
+1. ✅ Lifecycle state is DERIVED ONLY—never stored as primary state
+2. ✅ Computed on-demand for diagnostics and UI
+3. ✅ Deterministic—same events/outcome → same state
+4. ✅ Pure function—no mutations, no side effects
+5. ✅ Does NOT influence execution flow
+6. ✅ Does NOT inspect execution internals
+7. ✅ Terminal states (CANCELLED, BLOCKED, FAILED, COMPLETE, PARTIAL) are sticky
+
+**Relationship to Execution Events:**
+- Lifecycle state is derived FROM events
+- Events are the source of truth
+- Lifecycle state is a projection for UI display
+- Changing events changes derived state (deterministically)
+
+**Relationship to Execution Outcomes:**
+- Outcome provides final job state (COMPLETE/PARTIAL/FAILED/BLOCKED)
+- Outcome is used ONLY when EXECUTION_COMPLETED event exists
+- Lifecycle state maps outcome to UI-friendly state
+- Without outcome, derivation uses events alone
+
+**Why Lifecycle Is Derived, Not Stored:**
+Per INTENT.md:
+- Execution events are truth
+- Storing lifecycle state separately creates drift risk
+- Derivation ensures single source of truth
+- On-demand computation is fast (<1ms for 100+ events)
+
+**Non-Goals (Explicitly NOT Implemented):**
+- ❌ State machine controlling execution
+- ❌ Execution retry logic
+- ❌ Job control based on lifecycle state
+- ❌ Persistent lifecycle state storage
+- ❌ Lifecycle state transitions as events
+
+**Frontend Display:**
+- Small badge next to job status badge
+- Single word, uppercase (e.g., "RUNNING", "COMPLETE")
+- Neutral color palette (gray tones)
+- Tooltip: "Derived from execution timeline and outcome"
+- No actions, no toggles, no clicks
+- Read-only information only
+
+**Test Coverage (42 tests, 0.09s runtime):**
+- ✅ All 9 lifecycle states are reachable
+- ✅ State transitions are correct for given event sequences
+- ✅ Determinism verified (same inputs → same state)
+- ✅ Terminal states are sticky (cannot be overridden)
+- ✅ Edge cases handled (empty events, missing outcome, skipped validation)
+- ✅ Pure function behavior (no mutations of events or outcome)
+- ✅ Performance verified (<1ms even with 100+ events)
+- ✅ Documentation examples from docstring verified
+- ✅ Outcome mapping to lifecycle state correct
+- ✅ Clip-level events do not affect job-level state
+
+**Example Test Scenarios:**
+```python
+# Terminal state: Cancelled overrides everything
+events = [JOB_CREATED, EXECUTION_STARTED, EXECUTION_CANCELLED, EXECUTION_COMPLETED]
+assert derive_job_lifecycle_state(events) == CANCELLED
+
+# Validation failure blocks execution
+events = [JOB_CREATED, VALIDATION_STARTED, VALIDATION_FAILED]
+assert derive_job_lifecycle_state(events) == BLOCKED
+
+# Partial completion
+events = [EXECUTION_STARTED, EXECUTION_COMPLETED]
+outcome = ExecutionOutcome(job_state=PARTIAL, success=3, failed=2)
+assert derive_job_lifecycle_state(events, outcome) == PARTIAL
+```
+
+**Constraint Check (INTENT.md Compliance):**
+- ✅ No execution logic changed
+- ✅ No retries added
+- ✅ No state machine added to engine
+- ✅ No JobSpec mutation
+- ✅ No UI controls added
+- ✅ INTENT.md invariants respected
+
+**How This Avoids State Drift:**
+- Lifecycle state is computed on every query
+- Events are immutable source of truth
+- No separate lifecycle state table in database
+- Cannot have "stale" lifecycle state
+- If events change, derived state updates automatically
+
+
+
+

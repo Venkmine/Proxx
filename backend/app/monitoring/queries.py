@@ -309,6 +309,43 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         # Silently fail if event recording is unavailable
         pass
     
+    # Derive lifecycle state (read-only UI projection)
+    lifecycle_state = None
+    try:
+        from execution.jobLifecycle import derive_job_lifecycle_state
+        from execution.failureTypes import ExecutionOutcome
+        
+        # Get events for derivation
+        events = job.event_recorder.get_events()
+        
+        # Convert execution_outcome dict to ExecutionOutcome if available
+        outcome_obj = None
+        if execution_outcome:
+            try:
+                from execution.failureTypes import JobOutcomeState, ClipFailureType
+                outcome_obj = ExecutionOutcome(
+                    job_state=JobOutcomeState(execution_outcome['job_state']),
+                    total_clips=execution_outcome['total_clips'],
+                    success_clips=execution_outcome['success_clips'],
+                    failed_clips=execution_outcome['failed_clips'],
+                    skipped_clips=execution_outcome['skipped_clips'],
+                    failure_types=[ClipFailureType(ft) for ft in execution_outcome.get('failure_types', [])],
+                    summary=execution_outcome['summary'],
+                    clip_failures=execution_outcome.get('clip_failures')
+                )
+            except Exception:
+                # If conversion fails, derive without outcome
+                pass
+        
+        lifecycle = derive_job_lifecycle_state(
+            execution_events=events,
+            execution_outcome=outcome_obj
+        )
+        lifecycle_state = lifecycle.value
+    except Exception:
+        # Silently fail on lifecycle derivation - not critical
+        pass
+    
     return JobDetail(
         id=job.id,
         status=job.status,
@@ -327,6 +364,7 @@ def get_job_detail(registry: JobRegistry, job_id: str) -> JobDetail:
         ffmpeg_capabilities=_get_ffmpeg_capabilities_cached(),  # Hardware capabilities (detection only)
         execution_outcome=execution_outcome,  # Execution outcome classification
         execution_events=execution_events,  # Execution event timeline (QC observability)
+        lifecycle_state=lifecycle_state,  # Lifecycle state (derived UI projection)
     )
 
 

@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from .event_model import JobStatus
 from .heartbeat import WorkerMonitor
 from .state_store import StateStore, get_store
+from backend.execution.jobLifecycle import derive_job_lifecycle_state
 
 # Default binding configuration
 DEFAULT_HOST = "127.0.0.1"  # Localhost only by default
@@ -205,7 +206,7 @@ def create_monitor_app(store: Optional[StateStore] = None) -> FastAPI:
         """
         Get details for a specific job.
         
-        Returns the job record and its full event timeline.
+        Returns the job record, full event timeline, and derived lifecycle state.
         """
         try:
             job = store.get_job(job_id)
@@ -214,10 +215,18 @@ def create_monitor_app(store: Optional[StateStore] = None) -> FastAPI:
             
             events = store.get_events_for_job(job_id)
             
+            # Derive lifecycle state from execution events
+            # NOTE: This is computed on-demand, NOT stored
+            lifecycle_state = derive_job_lifecycle_state(
+                execution_events=events,
+                execution_outcome=None  # TODO: Add outcome when available
+            )
+            
             return {
                 "job": job.to_dict(),
                 "events": [event.to_dict() for event in events],
-                "event_count": len(events)
+                "event_count": len(events),
+                "lifecycle_state": lifecycle_state.value,
             }
         except HTTPException:
             raise
