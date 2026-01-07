@@ -3062,31 +3062,52 @@ function App() {
                       {selectedClipIds.size} clip(s)
                     </span>
                   )}
-                  {/* FIFO Queue: Start All button - manually trigger queue execution */}
-                  {/* Visible when: queue has jobs AND no job is currently running */}
-                  {queuedJobSpecs.length > 0 && !jobs.some(j => j.status.toUpperCase() === 'RUNNING') && (
+                  {/* Manual Execution Control: Start Execution button */}
+                  {/* Visible when: at least one PENDING job exists */}
+                  {/* Disabled when: any job is RUNNING or queue is empty */}
+                  {jobs.filter(j => j.status.toUpperCase() === 'PENDING').length > 0 && (
                     <Button
                       variant="primary"
                       size="sm"
                       onClick={async () => {
-                        // FIFO will automatically start the first job
-                        // This button is just a manual trigger if needed
-                        if (queuedJobSpecs.length > 0) {
-                          const firstJob = queuedJobSpecs[0]
-                          await startJob(firstJob.job_id)
+                        try {
+                          setLoading(true)
+                          const response = await fetch(`${BACKEND_URL}/control/jobs/start-execution`, { 
+                            method: 'POST' 
+                          })
+                          if (!response.ok) {
+                            const normalized = await normalizeResponseError(response, '/control/jobs/start-execution', 'manual-execution')
+                            throw new Error(normalized.message)
+                          }
+                          const result = await response.json()
+                          addStatusLogEntry({
+                            timestamp: new Date(),
+                            message: result.message || 'Execution started',
+                            type: 'success'
+                          })
+                          await fetchJobs()
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Failed to start execution')
+                        } finally {
+                          setLoading(false)
                         }
                       }}
-                      disabled={loading}
-                      data-testid="start-queue-btn"
-                      title="Start processing queue (jobs will execute in order)"
+                      disabled={loading || jobs.some(j => j.status.toUpperCase() === 'RUNNING')}
+                      data-testid="start-execution-btn"
+                      title={
+                        jobs.some(j => j.status.toUpperCase() === 'RUNNING')
+                          ? 'Cannot start: a job is already running'
+                          : `Start execution of ${jobs.filter(j => j.status.toUpperCase() === 'PENDING').length} pending job(s)`
+                      }
                     >
-                      ▶ Start Queue ({queuedJobSpecs.length} job{queuedJobSpecs.length !== 1 ? 's' : ''})
+                      ▶ Start Execution
                     </Button>
                   )}
-                  {/* Render Jobs button - starts all pending backend jobs (non-queued) */}
+                  {/* Legacy: Individual job start buttons still available per job */}
+                  {/* Render Jobs button - kept for backward compatibility */}
                   {jobs.filter(j => j.status.toUpperCase() === 'PENDING' && !queuedJobSpecs.some(q => q.job_id === j.id)).length > 0 && (
                     <Button
-                      variant="primary"
+                      variant="secondary"
                       size="sm"
                       onClick={async () => {
                         // Start all pending backend jobs that are NOT in our FIFO queue

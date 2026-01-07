@@ -1680,6 +1680,103 @@ async def rebind_preset_endpoint(job_id: str, body: RebindPresetRequest, request
 # =============================================================================
 
 
+@router.post("/jobs/start-execution", response_model=OperationResponse)
+async def start_execution_endpoint(request: Request):
+    """
+    Start manual execution of all PENDING jobs in FIFO order.
+    
+    This is the explicit manual trigger for job execution.
+    Starts the first PENDING job, subsequent jobs will execute
+    automatically in FIFO order as each completes.
+    
+    QC GATE: Only starts execution if:
+    - At least one PENDING job exists
+    - No job is currently RUNNING
+    
+    Returns:
+        Operation result with count of jobs queued for execution
+        
+    Raises:
+        400: No PENDING jobs or a job is already RUNNING
+        500: Execution failed
+    """
+    from app.execution.scheduler import get_scheduler
+    from datetime import datetime as dt
+    
+    try:
+        job_registry = request.app.state.job_registry
+        binding_registry = request.app.state.binding_registry
+        preset_registry = request.app.state.preset_registry
+        job_engine = request.app.state.job_engine
+        scheduler = get_scheduler()
+        
+        # Get all PENDING jobs
+        all_jobs = job_registry.list_jobs()
+        pending_jobs = [j for j in all_jobs if j.status == JobStatus.PENDING]
+        running_jobs = [j for j in all_jobs if j.status == JobStatus.RUNNING]
+        
+        # QC GATE: Check execution preconditions
+        if not pending_jobs:
+            raise HTTPException(
+                status_code=400,
+                detail="No PENDING jobs to execute"
+            )
+        
+        if running_jobs:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot start execution: {len(running_jobs)} job(s) already RUNNING"
+            )
+        
+        logger.info(f"[MANUAL_EXEC] Starting execution of {len(pending_jobs)} PENDING job(s)")
+        
+        # Enqueue all PENDING jobs in FIFO order
+        for job in pending_jobs:
+            scheduler.enqueue_job(job.id)
+        
+        # Start the first job (others will execute in sequence)
+        first_job = pending_jobs[0]
+        queue_position = scheduler.acquire_execution(first_job.id)
+        
+        if queue_position:
+            # Get preset if bound
+            preset_id = binding_registry.get_preset_id(first_job.id)
+            if preset_id:
+                preset = preset_registry.get_global_preset(preset_id)
+                if not preset:
+                    logger.warning(f"Bound preset '{preset_id}' not found for job {first_job.id}, proceeding with job settings")
+                    preset_id = None
+            
+            logger.info(f"[MANUAL_EXEC] Starting first job: {first_job.id}")
+            
+            # Execute the first job (in background thread to not block API)
+            import threading
+            def execute_async():
+                try:
+                    job_engine.execute_job(
+                        job=first_job,
+                        global_preset_id=preset_id,
+                        preset_registry=preset_registry,
+                        generate_reports=True,
+                    )
+                finally:
+                    scheduler.release_execution(first_job.id)
+            
+            thread = threading.Thread(target=execute_async, daemon=True)
+            thread.start()
+        
+        return OperationResponse(
+            success=True,
+            message=f"Execution started: {len(pending_jobs)} job(s) queued, starting job {first_job.id[:8]}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Manual execution start failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Execution start failed: {e}")
+
+
 @router.post("/jobs/{job_id}/start", response_model=OperationResponse)
 async def start_job_endpoint(job_id: str, request: Request):
     """
