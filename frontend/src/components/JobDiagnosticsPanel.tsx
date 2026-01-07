@@ -136,6 +136,25 @@ interface JobDiagnosticsData {
     prores_gpu_supported?: boolean
     error?: string
   } | null
+  
+  // Execution policy (read-only explanation, V2 only)
+  executionPolicy?: {
+    execution_class?: string
+    primary_engine?: string
+    blocking_reasons?: string[]
+    capability_summary?: {
+      gpu_decode?: boolean
+      gpu_encode?: boolean
+      prores_gpu_supported?: boolean
+    }
+    alternatives?: Array<{
+      engine?: string
+      codec?: string
+      tradeoff?: string
+    }>
+    confidence?: string
+    error?: string
+  } | null
 }
 
 interface JobDiagnosticsPanelProps {
@@ -502,6 +521,219 @@ export function JobDiagnosticsPanel({ data, enabled = true }: JobDiagnosticsPane
                 ℹ️ Detection only — does not affect execution behavior.
                 <br />
                 FFmpeg GPU ≠ Resolve GPU. ProRes always uses CPU in FFmpeg.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Execution Policy (Read-Only) */}
+      {data.executionPolicy && (
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem',
+            backgroundColor: 'var(--panel-bg-secondary, rgba(255, 255, 255, 0.03))',
+            borderRadius: 'var(--radius-md, 8px)',
+            border: '1px solid var(--border-color, rgba(255, 255, 255, 0.1))',
+          }}
+        >
+          <h4
+            style={{
+              margin: 0,
+              marginBottom: '0.625rem',
+              fontSize: '0.6875rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              color: 'var(--text-dim, #666)',
+            }}
+          >
+            Execution Policy (Read-Only)
+          </h4>
+          
+          {data.executionPolicy.error ? (
+            <div
+              style={{
+                padding: '0.375rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderRadius: 'var(--radius-sm, 4px)',
+                fontSize: '0.625rem',
+                color: 'var(--status-failed-fg, #ef4444)',
+              }}
+            >
+              Policy derivation failed: {data.executionPolicy.error}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {/* Execution Class Badge */}
+              {data.executionPolicy.execution_class && (
+                <div style={{ display: 'flex', gap: '0.5rem', lineHeight: 1.4 }}>
+                  <span style={{ color: 'var(--text-dim, #666)', minWidth: '85px', flexShrink: 0 }}>
+                    Class:
+                  </span>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      fontSize: '0.625rem',
+                      fontWeight: 600,
+                      backgroundColor:
+                        data.executionPolicy.execution_class === 'GPU_ENCODE_AVAILABLE'
+                          ? 'rgba(34, 197, 94, 0.15)'
+                          : data.executionPolicy.execution_class === 'GPU_DECODE_ONLY'
+                            ? 'rgba(251, 191, 36, 0.15)'
+                            : 'rgba(156, 163, 175, 0.15)',
+                      color:
+                        data.executionPolicy.execution_class === 'GPU_ENCODE_AVAILABLE'
+                          ? '#22c55e'
+                          : data.executionPolicy.execution_class === 'GPU_DECODE_ONLY'
+                            ? '#fbbf24'
+                            : '#9ca3af',
+                    }}
+                  >
+                    {data.executionPolicy.execution_class}
+                  </span>
+                </div>
+              )}
+              
+              {/* Primary Engine */}
+              {data.executionPolicy.primary_engine && (
+                <DiagnosticRow
+                  label="Engine"
+                  value={data.executionPolicy.primary_engine.toUpperCase()}
+                  mono
+                />
+              )}
+              
+              {/* Confidence */}
+              {data.executionPolicy.confidence && (
+                <DiagnosticRow
+                  label="Confidence"
+                  value={data.executionPolicy.confidence.toUpperCase()}
+                />
+              )}
+              
+              {/* Blocking Reasons */}
+              {data.executionPolicy.blocking_reasons && data.executionPolicy.blocking_reasons.length > 0 && (
+                <div style={{ marginTop: '0.25rem' }}>
+                  <div
+                    style={{
+                      color: 'var(--text-dim, #666)',
+                      fontSize: '0.625rem',
+                      marginBottom: '0.25rem',
+                    }}
+                  >
+                    Why:
+                  </div>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: '1.25rem',
+                      fontSize: '0.625rem',
+                      lineHeight: 1.5,
+                      color: 'var(--text-secondary, #999)',
+                    }}
+                  >
+                    {data.executionPolicy.blocking_reasons.map((reason, i) => (
+                      <li key={i} style={{ marginBottom: '0.25rem' }}>
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {/* Capability Summary */}
+              {data.executionPolicy.capability_summary && (
+                <div
+                  style={{
+                    marginTop: '0.5rem',
+                    padding: '0.375rem',
+                    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    fontSize: '0.625rem',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div style={{ color: 'var(--text-dim, #666)', marginBottom: '0.25rem' }}>
+                    Capabilities:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                    <span>
+                      GPU Decode: {data.executionPolicy.capability_summary.gpu_decode ? '✅ Yes' : '❌ No'}
+                    </span>
+                    <span>
+                      GPU Encode: {data.executionPolicy.capability_summary.gpu_encode ? '✅ Yes' : '❌ No'}
+                    </span>
+                    <span>
+                      ProRes GPU: {data.executionPolicy.capability_summary.prores_gpu_supported ? '✅ Yes' : '❌ No (CPU only)'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Alternatives (Collapsed by Default) */}
+              {data.executionPolicy.alternatives && data.executionPolicy.alternatives.length > 0 && (
+                <details
+                  style={{
+                    marginTop: '0.5rem',
+                    padding: '0.375rem',
+                    backgroundColor: 'rgba(156, 163, 175, 0.05)',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    fontSize: '0.625rem',
+                  }}
+                >
+                  <summary
+                    style={{
+                      cursor: 'pointer',
+                      color: 'var(--text-dim, #666)',
+                      userSelect: 'none',
+                    }}
+                  >
+                    Alternatives ({data.executionPolicy.alternatives.length})
+                  </summary>
+                  <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {data.executionPolicy.alternatives.map((alt, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          padding: '0.375rem',
+                          backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                          borderRadius: 'var(--radius-sm, 4px)',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, color: 'var(--text-secondary, #999)' }}>
+                          {alt.engine?.toUpperCase()} {alt.codec && `— ${alt.codec}`}
+                        </div>
+                        {alt.tradeoff && (
+                          <div style={{ marginTop: '0.25rem', color: 'var(--text-muted, #888)' }}>
+                            {alt.tradeoff}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              
+              {/* Informational note */}
+              <div
+                style={{
+                  marginTop: '0.5rem',
+                  padding: '0.375rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderRadius: 'var(--radius-sm, 4px)',
+                  fontSize: '0.625rem',
+                  lineHeight: 1.4,
+                  color: 'var(--text-muted, #888)',
+                }}
+              >
+                ℹ️ This explains <strong>why</strong> the job executes this way.
+                <br />
+                It does <strong>not</strong> control or change execution behavior.
               </div>
             </div>
           )}

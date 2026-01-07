@@ -142,6 +142,9 @@ class JobDetail(BaseModel):
     
     # FFmpeg Capabilities (detection only, read-only)
     ffmpeg_capabilities: Optional[dict] = None  # {hwaccels, encoders, prores_gpu_supported}
+    
+    # Execution Policy (read-only explanation, V2 only)
+    execution_policy: Optional[dict] = None  # {execution_class, blocking_reasons, alternatives}
 
 
 class ReportReference(BaseModel):

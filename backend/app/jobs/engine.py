@@ -1156,12 +1156,18 @@ class JobEngine:
             get_hostname,
             get_resolve_info,
             get_ffmpeg_capabilities,
+            get_execution_policy,
         )
         from ..reporting.writers import write_reports
         
         # Capture diagnostics
         resolve_info = get_resolve_info()
         ffmpeg_caps = get_ffmpeg_capabilities()
+        
+        # Execution policy (optional - requires JobSpec, which V1 jobs don't have)
+        execution_policy = None
+        # Note: In V2, we'd derive this from job.jobspec if available
+        # For now, execution_policy remains None for V1 jobs
         
         diagnostics = DiagnosticsInfo(
             proxx_version=get_proxx_version(),
@@ -1172,6 +1178,7 @@ class JobEngine:
             resolve_version=resolve_info.get("version"),
             resolve_studio=resolve_info.get("studio"),
             ffmpeg_capabilities=ffmpeg_caps,
+            execution_policy=execution_policy,
         )
         
         # Build ClipReports with execution metadata

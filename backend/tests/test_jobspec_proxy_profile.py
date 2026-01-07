@@ -17,9 +17,15 @@ import pytest
 from pathlib import Path
 import tempfile
 import json
+import sys
 
-from backend.job_spec import JobSpec, JobSpecValidationError
-from backend.v2.proxy_profiles import ProxyProfileError
+# Add backend to path for imports
+backend_dir = Path(__file__).parent.parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
+from job_spec import JobSpec, JobSpecValidationError
+from v2.proxy_profiles import ProxyProfileError
 
 
 class TestJobSpecProxyProfileField:

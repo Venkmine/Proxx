@@ -73,7 +73,8 @@ class DiagnosticsInfo(BaseModel):
     """
     System and environment diagnostics captured at report time.
     
-    Includes Proxx version, Python/OS versions, Resolve info, FFmpeg capabilities, etc.
+    Includes Proxx version, Python/OS versions, Resolve info, FFmpeg capabilities,
+    and execution policy explanation.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -93,6 +94,9 @@ class DiagnosticsInfo(BaseModel):
 
     # FFmpeg capabilities (detection only, does not affect execution)
     ffmpeg_capabilities: Optional[Dict[str, Any]] = None
+
+    # Execution policy (read-only explanation, does not affect execution)
+    execution_policy: Optional[Dict[str, Any]] = None
 
     # Timestamp
     generated_at: datetime = Field(default_factory=datetime.now)

@@ -27,6 +27,95 @@ The system can successfully:
 
 ## NEW FEATURES ADDED
 
+### Execution Policy Layer (2026-01-07)
+
+**Purpose:** Explain *why* a job executes the way it does, without changing execution behavior
+
+**Components Added:**
+- `backend/execution/executionPolicy.py` - Policy derivation module (read-only)
+- `backend/tests/test_execution_policy.py` - Unit tests (17 tests covering all cases)
+- Integration into `DiagnosticsInfo` model
+- Integration into `JobDetail` API response
+- Frontend execution policy display in Diagnostics panel
+
+**Execution Policy Report:**
+Provides deterministic explanation of:
+- CPU vs GPU reality
+- Engine constraints (FFmpeg vs Resolve)
+- Blocking reasons (human-readable)
+- Capability summary
+- Alternative engines/codecs (with tradeoffs)
+
+**Hard Rules:**
+1. ✅ ProRes is ALWAYS classified as CPU_ONLY under FFmpeg
+2. ✅ GPU decode ≠ GPU encode
+3. ✅ Absence of GPU is not an error
+4. ✅ Resolve suggested as alternative, never assumed
+5. ✅ Zero side effects on execution
+
+**Non-Goals (Explicitly NOT Implemented):**
+- ❌ Performance tuning
+- ❌ Auto engine switching
+- ❌ User-visible controls
+- ❌ FFmpeg argument changes
+- ❌ GPU enablement
+- ❌ Preset logic changes
+- ❌ Config flags
+
+**Example Output:**
+```json
+{
+  "execution_class": "CPU_ONLY",
+  "primary_engine": "ffmpeg",
+  "blocking_reasons": [
+    "ProRes encoding in FFmpeg is CPU-only. No GPU encoder exists for ProRes in FFmpeg."
+  ],
+  "capability_summary": {
+    "gpu_decode": true,
+    "gpu_encode": false,
+    "prores_gpu_supported": false
+  },
+  "alternatives": [
+    {
+      "engine": "resolve",
+      "codec": "prores_proxy",
+      "tradeoff": "Resolve Studio supports ProRes GPU encoding but requires license and installation."
+    }
+  ],
+  "confidence": "high"
+}
+```
+
+**Frontend Display:**
+- New "Execution Policy (Read-Only)" section in Job Diagnostics Panel
+- Execution class badge (color-coded: green=GPU available, yellow=decode only, gray=CPU only)
+- Primary engine display
+- Blocking reasons (bulleted list)
+- Capability summary (checkboxes)
+- Alternatives (collapsed by default)
+- Clear statement: "This explains WHY, does NOT control execution"
+
+**Policy ≠ Execution:**
+This layer explains execution behavior. It does not:
+- Change how jobs execute
+- Affect preset compilation
+- Enable GPU features
+- Route to different engines
+- Make performance decisions
+
+**Test Coverage:**
+- ProRes + FFmpeg + GPU present → CPU_ONLY ✅
+- H.264 + NVENC present → GPU_ENCODE_AVAILABLE ✅
+- RAW input → Suggests Resolve ✅
+- No GPU at all → CPU_ONLY (high confidence) ✅
+- Malformed JobSpec → Clean exception ✅
+- GPU decode only → GPU_DECODE_ONLY ✅
+- Deterministic output ✅
+- No side effects ✅
+- ProRes GPU assertion enforced ✅
+
+---
+
 ### FFmpeg Hardware Capability Detection (2026-01-06)
 
 **Purpose:** Introspection only - detect what FFmpeg can do without changing execution behavior

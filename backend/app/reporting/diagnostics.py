@@ -111,3 +111,45 @@ def get_ffmpeg_capabilities() -> Dict[str, Any]:
             "prores_gpu_supported": False,
             "error": f"Detection failed: {e}",
         }
+
+
+def get_execution_policy(jobspec: "JobSpec") -> Dict[str, Any]:
+    """
+    Derive read-only execution policy for a JobSpec.
+    
+    Explains WHY the job executes the way it does, without changing execution.
+    
+    Args:
+        jobspec: The JobSpec to analyze
+        
+    Returns:
+        Execution policy dict with:
+        - execution_class: CPU_ONLY | GPU_DECODE_ONLY | GPU_ENCODE_AVAILABLE
+        - primary_engine: ffmpeg | resolve
+        - blocking_reasons: List of human-readable explanations
+        - capability_summary: GPU capabilities
+        - alternatives: Suggested alternative engines/codecs
+        - confidence: high | medium
+        
+    Note:
+        This is DIAGNOSTIC ONLY - it does not affect execution behavior.
+    """
+    try:
+        from execution.executionPolicy import derive_execution_policy
+        ffmpeg_caps = get_ffmpeg_capabilities()
+        return derive_execution_policy(jobspec, ffmpeg_caps)
+    except Exception as e:
+        # Return safe fallback on error
+        return {
+            "execution_class": "UNKNOWN",
+            "primary_engine": "ffmpeg",
+            "blocking_reasons": [f"Policy derivation failed: {e}"],
+            "capability_summary": {
+                "gpu_decode": False,
+                "gpu_encode": False,
+                "prores_gpu_supported": False
+            },
+            "alternatives": [],
+            "confidence": "low",
+            "error": str(e)
+        }
