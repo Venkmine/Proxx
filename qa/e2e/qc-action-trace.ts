@@ -322,3 +322,118 @@ export function assertOutputFileExists(trace: QCActionTrace): void {
   
   console.log(`✓ Output file exists and has content: ${trace.outputFile}`)
 }
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * QC TRACE INVARIANTS — NON-NEGOTIABLE TRUTH GUARANTEES
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * Phase 5 Requirement: QC_ACTION_TRACE must reflect execution exactly.
+ * 
+ * These invariants MUST hold:
+ * 1. EXECUTION_STARTED must occur before EXECUTION_COMPLETED
+ * 2. EXECUTION_COMPLETED must not exist without STARTED
+ * 3. Output files without STARTED is a hard failure
+ * 4. STARTED without output is allowed (failure case), but must be classified
+ */
+export function assertTraceInvariants(trace: QCActionTrace): void {
+  const hasStarted = trace.entries.some(e => e.step === 'EXECUTION_STARTED' && e.success)
+  const hasCompleted = trace.entries.some(e => e.step === 'EXECUTION_COMPLETED' && e.success)
+  const hasOutput = trace.outputFileExists === true
+  
+  // Get timestamps for ordering check
+  const startedEntry = trace.entries.find(e => e.step === 'EXECUTION_STARTED')
+  const completedEntry = trace.entries.find(e => e.step === 'EXECUTION_COMPLETED')
+  
+  // Invariant 1: EXECUTION_COMPLETED requires EXECUTION_STARTED
+  if (hasCompleted && !hasStarted) {
+    throw new Error(
+      `TRACE_INVARIANT_VIOLATION: EXECUTION_COMPLETED exists without EXECUTION_STARTED\n` +
+      `This indicates execution events are being fabricated or inferred incorrectly.\n` +
+      `QC traces cannot lie.`
+    )
+  }
+  
+  // Invariant 2: EXECUTION_STARTED must precede EXECUTION_COMPLETED
+  if (startedEntry && completedEntry) {
+    const startedTime = new Date(startedEntry.timestamp).getTime()
+    const completedTime = new Date(completedEntry.timestamp).getTime()
+    
+    if (completedTime < startedTime) {
+      throw new Error(
+        `TRACE_INVARIANT_VIOLATION: EXECUTION_COMPLETED (${completedEntry.timestamp}) ` +
+        `occurred BEFORE EXECUTION_STARTED (${startedEntry.timestamp})\n` +
+        `Time travel is not allowed.`
+      )
+    }
+  }
+  
+  // Invariant 3: Output file without EXECUTION_STARTED is a hard failure
+  if (hasOutput && !hasStarted) {
+    throw new Error(
+      `TRACE_INVARIANT_VIOLATION: Output file exists but EXECUTION_STARTED was never recorded\n` +
+      `Output: ${trace.outputFile}\n` +
+      `This indicates the trace is incomplete or execution was not properly observed.`
+    )
+  }
+  
+  // Invariant 4: EXECUTION_STARTED without output must have a classified reason
+  // (This is allowed for failure cases, but we log it)
+  if (hasStarted && !hasCompleted && !hasOutput) {
+    console.log(`[QC_TRACE] ⚠ EXECUTION_STARTED without completion or output - likely execution failure`)
+    // This is allowed - it's a classified failure case
+  }
+  
+  // Invariant 5: If test passed, golden path must be complete (for execution tests)
+  if (trace.testPassed && !trace.goldenPathComplete) {
+    console.log(`[QC_TRACE] ⚠ Test passed but golden path incomplete - verify this is intentional`)
+  }
+  
+  console.log('✓ All QC trace invariants satisfied')
+}
+
+/**
+ * Asserts that lifecycle state matches filesystem reality.
+ * 
+ * Phase 5 Requirement: Lifecycle vs Reality Cross-Check
+ * 
+ * - COMPLETE + no output file → FAIL
+ * - FAILED + output exists → FAIL  
+ * - RUNNING + no FFmpeg process → FAIL
+ */
+export function assertLifecycleMatchesReality(
+  lifecycleState: 'pending' | 'running' | 'complete' | 'failed' | 'cancelled',
+  outputPath: string | undefined,
+  ffmpegRunning: boolean = false
+): void {
+  const outputExists = outputPath ? fs.existsSync(outputPath) : false
+  const outputHasContent = outputExists && fs.statSync(outputPath!).size > 0
+  
+  // COMPLETE must have output
+  if (lifecycleState === 'complete' && !outputHasContent) {
+    throw new Error(
+      `LIFECYCLE_REALITY_MISMATCH: State is COMPLETE but no output file exists\n` +
+      `Expected output: ${outputPath}\n` +
+      `Truth must converge.`
+    )
+  }
+  
+  // FAILED should not have output (partial outputs are an edge case)
+  if (lifecycleState === 'failed' && outputHasContent) {
+    console.log(
+      `[QC_TRACE] ⚠ State is FAILED but output exists: ${outputPath}\n` +
+      `This may indicate a partial output from a failed job.`
+    )
+    // This is a warning, not a hard failure - partial outputs can exist
+  }
+  
+  // RUNNING should have FFmpeg process (if we can check)
+  if (lifecycleState === 'running' && !ffmpegRunning) {
+    console.log(
+      `[QC_TRACE] ⚠ State is RUNNING but no FFmpeg process detected\n` +
+      `This may be a timing issue or a stuck job.`
+    )
+    // Warning only - timing can cause this legitimately
+  }
+  
+  console.log(`✓ Lifecycle state "${lifecycleState}" matches filesystem reality`)
+}

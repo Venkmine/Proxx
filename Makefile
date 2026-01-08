@@ -94,6 +94,57 @@ verify-e2e-report:
 	@echo "==================================================="
 	cd frontend && pnpm run test:e2e:report
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 5 ENFORCEMENT — ELECTRON E2E WORKFLOW TESTS
+# These tests validate the complete golden path via real Electron UI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Sacred test - THE test that proves the app works
+verify-sacred:
+	@echo "==================================================="
+	@echo "Sacred E2E Test — Minimum Viable Workflow"
+	@echo "==================================================="
+	cd qa/e2e && E2E_TEST=true npx playwright test sacred_meta_test.spec.ts --reporter=list
+
+# Workflow matrix - all 10 core workflows
+verify-workflow-matrix:
+	@echo "==================================================="
+	@echo "Workflow Matrix E2E — All Core Workflows"
+	@echo "==================================================="
+	cd qa/e2e && E2E_TEST=true npx playwright test workflow_matrix.spec.ts --reporter=list
+
+# Button coverage audit - zero dead UI
+verify-button-audit:
+	@echo "==================================================="
+	@echo "Button Coverage Audit — Zero Dead UI"
+	@echo "==================================================="
+	cd qa/e2e && E2E_TEST=true npx playwright test button_coverage_audit.spec.ts --reporter=list
+
+# Lifecycle crosscheck - truth must converge
+verify-lifecycle:
+	@echo "==================================================="
+	@echo "Lifecycle vs Reality Crosscheck"
+	@echo "==================================================="
+	cd qa/e2e && E2E_TEST=true npx playwright test lifecycle_crosscheck.spec.ts --reporter=list
+
+# ALL Phase 5 E2E tests
+verify-phase5:
+	@echo "==================================================="
+	@echo "Phase 5 Complete E2E Enforcement"
+	@echo "==================================================="
+	@echo ""
+	@make verify-sacred
+	@echo ""
+	@make verify-workflow-matrix
+	@echo ""
+	@make verify-button-audit
+	@echo ""
+	@make verify-lifecycle
+	@echo ""
+	@echo "==================================================="
+	@echo "Phase 5 Verification Complete"
+	@echo "==================================================="
+
 # Development
 dev:
 	./START

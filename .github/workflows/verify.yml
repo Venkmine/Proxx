@@ -83,13 +83,52 @@ jobs:
           cd qa/e2e
           npx playwright test sacred_meta_test.spec.ts --reporter=list
       
+      - name: Run Workflow Matrix E2E Tests
+        if: success()  # Only if sacred test passed
+        env:
+          E2E_TEST: 'true'
+          E2E_TARGET: 'electron'
+        run: |
+          cd qa/e2e
+          npx playwright test workflow_matrix.spec.ts --reporter=list || true
+          # Workflow matrix is informational for now
+      
+      - name: Run Button Coverage Audit
+        if: success()
+        env:
+          E2E_TEST: 'true'
+        run: |
+          cd qa/e2e
+          npx playwright test button_coverage_audit.spec.ts --reporter=list || true
+          # Audit is informational
+      
+      - name: Run Lifecycle Crosscheck
+        if: success()
+        env:
+          E2E_TEST: 'true'
+        run: |
+          cd qa/e2e
+          npx playwright test lifecycle_crosscheck.spec.ts --reporter=list || true
+      
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: electron-e2e-artifacts
-          path: artifacts/ui/
+          path: |
+            artifacts/ui/
+            qa/e2e/test-results/
           retention-days: 7
+      
+      - name: Upload QC_ACTION_TRACE artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qc-action-traces
+          path: |
+            artifacts/ui/**/qc_action_trace_*.json
+            artifacts/ui/**/*_summary.txt
+          retention-days: 30
 
   # ═══════════════════════════════════════════════════════════════════════════
   # BACKEND UNIT TESTS

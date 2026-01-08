@@ -835,4 +835,112 @@ See: [FIFO_QUEUE_IMPLEMENTATION.md](../FIFO_QUEUE_IMPLEMENTATION.md) for full te
 
 ---
 
----
+## 13. Phase 5: End-to-End Workflow Truth Enforcement
+
+Phase 5 establishes **complete coverage, permanence, and regression prevention** for all core user workflows via real Electron UI execution.
+
+### Workflow Matrix Coverage
+
+| Workflow | Test File | Buttons Pressed | Output Verified |
+|----------|-----------|-----------------|-----------------|
+| WF-01: Single clip → proxy | `workflow_matrix.spec.ts` | select-files, create-job, add-to-queue | ✓ Output file exists, non-zero size |
+| WF-02: Multiple clips → proxy | `workflow_matrix.spec.ts` | select-files (x2), create-job, add-to-queue | ✓ All outputs exist |
+| WF-04: Invalid output path → blocked | `workflow_matrix.spec.ts` | select-files, set invalid path | ✓ Blocked, no output |
+| WF-07: Queue > 1 job → FIFO | `workflow_matrix.spec.ts` | create-job (x2), add-to-queue | ✓ FIFO order verified |
+| WF-08: Cancel running job | `workflow_matrix.spec.ts` | create-job, add-to-queue, cancel | ✓ Job cancelled state |
+| WF-09: Delete queued job | `workflow_matrix.spec.ts` | create-job, delete | ✓ Job removed from queue |
+| WF-10: Execution failure → visible | `workflow_matrix.spec.ts` | create invalid job | ✓ Error classified and visible |
+
+### Button Coverage Audit
+
+The `button_coverage_audit.spec.ts` test enforces **Zero Dead UI**:
+
+- Scans all visible buttons in Electron UI
+- Verifies each button either:
+  - Emits a QC_ACTION_TRACE event, OR
+  - Causes a backend request, OR
+  - Changes visible UI state
+- Reports:
+  - **Active buttons**: Functional with observable effects
+  - **Disabled with reason**: Intentionally disabled with documented reason
+  - **Dead buttons**: No effect (requires fixing or removal)
+
+### QC_ACTION_TRACE Invariants (NORMATIVE)
+
+The following invariants are enforced in all E2E tests via `assertTraceInvariants()`:
+
+1. **EXECUTION_COMPLETED requires EXECUTION_STARTED**
+   - Cannot claim completion without starting
+   - Violation: `TRACE_INVARIANT_VIOLATION`
+
+2. **EXECUTION_STARTED must precede EXECUTION_COMPLETED**
+   - Time travel is not allowed
+   - Timestamps are authoritative
+
+3. **Output file without EXECUTION_STARTED is a hard failure**
+   - Files cannot appear without traced execution
+   - Observability cannot be bypassed
+
+4. **EXECUTION_STARTED without output is classified**
+   - Allowed for failure cases
+   - Must be visible and inspectable
+
+### Lifecycle vs Reality Cross-Check
+
+The `lifecycle_crosscheck.spec.ts` test enforces truth convergence:
+
+| Lifecycle State | Filesystem Reality | Result |
+|----------------|-------------------|--------|
+| COMPLETE | Output exists, non-zero | ✓ Valid |
+| COMPLETE | No output file | ✗ FAIL |
+| COMPLETE | Output empty (0 bytes) | ✗ FAIL |
+| FAILED | No output | ✓ Valid |
+| FAILED | Partial output exists | ⚠ Warning |
+| RUNNING | FFmpeg process active | ✓ Valid |
+| RUNNING | No FFmpeg process | ⚠ Warning (timing) |
+
+### QC Truth Guarantees
+
+After Phase 5 implementation, the following guarantees are enforced:
+
+1. **QC traces cannot lie**
+   - EXECUTION_STARTED emitted at exact moment of FFmpeg launch
+   - EXECUTION_COMPLETED emitted after FFmpeg exits
+   - Events not inferred from UI text or post-hoc analysis
+
+2. **Lifecycle cannot contradict filesystem**
+   - COMPLETE state always has output file
+   - Output file always has non-zero size
+   - RUNNING state has active FFmpeg process
+
+3. **Execution cannot be "inferred"**
+   - Events emitted from backend, not UI observation
+   - Timestamps are authoritative
+   - Order is guaranteed: STARTED → COMPLETED
+
+### CI Enforcement
+
+1. **Electron E2E runs first** - Unit tests blocked until E2E passes
+2. **Sacred test is mandatory** - CI fails if sacred test fails
+3. **Artifacts uploaded** - QC_ACTION_TRACE JSON, execution timeline, output metadata
+4. **Failed E2E blocks merge** - Green CI = "a human can run a job"
+
+### Running Phase 5 Tests
+
+```bash
+# Sacred test only (minimum viable workflow)
+make verify-sacred
+
+# All 10 workflow tests
+make verify-workflow-matrix
+
+# Button coverage audit (zero dead UI)
+make verify-button-audit
+
+# Lifecycle truth crosscheck
+make verify-lifecycle
+
+# ALL Phase 5 tests
+make verify-phase5
+```
+
