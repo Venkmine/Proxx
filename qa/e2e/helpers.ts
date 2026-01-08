@@ -77,11 +77,49 @@ export const test = base.extend<ElectronFixtures>({
     }
     
     // Default test file for E2E (can be overridden via QC_TEST_FILE env)
-    // Use ProRes RAW sample as default since BRAW requires special codec support
-    const testFile = process.env.QC_TEST_FILE || path.join(
-      projectRoot,
-      'forge-tests/samples/prores_raw_sample.mov'
-    )
+    // ═══════════════════════════════════════════════════════════════════════════
+    // IMPORTANT: Use STANDARD ProRes (not ProRes RAW) for FFmpeg compatibility
+    // ProRes RAW requires Resolve engine, but standard ProRes works with FFmpeg
+    // ═══════════════════════════════════════════════════════════════════════════
+    let testFile = process.env.QC_TEST_FILE
+    
+    if (!testFile) {
+      // Try standard ProRes sample first (FFmpeg-compatible)
+      const proresSample = path.join(projectRoot, 'forge-tests/samples/prores_sample.mov')
+      const h264Sample = path.join(projectRoot, 'forge-tests/samples/h264_sample.mp4')
+      const syntheticSample = path.join('/tmp', 'qc_synthetic_test.mp4')
+      
+      if (fs.existsSync(proresSample)) {
+        testFile = proresSample
+        console.log('[E2E] Using standard ProRes sample (FFmpeg-compatible)')
+      } else if (fs.existsSync(h264Sample)) {
+        testFile = h264Sample
+        console.log('[E2E] Using H.264 sample (FFmpeg-compatible)')
+      } else {
+        // Generate synthetic test file if no samples exist
+        console.log('[E2E] No test samples found, generating synthetic test file...')
+        try {
+          const { execSync } = await import('node:child_process')
+          execSync(
+            `ffmpeg -y -f lavfi -i testsrc2=duration=3:size=1280x720:rate=24 ` +
+            `-f lavfi -i sine=frequency=440:duration=3 ` +
+            `-c:v libx264 -preset ultrafast -crf 23 ` +
+            `-c:a aac -b:a 128k ` +
+            `"${syntheticSample}"`,
+            { stdio: 'pipe', timeout: 30000 }
+          )
+          testFile = syntheticSample
+          console.log('[E2E] Synthetic test file generated successfully')
+        } catch (error) {
+          throw new Error(
+            `No test media found and failed to generate synthetic file. ` +
+            `Provide QC_TEST_FILE or place media in forge-tests/samples/`
+          )
+        }
+      }
+    }
+    
+    console.log(`[E2E] Test file: ${testFile}`)
     
     // Default output dir
     const outputDir = process.env.QC_OUTPUT_DIR || '/tmp/qc_output'

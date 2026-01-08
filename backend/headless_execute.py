@@ -1074,6 +1074,22 @@ def execute_job_spec(
     logger.info(f"[EXECUTE] FFmpeg command built: {' '.join(ffmpeg_command[:10])}...")
     logger.info(f"[EXECUTE] Full command: {' '.join(ffmpeg_command)}")
     
+    # ═══════════════════════════════════════════════════════════════════════════
+    # EXECUTION_STARTED EVENT - QC_ACTION_TRACE NORMATIVE REQUIREMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    # This log line marks the EXACT moment FFmpeg execution begins.
+    # It MUST be emitted BEFORE subprocess.run() is called.
+    # This is NOT inferred, NOT post-hoc, NOT optional.
+    # See: docs/QC_ACTION_TRACE.md (NORMATIVE)
+    #
+    # The QC_ACTION_TRACE golden path requires, IN ORDER:
+    #   SELECT_SOURCE → CREATE_JOB → ADD_TO_QUEUE → EXECUTION_STARTED → EXECUTION_COMPLETED
+    #
+    # If EXECUTION_STARTED is missing from traces, tests fail.
+    # ═══════════════════════════════════════════════════════════════════════════
+    execution_started_at = datetime.now(timezone.utc)
+    logger.info(f"[QC_TRACE] EXECUTION_STARTED job_id={job_spec.job_id} source={source_path.name} timestamp={execution_started_at.isoformat()}")
+    
     # Execute synchronously
     logger.info(f"[EXECUTE] Starting FFmpeg process...")
     try:
@@ -1141,6 +1157,16 @@ def execute_job_spec(
         # Mark LUT as successfully applied if execution succeeded
         if lut_filepath:
             lut_applied = True
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # EXECUTION_COMPLETED EVENT - QC_ACTION_TRACE NORMATIVE REQUIREMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    # This log line marks the EXACT moment clip execution completes.
+    # See: docs/QC_ACTION_TRACE.md (NORMATIVE)
+    # ═══════════════════════════════════════════════════════════════════════════
+    execution_completed_at = datetime.now(timezone.utc)
+    duration_ms = int((execution_completed_at - execution_started_at).total_seconds() * 1000)
+    logger.info(f"[QC_TRACE] EXECUTION_COMPLETED job_id={job_spec.job_id} source={source_path.name} status={status} duration_ms={duration_ms} timestamp={execution_completed_at.isoformat()}")
     
     # Build result with LUT audit information in command
     # Add LUT metadata as comments in the command list for audit trail

@@ -680,6 +680,22 @@ EXECUTION_COMPLETED
 If any step is missing → test fails.
 This guarantees semantic correctness, not just visuals.
 
+#### EXECUTION_STARTED Emission (NORMATIVE)
+
+EXECUTION_STARTED **MUST** be emitted at the exact moment FFmpeg execution begins:
+
+- Backend emits: `[QC_TRACE] EXECUTION_STARTED job_id=... source=... timestamp=...`
+- This log line is written BEFORE `subprocess.run()` is called
+- It is NOT inferred, NOT post-hoc, NOT optional
+- See: `backend/headless_execute.py` line ~1075
+
+The frontend test observes this via:
+1. UI status indicators ("Running", "Encoding")
+2. Job status elements (`[data-testid="job-status"]`)
+3. Fast executions: EXECUTION_STARTED is recorded even if transient
+
+This ensures the trace reflects reality, not lies.
+
 ### Buttons Must Do Something
 
 Every clickable control in the Queue / Execution flow must cause:

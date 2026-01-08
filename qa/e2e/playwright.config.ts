@@ -39,12 +39,20 @@ import { defineConfig } from '@playwright/test'
  * - Job creation and completion
  * - Engine routing
  * - FIFO queue execution
+ * 
+ * Backend Lifecycle (deterministic):
+ * - globalSetup starts backend if not running
+ * - globalTeardown stops backend if we started it
+ * - One backend per test run
  */
 export default defineConfig({
   testDir: '.',
   
-  /* Global setup validates E2E_TEST environment */
+  /* Global setup validates E2E environment and starts backend */
   globalSetup: './global-setup.ts',
+  
+  /* Global teardown stops backend if we started it */
+  globalTeardown: './global-teardown.ts',
   
   /* 
    * Test matching order - SACRED TESTS FIRST
