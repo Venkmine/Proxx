@@ -19,6 +19,16 @@ import { defineConfig } from '@playwright/test'
  * - Run with Vite dev server
  * - Run in browser mode
  * - Skip the Electron-only guard check
+ * 
+ * TEST ORDERING:
+ * 1. sacred_meta_test.spec.ts RUNS FIRST (tagged @sacred)
+ *    - If this fails → entire suite aborts
+ *    - This validates the basic "can a user run a job?" flow
+ * 
+ * 2. golden_path_ui_workflow.spec.ts RUNS SECOND
+ *    - Full golden path with detailed assertions
+ * 
+ * 3. Other golden_path tests run after
  */
 
 /**
@@ -36,8 +46,16 @@ export default defineConfig({
   /* Global setup validates E2E_TEST environment */
   globalSetup: './global-setup.ts',
   
-  /* Only include golden_path tests to avoid problematic spec files */
-  testMatch: 'golden_path*.spec.ts',
+  /* 
+   * Test matching order - SACRED TESTS FIRST
+   * sacred_meta_test runs before all other tests.
+   * If it fails, CI should abort immediately.
+   */
+  testMatch: [
+    'sacred_meta_test.spec.ts',      // @sacred - MUST RUN FIRST
+    'golden_path_ui_workflow.spec.ts', // Primary golden path
+    'golden_path*.spec.ts',           // Other golden path variants
+  ],
   
   /* Run tests serially (Electron can only run one instance at a time) */
   fullyParallel: false,
@@ -46,11 +64,19 @@ export default defineConfig({
   /* Fail the build on CI if you accidentally left test.only in the source code */
   forbidOnly: !!process.env.CI,
   
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
+  /* 
+   * NO RETRIES FOR SACRED TESTS
+   * If the sacred test fails, it's a real failure, not flakiness.
+   * Other tests can retry on CI.
+   */
+  retries: process.env.CI ? 1 : 0,
   
-  /* Reporter to use */
-  reporter: 'list',
+  /* Reporter to use - include HTML report for detailed analysis */
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: '../../artifacts/ui/playwright-report' }],
+    ['json', { outputFile: '../../artifacts/ui/test-results.json' }],
+  ],
   
   /* Shared settings for all the projects below */
   use: {
@@ -60,7 +86,7 @@ export default defineConfig({
     /* Screenshot on failure */
     screenshot: 'only-on-failure',
     
-    /* Video on failure */
+    /* Video on failure - critical for debugging sacred test issues */
     video: 'retain-on-failure',
   },
 
@@ -69,4 +95,7 @@ export default defineConfig({
   expect: {
     timeout: 30_000, // 30s for assertions
   },
+  
+  /* Output directory for test artifacts */
+  outputDir: '../../artifacts/ui/test-results',
 })

@@ -616,7 +616,87 @@ This is not pessimism. It is professional paranoia.
 
 ---
 
-## 10. Test Media Policy (Repo Safety)
+## 10. Electron E2E as Single Source of Truth
+
+### Rule
+
+**Electron E2E tests are the single source of truth for "does Forge work?"**
+
+The only definition of "working" is:
+
+```
+Electron app boots →
+User presses buttons →
+Job created →
+Job queued →
+Job executed →
+Real output written
+```
+
+Anything else is noise.
+
+### Enforcement
+
+1. **Electron E2E tests MUST run BEFORE all other tests in CI**
+   - If Electron cannot launch → CI fails immediately
+   - Backend unit tests wait for E2E to pass
+
+2. **Browser-only Playwright runs are FORBIDDEN for golden paths**
+   - All golden path tests use `_electron` API
+   - Tests that connect to Vite/localhost are rejected
+
+3. **Guards prevent accidental browser testing:**
+   - `global-setup.ts` validates E2E_TEST=true
+   - `electron-guard.ts` validates window.__PRELOAD_RAN__
+   - Tests fail if E2E_TARGET=browser/vite
+
+### Sacred Test
+
+The `sacred_meta_test.spec.ts` answers one question:
+
+> "If a junior editor installs this app, can they run a job?"
+
+This test:
+- Runs FIRST in CI
+- Launches real Electron
+- Clicks real buttons
+- Creates real jobs
+- Produces real output
+- Is allowed to be slow
+- Is NOT allowed to be flaky
+
+### QC_ACTION_TRACE
+
+Every golden path test captures a QC_ACTION_TRACE artifact containing:
+
+```
+SELECT_SOURCE
+CREATE_JOB
+ADD_TO_QUEUE
+EXECUTION_STARTED
+EXECUTION_COMPLETED
+```
+
+If any step is missing → test fails.
+This guarantees semantic correctness, not just visuals.
+
+### Buttons Must Do Something
+
+Every clickable control in the Queue / Execution flow must cause:
+- A visible UI change, OR
+- A backend request, OR
+- A state transition
+
+If a button click produces no observable effect → test fails.
+
+This prevents:
+- Dead buttons
+- Placeholder UI
+- "Wired later" lies
+
+---
+
+## 11. Test Media Policy (Repo Safety)
 
 ### Rule
 
