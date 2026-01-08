@@ -115,3 +115,69 @@ python -m pytest tests/ -v --tb=short
 **Tests**: 5/5 passing  
 **Execution Contract**: PRESERVED  
 **FIFO Guarantee**: VERIFIED
+---
+
+## Critical Invariant: Backend Job ID is Authoritative
+
+**Added:** 2026-01-08
+
+### Problem
+
+A race condition caused infinite FIFO resubmission loops:
+
+1. Frontend created a job spec with client-generated `job_id` (e.g., `c5f9b80a`)
+2. Backend `/control/jobs/create` returned a DIFFERENT `job_id` (e.g., `55f191da`)
+3. Frontend called `/control/jobs/c5f9b80a/start` with the OLD client ID
+4. Backend returned 404 "Job not found"
+5. Frontend retried... infinitely
+
+### Root Cause
+
+```typescript
+// ❌ WRONG: Using client-generated ID
+const nextJobSpec = queuedJobSpecs[0]
+await startJob(nextJobSpec.job_id)  // Client ID, not backend ID!
+```
+
+### Fix Applied
+
+```typescript
+// ✅ CORRECT: Use backend-generated ID from create response
+const createResult = await createJob(jobPayload)
+const backendJobId = createResult.job_id  // Backend is authoritative!
+await startJob(backendJobId)
+```
+
+### Invariant Contract
+
+| Field | Source | Usage |
+|-------|--------|-------|
+| `JobSpec.job_id` | Client-generated | Draft tracking ONLY |
+| `createResult.job_id` | Backend-generated | ALL API calls post-creation |
+
+**NEVER use `JobSpec.job_id` after `/control/jobs/create` succeeds.**
+
+### Regression Test
+
+File: `qa/e2e/regression_fifo_job_id.spec.ts`
+
+```bash
+cd qa/e2e && E2E_TEST=true npx playwright test regression_fifo_job_id.spec.ts
+```
+
+Validates:
+- Backend `job_id` is captured from create response
+- No "Job not found" 404 errors occur
+- Job submit attempts ≤ 2 (no infinite loop)
+- Output file exists
+
+### Debug Logging
+
+Frontend logs (visible in browser console):
+```
+[FIFO] Submitting job to backend: {...}
+[FIFO] Job created in backend: {job_id: "55f191da-..."}
+[FIFO] Successfully started job 55f191da-..., dequeuing from local queue
+```
+
+These logs enable the regression test to validate the contract without mocking.

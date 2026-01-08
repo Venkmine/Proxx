@@ -355,6 +355,11 @@ function App() {
   // before loading=true has been rendered. Use refs to block immediately.
   const jobOperationInFlight = useRef<Set<string>>(new Set())
   
+  // RACE CONDITION FIX: Guard for FIFO execution workflow
+  // Prevents duplicate job submissions when the useEffect re-runs before
+  // the async executeJobWorkflow() completes and updates state.
+  const fifoExecutionInFlight = useRef<boolean>(false)
+  
   // Status log: Track previous job statuses to detect transitions
   const prevJobStatuses = useRef<Map<string, string>>(new Map())
   
@@ -751,17 +756,46 @@ function App() {
   // OUTPUT TAB STATE (Center Bottom Panel)
   // ============================================
   // State lifted to App.tsx for OutputTab rendering in center bottom panel
-  const [outputPath, setOutputPath] = useState('/path/to/output')
+  // NOTE: outputPath is synced with outputDirectory for E2E testability
+  const [outputPath, setOutputPath] = useState(() => {
+    // Initialize from localStorage to match outputDirectory state
+    const saved = localStorage.getItem('awaire_proxy_output_directory')
+    return saved || ''
+  })
   const [containerFormat, setContainerFormat] = useState('mov')
   const [filenameTemplate, setFilenameTemplate] = useState('{source_name}_proxy')
   const [outputDeliveryType, setOutputDeliveryType] = useState<'proxy' | 'delivery'>('proxy')
 
-  // Browse button handler (visual feedback only)
-  const handleOutputBrowseClick = useCallback(() => {
-    // NO filesystem operations, NO backend calls
-    // Just visual feedback via console (dev-only)
-    console.log('[App] Output browse button clicked (local-only, no action)')
-  }, [])
+  // Combined handler: updates both outputPath (display) AND outputDirectory (job creation)
+  const handleOutputPathChange = useCallback((path: string) => {
+    console.log('[App] handleOutputPathChange:', path)
+    setOutputPath(path)
+    setOutputDirectory(path)
+    // Also sync to the store for other components
+    useSourceSelectionStore.getState().setOutputDirectory(path)
+  }, [setOutputPath, setOutputDirectory])
+
+  // Browse button handler - opens folder selection dialog
+  const handleOutputBrowseClick = useCallback(async () => {
+    console.log('[App] Output browse button clicked')
+    if (!hasElectron) {
+      console.log('[App] No Electron, cannot browse')
+      return
+    }
+    try {
+      console.log('[App] Calling window.electron.openFolder()...')
+      const path = await window.electron?.openFolder?.()
+      console.log('[App] openFolder returned:', path)
+      if (path) {
+        setOutputDirectory(path)
+        // Also update the source selection store
+        useSourceSelectionStore.getState().setOutputDirectory(path)
+      }
+    } catch (err) {
+      console.error('[App] Folder selection error:', err)
+      setError(`Folder selection failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }, [hasElectron])
 
   // ============================================
   // APP MODE — Centralized State Machine
@@ -1342,39 +1376,110 @@ function App() {
   // FIFO Execution Loop - Automatic Job Sequencing
   // ============================================
   // INVARIANT: One job executing at a time
-  // BEHAVIOR: When no job is running AND queue has jobs → start first job
+  // BEHAVIOR: When no job is running AND queue has jobs → submit + start first job
   // DEQUEUE: When job completes → remove from queue → start next job
   useEffect(() => {
+    console.log(`[FIFO CHECK] jobs.length=${jobs.length}, queuedJobSpecs.length=${queuedJobSpecs.length}`)
+    
+    // RACE CONDITION FIX: Skip if we're already executing a job submission workflow
+    // This prevents duplicate submissions when the effect re-runs during async operations
+    if (fifoExecutionInFlight.current) {
+      console.log(`[FIFO CHECK] Skipping: execution already in flight`)
+      return
+    }
+    
     // Check if any job is currently running
     const hasRunningJob = jobs.some(j => j.status.toUpperCase() === 'RUNNING')
+    console.log(`[FIFO CHECK] hasRunningJob=${hasRunningJob}`)
     
     // If job is running OR queue is empty → do nothing
     if (hasRunningJob || queuedJobSpecs.length === 0) {
+      console.log(`[FIFO CHECK] Skipping: hasRunningJob=${hasRunningJob}, queue empty=${queuedJobSpecs.length === 0}`)
       return
     }
     
     // Get first job in FIFO queue
     const nextJobSpec = queuedJobSpecs[0]
     
-    // Check if this job has already been started (is in backend jobs list)
-    const jobAlreadyStarted = jobs.some(j => j.id === nextJobSpec.job_id)
+    // RACE CONDITION FIX: Set guard BEFORE starting async operation
+    fifoExecutionInFlight.current = true
     
-    if (jobAlreadyStarted) {
-      // Job was started but is no longer running (completed or failed)
-      // Remove from queue and continue to next
-      console.log(`[FIFO] Dequeuing completed job: ${nextJobSpec.job_id}`)
-      setQueuedJobSpecs(prev => prev.slice(1))
-      return
+    // Submit job to backend + start execution
+    console.log(`[FIFO] Submitting and starting queued job: ${nextJobSpec.job_id}`)
+    
+    const executeJobWorkflow = async () => {
+      try {
+        // Step 1: Submit JobSpec to backend (creates PENDING job)
+        // Map JobSpec properties to CreateJobRequest format
+        const createRequest = {
+          source_paths: nextJobSpec.sources, // sources is already string[]
+          settings_preset_id: null, // JobSpec doesn't store preset ID
+          deliver_settings: {
+            output_dir: nextJobSpec.output_directory,
+            video: {
+              codec: nextJobSpec.codec,
+              resolution_policy: 'source', // JobSpec resolution is derived
+              frame_rate_policy: nextJobSpec.fps_mode === 'same-as-source' ? 'source' : 'custom',
+              frame_rate: nextJobSpec.fps_explicit?.toString() || null,
+            },
+            file: {
+              container: nextJobSpec.container,
+              naming_template: nextJobSpec.naming_template,
+            },
+          },
+          engine: 'ffmpeg', // Force FFmpeg - Resolve not available in Proxy v1
+        }
+        
+        console.log('[FIFO] Submitting job to backend:', JSON.stringify(createRequest, null, 2))
+        
+        const createResponse = await fetch(`${BACKEND_URL}/control/jobs/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(createRequest),
+        })
+        
+        if (!createResponse.ok) {
+          const errorText = await createResponse.text()
+          console.error(`[FIFO] Failed to create job ${nextJobSpec.job_id}: ${errorText}`)
+          setError(`Failed to submit job: ${errorText}`)
+          // Remove failed job from queue
+          setQueuedJobSpecs(prev => prev.slice(1))
+          return
+        }
+        
+        const createResult = await createResponse.json()
+        console.log(`[FIFO] Job created in backend:`, createResult)
+        
+        // Step 2: Start the job execution using the BACKEND's assigned job_id
+        // CRITICAL: Backend generates its own job_id, ignore client-side job_id
+        const backendJobId = createResult.job_id
+        if (!backendJobId) {
+          console.error(`[FIFO] Backend did not return job_id:`, createResult)
+          setError(`Backend did not return job ID`)
+          setQueuedJobSpecs(prev => prev.slice(1))
+          return
+        }
+        
+        await startJob(backendJobId)
+        
+        // SUCCESS: Dequeue the job spec now that it's been submitted to backend
+        console.log(`[FIFO] Successfully started job ${backendJobId}, dequeuing from local queue`)
+        setQueuedJobSpecs(prev => prev.slice(1))
+        
+        // Refresh jobs list to show the new job
+        await fetchJobs()
+      } catch (err) {
+        console.error(`[FIFO] Job workflow error:`, err)
+        setError(`Failed to execute job workflow: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        // Remove failed job from queue
+        setQueuedJobSpecs(prev => prev.slice(1))
+      } finally {
+        // RACE CONDITION FIX: Clear guard when workflow completes (success or failure)
+        fifoExecutionInFlight.current = false
+      }
     }
     
-    // Start next job in queue
-    console.log(`[FIFO] Starting next queued job: ${nextJobSpec.job_id}`)
-    
-    // Call startJob directly (it's defined above)
-    const executeStart = async () => {
-      await startJob(nextJobSpec.job_id)
-    }
-    executeStart()
+    executeJobWorkflow()
     
   }, [jobs, queuedJobSpecs])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2956,7 +3061,7 @@ function App() {
             <CenterBottomPanel minHeight={200}>
               <OutputTab
                 outputPath={outputPath}
-                onOutputPathChange={setOutputPath}
+                onOutputPathChange={handleOutputPathChange}
                 containerFormat={containerFormat}
                 onContainerFormatChange={setContainerFormat}
                 filenameTemplate={filenameTemplate}

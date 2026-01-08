@@ -62,11 +62,11 @@ export const test = base.extend<ElectronFixtures>({
       )
     }
 
-    // Use Electron from e2e/node_modules (has proper electron version)
-    // Fall back to frontend/node_modules if not present
-    let electronPath = path.join(__dirname, 'node_modules/.bin/electron')
+    // Use Electron from frontend/node_modules (known working)
+    // Only fall back to e2e/node_modules if frontend doesn't have it
+    let electronPath = path.join(projectRoot, 'frontend/node_modules/.bin/electron')
     if (!fs.existsSync(electronPath)) {
-      electronPath = path.join(projectRoot, 'frontend/node_modules/.bin/electron')
+      electronPath = path.join(__dirname, 'node_modules/.bin/electron')
     }
     
     if (!fs.existsSync(electronPath)) {

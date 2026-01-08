@@ -776,6 +776,47 @@ Allowed formats:
 
 ---
 
-**End of document**
+## 12. Regression Tests
+
+### Rule
+
+**Every trust-breaking bug that reaches production MUST result in a regression test.**
+
+Regression tests are different from golden path tests:
+- **Golden path tests** verify expected behavior works
+- **Regression tests** verify fixed bugs stay fixed
+
+### Current Regression Tests
+
+| Test | Bug Fixed | Invariant Enforced |
+|------|-----------|-------------------|
+| `regression_fifo_job_id.spec.ts` | Infinite FIFO resubmission loop | Backend job_id is authoritative |
+
+### FIFO Job ID Contract (regression_fifo_job_id.spec.ts)
+
+**Bug:** Frontend used client-generated `job_id` for API calls after job creation, but backend generates its own ID. This caused infinite 404 "Job not found" loops.
+
+**Fix:** Use `createResult.job_id` from backend response for all subsequent API calls.
+
+**Invariant:**
+```
+Client JobSpec.job_id → Draft tracking ONLY
+Backend createResult.job_id → ALL API calls post-creation
+```
+
+**Run:**
+```bash
+cd qa/e2e && E2E_TEST=true npx playwright test regression_fifo_job_id.spec.ts
+```
+
+**Validates:**
+- ✅ Backend `job_id` is captured from create response
+- ✅ No "Job not found" 404 errors occur
+- ✅ Job submit attempts ≤ 2 (no infinite loop)
+- ✅ Output file exists
+
+See: [FIFO_QUEUE_IMPLEMENTATION.md](../FIFO_QUEUE_IMPLEMENTATION.md) for full technical details.
+
+---
 
 ---

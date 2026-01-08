@@ -55,6 +55,7 @@ export default defineConfig({
     'sacred_meta_test.spec.ts',      // @sacred - MUST RUN FIRST
     'golden_path_ui_workflow.spec.ts', // Primary golden path
     'golden_path*.spec.ts',           // Other golden path variants
+    'regression_*.spec.ts',           // Regression tests
   ],
   
   /* Run tests serially (Electron can only run one instance at a time) */
