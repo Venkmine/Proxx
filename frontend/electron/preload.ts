@@ -38,6 +38,8 @@ console.log('[PRELOAD DEBUG] process.argv:', process.argv)
 // Also expose process.argv to debug what args are passed
 contextBridge.exposeInMainWorld('__PRELOAD_RAN__', true)
 contextBridge.exposeInMainWorld('__PRELOAD_ARGV__', process.argv)
+// Expose E2E_TEST flag for splash screen skip logic
+contextBridge.exposeInMainWorld('__E2E_TEST__', E2E_TEST)
 
 if (E2E_TEST && QC_TEST_FILE) {
   console.log('[PRELOAD E2E] Installing dialog mocks BEFORE app render');

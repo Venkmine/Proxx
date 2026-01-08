@@ -77,9 +77,10 @@ export const test = base.extend<ElectronFixtures>({
     }
     
     // Default test file for E2E (can be overridden via QC_TEST_FILE env)
+    // Use ProRes RAW sample as default since BRAW requires special codec support
     const testFile = process.env.QC_TEST_FILE || path.join(
       projectRoot,
-      'forge-tests/samples/RAW/BLACKMAGIC/BMPCC6K Indie Film BRAW/A001_06260430_C007.braw'
+      'forge-tests/samples/prores_raw_sample.mov'
     )
     
     // Default output dir

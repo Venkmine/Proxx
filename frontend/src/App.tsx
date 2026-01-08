@@ -656,8 +656,11 @@ function App() {
   
   // Phase 22: Splash screen state (shown on first launch / connectivity delay)
   // Skip splash in E2E tests for faster visual QC
+  // Check multiple sources: Electron preload flag, Vite env, or legacy process.env
   const skipSplashForTests = typeof window !== 'undefined' && 
-    (window.process?.env?.E2E_TEST === 'true' || import.meta.env.VITE_SKIP_SPLASH === 'true')
+    ((window as unknown as { __E2E_TEST__?: boolean }).__E2E_TEST__ === true ||
+     (window as unknown as { __QC_MOCKS_INSTALLED__?: boolean }).__QC_MOCKS_INSTALLED__ === true ||
+     import.meta.env.VITE_SKIP_SPLASH === 'true')
   const [showSplash, setShowSplash] = useState<boolean>(!skipSplashForTests)
   const [enginesLoaded, setEnginesLoaded] = useState<boolean>(skipSplashForTests)
   
