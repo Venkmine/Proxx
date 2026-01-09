@@ -51,6 +51,8 @@ import { normalizeResponseError, createJobError } from './utils/errorNormalize'
 import { logStateTransition } from './utils/logger'
 import * as statusMessages from './utils/statusMessages'
 import { buildJobSpec, type JobSpec } from './utils/buildJobSpec'
+// Branding QC Guard: Enforces single-logo rule in development
+import { enforceBrandingGuard } from './utils/brandingGuard'
 // Alpha: Copilot imports hidden (dev feature)
 // import { CopilotPromptWindow, CopilotPromptBackdrop } from './components/CopilotPromptWindow'
 // V1 OBSERVABILITY: Debug panel for UI event log (DEV only)
@@ -461,6 +463,11 @@ function App() {
   // Register stores for QC inspection (QC mode only)
   useEffect(() => {
     registerStoresForQC()
+  }, [])
+  
+  // Branding QC Guard: Verify single-logo rule on app mount (DEV only)
+  useEffect(() => {
+    enforceBrandingGuard()
   }, [])
   
   useEffect(() => {
