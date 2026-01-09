@@ -69,8 +69,8 @@ import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 // Source Selection Store: Authoritative source selection state
 import { useSourceSelectionStore } from './stores/sourceSelectionStore'
 import { registerStoresForQC } from './stores/qcRegistry'
-// Watch Folders V2: Detection automatic, execution manual
-import { WatchFoldersPanel } from './components/WatchFoldersPanel'
+// Watch Folders V3: PHASE 6.5 - Counts-first, scalable, clear state
+import { WatchFoldersPanel } from './components/WatchFoldersPanelV3'
 import type { WatchFolder, PendingFile, WatchFolderConfig } from './types/watchFolders'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'

@@ -1,70 +1,177 @@
 /**
- * Watch Folders (V1) — Recursive, QC-Safe Automation
+ * Watch Folders V2 - Types
  * 
- * ⚠️ RECURSIVE FOLDER MONITORING ONLY
+ * INTENT.md Compliance:
+ * - Detection is automatic (file watcher runs)
+ * - Execution is MANUAL (operator must click "Create Jobs")
+ * - No auto-retry, no silent automation
+ * - Full QC_ACTION_TRACE coverage
  * 
- * Watch folders automatically enqueue jobs when new eligible files appear
- * anywhere in a recursive directory tree. This is NOT a startup ingest scan.
+ * Single Source of Truth:
+ * - WatchFolder state is owned by Electron main process
+ * - Renderer receives state via IPC
+ * - Pending files accumulate until operator acts
  * 
- * CRITICAL RULES:
- * - ✅ Recursive: Watches entire folder tree
- * - ❌ No startup storm: Existing files are IGNORED when enabling
- * - ❌ No execution bypass: Uses preset → JobSpec → queue → execution
- * - ❌ No batching: One file = one job
- * - ✅ Eligibility gate: Extensions, patterns, duplicates checked
- * - ✅ FIFO preservation: Jobs queued normally, execute one at a time
- * 
- * USE CASES:
- * - Camera cards with nested folder structures
- * - Imported projects with deep hierarchies
- * - Nested vendor deliveries
- * - Editorial exports with subfolder organization
- * 
- * EXECUTION FLOW:
- * 1. New file detected (recursive)
- * 2. Check eligibility (extension, patterns, duplicates)
- * 3. Resolve preset by preset_id
- * 4. Build JobSpec normally
- * 5. Validate JobSpec
- * 6. Enqueue via existing FIFO queue
- * 7. Execute one at a time (existing logic)
+ * PHASE 6.5: Counts-First Model
+ * - Counters track lifecycle: Detected → Staged → Jobs Created → Completed/Failed
+ * - Counts survive UI refreshes (persisted in main process)
+ * - No inference from UI text - counts are explicit
  */
 
+/**
+ * Watch folder status enum - unambiguous states
+ */
+export type WatchFolderStatus = 'watching' | 'paused'
+
+/**
+ * Per-watch-folder counters for tracking file lifecycle
+ * PHASE 6.5: Counts-first model for scalability
+ */
+export interface WatchFolderCounts {
+  /** Total files detected since last reset */
+  detected: number
+  /** Files currently eligible for job creation (not yet processed) */
+  staged: number
+  /** Files already converted into jobs */
+  jobs_created: number
+  /** Successful encodes from this watch folder */
+  completed: number
+  /** Failed encodes (sticky - does not auto-clear) */
+  failed: number
+}
+
+/**
+ * A watched folder configuration
+ */
 export interface WatchFolder {
-  /** Unique identifier */
+  /** Unique identifier (UUID) */
   id: string
-  /** Root path to watch (recursively) */
+  /** Absolute path to the folder being watched */
   path: string
-  /** Preset ID to use for jobs */
-  preset_id: string
-  /** Whether watching is active */
+  /** Whether the watcher is currently active */
   enabled: boolean
-  /** Always true for V1 (explicit recursive requirement) */
-  recursive: true
-  /** Allowlist of file extensions (e.g. ["mov", "mxf", "braw"]) */
-  include_extensions?: string[]
-  /** Exclusion patterns (regex or glob, e.g. /Proxy/, /\\.cache/) */
-  exclude_patterns?: string[]
+  /** Explicit status for UI clarity (derived from enabled) */
+  status: WatchFolderStatus
+  /** Whether to watch subdirectories recursively */
+  recursive: boolean
+  /** Optional preset ID to apply to detected files */
+  preset_id?: string
+  /** File extensions to include (e.g., ['.mov', '.mxf']) - empty means all video files */
+  include_extensions: string[]
+  /** Glob patterns to exclude (e.g., ['._*', '.DS_Store']) */
+  exclude_patterns: string[]
+  /** Files detected but not yet processed (pending operator action) */
+  pending_files: PendingFile[]
+  /** PHASE 6.5: Lifecycle counters */
+  counts: WatchFolderCounts
+  /** Optional error message if watcher failed */
+  error?: string
+  /** Timestamp when watcher was created */
+  created_at: string
+  /** Timestamp when watcher was last modified */
+  updated_at: string
 }
 
-export interface WatchFolderRegistry {
-  /** Map of watch folder ID to config */
-  folders: Record<string, WatchFolder>
-  /** Map of processed file paths to prevent duplicates */
-  processed_files: Record<string, { mtime: number; hash?: string }>
+/**
+ * A file detected by the watcher, pending operator action
+ */
+export interface PendingFile {
+  /** Absolute path to the detected file */
+  path: string
+  /** File size in bytes */
+  size: number
+  /** Timestamp when file was detected */
+  detected_at: string
+  /** Whether file is selected for job creation */
+  selected: boolean
 }
 
-export interface WatchFolderEvent {
-  /** Watch folder ID that triggered this event */
-  watch_folder_id: string
-  /** File path that was detected */
-  file_path: string
-  /** Timestamp of event */
+/**
+ * Configuration for adding a new watch folder
+ */
+export interface WatchFolderConfig {
+  path: string
+  enabled: boolean
+  recursive: boolean
+  preset_id?: string
+  include_extensions: string[]
+  exclude_patterns: string[]
+}
+
+/**
+ * IPC Events sent from main process to renderer
+ */
+export interface WatchFolderEvents {
+  /** Emitted when a file is detected in a watched folder */
+  'watch-folder:file-detected': {
+    watchFolderId: string
+    file: PendingFile
+  }
+  /** Emitted when watch folder state changes */
+  'watch-folder:state-changed': {
+    watchFolders: WatchFolder[]
+  }
+  /** Emitted when a watcher encounters an error */
+  'watch-folder:error': {
+    watchFolderId: string
+    error: string
+  }
+}
+
+/**
+ * QC_ACTION_TRACE events for Watch Folders
+ * These events are logged for E2E test observability
+ */
+export type WatchFolderTraceEvent =
+  | 'WATCH_FOLDER_ADDED'
+  | 'WATCH_FOLDER_ENABLED'
+  | 'WATCH_FOLDER_DISABLED'
+  | 'WATCH_FOLDER_REMOVED'
+  | 'WATCH_FOLDER_FILE_DETECTED'
+  | 'WATCH_FOLDER_PENDING_LIST_UPDATED'
+  | 'WATCH_FOLDER_JOBS_CREATED'
+  | 'WATCH_FOLDER_COUNTS_UPDATED'
+  | 'WATCH_FOLDER_JOB_COMPLETED'
+  | 'WATCH_FOLDER_JOB_FAILED'
+
+/**
+ * Trace event payload for QC observability
+ */
+export interface WatchFolderTracePayload {
+  event: WatchFolderTraceEvent
+  watchFolderId: string
   timestamp: string
-  /** Whether file was eligible for processing */
-  eligible: boolean
-  /** Rejection reason if not eligible */
-  rejection_reason?: string
-  /** Job ID if job was created */
-  job_id?: string
+  details?: {
+    path?: string
+    fileCount?: number
+    jobIds?: string[]
+    error?: string
+    counts?: WatchFolderCounts
+  }
 }
+
+/**
+ * Default video file extensions to watch
+ */
+export const DEFAULT_VIDEO_EXTENSIONS = [
+  '.mov',
+  '.mp4',
+  '.mxf',
+  '.avi',
+  '.mkv',
+  '.r3d',
+  '.braw',
+  '.ari',
+  '.dng',
+]
+
+/**
+ * Default exclude patterns (system files, hidden files)
+ */
+export const DEFAULT_EXCLUDE_PATTERNS = [
+  '**/._*',
+  '**/.DS_Store',
+  '**/Thumbs.db',
+  '**/.Spotlight-V100',
+  '**/.Trashes',
+]

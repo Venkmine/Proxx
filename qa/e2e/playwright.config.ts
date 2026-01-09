@@ -64,6 +64,7 @@ export default defineConfig({
     'golden_path_ui_workflow.spec.ts', // Primary golden path
     'golden_path*.spec.ts',            // Other golden path variants
     'watch_folder_enforcement.spec.ts', // Watch Folder E2E validation
+    'phase_6_5_watch_folder_state.spec.ts', // Phase 6.5: Watch Folder State & Scalability
     'preset_persistence.spec.ts',       // Preset persistence validation
     'phase6_preset_truth.spec.ts',      // Phase 6: Preset system truth
     'workflow_matrix.spec.ts',         // Phase 5: All core workflows
