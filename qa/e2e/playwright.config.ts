@@ -60,10 +60,13 @@ export default defineConfig({
    * If it fails, CI should abort immediately.
    */
   testMatch: [
-    'sacred_meta_test.spec.ts',      // @sacred - MUST RUN FIRST
+    'sacred_meta_test.spec.ts',        // @sacred - MUST RUN FIRST
     'golden_path_ui_workflow.spec.ts', // Primary golden path
-    'golden_path*.spec.ts',           // Other golden path variants
-    'regression_*.spec.ts',           // Regression tests
+    'golden_path*.spec.ts',            // Other golden path variants
+    'workflow_matrix.spec.ts',         // Phase 5: All core workflows
+    'button_coverage_audit.spec.ts',   // Phase 5: Zero dead UI
+    'lifecycle_crosscheck.spec.ts',    // Phase 5: Truth convergence
+    'regression_*.spec.ts',            // Regression tests
   ],
   
   /* Run tests serially (Electron can only run one instance at a time) */
