@@ -3,7 +3,7 @@
  * 
  * INTENT.md Compliance:
  * - Detection is automatic (files appear in staged count)
- * - Execution is MANUAL (operator must click "Create Jobs")
+ * - Execution is MANUAL (operator must click "Create Jobs") UNLESS ARMED
  * - No auto-retry, no silent automation
  * - Full visibility via counts (not file lists)
  * 
@@ -14,10 +14,15 @@
  * D) Create Jobs Semantics: Clear action with helper text
  * E) Layout: Collapsed/expanded views, functional space
  * F) No automation regression
+ * 
+ * PHASE 7 ADDITIONS:
+ * G) Armed Mode: Auto job creation when armed
+ * H) Arm/Disarm UI: Clear visual distinction for armed state
+ * I) Pre-arm Validation: UI shows why arming is blocked
  */
 
 import React, { useState, useCallback } from 'react'
-import type { WatchFolder, PendingFile, WatchFolderConfig, WatchFolderCounts } from '../types/watchFolders'
+import type { WatchFolder, PendingFile, WatchFolderConfig, WatchFolderCounts, ArmBlockReason } from '../types/watchFolders'
 import { DEFAULT_VIDEO_EXTENSIONS, DEFAULT_EXCLUDE_PATTERNS } from '../types/watchFolders'
 
 /** Maximum files to show in staged file preview */
@@ -34,13 +39,33 @@ interface WatchFoldersPanelProps {
   onSelectAll: (watchFolderId: string, selected: boolean) => Promise<boolean>
   onCreateJobs: (watchFolderId: string, selectedFiles: PendingFile[], presetId?: string) => void
   onClearPending: (watchFolderId: string, filePaths: string[]) => Promise<boolean>
+  // PHASE 7: Armed watch folder callbacks
+  onArmWatchFolder?: (id: string) => Promise<{ success: boolean; blockReasons?: ArmBlockReason[] }>
+  onDisarmWatchFolder?: (id: string) => Promise<boolean>
 }
 
 /**
  * Status indicator component with clear visual state
+ * PHASE 7: Added 'armed' status with distinct orange styling
  */
-function StatusIndicator({ status, enabled }: { status: 'watching' | 'paused'; enabled: boolean }): React.ReactElement {
-  const isActive = status === 'watching' && enabled
+function StatusIndicator({ status, enabled }: { status: 'watching' | 'paused' | 'armed'; enabled: boolean }): React.ReactElement {
+  const isActive = (status === 'watching' || status === 'armed') && enabled
+  const isArmed = status === 'armed' && enabled
+  
+  // PHASE 7: Armed state uses orange to indicate auto-action mode
+  const getStatusColor = () => {
+    if (isArmed) return 'rgb(251, 146, 60)' // Orange for armed
+    if (isActive) return 'var(--status-success)' // Green for watching
+    return 'var(--text-tertiary)' // Gray for paused
+  }
+  
+  const getStatusLabel = () => {
+    if (isArmed) return 'Armed'
+    if (isActive) return 'Watching'
+    return 'Paused'
+  }
+  
+  const statusColor = getStatusColor()
   
   return (
     <div
@@ -59,8 +84,8 @@ function StatusIndicator({ status, enabled }: { status: 'watching' | 'paused'; e
           width: '8px',
           height: '8px',
           borderRadius: '50%',
-          background: isActive ? 'var(--status-success)' : 'var(--text-tertiary)',
-          boxShadow: isActive ? '0 0 4px var(--status-success)' : 'none',
+          background: statusColor,
+          boxShadow: isActive ? `0 0 4px ${statusColor}` : 'none',
           transition: 'background 0.2s, box-shadow 0.2s',
         }}
       />
@@ -70,14 +95,14 @@ function StatusIndicator({ status, enabled }: { status: 'watching' | 'paused'; e
         style={{
           fontSize: '0.6875rem',
           fontWeight: 500,
-          color: isActive ? 'var(--status-success)' : 'var(--text-tertiary)',
+          color: statusColor,
           textTransform: 'uppercase',
           letterSpacing: '0.025em',
           pointerEvents: 'none', // Not clickable
           userSelect: 'none',
         }}
       >
-        {isActive ? 'Watching' : 'Paused'}
+        {getStatusLabel()}
       </span>
     </div>
   )
@@ -338,6 +363,9 @@ export function WatchFoldersPanel({
   onSelectAll,
   onCreateJobs,
   onClearPending,
+  // PHASE 7: Armed watch folder callbacks
+  onArmWatchFolder,
+  onDisarmWatchFolder,
 }: WatchFoldersPanelProps): React.ReactElement {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newFolderPath, setNewFolderPath] = useState('')
@@ -345,6 +373,7 @@ export function WatchFoldersPanel({
   const [newFolderPresetId, setNewFolderPresetId] = useState<string | undefined>()
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [showStagedFiles, setShowStagedFiles] = useState<Set<string>>(new Set())
+  const [armBlockReasons, setArmBlockReasons] = useState<Map<string, ArmBlockReason[]>>(new Map())
   
   const hasElectron = typeof window !== 'undefined' && window.electron !== undefined
   
@@ -419,6 +448,58 @@ export function WatchFoldersPanel({
     const filePaths = watchFolder.pending_files.map(f => f.path)
     await onClearPending(watchFolder.id, filePaths)
   }, [onClearPending])
+  
+  /**
+   * PHASE 7: Arm a watch folder for auto job creation
+   */
+  const handleArmWatchFolder = useCallback(async (id: string) => {
+    if (!onArmWatchFolder) return
+    
+    const result = await onArmWatchFolder(id)
+    if (!result.success && result.blockReasons) {
+      // Store block reasons for display
+      setArmBlockReasons(prev => new Map(prev).set(id, result.blockReasons!))
+      // Clear after 5 seconds
+      setTimeout(() => {
+        setArmBlockReasons(prev => {
+          const next = new Map(prev)
+          next.delete(id)
+          return next
+        })
+      }, 5000)
+    }
+  }, [onArmWatchFolder])
+  
+  /**
+   * PHASE 7: Disarm a watch folder
+   */
+  const handleDisarmWatchFolder = useCallback(async (id: string) => {
+    if (!onDisarmWatchFolder) return
+    await onDisarmWatchFolder(id)
+  }, [onDisarmWatchFolder])
+  
+  /**
+   * PHASE 7: Get human-readable block reason
+   */
+  const getBlockReasonText = (reason: ArmBlockReason): string => {
+    switch (reason) {
+      case 'NO_PRESET': return 'No preset configured'
+      case 'PAUSED': return 'Watch folder is paused'
+      case 'ALREADY_ARMED': return 'Already armed'
+      case 'WATCHER_ERROR': return 'Watcher has an error'
+      default: return 'Unknown reason'
+    }
+  }
+  
+  /**
+   * PHASE 7: Check if watch folder can be armed (client-side pre-check)
+   */
+  const canArm = (wf: WatchFolder): boolean => {
+    return wf.enabled && 
+           !wf.armed && 
+           !!wf.preset_id && 
+           !wf.error
+  }
   
   const formatPath = (fullPath: string): string => {
     const parts = fullPath.split('/')
@@ -684,10 +765,49 @@ export function WatchFoldersPanel({
               </div>
               
               {/* Status indicator (read-only) */}
-              <StatusIndicator status={wf.status || (wf.enabled ? 'watching' : 'paused')} enabled={wf.enabled} />
+              <StatusIndicator status={wf.status || (wf.armed ? 'armed' : wf.enabled ? 'watching' : 'paused')} enabled={wf.enabled} />
               
               {/* Counts badge (compact) */}
               <CountsDisplay counts={counts} compact={true} />
+              
+              {/* PHASE 7: Arm/Disarm button */}
+              {onArmWatchFolder && onDisarmWatchFolder && (
+                <button
+                  data-testid={`arm-disarm-${wf.id}`}
+                  onClick={() => wf.armed ? handleDisarmWatchFolder(wf.id) : handleArmWatchFolder(wf.id)}
+                  disabled={!wf.armed && !canArm(wf)}
+                  title={
+                    wf.armed 
+                      ? 'Disarm (stop auto job creation)' 
+                      : canArm(wf) 
+                        ? 'Arm (enable auto job creation)' 
+                        : !wf.preset_id 
+                          ? 'Cannot arm: No preset configured'
+                          : !wf.enabled
+                            ? 'Cannot arm: Watcher is paused'
+                            : 'Cannot arm'
+                  }
+                  style={{
+                    padding: '0.25rem 0.5rem',
+                    background: wf.armed 
+                      ? 'rgb(251, 146, 60)' 
+                      : canArm(wf) 
+                        ? 'var(--surface-tertiary)' 
+                        : 'var(--surface-tertiary)',
+                    border: wf.armed 
+                      ? '1px solid rgb(251, 146, 60)' 
+                      : '1px solid var(--border-primary)',
+                    borderRadius: '4px',
+                    color: wf.armed ? 'white' : canArm(wf) ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    fontSize: '0.6875rem',
+                    cursor: (wf.armed || canArm(wf)) ? 'pointer' : 'not-allowed',
+                    fontWeight: 600,
+                    opacity: (wf.armed || canArm(wf)) ? 1 : 0.5,
+                  }}
+                >
+                  {wf.armed ? '⚡ Armed' : 'Arm'}
+                </button>
+              )}
               
               {/* Pause/Resume action button */}
               <button
@@ -738,6 +858,22 @@ export function WatchFoldersPanel({
                 }}
               >
                 ⚠ {wf.error}
+              </div>
+            )}
+            
+            {/* PHASE 7: Arm block reasons message (temporary) */}
+            {armBlockReasons.get(wf.id) && (
+              <div 
+                data-testid={`arm-block-reasons-${wf.id}`}
+                style={{
+                  padding: '0.5rem',
+                  background: 'rgba(251, 146, 60, 0.1)',
+                  borderBottom: '1px solid rgba(251, 146, 60, 0.3)',
+                  color: 'rgb(251, 146, 60)',
+                  fontSize: '0.75rem',
+                }}
+              >
+                ⚠ Cannot arm: {armBlockReasons.get(wf.id)!.map(getBlockReasonText).join(', ')}
               </div>
             )}
             

@@ -195,10 +195,18 @@ export function SourceSelectionPanel({
               No sources selected
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <Button onClick={handleSelectFiles} disabled={!hasElectron}>
+              <Button 
+                onClick={handleSelectFiles} 
+                disabled={!hasElectron}
+                data-testid="select-source-files-button"
+              >
                 📁 Select Files
               </Button>
-              <Button onClick={handleSelectFolder} disabled={!hasElectron}>
+              <Button 
+                onClick={handleSelectFolder} 
+                disabled={!hasElectron}
+                data-testid="select-source-folder-button"
+              >
                 📂 Select Folder
               </Button>
             </div>
@@ -233,6 +241,7 @@ export function SourceSelectionPanel({
                 onClick={handleSelectFiles} 
                 disabled={!hasElectron || isLoading}
                 style={{ fontSize: '0.75rem' }}
+                data-testid="add-source-files-button"
               >
                 + Files
               </Button>
@@ -240,6 +249,7 @@ export function SourceSelectionPanel({
                 onClick={handleSelectFolder} 
                 disabled={!hasElectron || isLoading}
                 style={{ fontSize: '0.75rem' }}
+                data-testid="add-source-folder-button"
               >
                 + Folder
               </Button>
@@ -254,6 +264,7 @@ export function SourceSelectionPanel({
                 fontSize: '0.75rem',
                 backgroundColor: 'var(--accent-primary)',
               }}
+              data-testid="run-preflight-button"
             >
               Run Preflight
             </Button>

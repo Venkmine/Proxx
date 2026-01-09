@@ -35,7 +35,8 @@ Honesty > promises
 - Incomplete UI-only features are allowed if clearly scoped
 
 ### Feature Rules
-- Presets are optional
+- Presets are DURABLE (stored in userData, survive rebuilds)
+- Default presets exist on first launch (5 editor-sane templates)
 - Watch folders may exist in backend but MUST NOT appear in UI
 - Colour management, LUTs, watermarking may be UI-only
 - No v1 constraints apply

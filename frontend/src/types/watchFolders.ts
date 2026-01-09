@@ -20,8 +20,9 @@
 
 /**
  * Watch folder status enum - unambiguous states
+ * PHASE 7: Added 'armed' status for auto job creation mode
  */
-export type WatchFolderStatus = 'watching' | 'paused'
+export type WatchFolderStatus = 'watching' | 'paused' | 'armed'
 
 /**
  * Per-watch-folder counters for tracking file lifecycle
@@ -50,8 +51,14 @@ export interface WatchFolder {
   path: string
   /** Whether the watcher is currently active */
   enabled: boolean
-  /** Explicit status for UI clarity (derived from enabled) */
+  /** Explicit status for UI clarity (derived from enabled + armed) */
   status: WatchFolderStatus
+  /** 
+   * PHASE 7: Armed mode - when true, automatically creates jobs for detected files
+   * Requires: preset_id set, delivery destination configured, engine resolved
+   * Cannot be armed while paused
+   */
+  armed: boolean
   /** Whether to watch subdirectories recursively */
   recursive: boolean
   /** Optional preset ID to apply to detected files */
@@ -121,6 +128,7 @@ export interface WatchFolderEvents {
 /**
  * QC_ACTION_TRACE events for Watch Folders
  * These events are logged for E2E test observability
+ * PHASE 7: Added armed-related events
  */
 export type WatchFolderTraceEvent =
   | 'WATCH_FOLDER_ADDED'
@@ -133,9 +141,33 @@ export type WatchFolderTraceEvent =
   | 'WATCH_FOLDER_COUNTS_UPDATED'
   | 'WATCH_FOLDER_JOB_COMPLETED'
   | 'WATCH_FOLDER_JOB_FAILED'
+  // PHASE 7: Armed watch folder events
+  | 'WATCH_FOLDER_ARMED'
+  | 'WATCH_FOLDER_DISARMED'
+  | 'WATCH_FOLDER_ARM_BLOCKED'
+  | 'WATCH_FOLDER_AUTO_JOB_CREATED'
+  | 'WATCH_FOLDER_AUTO_JOB_BLOCKED'
+
+/**
+ * PHASE 7: Reasons why a watch folder cannot be armed
+ */
+export type ArmBlockReason =
+  | 'NO_PRESET'          // No preset assigned
+  | 'PAUSED'             // Watch folder is paused
+  | 'ALREADY_ARMED'      // Already in armed state
+  | 'WATCHER_ERROR'      // Watcher has an error
+
+/**
+ * PHASE 7: Result of arm validation check
+ */
+export interface ArmValidationResult {
+  canArm: boolean
+  blockReasons: ArmBlockReason[]
+}
 
 /**
  * Trace event payload for QC observability
+ * PHASE 7: Extended with armed-related details
  */
 export interface WatchFolderTracePayload {
   event: WatchFolderTraceEvent
@@ -147,6 +179,12 @@ export interface WatchFolderTracePayload {
     jobIds?: string[]
     error?: string
     counts?: WatchFolderCounts
+    // PHASE 7: Armed-related details
+    armed?: boolean
+    blockReasons?: ArmBlockReason[]
+    autoJobId?: string
+    sourcePath?: string
+    presetId?: string
   }
 }
 

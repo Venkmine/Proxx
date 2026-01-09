@@ -22,8 +22,8 @@
     "qc:interpret": "node ../scripts/qc/interpret_glm_report.mjs",
     "qc:loop": "node ../scripts/qc/run_qc_loop.mjs",
     "qc:diff": "node ../scripts/qc/diff_glm_reports.mjs",
-    "electron:dev": "tsc -p tsconfig.electron.json && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist-electron/main.js",
-    "electron:build": "tsc -p tsconfig.electron.json",
+    "electron:dev": "tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && VITE_DEV_SERVER_URL=http://localhost:5173 electron dist-electron/main.js",
+    "electron:build": "tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json",
     "pnpm:electron:dev": "pnpm --filter ./frontend electron:dev"
   },
   "dependencies": {
@@ -51,5 +51,22 @@
     "vite": "^6.0.3",
     "vite-plugin-electron": "^0.28.7",
     "vitest": "^4.0.16"
+  },
+  "build": {
+    "appId": "com.awaire.proxy",
+    "productName": "Awaire Proxy",
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.video"
+    },
+    "win": {
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "icon": "build/icon.png"
+    }
   }
 }

@@ -147,6 +147,7 @@ function isJobTerminal(status: string): boolean {
 // Watch Folders V2: Added watchFolder namespace for detection-only automation
 // Preset Persistence: Added preset namespace for durable storage
 import type { Preset, DeliverSettings as PresetDeliverSettings } from './types/presets'
+import type { ArmBlockReason } from './types/watchFolders'
 declare global {
   interface Window {
     electron?: {
@@ -171,6 +172,10 @@ declare global {
         selectAll: (watchFolderId: string, selected: boolean) => Promise<boolean>
         clearPending: (watchFolderId: string, filePaths: string[]) => Promise<boolean>
         logJobsCreated: (watchFolderId: string, jobIds: string[]) => Promise<boolean>
+        // PHASE 7: Armed watch folder operations
+        arm: (id: string) => Promise<{ success: boolean; blockReasons?: ArmBlockReason[] }>
+        disarm: (id: string) => Promise<boolean>
+        validateArm: (id: string) => Promise<{ canArm: boolean; blockReasons: ArmBlockReason[] }>
         onStateChanged: (callback: (data: { watchFolders: WatchFolder[] }) => void) => void
         onFileDetected: (callback: (data: { watchFolderId: string; file: PendingFile }) => void) => void
         onError: (callback: (data: { watchFolderId: string; error: string }) => void) => void
@@ -570,6 +575,24 @@ function App() {
   const handleClearPendingFiles = useCallback(async (watchFolderId: string, filePaths: string[]): Promise<boolean> => {
     if (!hasElectron || !window.electron?.watchFolder) return false
     return window.electron.watchFolder.clearPending(watchFolderId, filePaths)
+  }, [hasElectron])
+  
+  /**
+   * PHASE 7: Arm a watch folder for auto job creation
+   */
+  const handleArmWatchFolder = useCallback(async (id: string): Promise<{ success: boolean; blockReasons?: Array<'NO_PRESET' | 'PAUSED' | 'ALREADY_ARMED' | 'WATCHER_ERROR'> }> => {
+    if (!hasElectron || !window.electron?.watchFolder) {
+      return { success: false, blockReasons: [] }
+    }
+    return window.electron.watchFolder.arm(id)
+  }, [hasElectron])
+  
+  /**
+   * PHASE 7: Disarm a watch folder
+   */
+  const handleDisarmWatchFolder = useCallback(async (id: string): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.disarm(id)
   }, [hasElectron])
   
   /**
@@ -2825,11 +2848,13 @@ function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Forge: Primary app identity */}
           <img
-            src="/branding/awaire-logo.png"
-            alt="Awaire"
+            src="/branding/forge-logo.png"
+            alt="Forge"
+            data-testid="forge-logo"
             style={{
-              height: '1.5rem',
+              height: '1.75rem',
               width: 'auto',
               userSelect: 'none',
               pointerEvents: 'none',
@@ -2845,12 +2870,39 @@ function App() {
             color: 'var(--text-dim)',
             alignItems: 'center',
           }}>
-            <span 
-              data-testid="backend-status"
-              style={{ color: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)' }}
+            {/* Awaire: Service/backend connection indicator */}
+            <div 
+              data-testid="awaire-service-indicator"
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.375rem',
+                padding: '0.125rem 0.5rem',
+                background: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: 'var(--radius-sm)',
+              }}
             >
-              {backendConnected ? '● Connected' : '○ Disconnected'}
-            </span>
+              <img
+                src="/branding/awaire-logo.png"
+                alt="Awaire"
+                style={{
+                  height: '0.875rem',
+                  width: 'auto',
+                  opacity: backendConnected ? 0.9 : 0.4,
+                  userSelect: 'none',
+                  pointerEvents: 'none',
+                }}
+              />
+              <span 
+                data-testid="backend-status"
+                style={{ 
+                  color: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)',
+                  fontSize: '0.5625rem',
+                }}
+              >
+                {backendConnected ? '●' : '○'}
+              </span>
+            </div>
             <span style={{
               padding: '0.125rem 0.375rem',
               fontSize: '0.5625rem',
@@ -3093,6 +3145,8 @@ function App() {
                       onSelectAll={handleSelectAllWatchFolderFiles}
                       onCreateJobs={handleCreateJobsFromWatchFolder}
                       onClearPending={handleClearPendingFiles}
+                      onArmWatchFolder={handleArmWatchFolder}
+                      onDisarmWatchFolder={handleDisarmWatchFolder}
                     />
                   </div>
                 )}
@@ -3325,11 +3379,11 @@ function App() {
                     {jobsWithQueuedSpec.length === 0 ? (
                       <>
                         <img
-                          src="/branding/awaire-logo.png"
-                          alt="Awaire"
+                          src="/branding/forge-logo.png"
+                          alt="Forge"
                           style={{
-                            opacity: 0.1,
-                            height: '5rem',
+                            opacity: 0.15,
+                            height: '4rem',
                             width: 'auto',
                             marginBottom: '1rem',
                             userSelect: 'none',

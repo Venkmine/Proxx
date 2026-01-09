@@ -103,7 +103,7 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
       style={{
         position: 'fixed',
         bottom: '32px', // Above footer
-        left: '16px',  // Aligned with left panel inner padding
+        left: '496px',  // Past left panel (480px) + padding
         width: '440px',  // Wider to match left panel content width
         maxHeight: `${maxHeight}px`,
         background: 'rgba(16, 18, 20, 0.98)',

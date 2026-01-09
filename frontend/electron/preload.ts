@@ -69,6 +69,48 @@ if (E2E_TEST && QC_TEST_FILE) {
     openFilesOrFolders: mockOpenFilesOrFolders,
     showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
     isAuditMode: () => E2E_AUDIT_MODE,
+    // Watch Folders V2 - MUST be exposed in E2E mode too
+    watchFolder: {
+      getAll: () => ipcRenderer.invoke('watch-folder:get-all'),
+      add: (config: any) => ipcRenderer.invoke('watch-folder:add', config),
+      enable: (id: string) => ipcRenderer.invoke('watch-folder:enable', id),
+      disable: (id: string) => ipcRenderer.invoke('watch-folder:disable', id),
+      remove: (id: string) => ipcRenderer.invoke('watch-folder:remove', id),
+      update: (id: string, updates: any) => ipcRenderer.invoke('watch-folder:update', id, updates),
+      toggleFile: (watchFolderId: string, filePath: string) => 
+        ipcRenderer.invoke('watch-folder:toggle-file', watchFolderId, filePath),
+      selectAll: (watchFolderId: string, selected: boolean) => 
+        ipcRenderer.invoke('watch-folder:select-all', watchFolderId, selected),
+      clearPending: (watchFolderId: string, filePaths: string[]) => 
+        ipcRenderer.invoke('watch-folder:clear-pending', watchFolderId, filePaths),
+      logJobsCreated: (watchFolderId: string, jobIds: string[]) => 
+        ipcRenderer.invoke('watch-folder:log-jobs-created', watchFolderId, jobIds),
+      // PHASE 7: Armed watch folder operations
+      arm: (id: string) => ipcRenderer.invoke('watch-folder:arm', id),
+      disarm: (id: string) => ipcRenderer.invoke('watch-folder:disarm', id),
+      validateArm: (id: string) => ipcRenderer.invoke('watch-folder:validate-arm', id),
+      onStateChanged: (callback: (data: any) => void) => {
+        ipcRenderer.on('watch-folder:state-changed', (_event, data) => callback(data))
+      },
+      onFileDetected: (callback: (data: any) => void) => {
+        ipcRenderer.on('watch-folder:file-detected', (_event, data) => callback(data))
+      },
+      onError: (callback: (data: any) => void) => {
+        ipcRenderer.on('watch-folder:error', (_event, data) => callback(data))
+      },
+    },
+    // Preset Persistence - Durable storage in userData
+    preset: {
+      getAll: () => ipcRenderer.invoke('preset:get-all'),
+      get: (id: string) => ipcRenderer.invoke('preset:get', id),
+      create: (name: string, settings: any, description?: string) =>
+        ipcRenderer.invoke('preset:create', name, settings, description),
+      update: (id: string, updates: any) => ipcRenderer.invoke('preset:update', id, updates),
+      delete: (id: string) => ipcRenderer.invoke('preset:delete', id),
+      duplicate: (id: string, newName: string) => ipcRenderer.invoke('preset:duplicate', id, newName),
+      resetDefaults: () => ipcRenderer.invoke('preset:reset-defaults'),
+      getStoragePath: () => ipcRenderer.invoke('preset:get-storage-path'),
+    },
   });
   
   // Set flag to indicate mocks are installed
@@ -89,17 +131,54 @@ if (E2E_TEST && QC_TEST_FILE) {
     showItemInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
     // Audit mode flag (dev/test-only)
     isAuditMode: () => E2E_AUDIT_MODE,
-    // Watch Folders V1: Recursive monitoring
-    startWatchFolder: (config: any) => ipcRenderer.invoke('watch-folder:start', config),
-    stopWatchFolder: (id: string) => ipcRenderer.invoke('watch-folder:stop', id),
-    onWatchFolderFileDetected: (callback: (event: any) => void) => {
-      ipcRenderer.on('watch-folder:file-detected', (_event, data) => callback(data))
+    
+    // ============================================
+    // Watch Folders V2: Detection automatic, execution manual
+    // ============================================
+    watchFolder: {
+      getAll: () => ipcRenderer.invoke('watch-folder:get-all'),
+      add: (config: any) => ipcRenderer.invoke('watch-folder:add', config),
+      enable: (id: string) => ipcRenderer.invoke('watch-folder:enable', id),
+      disable: (id: string) => ipcRenderer.invoke('watch-folder:disable', id),
+      remove: (id: string) => ipcRenderer.invoke('watch-folder:remove', id),
+      update: (id: string, updates: any) => ipcRenderer.invoke('watch-folder:update', id, updates),
+      toggleFile: (watchFolderId: string, filePath: string) => 
+        ipcRenderer.invoke('watch-folder:toggle-file', watchFolderId, filePath),
+      selectAll: (watchFolderId: string, selected: boolean) => 
+        ipcRenderer.invoke('watch-folder:select-all', watchFolderId, selected),
+      clearPending: (watchFolderId: string, filePaths: string[]) => 
+        ipcRenderer.invoke('watch-folder:clear-pending', watchFolderId, filePaths),
+      logJobsCreated: (watchFolderId: string, jobIds: string[]) => 
+        ipcRenderer.invoke('watch-folder:log-jobs-created', watchFolderId, jobIds),
+      // PHASE 7: Armed watch folder operations
+      arm: (id: string) => ipcRenderer.invoke('watch-folder:arm', id),
+      disarm: (id: string) => ipcRenderer.invoke('watch-folder:disarm', id),
+      validateArm: (id: string) => ipcRenderer.invoke('watch-folder:validate-arm', id),
+      // Event listeners
+      onStateChanged: (callback: (data: any) => void) => {
+        ipcRenderer.on('watch-folder:state-changed', (_event, data) => callback(data))
+      },
+      onFileDetected: (callback: (data: any) => void) => {
+        ipcRenderer.on('watch-folder:file-detected', (_event, data) => callback(data))
+      },
+      onError: (callback: (data: any) => void) => {
+        ipcRenderer.on('watch-folder:error', (_event, data) => callback(data))
+      },
     },
-    onWatchFolderFileRejected: (callback: (event: any) => void) => {
-      ipcRenderer.on('watch-folder:file-rejected', (_event, data) => callback(data))
-    },
-    onWatchFolderError: (callback: (event: any) => void) => {
-      ipcRenderer.on('watch-folder:error', (_event, data) => callback(data))
+    
+    // ============================================
+    // Preset Persistence: Durable storage in userData
+    // ============================================
+    preset: {
+      getAll: () => ipcRenderer.invoke('preset:get-all'),
+      get: (id: string) => ipcRenderer.invoke('preset:get', id),
+      create: (name: string, settings: any, description?: string) =>
+        ipcRenderer.invoke('preset:create', name, settings, description),
+      update: (id: string, updates: any) => ipcRenderer.invoke('preset:update', id, updates),
+      delete: (id: string) => ipcRenderer.invoke('preset:delete', id),
+      duplicate: (id: string, newName: string) => ipcRenderer.invoke('preset:duplicate', id, newName),
+      resetDefaults: () => ipcRenderer.invoke('preset:reset-defaults'),
+      getStoragePath: () => ipcRenderer.invoke('preset:get-storage-path'),
     },
   });
 }

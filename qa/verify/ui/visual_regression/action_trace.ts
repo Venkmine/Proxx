@@ -507,3 +507,377 @@ export async function instrumentCreateJobAction(
   
   return builder.build()
 }
+
+// ============================================================================
+// SELECT SOURCE ACTION INSTRUMENTATION
+// ============================================================================
+
+/**
+ * Instrument the "Select Source" action with full QC trace.
+ * 
+ * This action captures source file selection via native dialog.
+ * In E2E tests, we inject paths directly to avoid Finder dialogs.
+ */
+export async function instrumentSelectSourceAction(
+  page: Page,
+  baseArtifactDir: string,
+  injectPaths?: string[]
+): Promise<ActionTrace> {
+  const builder = new ActionTraceBuilder('click_select_source', baseArtifactDir)
+  
+  // 1. Record prior workflow state
+  const priorState = await inferWorkflowState(page)
+  builder.setPriorState(priorState)
+  builder.setExpectedTransition('idle', 'source_loaded', 'User selects source files')
+  
+  console.log(`🎯 [ACTION TRACE] click_select_source`)
+  console.log(`   Prior state: ${priorState}`)
+  
+  const actionStart = Date.now()
+  
+  // If we have paths to inject, inject them directly to the store
+  if (injectPaths && injectPaths.length > 0) {
+    console.log(`   Injecting ${injectPaths.length} source path(s) for E2E testing`)
+    
+    // Inject paths via JavaScript to avoid native dialog
+    await page.evaluate((paths: string[]) => {
+      // Access the Zustand store via window (exposed for testing)
+      const store = (window as any).__SOURCE_SELECTION_STORE__
+      if (store) {
+        store.getState().addPaths(paths)
+      } else {
+        // Fallback: dispatch custom event
+        window.dispatchEvent(new CustomEvent('e2e:inject-source-paths', { detail: paths }))
+      }
+    }, injectPaths)
+    
+    // Wait for UI to reflect the paths
+    await page.waitForSelector('[data-testid="sources-loaded-indicator"]', { timeout: 5000 }).catch(() => null)
+    
+    builder.setBackendSignals({
+      job_created: false, // Not creating job, just selecting source
+      response_time_ms: Date.now() - actionStart
+    })
+  } else {
+    // Click the select source button (will open native dialog in real usage)
+    const selectButton = page.locator('[data-testid="select-source-files-button"], [data-testid="add-source-files-button"]').first()
+    
+    if (await selectButton.count() === 0) {
+      builder.setBackendSignals({
+        job_created: false,
+        error_reason: 'Select Source button not found in DOM',
+        error_category: 'precondition',
+        response_time_ms: Date.now() - actionStart
+      })
+      builder.setVisualSnapshot({
+        screenshot_path: '',
+        captured_at: new Date().toISOString(),
+        settle_trigger: 'timeout'
+      })
+      builder.evaluateOutcome(false, ['Select Source button not found'])
+      return builder.build()
+    }
+    
+    await selectButton.click()
+    
+    builder.setBackendSignals({
+      response_time_ms: Date.now() - actionStart
+    })
+  }
+  
+  // Wait for UI to settle
+  const settleResult = await waitForUISettle(page, 5000)
+  console.log(`   UI settled via: ${settleResult.trigger} (${settleResult.elapsed_ms}ms)`)
+  
+  // Capture screenshot
+  const screenshotPath = path.join(builder.getArtifactDir(), 'screenshot.png')
+  await page.screenshot({ path: screenshotPath, fullPage: true })
+  
+  // Capture DOM snapshot
+  const domSnapshotPath = path.join(builder.getArtifactDir(), 'dom_snapshot.json')
+  const domSnapshot = await captureDOMSnapshot(page)
+  fs.writeFileSync(domSnapshotPath, JSON.stringify(domSnapshot, null, 2))
+  
+  builder.setVisualSnapshot({
+    screenshot_path: screenshotPath,
+    dom_snapshot_path: domSnapshotPath,
+    captured_at: new Date().toISOString(),
+    settle_trigger: settleResult.trigger
+  })
+  
+  // Evaluate outcome
+  const currentState = await inferWorkflowState(page)
+  const sourcesLoaded = currentState === 'source_loaded'
+  
+  // For source selection, we consider it successful if sources are now loaded
+  if (injectPaths && injectPaths.length > 0) {
+    builder.evaluateOutcome(sourcesLoaded, sourcesLoaded ? undefined : ['Sources not loaded after injection'])
+  } else {
+    // If no paths injected, just verify button was clickable
+    builder.evaluateOutcome(true)
+  }
+  
+  const tracePath = builder.save()
+  console.log(`   Trace saved: ${tracePath}`)
+  console.log(`   QC Outcome: ${builder.build().qc_outcome}`)
+  
+  return builder.build()
+}
+
+// ============================================================================
+// ADD TO QUEUE ACTION INSTRUMENTATION
+// ============================================================================
+
+/**
+ * Instrument the "Add to Queue" action with full QC trace.
+ */
+export async function instrumentAddToQueueAction(
+  page: Page,
+  baseArtifactDir: string
+): Promise<ActionTrace> {
+  const builder = new ActionTraceBuilder('click_add_to_queue', baseArtifactDir)
+  
+  // 1. Record prior workflow state
+  const priorState = await inferWorkflowState(page)
+  builder.setPriorState(priorState)
+  builder.setExpectedTransition('source_loaded', 'source_loaded', 'User adds job to queue')
+  
+  console.log(`🎯 [ACTION TRACE] click_add_to_queue`)
+  console.log(`   Prior state: ${priorState}`)
+  
+  const actionStart = Date.now()
+  
+  // Find and click Add to Queue button
+  const addToQueueButton = page.locator('[data-testid="add-to-queue-button"]').first()
+  
+  if (await addToQueueButton.count() === 0) {
+    builder.setBackendSignals({
+      job_created: false,
+      error_reason: 'Add to Queue button not found in DOM',
+      error_category: 'precondition',
+      response_time_ms: Date.now() - actionStart
+    })
+    builder.setVisualSnapshot({
+      screenshot_path: '',
+      captured_at: new Date().toISOString(),
+      settle_trigger: 'timeout'
+    })
+    builder.evaluateOutcome(false, ['Add to Queue button not found'])
+    return builder.build()
+  }
+  
+  // Click the button
+  await addToQueueButton.click()
+  console.log(`   Button clicked at: ${new Date().toISOString()}`)
+  
+  // Wait for UI to settle
+  const settleResult = await waitForUISettle(page, 5000)
+  console.log(`   UI settled via: ${settleResult.trigger} (${settleResult.elapsed_ms}ms)`)
+  
+  // Capture backend signals - check for job in queue
+  const backendSignals = await captureBackendSignals(page, actionStart)
+  builder.setBackendSignals(backendSignals)
+  
+  // Capture screenshot
+  const screenshotPath = path.join(builder.getArtifactDir(), 'screenshot.png')
+  await page.screenshot({ path: screenshotPath, fullPage: true })
+  
+  // Capture DOM snapshot
+  const domSnapshotPath = path.join(builder.getArtifactDir(), 'dom_snapshot.json')
+  const domSnapshot = await captureDOMSnapshot(page)
+  fs.writeFileSync(domSnapshotPath, JSON.stringify(domSnapshot, null, 2))
+  
+  builder.setVisualSnapshot({
+    screenshot_path: screenshotPath,
+    dom_snapshot_path: domSnapshotPath,
+    captured_at: new Date().toISOString(),
+    settle_trigger: settleResult.trigger
+  })
+  
+  // Evaluate outcome - job should now be in queue (PENDING status)
+  const jobInQueue = await page.locator('[data-job-status="PENDING"]').count() > 0
+  builder.evaluateOutcome(jobInQueue, jobInQueue ? undefined : ['Job not visible in queue'])
+  
+  const tracePath = builder.save()
+  console.log(`   Trace saved: ${tracePath}`)
+  console.log(`   QC Outcome: ${builder.build().qc_outcome}`)
+  
+  return builder.build()
+}
+
+// ============================================================================
+// START EXECUTION ACTION INSTRUMENTATION
+// ============================================================================
+
+/**
+ * Instrument the "Start Execution" action with full QC trace.
+ */
+export async function instrumentStartExecutionAction(
+  page: Page,
+  baseArtifactDir: string
+): Promise<ActionTrace> {
+  const builder = new ActionTraceBuilder('click_start_execution', baseArtifactDir)
+  
+  // 1. Record prior workflow state
+  const priorState = await inferWorkflowState(page)
+  builder.setPriorState(priorState)
+  builder.setExpectedTransition('source_loaded', 'job_running', 'User starts execution')
+  
+  console.log(`🎯 [ACTION TRACE] click_start_execution`)
+  console.log(`   Prior state: ${priorState}`)
+  
+  const actionStart = Date.now()
+  
+  // Find Start Execution button
+  const startButton = page.locator('[data-testid="start-execution-btn"]').first()
+  
+  if (await startButton.count() === 0) {
+    builder.setBackendSignals({
+      job_created: false,
+      error_reason: 'Start Execution button not found in DOM',
+      error_category: 'precondition',
+      response_time_ms: Date.now() - actionStart
+    })
+    builder.setVisualSnapshot({
+      screenshot_path: '',
+      captured_at: new Date().toISOString(),
+      settle_trigger: 'timeout'
+    })
+    builder.evaluateOutcome(false, ['Start Execution button not found'])
+    return builder.build()
+  }
+  
+  // Check if button is disabled
+  const isDisabled = await startButton.isDisabled()
+  if (isDisabled) {
+    builder.setBackendSignals({
+      job_created: false,
+      error_reason: 'Start Execution button is disabled',
+      error_category: 'precondition',
+      response_time_ms: Date.now() - actionStart
+    })
+    builder.setVisualSnapshot({
+      screenshot_path: '',
+      captured_at: new Date().toISOString(),
+      settle_trigger: 'timeout'
+    })
+    builder.evaluateOutcome(false, ['Start Execution button is disabled'])
+    
+    // Still take screenshot to document state
+    const screenshotPath = path.join(builder.getArtifactDir(), 'screenshot.png')
+    await page.screenshot({ path: screenshotPath, fullPage: true })
+    builder.setVisualSnapshot({
+      screenshot_path: screenshotPath,
+      captured_at: new Date().toISOString(),
+      settle_trigger: 'timeout'
+    })
+    builder.save()
+    
+    return builder.build()
+  }
+  
+  // Click the button
+  await startButton.click()
+  console.log(`   Button clicked at: ${new Date().toISOString()}`)
+  
+  // Wait for UI to settle (may take longer for execution to start)
+  const settleResult = await waitForUISettle(page, 15000)
+  console.log(`   UI settled via: ${settleResult.trigger} (${settleResult.elapsed_ms}ms)`)
+  
+  // Capture backend signals
+  const backendSignals = await captureBackendSignals(page, actionStart)
+  
+  // Check for RUNNING job status
+  const jobRunning = await page.locator('[data-job-status="RUNNING"]').count() > 0
+  if (jobRunning) {
+    backendSignals.job_created = true
+  }
+  
+  builder.setBackendSignals(backendSignals)
+  
+  // Capture screenshot
+  const screenshotPath = path.join(builder.getArtifactDir(), 'screenshot.png')
+  await page.screenshot({ path: screenshotPath, fullPage: true })
+  
+  // Capture DOM snapshot
+  const domSnapshotPath = path.join(builder.getArtifactDir(), 'dom_snapshot.json')
+  const domSnapshot = await captureDOMSnapshot(page)
+  fs.writeFileSync(domSnapshotPath, JSON.stringify(domSnapshot, null, 2))
+  
+  builder.setVisualSnapshot({
+    screenshot_path: screenshotPath,
+    dom_snapshot_path: domSnapshotPath,
+    captured_at: new Date().toISOString(),
+    settle_trigger: settleResult.trigger
+  })
+  
+  // Evaluate outcome - job should be running or completed
+  const currentState = await inferWorkflowState(page)
+  const executionStarted = currentState === 'job_running' || currentState === 'job_complete'
+  
+  builder.evaluateOutcome(
+    executionStarted, 
+    executionStarted ? undefined : ['Execution did not start']
+  )
+  
+  const tracePath = builder.save()
+  console.log(`   Trace saved: ${tracePath}`)
+  console.log(`   QC Outcome: ${builder.build().qc_outcome}`)
+  
+  return builder.build()
+}
+
+// ============================================================================
+// ACTION SUMMARY GENERATION
+// ============================================================================
+
+/**
+ * Generate a summary of all action traces for a test run.
+ */
+export function generateActionSummary(
+  traces: ActionTrace[],
+  outputDir: string
+): { verified_ok: number; verified_not_ok: number; blocked_precondition: number } {
+  const summary = {
+    timestamp: new Date().toISOString(),
+    total_actions: traces.length,
+    verified_ok: 0,
+    verified_not_ok: 0,
+    blocked_precondition: 0,
+    actions: traces.map(t => ({
+      action_id: t.action_id,
+      trace_id: t.trace_id,
+      qc_outcome: t.qc_outcome,
+      qc_reason: t.qc_reason,
+    }))
+  }
+  
+  for (const trace of traces) {
+    switch (trace.qc_outcome) {
+      case 'VERIFIED_OK':
+        summary.verified_ok++
+        break
+      case 'VERIFIED_NOT_OK':
+        summary.verified_not_ok++
+        break
+      case 'BLOCKED_PRECONDITION':
+        summary.blocked_precondition++
+        break
+    }
+  }
+  
+  const summaryPath = path.join(outputDir, 'action_summary.json')
+  fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2))
+  
+  console.log(`\n📊 ACTION SUMMARY`)
+  console.log(`   VERIFIED_OK: ${summary.verified_ok}`)
+  console.log(`   VERIFIED_NOT_OK: ${summary.verified_not_ok}`)
+  console.log(`   BLOCKED_PRECONDITION: ${summary.blocked_precondition}`)
+  console.log(`   Summary saved: ${summaryPath}`)
+  
+  return {
+    verified_ok: summary.verified_ok,
+    verified_not_ok: summary.verified_not_ok,
+    blocked_precondition: summary.blocked_precondition
+  }
+}

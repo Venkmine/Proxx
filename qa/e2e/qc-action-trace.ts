@@ -10,6 +10,13 @@
  *   EXECUTION_STARTED
  *   EXECUTION_COMPLETED
  * 
+ * For Watch Folder workflows, the trace includes:
+ *   WATCH_FOLDER_TRIGGERED (replaces SELECT_SOURCE)
+ *   CREATE_JOB
+ *   ADD_TO_QUEUE
+ *   EXECUTION_STARTED
+ *   EXECUTION_COMPLETED
+ * 
  * If any step is missing → test fails.
  * This guarantees semantic correctness, not just visuals.
  */
@@ -28,7 +35,26 @@ export const GOLDEN_PATH_STEPS = [
   'EXECUTION_COMPLETED',
 ] as const
 
+/**
+ * Extended steps for Watch Folder workflows.
+ */
+export const WATCH_FOLDER_STEPS = [
+  'WATCH_FOLDER_CONFIGURED',
+  'WATCH_FOLDER_ENABLED',
+  'WATCH_FOLDER_TRIGGERED',
+  'CREATE_JOB',
+  'ADD_TO_QUEUE',
+  'EXECUTION_STARTED',
+  'EXECUTION_COMPLETED',
+] as const
+
 export type GoldenPathStep = typeof GOLDEN_PATH_STEPS[number]
+export type WatchFolderStep = typeof WATCH_FOLDER_STEPS[number]
+
+/**
+ * Execution engine type for engine routing verification.
+ */
+export type ExecutionEngine = 'ffmpeg' | 'resolve' | 'both' | 'unknown'
 
 /**
  * A single action trace entry in the QC trace log.
@@ -43,11 +69,22 @@ export interface QCActionEntry {
     jobId?: string
     status?: string
     error?: string
+    engine?: ExecutionEngine
   }
   uiState?: {
     buttonsVisible: string[]
     buttonsEnabled: string[]
     currentPanel?: string
+  }
+  /**
+   * Engine information for routing verification.
+   * Only populated for EXECUTION_STARTED step.
+   */
+  engineInfo?: {
+    expected: ExecutionEngine
+    observed: ExecutionEngine
+    processId?: number
+    command?: string
   }
 }
 

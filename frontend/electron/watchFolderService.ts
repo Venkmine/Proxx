@@ -3,7 +3,7 @@
  * 
  * INTENT.md Compliance:
  * - Detection is automatic (chokidar watches filesystem)
- * - Execution is MANUAL (files accumulate in pending_files)
+ * - Execution is MANUAL (files accumulate in pending_files) UNLESS ARMED
  * - No auto-retry, no silent automation
  * - Full QC_ACTION_TRACE logging
  * 
@@ -16,6 +16,11 @@
  * - Counters track lifecycle: Detected → Staged → Jobs Created → Completed/Failed
  * - Counts update deterministically
  * - Counts survive UI refreshes
+ * 
+ * PHASE 7: Armed Watch Folders
+ * - When armed: automatically creates jobs for detected files
+ * - Pre-arm validation: requires preset, not paused, no errors
+ * - Full QC_ACTION_TRACE for arm/disarm and auto-job events
  */
 
 import { BrowserWindow } from 'electron'
@@ -28,8 +33,17 @@ import { randomUUID } from 'node:crypto'
 // Types (mirrored from frontend for isolation)
 // ============================================
 
-/** Watch folder status - unambiguous states */
-type WatchFolderStatus = 'watching' | 'paused'
+/** Watch folder status - unambiguous states (PHASE 7: added 'armed') */
+type WatchFolderStatus = 'watching' | 'paused' | 'armed'
+
+/** PHASE 7: Reasons why arming is blocked */
+type ArmBlockReason = 'NO_PRESET' | 'PAUSED' | 'ALREADY_ARMED' | 'WATCHER_ERROR'
+
+/** PHASE 7: Arm validation result */
+interface ArmValidationResult {
+  canArm: boolean
+  blockReasons: ArmBlockReason[]
+}
 
 /** Per-watch-folder counters (PHASE 6.5) */
 interface WatchFolderCounts {
@@ -52,6 +66,7 @@ interface WatchFolder {
   path: string
   enabled: boolean
   status: WatchFolderStatus
+  armed: boolean  // PHASE 7: Auto job creation mode
   recursive: boolean
   preset_id?: string
   include_extensions: string[]
@@ -96,6 +111,32 @@ const DEFAULT_EXCLUDE_PATTERNS = [
   '**/.Spotlight-V100',
   '**/.Trashes',
 ]
+
+// ============================================
+// PHASE 7: Auto Job Creation Callback
+// ============================================
+
+/**
+ * Callback type for auto job creation when armed
+ * Returns the created job ID or null if creation failed
+ */
+type AutoJobCreationCallback = (
+  watchFolderId: string,
+  filePath: string,
+  presetId: string
+) => Promise<string | null>
+
+/** Registered callback for auto job creation (set by main.ts) */
+let autoJobCreationCallback: AutoJobCreationCallback | null = null
+
+/**
+ * Register the auto job creation callback
+ * Called by main.ts to wire up job creation logic
+ */
+export function registerAutoJobCreationCallback(callback: AutoJobCreationCallback): void {
+  autoJobCreationCallback = callback
+  console.log('[WATCH FOLDER] Auto job creation callback registered')
+}
 
 // ============================================
 // QC_ACTION_TRACE Logging
@@ -213,6 +254,46 @@ function createWatcher(watchFolder: WatchFolder, mainWindow: BrowserWindow | nul
         counts: watchFolder.counts 
       })
       
+      // PHASE 7: Auto job creation when armed
+      if (watchFolder.armed && watchFolder.preset_id && autoJobCreationCallback) {
+        try {
+          const jobId = await autoJobCreationCallback(
+            watchFolder.id,
+            filePath,
+            watchFolder.preset_id
+          )
+          
+          if (jobId) {
+            // Success: remove from pending, update counts
+            watchFolder.pending_files = watchFolder.pending_files.filter(f => f.path !== filePath)
+            watchFolder.counts.staged = Math.max(0, watchFolder.counts.staged - 1)
+            watchFolder.counts.jobs_created += 1
+            
+            logTrace('WATCH_FOLDER_AUTO_JOB_CREATED', watchFolder.id, {
+              path: filePath,
+              autoJobId: jobId,
+              presetId: watchFolder.preset_id,
+              counts: watchFolder.counts,
+            })
+          } else {
+            // Job creation returned null - blocked but not failed
+            logTrace('WATCH_FOLDER_AUTO_JOB_BLOCKED', watchFolder.id, {
+              path: filePath,
+              presetId: watchFolder.preset_id,
+              reason: 'job_creation_returned_null',
+            })
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err)
+          logTrace('WATCH_FOLDER_AUTO_JOB_BLOCKED', watchFolder.id, {
+            path: filePath,
+            presetId: watchFolder.preset_id,
+            reason: 'job_creation_error',
+            error: errorMessage,
+          })
+        }
+      }
+      
       // Notify renderer
       notifyFileDetected(mainWindow, watchFolder.id, pendingFile)
       notifyStateChange(mainWindow)
@@ -252,6 +333,7 @@ export function addWatchFolder(config: WatchFolderConfig, mainWindow: BrowserWin
     path: config.path,
     enabled: config.enabled,
     status: config.enabled ? 'watching' : 'paused',
+    armed: false,  // PHASE 7: New watch folders start unarmed
     recursive: config.recursive,
     preset_id: config.preset_id,
     include_extensions: config.include_extensions,
@@ -295,14 +377,20 @@ export function enableWatchFolder(id: string, mainWindow: BrowserWindow | null):
   if (watchFolder.enabled && activeWatchers.has(id)) return true
   
   watchFolder.enabled = true
-  watchFolder.status = 'watching'
+  // PHASE 7: Preserve armed status when re-enabling (only if still valid)
+  if (watchFolder.armed && watchFolder.preset_id && !watchFolder.error) {
+    watchFolder.status = 'armed'
+  } else {
+    watchFolder.status = 'watching'
+    watchFolder.armed = false  // Clear armed if conditions no longer met
+  }
   watchFolder.error = undefined
   watchFolder.updated_at = new Date().toISOString()
   
   const watcher = createWatcher(watchFolder, mainWindow)
   activeWatchers.set(id, watcher)
   
-  logTrace('WATCH_FOLDER_ENABLED', id, { path: watchFolder.path })
+  logTrace('WATCH_FOLDER_ENABLED', id, { path: watchFolder.path, armed: watchFolder.armed })
   notifyStateChange(mainWindow)
   
   return true
@@ -310,12 +398,16 @@ export function enableWatchFolder(id: string, mainWindow: BrowserWindow | null):
 
 /**
  * Disable a watch folder (stop watching)
+ * PHASE 7: Disabling also disarms the watch folder
  */
 export function disableWatchFolder(id: string, mainWindow: BrowserWindow | null): boolean {
   const watchFolder = watchFoldersState.get(id)
   if (!watchFolder) return false
   
+  const wasArmed = watchFolder.armed
+  
   watchFolder.enabled = false
+  watchFolder.armed = false  // PHASE 7: Cannot be armed while paused
   watchFolder.status = 'paused'
   watchFolder.updated_at = new Date().toISOString()
   
@@ -325,7 +417,16 @@ export function disableWatchFolder(id: string, mainWindow: BrowserWindow | null)
     activeWatchers.delete(id)
   }
   
-  logTrace('WATCH_FOLDER_DISABLED', id, { path: watchFolder.path })
+  logTrace('WATCH_FOLDER_DISABLED', id, { path: watchFolder.path, wasArmed })
+  
+  // PHASE 7: If was armed, also emit disarm trace
+  if (wasArmed) {
+    logTrace('WATCH_FOLDER_DISARMED', id, { 
+      path: watchFolder.path,
+      reason: 'paused',
+    })
+  }
+  
   notifyStateChange(mainWindow)
   
   return true
@@ -348,6 +449,114 @@ export function removeWatchFolder(id: string, mainWindow: BrowserWindow | null):
   watchFoldersState.delete(id)
   
   logTrace('WATCH_FOLDER_REMOVED', id, { path: watchFolder.path })
+  notifyStateChange(mainWindow)
+  
+  return true
+}
+
+// ============================================
+// PHASE 7: Armed Watch Folder API
+// ============================================
+
+/**
+ * Validate whether a watch folder can be armed
+ * Returns validation result with block reasons
+ */
+export function validateArmWatchFolder(id: string): ArmValidationResult {
+  const watchFolder = watchFoldersState.get(id)
+  if (!watchFolder) {
+    return { canArm: false, blockReasons: [] }
+  }
+  
+  const blockReasons: ArmBlockReason[] = []
+  
+  // Check: Must have preset assigned
+  if (!watchFolder.preset_id) {
+    blockReasons.push('NO_PRESET')
+  }
+  
+  // Check: Must not be paused
+  if (!watchFolder.enabled || watchFolder.status === 'paused') {
+    blockReasons.push('PAUSED')
+  }
+  
+  // Check: Must not already be armed
+  if (watchFolder.armed) {
+    blockReasons.push('ALREADY_ARMED')
+  }
+  
+  // Check: Must not have watcher error
+  if (watchFolder.error) {
+    blockReasons.push('WATCHER_ERROR')
+  }
+  
+  return {
+    canArm: blockReasons.length === 0,
+    blockReasons,
+  }
+}
+
+/**
+ * Arm a watch folder (enable auto job creation)
+ * Pre-validates and returns success/failure with block reasons
+ */
+export function armWatchFolder(
+  id: string, 
+  mainWindow: BrowserWindow | null
+): { success: boolean; blockReasons?: ArmBlockReason[] } {
+  const validation = validateArmWatchFolder(id)
+  
+  if (!validation.canArm) {
+    logTrace('WATCH_FOLDER_ARM_BLOCKED', id, { 
+      blockReasons: validation.blockReasons 
+    })
+    return { success: false, blockReasons: validation.blockReasons }
+  }
+  
+  const watchFolder = watchFoldersState.get(id)
+  if (!watchFolder) {
+    return { success: false, blockReasons: [] }
+  }
+  
+  watchFolder.armed = true
+  watchFolder.status = 'armed'
+  watchFolder.updated_at = new Date().toISOString()
+  
+  logTrace('WATCH_FOLDER_ARMED', id, { 
+    path: watchFolder.path,
+    presetId: watchFolder.preset_id,
+  })
+  
+  notifyStateChange(mainWindow)
+  
+  return { success: true }
+}
+
+/**
+ * Disarm a watch folder (disable auto job creation)
+ * Keeps the watcher running in 'watching' mode
+ */
+export function disarmWatchFolder(
+  id: string, 
+  mainWindow: BrowserWindow | null
+): boolean {
+  const watchFolder = watchFoldersState.get(id)
+  if (!watchFolder) return false
+  
+  if (!watchFolder.armed) {
+    // Already disarmed
+    return true
+  }
+  
+  watchFolder.armed = false
+  watchFolder.status = watchFolder.enabled ? 'watching' : 'paused'
+  watchFolder.updated_at = new Date().toISOString()
+  
+  logTrace('WATCH_FOLDER_DISARMED', id, { 
+    path: watchFolder.path,
+    reason: 'manual',
+  })
+  
   notifyStateChange(mainWindow)
   
   return true

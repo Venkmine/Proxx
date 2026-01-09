@@ -710,6 +710,95 @@ This prevents:
 - Placeholder UI
 - "Wired later" lies
 
+### Engine Routing Enforcement Tests
+
+The `engine_routing_enforcement.spec.ts` test validates that:
+
+1. **FFmpeg is used for standard codecs** (H.264, ProRes, etc.)
+2. **DaVinci Resolve is used for RAW codecs** (BRAW, R3D)
+3. **Engine selection is tested, not assumed**
+
+This test observes actual process execution:
+- Uses `pgrep` to detect running FFmpeg/Resolve processes
+- Validates file outputs exist with correct size
+- Fails explicitly if Resolve is required but unavailable
+
+The test answers: "Did the system use the right engine for the source?"
+
+### Watch Folder Enforcement Tests
+
+The Watch Folder V2 system validates that:
+
+1. **Detection is automatic, execution is manual** (INTENT.md compliance)
+   - Files appear in pending list when detected
+   - Jobs are NOT created automatically
+   - Operator must click "Create Jobs" to process selected files
+   
+2. **Add Watch Folder button opens folder picker**
+   - Uses Electron's `dialog.showOpenDialog()`
+   - Returns absolute path for folder
+
+3. **Enable/Disable toggles start and stop monitoring**
+   - Enable starts chokidar watcher with `awaitWriteFinish` for file stability
+   - Disable stops watcher but preserves pending files
+
+4. **File detection populates pending list**
+   - New files appear in `pending_files` array
+   - Each file has `selected: true` by default
+   - Operator can toggle individual files or use "Select All"
+
+5. **Create Jobs processes selected files only**
+   - Only files with `selected: true` are processed
+   - Each file becomes a separate JobSpec
+   - Files are cleared from pending list after job creation
+
+6. **QC_ACTION_TRACE coverage**
+   - `WATCH_FOLDER_ADDED` when folder is configured
+   - `WATCH_FOLDER_ENABLED` when monitoring starts
+   - `WATCH_FOLDER_DISABLED` when monitoring stops
+   - `WATCH_FOLDER_REMOVED` when folder is deleted
+   - `WATCH_FOLDER_FILE_DETECTED` when file is found
+   - `WATCH_FOLDER_PENDING_LIST_UPDATED` when selection changes
+   - `WATCH_FOLDER_JOBS_CREATED` when operator creates jobs
+
+This test uses the Watch Folder V2 IPC API:
+- `window.electron.watchFolder.add(config)` 
+- `window.electron.watchFolder.enable(id)`
+- `window.electron.watchFolder.disable(id)`
+- `window.electron.watchFolder.remove(id)`
+- `window.electron.watchFolder.toggleFile(watchFolderId, filePath)`
+- `window.electron.watchFolder.selectAll(watchFolderId, selected)`
+- `window.electron.watchFolder.clearPending(watchFolderId, filePaths)`
+- Event: `window.electron.watchFolder.onFileDetected(callback)`
+- Event: `window.electron.watchFolder.onStateChanged(callback)`
+
+The test answers: "Does Watch Folder detect files without auto-executing?"
+
+### Extended QC_ACTION_TRACE
+
+The trace module now includes:
+
+**Engine tracking:**
+```typescript
+engineInfo?: {
+  expected: ExecutionEngine;
+  observed: ExecutionEngine;
+  processId?: number;
+  command?: string;
+}
+```
+
+**Watch folder steps:**
+- `WATCH_FOLDER_ADDED`
+- `WATCH_FOLDER_ENABLED`
+- `WATCH_FOLDER_DISABLED`
+- `WATCH_FOLDER_REMOVED`
+- `WATCH_FOLDER_FILE_DETECTED`
+- `WATCH_FOLDER_PENDING_LIST_UPDATED`
+- `WATCH_FOLDER_JOBS_CREATED`
+
+These extensions ensure QC traces reflect reality, not assumptions.
+
 ---
 
 ## 11. Test Media Policy (Repo Safety)

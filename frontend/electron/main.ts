@@ -4,11 +4,37 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import {
-  startWatchFolder,
-  stopWatchFolder,
+  addWatchFolder,
+  enableWatchFolder,
+  disableWatchFolder,
+  removeWatchFolder,
+  updateWatchFolder,
+  togglePendingFileSelection,
+  selectAllPendingFiles,
+  clearPendingFiles,
+  getAllWatchFolders,
   stopAllWatchers,
+  logJobsCreated,
+  // PHASE 7: Armed watch folder functions
+  armWatchFolder,
+  disarmWatchFolder,
+  validateArmWatchFolder,
+  registerAutoJobCreationCallback,
   type WatchFolderConfig,
 } from './watchFolderService.js';
+
+import {
+  loadPresets,
+  getPreset,
+  createPreset,
+  updatePreset as updatePresetService,
+  deletePreset,
+  duplicatePreset,
+  resetToDefaults,
+  getPresetStoragePath,
+  type Preset,
+  type DeliverSettings,
+} from './presetService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -110,7 +136,7 @@ function getErrorHtml(errorTitle: string, errorDetails: string): string {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Awaire Proxy - Error</title>
+  <title>Forge - Error</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -551,19 +577,136 @@ function setupIpcHandlers() {
     app.quit();
   });
   
-  // Watch Folders V1: IPC handlers for file watching
-  ipcMain.handle('watch-folder:start', (_event, config: WatchFolderConfig) => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    if (mainWindow) {
-      startWatchFolder(config, mainWindow)
-      return { success: true }
-    }
-    return { success: false, error: 'No main window found' }
+  // ============================================
+  // Watch Folders V2: IPC Handlers
+  // ============================================
+  // INTENT.md: Detection automatic, execution manual
+  // All state owned by main process, pushed to renderer
+  
+  /** Get all watch folders (initial state sync) */
+  ipcMain.handle('watch-folder:get-all', () => {
+    return getAllWatchFolders()
   })
   
-  ipcMain.handle('watch-folder:stop', (_event, id: string) => {
-    stopWatchFolder(id)
-    return { success: true }
+  /** Add a new watch folder */
+  ipcMain.handle('watch-folder:add', (_event, config: WatchFolderConfig) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return addWatchFolder(config, mainWindow)
+  })
+  
+  /** Enable a watch folder (start watching) */
+  ipcMain.handle('watch-folder:enable', (_event, id: string) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return enableWatchFolder(id, mainWindow)
+  })
+  
+  /** Disable a watch folder (stop watching) */
+  ipcMain.handle('watch-folder:disable', (_event, id: string) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return disableWatchFolder(id, mainWindow)
+  })
+  
+  /** Remove a watch folder */
+  ipcMain.handle('watch-folder:remove', (_event, id: string) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return removeWatchFolder(id, mainWindow)
+  })
+  
+  /** Update watch folder configuration */
+  ipcMain.handle('watch-folder:update', (_event, id: string, updates: Partial<WatchFolderConfig>) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return updateWatchFolder(id, updates, mainWindow)
+  })
+  
+  /** Toggle pending file selection */
+  ipcMain.handle('watch-folder:toggle-file', (_event, watchFolderId: string, filePath: string) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return togglePendingFileSelection(watchFolderId, filePath, mainWindow)
+  })
+  
+  /** Select/deselect all pending files */
+  ipcMain.handle('watch-folder:select-all', (_event, watchFolderId: string, selected: boolean) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return selectAllPendingFiles(watchFolderId, selected, mainWindow)
+  })
+  
+  /** Clear pending files after job creation */
+  ipcMain.handle('watch-folder:clear-pending', (_event, watchFolderId: string, filePaths: string[]) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return clearPendingFiles(watchFolderId, filePaths, mainWindow)
+  })
+  
+  /** Log jobs created (for QC trace) */
+  ipcMain.handle('watch-folder:log-jobs-created', (_event, watchFolderId: string, jobIds: string[]) => {
+    logJobsCreated(watchFolderId, jobIds)
+    return true
+  })
+  
+  // ============================================
+  // PHASE 7: Armed Watch Folder IPC Handlers
+  // ============================================
+  
+  /** Arm a watch folder (enable auto job creation) */
+  ipcMain.handle('watch-folder:arm', (_event, id: string) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return armWatchFolder(id, mainWindow)
+  })
+  
+  /** Disarm a watch folder (disable auto job creation) */
+  ipcMain.handle('watch-folder:disarm', (_event, id: string) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    return disarmWatchFolder(id, mainWindow)
+  })
+  
+  /** Validate if watch folder can be armed */
+  ipcMain.handle('watch-folder:validate-arm', (_event, id: string) => {
+    return validateArmWatchFolder(id)
+  })
+  
+  // ============================================
+  // Preset Persistence: IPC Handlers
+  // ============================================
+  // Presets stored in userData/presets.json - survives rebuilds
+  // Default presets created on first launch
+  
+  /** Get all presets */
+  ipcMain.handle('preset:get-all', () => {
+    return loadPresets()
+  })
+  
+  /** Get a single preset by ID */
+  ipcMain.handle('preset:get', (_event, id: string) => {
+    return getPreset(id)
+  })
+  
+  /** Create a new preset */
+  ipcMain.handle('preset:create', (_event, name: string, settings: DeliverSettings, description?: string) => {
+    return createPreset(name, settings, description)
+  })
+  
+  /** Update an existing preset */
+  ipcMain.handle('preset:update', (_event, id: string, updates: Partial<Pick<Preset, 'name' | 'description' | 'settings'>>) => {
+    return updatePresetService(id, updates)
+  })
+  
+  /** Delete a preset */
+  ipcMain.handle('preset:delete', (_event, id: string) => {
+    return deletePreset(id)
+  })
+  
+  /** Duplicate a preset */
+  ipcMain.handle('preset:duplicate', (_event, id: string, newName: string) => {
+    return duplicatePreset(id, newName)
+  })
+  
+  /** Reset all presets to defaults */
+  ipcMain.handle('preset:reset-defaults', () => {
+    return resetToDefaults()
+  })
+  
+  /** Get preset storage path (debugging) */
+  ipcMain.handle('preset:get-storage-path', () => {
+    return getPresetStoragePath()
   })
 }
 

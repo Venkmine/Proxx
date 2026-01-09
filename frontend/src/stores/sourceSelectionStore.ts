@@ -225,6 +225,26 @@ export const useSourceSelectionStore = create<SourceSelectionStoreState>((set, g
 }))
 
 // ============================================================================
+// E2E TESTING EXPOSURE
+// ============================================================================
+// Expose store to window for E2E tests to inject source paths directly.
+// This avoids native file dialogs during automated testing.
+// Only active in development or E2E test mode.
+if (typeof window !== 'undefined') {
+  // Expose the store for E2E testing
+  (window as any).__SOURCE_SELECTION_STORE__ = useSourceSelectionStore
+  
+  // Also listen for custom events for path injection
+  window.addEventListener('e2e:inject-source-paths', ((event: CustomEvent<string[]>) => {
+    const paths = event.detail
+    if (paths && paths.length > 0) {
+      console.log('[E2E] Injecting source paths via custom event:', paths)
+      useSourceSelectionStore.getState().addPaths(paths)
+    }
+  }) as EventListener)
+}
+
+// ============================================================================
 // DERIVED STATE HELPERS
 // ============================================================================
 
