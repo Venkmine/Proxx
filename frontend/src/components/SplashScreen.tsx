@@ -95,15 +95,18 @@ export function SplashScreen({
         cursor: canDismissEarly ? 'pointer' : 'default',
       }}
     >
-      {/* Logo Area */}
+      {/* Wordmark Area — TEXT ONLY per branding rules */}
+      {/* See: src/branding/constants.ts */}
       <div
         style={{
           marginBottom: '2rem',
           textAlign: 'center',
         }}
       >
-        {/* App name - no logo per single-logo rule */}
+        {/* WORDMARK TEXT ONLY — no images allowed on splash screen */}
         <div
+          data-testid="forge-wordmark"
+          data-branding-type="wordmark-text"
           style={{
             fontSize: '1.5rem',
             fontWeight: 700,

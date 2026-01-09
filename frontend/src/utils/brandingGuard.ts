@@ -1,25 +1,35 @@
 /**
  * BRANDING QC GUARD
  * 
- * This module enforces the single-logo rule at runtime during development.
+ * This module enforces branding semantics at runtime during development.
  * 
- * RULE: Exactly ONE Forge logo image in the entire UI (header only)
+ * BRANDING MODEL:
+ * - LOGO-ICON: Non-text geometric mark (image only) - header only
+ * - WORDMARK-TEXT: Text "Forge" - allowed in specific locations
  * 
- * Allowed:
- * - ONE <img> with src containing "FORGE_MOONLANDER_LOGO_WHITE"
- * - Located in app header only
+ * RULES:
+ * 1. Header: Logo icon (image) + wordmark text allowed
+ * 2. Splash screen: Wordmark text ONLY (no images)
+ * 3. Monitor/Preview: NO branding OR neutral text only
+ * 4. Title bar: Wordmark text ONLY
  * 
- * NOT Allowed:
- * - Multiple logo images
- * - Logo images outside header
- * - Logo SVGs as branding
- * - Background image logos
+ * VIOLATION DETECTION:
+ * - Wordmark-as-image (FORGE_MOONLANDER_LOGO) anywhere = VIOLATION
+ * - Multiple logo icons = VIOLATION
+ * - Logo icon outside header = VIOLATION
  * 
- * Text-only branding ("Forge", "FORGE") is always allowed.
+ * See: src/branding/constants.ts for authoritative rules
  */
 
-const FORGE_LOGO_PATTERN = /FORGE_MOONLANDER_LOGO_WHITE/
-const EXPECTED_LOGO_COUNT = 1
+// Patterns for detection
+const WORDMARK_IMAGE_PATTERN = /FORGE_MOONLANDER|forge-logo\.png|wordmark/i
+const LOGO_ICON_PATTERN = /forge-icon/i
+const DEPRECATED_BRANDING_IMAGES = [
+  'FORGE_MOONLANDER_LOGO_WHITE.png',
+  'forge-logo.png',
+  'AWAIRE_Logo_Main_PNG.png',
+  'awaire-logo.png',
+]
 
 /**
  * Checks DOM for branding violations.
@@ -29,56 +39,90 @@ const EXPECTED_LOGO_COUNT = 1
  */
 export function checkBrandingCompliance(): {
   compliant: boolean
-  logoCount: number
+  logoIconCount: number
+  wordmarkTextCount: number
   violations: string[]
 } {
   if (typeof document === 'undefined') {
-    return { compliant: true, logoCount: 0, violations: [] }
+    return { compliant: true, logoIconCount: 0, wordmarkTextCount: 0, violations: [] }
   }
 
   const violations: string[] = []
-  let logoCount = 0
+  let logoIconCount = 0
+  let wordmarkTextCount = 0
 
   // Find all images
   const images = document.querySelectorAll('img')
-  const logoImages: HTMLImageElement[] = []
-
+  
   images.forEach((img) => {
     const src = img.getAttribute('src') || ''
-    if (FORGE_LOGO_PATTERN.test(src)) {
-      logoCount++
-      logoImages.push(img)
+    
+    // Check for deprecated wordmark-as-image (VIOLATION)
+    if (WORDMARK_IMAGE_PATTERN.test(src)) {
+      violations.push(
+        `BRANDING VIOLATION: Wordmark-as-image detected: ${src}`
+      )
+      const parent = img.closest('[data-testid]')
+      violations.push(
+        `  Location: ${parent?.getAttribute('data-testid') || 'unknown'}`
+      )
+      violations.push(
+        `  Fix: Replace image with text wordmark or logo icon`
+      )
+    }
+    
+    // Check for deprecated Awaire/old branding
+    for (const deprecated of DEPRECATED_BRANDING_IMAGES) {
+      if (src.includes(deprecated)) {
+        violations.push(
+          `BRANDING VIOLATION: Deprecated asset in use: ${deprecated}`
+        )
+      }
+    }
+    
+    // Count logo icons (should be exactly 1, in header)
+    if (LOGO_ICON_PATTERN.test(src)) {
+      logoIconCount++
+      
+      // Check if in header
+      const isInHeader = img.getAttribute('data-testid') === 'forge-logo-icon' ||
+                         img.closest('[data-testid="app-header"]') !== null
+      
+      if (!isInHeader && logoIconCount === 1) {
+        violations.push(
+          `BRANDING VIOLATION: Logo icon found outside header`
+        )
+      }
     }
   })
 
-  // Check count
-  if (logoCount > EXPECTED_LOGO_COUNT) {
+  // Count wordmark text elements (via data attribute)
+  const wordmarkElements = document.querySelectorAll('[data-branding-type="wordmark-text"]')
+  wordmarkTextCount = wordmarkElements.length
+
+  // Check for multiple logo icons
+  if (logoIconCount > 1) {
     violations.push(
-      `BRANDING VIOLATION: Found ${logoCount} Forge logo images, expected ${EXPECTED_LOGO_COUNT}`
+      `BRANDING VIOLATION: Found ${logoIconCount} logo icons, expected max 1`
     )
-    logoImages.forEach((img, i) => {
-      const parent = img.closest('[data-testid]')
-      const testId = parent?.getAttribute('data-testid') || 'unknown'
-      violations.push(`  [${i + 1}] Location: ${testId}, src: ${img.src}`)
-    })
   }
 
-  // Check location (should be in header)
-  if (logoCount === 1 && logoImages[0]) {
-    const img = logoImages[0]
-    const isInHeader = img.closest('header') !== null || 
-                       img.getAttribute('data-testid') === 'forge-app-logo'
+  // Check for logo icon without wordmark in header (should have both)
+  if (logoIconCount === 1) {
+    const logoIcon = document.querySelector('[data-testid="forge-logo-icon"]')
+    const headerWordmark = document.querySelector('[data-testid="forge-wordmark"]')
     
-    if (!isInHeader) {
+    if (logoIcon && !headerWordmark) {
       violations.push(
-        `BRANDING VIOLATION: Logo found outside header at ${img.closest('[data-testid]')?.getAttribute('data-testid') || 'unknown'}`
+        `BRANDING WARNING: Logo icon without wordmark text in header`
       )
     }
   }
 
   return {
     compliant: violations.length === 0,
-    logoCount,
+    logoIconCount,
+    wordmarkTextCount,
     violations,
   }
 }
@@ -102,12 +146,12 @@ export function enforceBrandingGuard(): void {
       )
       result.violations.forEach((v) => console.error(v))
       console.error(
-        '%cFix: Only App header should contain the Forge logo image.',
+        '%cFix: See src/branding/constants.ts for branding rules.',
         'color: #ffaa00; font-weight: bold;'
       )
-    } else if (result.logoCount === 1) {
+    } else {
       console.log(
-        '%c✓ Branding compliant: 1 logo in header',
+        `%c✓ Branding compliant: ${result.logoIconCount} logo icon(s), ${result.wordmarkTextCount} wordmark text(s)`,
         'color: #00aa00;'
       )
     }

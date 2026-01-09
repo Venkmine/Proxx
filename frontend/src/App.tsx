@@ -2854,19 +2854,36 @@ function App() {
           alignItems: 'center',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* FORGE: App identity (Awaire logo is in TitleBar for Electron) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {/* FORGE BRANDING: Logo Icon (non-text geometric mark) + Wordmark Text */}
+          {/* See: src/branding/constants.ts for branding rules */}
           <img
-            src="./branding/FORGE_MOONLANDER_LOGO_WHITE.png"
-            alt="Forge"
-            data-testid="forge-app-logo"
+            src="./branding/forge-icon.svg"
+            alt=""
+            aria-hidden="true"
+            data-testid="forge-logo-icon"
+            data-branding-type="logo-icon"
             style={{
-              height: '1.75rem',
-              width: 'auto',
+              height: '1.5rem',
+              width: '1.5rem',
               userSelect: 'none',
               pointerEvents: 'none',
             }}
           />
+          <span
+            data-testid="forge-wordmark"
+            data-branding-type="wordmark-text"
+            style={{
+              fontSize: '1rem',
+              fontWeight: 600,
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text-primary)',
+              letterSpacing: '0.02em',
+              userSelect: 'none',
+            }}
+          >
+            Forge
+          </span>
           
           {/* System Status Indicators — Minimal, textual, low visual weight */}
           <div style={{ 

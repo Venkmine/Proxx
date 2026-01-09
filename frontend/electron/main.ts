@@ -307,9 +307,16 @@ function saveWindowBounds(bounds: Electron.Rectangle) {
 async function createWindow() {
   const preloadPath = path.resolve(__dirname, 'preload.js'); // Use absolute path
   
+  // BRANDING QC BUILD MARKER
+  const BUILD_ID = 'BRANDING_QC_001';
+  const BUILD_TIMESTAMP = new Date().toISOString();
+  
   writeLog('INFO', '═══════════════════════════════════════');
   writeLog('INFO', 'AWAIRE PROXY BOOT');
   writeLog('INFO', '═══════════════════════════════════════');
+  writeLog('INFO', `BUILD_ID: ${BUILD_ID}`);
+  writeLog('INFO', `BUILD_TIMESTAMP: ${BUILD_TIMESTAMP}`);
+  writeLog('INFO', `process.execPath: ${process.execPath}`);
   writeLog('INFO', `__dirname: ${__dirname}`);
   writeLog('INFO', `Preload path (absolute): ${preloadPath}`);
   

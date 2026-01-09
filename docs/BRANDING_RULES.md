@@ -1,103 +1,83 @@
 # Branding Rules — Forge Application
 
-**Version:** 1.0.0  
+**Version:** 2.0.0  
 **Status:** NORMATIVE  
 **Last Updated:** 2026-01-09
 
 ---
 
-## Single Logo Rule
+## Branding Semantics Model
 
-### Core Principle
+### CRITICAL: Logo vs Wordmark Distinction
 
-> **There is exactly ONE Forge logo image in the entire UI.**
+This document defines the **authoritative** branding model. Copilot and all engineers MUST follow these rules.
 
-This is not a design preference. This is brand authority and cognitive load control.
+| Type | Definition | Example |
+|------|------------|---------|
+| **Logo Icon** | Non-text geometric mark (image only) | `forge-icon.svg` |
+| **Wordmark** | Text "Forge" rendered as text (never image) | `<span>Forge</span>` |
 
----
+### The Problem This Solves
 
-## Allowed Branding
+Previously, the Forge logo was a **wordmark-as-image** (`FORGE_MOONLANDER_LOGO_WHITE.png` — the word "Forge" styled as a PNG). This caused visual duplication when shown alongside text "Forge", even when code-level rules were technically correct.
 
-### Forge Logo Image ✅
+### The Solution
 
-- **Location:** Top-left application header ONLY
-- **Asset:** `FORGE_MOONLANDER_LOGO_WHITE.png`
-- **Component:** `App.tsx` header section
-- **Implementation:** `<img>` element only
-- **Count:** Exactly 1
-
-### Text Branding ✅
-
-Text-based branding is allowed anywhere:
-
-- Plain text: `"Forge"` or `"FORGE"`
-- Low-opacity text watermarks (CSS `opacity` only)
-- Status indicators: `"Forge Alpha"`
-
-**Text branding is NOT rendered via `<img>` or logo assets.**
-
-### Awaire Text ✅
-
-- Status indicator only: `"Awaire ● Connected"`
-- Text-only, no images, no logos, no SVGs
+1. **Logo Icon**: Use `forge-icon.svg` (geometric mark) in header
+2. **Wordmark**: Use text `"Forge"` (never an image)
+3. **Never**: Use `FORGE_MOONLANDER_LOGO_WHITE.png` (deprecated)
 
 ---
 
-## Prohibited Usage
+## Allowed Branding by Location
 
-### Logo Images ❌
+### Header (Top-Left) ✅
 
-The following are NEVER allowed outside the header:
+- Logo icon (image): `forge-icon.svg`
+- Wordmark text: `"Forge"`
+- Both allowed together (icon + text)
 
-- Logo `<img>` elements
-- Logo SVGs as branding
-- Background image logos
-- Splash screen logos
-- Preview/monitor logos
-- Fallback logo images
-- Watermark logo images
+### SplashScreen ✅
 
-### Opacity Tricks ❌
+- Wordmark TEXT ONLY: `"Forge"`
+- NO images allowed
 
-- No background-image logos with opacity
-- No positioned logo overlays
-- No "helpful" fallback logos
+### MonitorSurface / Preview ✅
 
----
+- NO branding OR neutral instructional text only
+- Example: "Drop media here" (not "FORGE")
 
-## Component Responsibilities
+### TitleBar ✅
 
-| Component | Logo Image? | Text Branding? |
-|-----------|-------------|----------------|
-| **App header** | ✅ Yes (ONLY here) | ✅ Yes |
-| **SplashScreen** | ❌ No | ✅ Yes ("Forge ALPHA") |
-| **MonitorSurface** | ❌ No | ✅ Yes ("FORGE" at 15% opacity) |
-| **VisualPreviewWorkspace** | ❌ No | ✅ Optional |
-| **TitleBar** | ❌ No | ✅ Yes ("Forge") |
-| **Queue empty state** | ❌ No | ✅ Yes (text only) |
+- Wordmark TEXT ONLY: `"Forge"`
+- NO images allowed
+
+### Queue Empty State ✅
+
+- TEXT ONLY
+- NO images allowed
 
 ---
 
-## QC Enforcement
+## Prohibited Usage ❌
 
-### Development Guard
+### Wordmark-as-Image (DEPRECATED)
 
-The branding guard (`src/utils/brandingGuard.ts`) runs on app mount in development mode:
+The following assets are DEPRECATED and must NOT be used:
 
-1. Counts all `<img>` elements with Forge logo src
-2. Verifies count === 1
-3. Verifies location is in header
-4. Logs violations to console
+```
+❌ FORGE_MOONLANDER_LOGO_WHITE.png  (wordmark image)
+❌ forge-logo.png                   (wordmark image)
+❌ AWAIRE_Logo_Main_PNG.png         (old branding)
+❌ awaire-logo.png                  (old branding)
+```
 
-### Build Verification
+### Visual Duplication
 
-Before release, verify:
-
-```bash
-# Rebuild clean
-cd frontend && rm -rf dist && pnpm run build
-
-# Count logo references in bundle (should be 1)
+Never show:
+- Logo icon AND wordmark image together
+- Wordmark image AND wordmark text together
+- Same branding appearing twice in one viewport
 grep -o "FORGE_MOONLANDER_LOGO_WHITE" dist/assets/*.js | wc -l
 ```
 
@@ -107,10 +87,60 @@ Expected output: `1`
 
 ## Why This Matters
 
+---
+
+## Asset Reference
+
+### Approved Assets
+
+| Asset | Type | Location | Usage |
+|-------|------|----------|-------|
+| `forge-icon.svg` | Logo Icon | Header only | Primary brand mark |
+| `forge-icon-light-32x32.png` | Logo Icon | Header (fallback) | Light backgrounds |
+| `forge-icon-dark-32x32.png` | Logo Icon | Header (fallback) | Dark backgrounds |
+
+### Deprecated Assets (DO NOT USE)
+
+| Asset | Reason |
+|-------|--------|
+| `FORGE_MOONLANDER_LOGO_WHITE.png` | Wordmark-as-image causes duplication |
+| `forge-logo.png` | Wordmark-as-image causes duplication |
+| `AWAIRE_Logo_Main_PNG.png` | Old branding |
+| `awaire-logo.png` | Old branding |
+
+---
+
+## QC Enforcement
+
+### Development Guard
+
+The branding guard (`src/utils/brandingGuard.ts`) runs on app mount in development mode:
+
+1. Detects deprecated wordmark-as-image usage
+2. Counts logo icons (should be max 1)
+3. Verifies logo icon is in header
+4. Logs violations to console
+
+### Build Verification
+
+```bash
+# Rebuild clean
+cd frontend && rm -rf dist && pnpm run build
+
+# Verify no deprecated assets in bundle
+grep -c "FORGE_MOONLANDER" dist/assets/*.js  # Should be 0
+grep -c "forge-icon" dist/assets/*.js        # Should be 1
+```
+
+---
+
+## Rationale
+
 1. **Brand Authority** — One logo, one identity, one source of truth
-2. **Cognitive Load** — Users don't need logo reinforcement on every screen
-3. **Regression Prevention** — Clear rules prevent well-meaning additions
-4. **QC Automation** — Countable, testable, enforceable
+2. **Semantic Clarity** — Icon ≠ wordmark, never confuse them
+3. **Visual Deduplication** — User sees branding ONCE per viewport
+4. **Regression Prevention** — Clear rules prevent well-meaning additions
+5. **QC Automation** — Countable, testable, enforceable
 
 ---
 
@@ -118,19 +148,20 @@ Expected output: `1`
 
 | Date | Change |
 |------|--------|
-| 2026-01-09 | Initial branding authority reset |
-| 2026-01-09 | Added QC guard in development |
-| 2026-01-09 | Removed logos from splash, monitor, queue |
+| 2026-01-09 | v2.0.0: Branding semantics model (logo icon vs wordmark) |
+| 2026-01-09 | Deprecated FORGE_MOONLANDER wordmark-as-image |
+| 2026-01-09 | Introduced forge-icon.svg as primary brand mark |
+| 2026-01-09 | Updated QC guard for new model |
 
 ---
 
 ## Violations
 
-If you see a Forge logo image outside the header:
+If you see a deprecated branding asset:
 
 1. It is a bug
-2. Remove it
-3. Replace with text if needed
+2. Remove the deprecated image
+3. Use logo icon OR wordmark text (never both as images)
 4. Run branding guard to verify
 
-**Do not add "helpful" logos. The single-logo rule is non-negotiable.**
+**The branding semantics model is non-negotiable.**

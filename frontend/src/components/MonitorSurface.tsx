@@ -517,29 +517,8 @@ export function MonitorSurface({
         >
           {/* Left: Brand Labels + Preview Mode Badge + Zoom Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {/* Brand Stack: AWAIRE on top, Forge below */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-              <span style={{
-                fontSize: '0.625rem',
-                fontFamily: 'var(--font-sans)',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-              }}>
-                AWAIRE
-              </span>
-              <span style={{
-                fontSize: '0.5625rem',
-                fontFamily: 'var(--font-sans)',
-                fontWeight: 400,
-                color: 'var(--text-muted)',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-              }}>
-                Forge
-              </span>
-            </div>
+            {/* NO BRANDING in monitor overlay — branding is in header only */}
+            {/* See: src/branding/constants.ts for branding rules */}
             <PreviewModeBadge 
               mode={
                 // Phase D2: PreviewIntent-based badge mode
@@ -717,6 +696,8 @@ export function MonitorSurface({
             }}
           >
             {/* Idle state text - no logo per single-logo rule */}
+            {/* NO BRANDING in idle state — keeps monitor clean */}
+            {/* Branding appears in header only */}
             <div
               style={{
                 textAlign: 'center',
@@ -725,17 +706,15 @@ export function MonitorSurface({
             >
               <span
                 style={{
-                  fontSize: '3rem',
+                  fontSize: '1rem',
                   fontFamily: 'var(--font-sans)',
-                  fontWeight: 300,
-                  letterSpacing: '0.35em',
+                  fontWeight: 400,
                   color: 'var(--text-dim)',
-                  opacity: 0.15,
-                  textTransform: 'uppercase',
+                  opacity: 0.3,
                   userSelect: 'none',
                 }}
               >
-                FORGE
+                Drop media here
               </span>
             </div>
           </div>
