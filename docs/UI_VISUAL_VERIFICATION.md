@@ -49,6 +49,16 @@ Additional screenshots may be required depending on the change:
 - Different viewport sizes (if layout is responsive)
 - Edge cases (e.g., very long filenames, overflow conditions)
 
+### Branding Verification
+
+**Single Logo Rule (2026-01-09):**
+- ✅ Exactly ONE Forge logo image permitted (App header only)
+- ❌ No logos in splash screen, monitors, empty states
+- ✅ Text-only branding allowed ("Forge" wordmark)
+- ❌ No watermarks, no opacity-faded logos, no background images
+
+**Visual Check:** Logo should appear ONLY in top-left header, nowhere else.
+
 ### Screenshot Quality Requirements
 
 - **Full window capture** (not clipped regions)

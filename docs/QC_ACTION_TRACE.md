@@ -221,4 +221,21 @@ Both systems contribute to the final `qc_decision.json`.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.1 | 2026-01-09 | Added UI_BRANDING_SINGLE_LOGO_ENFORCED |
 | 1.0.0 | 2026-01-03 | Initial schema with click_create_job support |
+
+---
+
+## QC Actions Registry
+
+### UI_BRANDING_SINGLE_LOGO_ENFORCED
+
+**Action:** Single Forge logo enforcement  
+**Timestamp:** 2026-01-09  
+**Verification:**
+- Source code: 1 logo reference (App.tsx header only)
+- Production bundle: 1 logo reference  
+- Removed from: SplashScreen, MonitorSurface, VisualPreviewWorkspace, Queue empty state
+- Replaced with: Text-only branding ("Forge" wordmark, neutral typography)
+
+**Verdict:** ✅ COMPLIANT — Single-logo rule enforced across entire UI
