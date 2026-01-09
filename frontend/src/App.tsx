@@ -2848,13 +2848,13 @@ function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* Forge: Primary app identity */}
+          {/* AWAIRE: Primary app identity */}
           <img
-            src="/branding/forge-logo.png"
-            alt="Forge"
-            data-testid="forge-logo"
+            src="/branding/awaire-logo.png"
+            alt="Awaire"
+            data-testid="awaire-logo"
             style={{
-              height: '1.75rem',
+              height: '2.5rem',
               width: 'auto',
               userSelect: 'none',
               pointerEvents: 'none',
@@ -2870,9 +2870,9 @@ function App() {
             color: 'var(--text-dim)',
             alignItems: 'center',
           }}>
-            {/* Awaire: Service/backend connection indicator */}
+            {/* Backend connection indicator */}
             <div 
-              data-testid="awaire-service-indicator"
+              data-testid="backend-service-indicator"
               style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -2882,15 +2882,12 @@ function App() {
                 borderRadius: 'var(--radius-sm)',
               }}
             >
-              <img
-                src="/branding/awaire-logo.png"
-                alt="Awaire"
+              <div
                 style={{
-                  height: '0.875rem',
-                  width: 'auto',
-                  opacity: backendConnected ? 0.9 : 0.4,
-                  userSelect: 'none',
-                  pointerEvents: 'none',
+                  width: '0.5rem',
+                  height: '0.5rem',
+                  borderRadius: '50%',
+                  background: backendConnected ? 'var(--status-completed-fg)' : 'var(--status-failed-fg)',
                 }}
               />
               <span 
@@ -3379,8 +3376,8 @@ function App() {
                     {jobsWithQueuedSpec.length === 0 ? (
                       <>
                         <img
-                          src="/branding/forge-logo.png"
-                          alt="Forge"
+                          src="/branding/awaire-logo.png"
+                          alt="Awaire"
                           style={{
                             opacity: 0.15,
                             height: '4rem',
