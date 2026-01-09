@@ -135,7 +135,7 @@ export function FirstRunStatus({
     return (
       <div className="first-run-status first-run-status--loading">
         <div className="first-run-status__header">
-          <h2>Checking Forge Readiness...</h2>
+          <h2>Checking AWAIRE Readiness...</h2>
         </div>
         <div className="first-run-status__body">
           <div className="first-run-status__spinner" />
@@ -175,7 +175,7 @@ export function FirstRunStatus({
     <div className={`first-run-status ${statusClass}`}>
       <div className="first-run-status__header">
         <h2>
-          {report.ready ? '✔ Forge Ready' : '✘ Forge Not Ready'}
+          {report.ready ? '✔ AWAIRE Ready' : '✘ AWAIRE Not Ready'}
         </h2>
         <span className="first-run-status__version">v{report.version}</span>
       </div>
@@ -235,7 +235,7 @@ export function FirstRunStatus({
         {/* Not ready message */}
         {!report.ready && (
           <div className="first-run-status__not-ready-message">
-            <p>Forge cannot start until blocking issues are resolved.</p>
+            <p>AWAIRE cannot start until blocking issues are resolved.</p>
             <p>
               Run <code>python forge.py --check</code> for details.
             </p>

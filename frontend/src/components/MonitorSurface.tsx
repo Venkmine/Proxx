@@ -517,8 +517,31 @@ export function MonitorSurface({
             zIndex: 10,
           }}
         >
-          {/* Left: Preview Mode Badge + Zoom Indicator */}
+          {/* Left: Brand Labels + Preview Mode Badge + Zoom Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Brand Stack: AWAIRE on top, Forge below */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+              <span style={{
+                fontSize: '0.625rem',
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}>
+                AWAIRE
+              </span>
+              <span style={{
+                fontSize: '0.5625rem',
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 400,
+                color: 'var(--text-muted)',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}>
+                Forge
+              </span>
+            </div>
             <PreviewModeBadge 
               mode={
                 // Phase D2: PreviewIntent-based badge mode
@@ -699,13 +722,12 @@ export function MonitorSurface({
             {!logoError ? (
               <img
                 src="/branding/awaire-logo.png"
-                alt=""
+                alt="AWAIRE"
                 draggable={false}
                 style={{
                   height: '4rem',
                   width: 'auto',
-                  opacity: 0.12,
-                  filter: 'grayscale(100%)',
+                  opacity: 0.15,
                   userSelect: 'none',
                   pointerEvents: 'none',
                 }}
@@ -725,7 +747,7 @@ export function MonitorSurface({
                   userSelect: 'none',
                 }}
               >
-                Forge
+                AWAIRE
               </span>
             )}
           </div>

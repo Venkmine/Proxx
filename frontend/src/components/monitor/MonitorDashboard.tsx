@@ -180,7 +180,7 @@ export function MonitorDashboard() {
             fontSize: '18px',
             fontWeight: 600,
           }}>
-            Forge Monitor
+            AWAIRE Monitor
           </h1>
           <div style={{
             fontSize: '11px',
@@ -321,7 +321,7 @@ export function MonitorDashboard() {
         color: 'var(--text-tertiary, #666)',
         textAlign: 'center',
       }}>
-        Forge Monitor v1.0.0 — Read-only observability layer
+        AWAIRE Monitor v1.0.0 — Read-only observability layer
       </footer>
     </div>
   )
