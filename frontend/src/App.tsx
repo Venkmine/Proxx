@@ -2850,7 +2850,7 @@ function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {/* FORGE: App identity (Awaire logo is in TitleBar for Electron) */}
           <img
-            src="/branding/forge-logo.png"
+            src="/branding/FORGE_MOONLANDER_LOGO_WHITE.png"
             alt="Forge"
             data-testid="forge-app-logo"
             style={{
@@ -3376,7 +3376,7 @@ function App() {
                     {jobsWithQueuedSpec.length === 0 ? (
                       <>
                         <img
-                          src="/branding/awaire-logo.png"
+                          src="/branding/AWAIRE_Logo_Main_PNG.png"
                           alt="Awaire"
                           style={{
                             opacity: 0.15,

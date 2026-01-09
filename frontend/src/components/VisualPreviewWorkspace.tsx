@@ -222,7 +222,7 @@ export function VisualPreviewWorkspace({
               {/* FORGE Logo at 15% opacity — App branding for preview monitor */}
               <div style={{ opacity: 0.15, marginBottom: '0.5rem' }}>
                 <img
-                  src="/branding/forge-logo.png"
+                  src="/branding/FORGE_MOONLANDER_LOGO_WHITE.png"
                   alt="Forge"
                   style={{
                     height: '3rem',

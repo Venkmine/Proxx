@@ -104,7 +104,7 @@ export function SplashScreen({
       >
         {/* Awaire logo */}
         <img
-          src="/branding/awaire-logo.png"
+          src="/branding/AWAIRE_Logo_Main_PNG.png"
           alt="Awaire"
           style={{
             height: '3rem',

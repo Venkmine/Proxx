@@ -721,7 +721,7 @@ export function MonitorSurface({
             {/* Logo (dimmed background) — FORGE branding for preview monitor */}
             {!logoError ? (
               <img
-                src="/branding/forge-logo.png"
+                src="/branding/FORGE_MOONLANDER_LOGO_WHITE.png"
                 alt="Forge"
                 draggable={false}
                 style={{
