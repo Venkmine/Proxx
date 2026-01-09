@@ -3375,18 +3375,6 @@ function App() {
                   >
                     {jobsWithQueuedSpec.length === 0 ? (
                       <>
-                        <img
-                          src="./branding/AWAIRE_Logo_Main_PNG.png"
-                          alt="Awaire"
-                          style={{
-                            opacity: 0.15,
-                            height: '4rem',
-                            width: 'auto',
-                            marginBottom: '1rem',
-                            userSelect: 'none',
-                            pointerEvents: 'none',
-                          }}
-                        />
                         <div style={{ fontSize: '0.75rem', marginBottom: '0.25rem', fontWeight: 600 }}>No jobs in queue</div>
                         <div style={{ fontSize: '0.6875rem', lineHeight: 1.5 }}>
                           Add files in the left panel and click "Add to Queue"

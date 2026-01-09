@@ -219,21 +219,7 @@ export function VisualPreviewWorkspace({
                 gap: '1rem',
               }}
             >
-              {/* FORGE Logo at 15% opacity — App branding for preview monitor */}
-              <div style={{ opacity: 0.15, marginBottom: '0.5rem' }}>
-                <img
-                  src="./branding/FORGE_MOONLANDER_LOGO_WHITE.png"
-                  alt="Forge"
-                  style={{
-                    height: '3rem',
-                    width: 'auto',
-                  }}
-                  onError={(e) => {
-                    // Fallback to text if image fails
-                    (e.target as HTMLImageElement).style.display = 'none'
-                  }}
-                />
-              </div>
+              {/* No-source state text - no logo per single-logo rule */}
               <span
                 style={{
                   fontSize: '0.8125rem',

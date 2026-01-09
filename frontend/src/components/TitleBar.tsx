@@ -43,17 +43,19 @@ export function TitleBar() {
         zIndex: 1000,
       } as React.CSSProperties}
     >
-      {/* App Title */}
-      <img
-        src="./branding/AWAIRE_Logo_Main_PNG.png"
-        alt="Awaire"
+      {/* App Title - Text only, no logo */}
+      <div
         style={{
-          height: '1rem',
-          width: 'auto',
+          fontSize: '0.8125rem',
+          fontFamily: 'var(--font-sans)',
+          fontWeight: 600,
+          color: 'var(--text-primary)',
+          letterSpacing: '0.03em',
           userSelect: 'none',
-          pointerEvents: 'none',
         }}
-      />
+      >
+        Forge
+      </div>
 
       {/* Window Controls (non-draggable) */}
       <div

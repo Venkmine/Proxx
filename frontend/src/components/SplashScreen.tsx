@@ -102,17 +102,17 @@ export function SplashScreen({
           textAlign: 'center',
         }}
       >
-        {/* Awaire logo */}
-        <img
-          src="./branding/AWAIRE_Logo_Main_PNG.png"
-          alt="Awaire"
+        {/* App name - no logo per single-logo rule */}
+        <div
           style={{
-            height: '3rem',
-            width: 'auto',
-            userSelect: 'none',
-            pointerEvents: 'none',
+            fontSize: '1.5rem',
+            fontWeight: 700,
+            marginBottom: '0.5rem',
+            color: 'var(--text-primary)',
           }}
-        />
+        >
+          Forge
+        </div>
         <div
           style={{
             fontSize: '0.75rem',

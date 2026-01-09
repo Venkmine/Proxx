@@ -229,7 +229,6 @@ export function MonitorSurface({
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
-  const [logoError, setLogoError] = useState(false)
   
   // Video loading state
   const [videoError, setVideoError] = useState(false)
@@ -337,7 +336,6 @@ export function MonitorSurface({
 
   // Reset states when source changes
   useEffect(() => {
-    setLogoError(false)
     setVideoError(false)
     setVideoLoaded(false)
     setDuration(0)
@@ -718,23 +716,13 @@ export function MonitorSurface({
               gap: '2rem',
             }}
           >
-            {/* Logo (dimmed background) — FORGE branding for preview monitor */}
-            {!logoError ? (
-              <img
-                src="./branding/FORGE_MOONLANDER_LOGO_WHITE.png"
-                alt="Forge"
-                draggable={false}
-                style={{
-                  height: '4rem',
-                  width: 'auto',
-                  opacity: 0.15,
-                  userSelect: 'none',
-                  pointerEvents: 'none',
-                }}
-                onError={() => setLogoError(true)}
-              />
-            ) : (
-              /* Fallback: Text-based logo if image fails */
+            {/* Idle state text - no logo per single-logo rule */}
+            <div
+              style={{
+                textAlign: 'center',
+                color: 'var(--text-dim)',
+              }}
+            >
               <span
                 style={{
                   fontSize: '3rem',
@@ -749,7 +737,7 @@ export function MonitorSurface({
               >
                 FORGE
               </span>
-            )}
+            </div>
           </div>
         )}
 
