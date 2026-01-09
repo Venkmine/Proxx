@@ -176,3 +176,7 @@ logs/
 *.result.json
 backend/__pycache__/
 frontend/node_modules/
+
+# Large design assets
+*.psd
+apps/**/*.psd
