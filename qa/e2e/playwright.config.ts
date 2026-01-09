@@ -63,6 +63,9 @@ export default defineConfig({
     'sacred_meta_test.spec.ts',        // @sacred - MUST RUN FIRST
     'golden_path_ui_workflow.spec.ts', // Primary golden path
     'golden_path*.spec.ts',            // Other golden path variants
+    'watch_folder_enforcement.spec.ts', // Watch Folder E2E validation
+    'preset_persistence.spec.ts',       // Preset persistence validation
+    'phase6_preset_truth.spec.ts',      // Phase 6: Preset system truth
     'workflow_matrix.spec.ts',         // Phase 5: All core workflows
     'button_coverage_audit.spec.ts',   // Phase 5: Zero dead UI
     'lifecycle_crosscheck.spec.ts',    // Phase 5: Truth convergence

@@ -1,10 +1,12 @@
 /**
- * usePresets — Client-side Preset Management Hook (Alpha)
+ * usePresets — Preset Management Hook with Durable Persistence
  * 
- * ⚠️ ALPHA LIMITATION:
- * Presets are stored in localStorage only (client-side).
- * No backend persistence, no sync across devices.
- * This is intentional for Alpha — keeps implementation simple.
+ * PERSISTENCE STRATEGY:
+ * 1. Electron mode: Uses IPC to store presets in userData/presets.json
+ *    - Survives app rebuilds, restarts, OS reboots
+ *    - Default presets created on first launch
+ * 2. Browser mode (fallback): Uses localStorage
+ *    - For development/testing without Electron
  * 
  * Features:
  * - Create preset from current settings
@@ -19,7 +21,7 @@
  * "No preset (use current settings)" is explicitly supported.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { DeliverSettings } from '../components/DeliverControlPanel'
 
 // ============================================================================
@@ -33,6 +35,7 @@ export interface Preset {
   createdAt: string
   updatedAt: string
   settings: DeliverSettings
+  isDefault?: boolean  // True for built-in default presets
 }
 
 export interface PresetManagerState {
@@ -49,8 +52,9 @@ export interface UsePresetsReturn {
   selectedPresetId: string | null
   isDirty: boolean
   editingPresetId: string | null
+  isLoading: boolean
   
-  // Actions
+  // Actions (async for Electron IPC, but return promises that resolve quickly)
   createPreset: (name: string, settings: DeliverSettings, description?: string) => Preset | { error: string }
   updatePreset: (id: string, updates: Partial<Pick<Preset, 'name' | 'description' | 'settings'>>) => boolean
   renamePreset: (id: string, newName: string) => boolean | { error: string }
@@ -59,11 +63,11 @@ export interface UsePresetsReturn {
   selectPreset: (id: string | null) => void
   getPreset: (id: string) => Preset | undefined
   
-  // Save operations (new)
+  // Save operations
   savePreset: (settings: DeliverSettings) => boolean
   saveAsPreset: (name: string, settings: DeliverSettings, description?: string) => Preset | { error: string }
   
-  // Validation (new)
+  // Validation
   isNameTaken: (name: string, excludeId?: string) => boolean
   
   // Edit mode
@@ -96,6 +100,14 @@ const SELECTED_PRESET_KEY = 'awaire_proxy_selected_preset'
 
 function generateId(): string {
   return `preset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+}
+
+/**
+ * Check if Electron preset API is available
+ */
+function hasElectronPresetAPI(): boolean {
+  return typeof window !== 'undefined' && 
+         window.electron?.preset !== undefined
 }
 
 function loadPresetsFromStorage(): Preset[] {
@@ -154,24 +166,55 @@ export function usePresets(): UsePresetsReturn {
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   // Store original settings for cancel editing and dirty comparison
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_originalSettings, setOriginalSettings] = useState<DeliverSettings | null>(null)
+  
+  // Track if using Electron persistence
+  const usingElectronRef = useRef(false)
 
-  // Load presets from localStorage on mount
+  // Load presets on mount - try Electron first, fall back to localStorage
   useEffect(() => {
-    const loaded = loadPresetsFromStorage()
-    setPresets(loaded)
-    
-    const savedSelectedId = loadSelectedPresetId()
-    if (savedSelectedId && loaded.some(p => p.id === savedSelectedId)) {
-      setSelectedPresetId(savedSelectedId)
+    async function loadPresets() {
+      setIsLoading(true)
+      
+      if (hasElectronPresetAPI()) {
+        try {
+          const loaded = await window.electron!.preset!.getAll()
+          setPresets(loaded)
+          usingElectronRef.current = true
+          console.log(`[usePresets] Loaded ${loaded.length} presets from Electron`)
+        } catch (err) {
+          console.error('[usePresets] Electron load failed, falling back to localStorage:', err)
+          const loaded = loadPresetsFromStorage()
+          setPresets(loaded)
+          usingElectronRef.current = false
+        }
+      } else {
+        const loaded = loadPresetsFromStorage()
+        setPresets(loaded)
+        usingElectronRef.current = false
+        console.log(`[usePresets] Loaded ${loaded.length} presets from localStorage`)
+      }
+      
+      const savedSelectedId = loadSelectedPresetId()
+      if (savedSelectedId) {
+        setSelectedPresetId(savedSelectedId)
+      }
+      
+      setIsLoading(false)
     }
+    
+    loadPresets()
   }, [])
 
-  // Persist presets to localStorage on change
+  // Persist presets to localStorage on change (only when NOT using Electron)
   useEffect(() => {
-    savePresetsToStorage(presets)
+    // Don't save to localStorage when using Electron - it handles persistence
+    if (!usingElectronRef.current) {
+      savePresetsToStorage(presets)
+    }
   }, [presets])
 
   // Persist selected preset ID on change
@@ -212,7 +255,20 @@ export function usePresets(): UsePresetsReturn {
       updatedAt: now,
       settings: JSON.parse(JSON.stringify(settings)), // Deep copy
     }
+    
+    // Update local state immediately
     setPresets(prev => [...prev, preset])
+    
+    // If using Electron, sync to persistent storage in background
+    if (usingElectronRef.current && hasElectronPresetAPI()) {
+      window.electron!.preset!.create(trimmedName, settings, description)
+        .then((electronPreset: Preset) => {
+          // Replace the local preset with the one from Electron (to get the correct ID)
+          setPresets(prev => prev.map(p => p.id === preset.id ? electronPreset : p))
+        })
+        .catch(err => console.error('[usePresets] Electron create failed:', err))
+    }
+    
     return preset
   }, [isNameTaken])
 
@@ -230,6 +286,13 @@ export function usePresets(): UsePresetsReturn {
       }
       return p
     }))
+    
+    // If using Electron, sync to persistent storage in background
+    if (found && usingElectronRef.current && hasElectronPresetAPI()) {
+      window.electron!.preset!.update(id, updates)
+        .catch((err: unknown) => console.error('[usePresets] Electron update failed:', err))
+    }
+    
     return found
   }, [])
 
@@ -255,9 +318,18 @@ export function usePresets(): UsePresetsReturn {
     return result
   }, [presets, createPreset])
 
+  /**
+   * PHASE 6: Delete a preset by ID.
+   * 
+   * ALL presets can be deleted, including defaults.
+   * The isDefault flag does NOT protect from deletion.
+   */
   const deletePreset = useCallback((id: string): boolean => {
-    const exists = presets.some(p => p.id === id)
-    if (!exists) return false
+    const preset = presets.find(p => p.id === id)
+    if (!preset) return false
+    
+    // PHASE 6: isDefault does NOT protect from deletion
+    console.log(`[usePresets] Deleting preset: ${preset.name} (isDefault: ${preset.isDefault ?? false})`)
     
     setPresets(prev => prev.filter(p => p.id !== id))
     
@@ -270,6 +342,12 @@ export function usePresets(): UsePresetsReturn {
     if (editingPresetId === id) {
       setEditingPresetId(null)
       setOriginalSettings(null)
+    }
+    
+    // If using Electron, sync to persistent storage in background
+    if (usingElectronRef.current && hasElectronPresetAPI()) {
+      window.electron!.preset!.delete(id)
+        .catch((err: unknown) => console.error('[usePresets] Electron delete failed:', err))
     }
     
     return true
@@ -455,6 +533,7 @@ export function usePresets(): UsePresetsReturn {
     selectedPresetId,
     isDirty,
     editingPresetId,
+    isLoading,
     createPreset,
     updatePreset,
     renamePreset,

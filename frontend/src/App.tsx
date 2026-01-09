@@ -68,12 +68,10 @@ import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 // Source Selection Store: Authoritative source selection state
 import { useSourceSelectionStore } from './stores/sourceSelectionStore'
-// Watch Folders V1: Recursive monitoring
-import { useWatchFolders } from './hooks/useWatchFolders'
-import { useWatchFolderIntegration } from './hooks/useWatchFolderIntegration'
-import { WatchFoldersPanel } from './components/WatchFoldersPanel'
-import type { WatchFolder } from './types/watchFolders'
 import { registerStoresForQC } from './stores/qcRegistry'
+// Watch Folders V2: Detection automatic, execution manual
+import { WatchFoldersPanel } from './components/WatchFoldersPanel'
+import type { WatchFolder, PendingFile, WatchFolderConfig } from './types/watchFolders'
 // Tiered Preview System: Non-blocking, editor-grade preview model
 import { useTieredPreview } from './hooks/useTieredPreview'
 // App State Machine: Explicit centralized state derivation
@@ -146,7 +144,9 @@ function isJobTerminal(status: string): boolean {
 
 // Electron IPC types
 // INC-003: Added openFilesOrFolders for combined file+folder selection
-// Watch Folders V1: Added watch folder IPC methods
+// Watch Folders V2: Added watchFolder namespace for detection-only automation
+// Preset Persistence: Added preset namespace for durable storage
+import type { Preset, DeliverSettings as PresetDeliverSettings } from './types/presets'
 declare global {
   interface Window {
     electron?: {
@@ -159,12 +159,33 @@ declare global {
       openPath?: (path: string) => void
       /** Check if audit mode is enabled (exposes unsupported features for testing) */
       isAuditMode?: () => boolean
-      // Watch Folders V1: IPC methods for recursive monitoring
-      startWatchFolder?: (config: any) => Promise<void>
-      stopWatchFolder?: (id: string) => Promise<void>
-      onWatchFolderFileDetected?: (callback: (event: any) => void) => void
-      onWatchFolderFileRejected?: (callback: (event: any) => void) => void
-      onWatchFolderError?: (callback: (event: any) => void) => void
+      /** Watch Folders V2: Detection automatic, execution manual */
+      watchFolder?: {
+        getAll: () => Promise<WatchFolder[]>
+        add: (config: WatchFolderConfig) => Promise<WatchFolder>
+        enable: (id: string) => Promise<boolean>
+        disable: (id: string) => Promise<boolean>
+        remove: (id: string) => Promise<boolean>
+        update: (id: string, updates: Partial<WatchFolderConfig>) => Promise<WatchFolder | null>
+        toggleFile: (watchFolderId: string, filePath: string) => Promise<boolean>
+        selectAll: (watchFolderId: string, selected: boolean) => Promise<boolean>
+        clearPending: (watchFolderId: string, filePaths: string[]) => Promise<boolean>
+        logJobsCreated: (watchFolderId: string, jobIds: string[]) => Promise<boolean>
+        onStateChanged: (callback: (data: { watchFolders: WatchFolder[] }) => void) => void
+        onFileDetected: (callback: (data: { watchFolderId: string; file: PendingFile }) => void) => void
+        onError: (callback: (data: { watchFolderId: string; error: string }) => void) => void
+      }
+      /** Preset Persistence: Durable storage in userData */
+      preset?: {
+        getAll: () => Promise<Preset[]>
+        get: (id: string) => Promise<Preset | null>
+        create: (name: string, settings: PresetDeliverSettings, description?: string) => Promise<Preset>
+        update: (id: string, updates: Partial<Pick<Preset, 'name' | 'description' | 'settings'>>) => Promise<Preset>
+        delete: (id: string) => Promise<boolean>
+        duplicate: (id: string, newName: string) => Promise<Preset>
+        resetDefaults: () => Promise<Preset[]>
+        getStoragePath: () => Promise<string>
+      }
     }
   }
 }
@@ -471,136 +492,148 @@ function App() {
   // Alpha: Client-side preset management (localStorage)
   const presetManager = usePresets()
   
-  // Watch Folders V1: Recursive monitoring (localStorage registry)
-  const {
-    watchFolders,
-    events: watchFolderEvents,
-    watchFolderErrors,
-    isFileProcessed,
-    markFileProcessed,
-    logEvent: logWatchFolderEvent,
-    addWatchFolder,
-    removeWatchFolder,
-    enableWatchFolder,
-    disableWatchFolder,
-    updateWatchFolder,
-    setWatchFolderError,
-    clearWatchFolderError,
-  } = useWatchFolders()
-  
-  // Watch Folders V1: Integrate file detection with job queue
-  useWatchFolderIntegration({
-    watchFolders,
-    presets: presetManager.presets,
-    isFileProcessed,
-    markFileProcessed,
-    logEvent: logWatchFolderEvent,
-    setWatchFolderError,
-    clearWatchFolderError,
-    onEnqueueJob: useCallback((jobSpec: JobSpec) => {
-      console.log('[APP] Watch folder enqueuing job:', jobSpec.job_id)
-      setQueuedJobSpecs(prev => [...prev, jobSpec])
-    }, []),
+  // ============================================
+  // Watch Folders V2: Detection automatic, execution manual
+  // ============================================
+  // State synced from Electron main process
+  const [watchFolders, setWatchFolders] = useState<WatchFolder[]>([])
+  const [watchFoldersPanelCollapsed, setWatchFoldersPanelCollapsed] = useState(() => {
+    const saved = localStorage.getItem('awaire_watch_folders_panel_collapsed')
+    return saved ? JSON.parse(saved) : true
   })
   
-  // Watch Folders: Wrapper functions that handle IPC calls
-  const handleAddWatchFolder = useCallback((config: Omit<WatchFolder, 'id'>) => {
-    const id = addWatchFolder(config)
+  // Persist panel collapsed state
+  useEffect(() => {
+    localStorage.setItem('awaire_watch_folders_panel_collapsed', JSON.stringify(watchFoldersPanelCollapsed))
+  }, [watchFoldersPanelCollapsed])
+  
+  // Initialize watch folders from Electron on mount
+  useEffect(() => {
+    if (!hasElectron || !window.electron?.watchFolder) return
     
-    // Start watching if enabled
-    if (config.enabled && hasElectron && window.electron?.startWatchFolder) {
-      const watchFolderConfig = {
-        id,
-        path: config.path,
-        enabled: config.enabled,
-        recursive: config.recursive,
-        preset_id: config.preset_id,
-        include_extensions: config.include_extensions,
-        exclude_patterns: config.exclude_patterns,
-      }
-      window.electron.startWatchFolder(watchFolderConfig).catch(err => {
-        console.error('[APP] Failed to start watch folder:', err)
-        setWatchFolderError(id, `Failed to start: ${err.message || String(err)}`)
-      })
+    // Get initial state
+    window.electron.watchFolder.getAll().then(folders => {
+      setWatchFolders(folders)
+    }).catch(err => {
+      console.error('[APP] Failed to get watch folders:', err)
+    })
+    
+    // Listen for state changes
+    window.electron.watchFolder.onStateChanged((data) => {
+      setWatchFolders(data.watchFolders)
+    })
+    
+    // Listen for file detections (for notifications)
+    window.electron.watchFolder.onFileDetected((data) => {
+      console.log('[APP] Watch folder file detected:', data.file.path)
+    })
+    
+    // Listen for errors
+    window.electron.watchFolder.onError((data) => {
+      console.error('[APP] Watch folder error:', data.watchFolderId, data.error)
+    })
+  }, [hasElectron])
+  
+  // Watch folder handlers
+  const handleAddWatchFolder = useCallback(async (config: WatchFolderConfig): Promise<WatchFolder> => {
+    if (!hasElectron || !window.electron?.watchFolder) {
+      throw new Error('Electron not available')
+    }
+    return window.electron.watchFolder.add(config)
+  }, [hasElectron])
+  
+  const handleEnableWatchFolder = useCallback(async (id: string): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.enable(id)
+  }, [hasElectron])
+  
+  const handleDisableWatchFolder = useCallback(async (id: string): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.disable(id)
+  }, [hasElectron])
+  
+  const handleRemoveWatchFolder = useCallback(async (id: string): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.remove(id)
+  }, [hasElectron])
+  
+  const handleToggleWatchFolderFile = useCallback(async (watchFolderId: string, filePath: string): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.toggleFile(watchFolderId, filePath)
+  }, [hasElectron])
+  
+  const handleSelectAllWatchFolderFiles = useCallback(async (watchFolderId: string, selected: boolean): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.selectAll(watchFolderId, selected)
+  }, [hasElectron])
+  
+  const handleClearPendingFiles = useCallback(async (watchFolderId: string, filePaths: string[]): Promise<boolean> => {
+    if (!hasElectron || !window.electron?.watchFolder) return false
+    return window.electron.watchFolder.clearPending(watchFolderId, filePaths)
+  }, [hasElectron])
+  
+  /**
+   * PHASE 6: Create jobs from watch folder pending files.
+   * 
+   * CRITICAL: preset_id is REQUIRED, not optional.
+   * This function FAILS LOUDLY if no preset is configured.
+   * This is preparatory work for future auto-transcoding.
+   */
+  const handleCreateJobsFromWatchFolder = useCallback((watchFolderId: string, selectedFiles: PendingFile[], presetId?: string) => {
+    // PHASE 6: Enforce preset requirement
+    if (!presetId) {
+      console.error(`[PHASE 6 VIOLATION] Watch folder ${watchFolderId} has no preset configured. Cannot create jobs.`)
+      // Show visible error to user
+      alert('Cannot create jobs: Watch folder has no preset configured.\n\nPlease configure a preset for this watch folder before creating jobs.')
+      return
     }
     
-    return id
-  }, [addWatchFolder, setWatchFolderError, hasElectron])
-  
-  const handleRemoveWatchFolder = useCallback((id: string) => {
-    // Stop watching first
-    if (hasElectron && window.electron?.stopWatchFolder) {
-      window.electron.stopWatchFolder(id).catch(err => {
-        console.error('[APP] Failed to stop watch folder:', err)
-      })
+    // Get the preset from Electron storage
+    if (!hasElectron || !window.electron?.preset) {
+      console.error('[Watch Folder] Cannot create jobs: Electron preset API not available')
+      return
     }
     
-    removeWatchFolder(id)
-  }, [removeWatchFolder, hasElectron])
-  
-  const handleEnableWatchFolder = useCallback((id: string) => {
-    enableWatchFolder(id)
+    // Create jobs from selected pending files
+    const jobIds: string[] = []
+    const newJobSpecs: JobSpec[] = []
     
-    // Start watching
-    if (hasElectron && window.electron?.startWatchFolder) {
-      const wf = watchFolders.find(w => w.id === id)
-      if (wf) {
-        const watchFolderConfig = {
-          id: wf.id,
-          path: wf.path,
-          enabled: true,
-          recursive: wf.recursive,
-          preset_id: wf.preset_id,
-          include_extensions: wf.include_extensions,
-          exclude_patterns: wf.exclude_patterns,
-        }
-        window.electron.startWatchFolder(watchFolderConfig).catch(err => {
-          console.error('[APP] Failed to start watch folder:', err)
-          setWatchFolderError(id, `Failed to start: ${err.message || String(err)}`)
+    for (const file of selectedFiles) {
+      try {
+        // PHASE 6: Jobs created from watch folders
+        // Preset enforcement happens before this point
+        // Full preset application will come in auto-transcode phase
+        const jobSpec = buildJobSpec({
+          sources: [file.path],
+          outputPath: outputDirectory || '/tmp',
+          containerFormat: 'mov',  // TODO: Apply from preset in auto-transcode phase
+          filenameTemplate: '{source_name}_proxy',
+          deliveryType: 'proxy',
         })
+        
+        jobIds.push(jobSpec.job_id)
+        newJobSpecs.push(jobSpec)
+      } catch (err) {
+        console.error(`[Watch Folder] Failed to create job for ${file.path}:`, err)
       }
     }
-  }, [enableWatchFolder, watchFolders, setWatchFolderError, hasElectron])
-  
-  const handleDisableWatchFolder = useCallback((id: string) => {
-    disableWatchFolder(id)
     
-    // Stop watching
-    if (hasElectron && window.electron?.stopWatchFolder) {
-      window.electron.stopWatchFolder(id).catch(err => {
-        console.error('[APP] Failed to stop watch folder:', err)
-      })
+    // Add all jobs to queue
+    if (newJobSpecs.length > 0) {
+      setQueuedJobSpecs(prev => [...prev, ...newJobSpecs])
     }
     
-    // Clear any errors
-    clearWatchFolderError(id)
-  }, [disableWatchFolder, clearWatchFolderError, hasElectron])
-  
-  const handleUpdateWatchFolder = useCallback((id: string, updates: Partial<Omit<WatchFolder, 'id'>>) => {
-    updateWatchFolder(id, updates)
-    
-    // Restart watcher if enabled
-    const wf = watchFolders.find(w => w.id === id)
-    if (wf?.enabled && hasElectron && window.electron?.startWatchFolder && window.electron?.stopWatchFolder) {
-      // Stop and restart
-      window.electron.stopWatchFolder(id).then(() => {
-        const updatedWf = { ...wf, ...updates }
-        const watchFolderConfig = {
-          id: updatedWf.id,
-          path: updatedWf.path,
-          enabled: updatedWf.enabled,
-          recursive: updatedWf.recursive,
-          preset_id: updatedWf.preset_id,
-          include_extensions: updatedWf.include_extensions,
-          exclude_patterns: updatedWf.exclude_patterns,
-        }
-        return window.electron!.startWatchFolder!(watchFolderConfig)
-      }).catch(err => {
-        console.error('[APP] Failed to restart watch folder:', err)
-        setWatchFolderError(id, `Failed to restart: ${err.message || String(err)}`)
-      })
+    // Log trace event
+    if (hasElectron && window.electron?.watchFolder) {
+      window.electron.watchFolder.logJobsCreated(watchFolderId, jobIds)
     }
-  }, [updateWatchFolder, watchFolders, setWatchFolderError, hasElectron])
+    
+    // Clear the processed files from pending list
+    const filePaths = selectedFiles.map(f => f.path)
+    handleClearPendingFiles(watchFolderId, filePaths)
+    
+    console.log(`[APP] PHASE 6: Created ${jobIds.length} jobs from watch folder ${watchFolderId} with preset ${presetId}`)
+  }, [outputDirectory, hasElectron, handleClearPendingFiles])
   
   // Legacy: Backend presets (kept for backwards compatibility with existing backend)
   const [backendPresets, setBackendPresets] = useState<PresetInfo[]>([])
@@ -628,17 +661,6 @@ function App() {
 
   // Drag state for job reordering (not file drag & drop)
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
-  
-  // Watch Folders panel visibility (collapsed by default)
-  const [watchFoldersPanelCollapsed, setWatchFoldersPanelCollapsed] = useState(() => {
-    const saved = localStorage.getItem('awaire_watch_folders_panel_collapsed')
-    return saved ? JSON.parse(saved) : true
-  })
-  
-  // Persist watch folders panel collapsed state
-  useEffect(() => {
-    localStorage.setItem('awaire_watch_folders_panel_collapsed', JSON.stringify(watchFoldersPanelCollapsed))
-  }, [watchFoldersPanelCollapsed])
   
   // ============================================
   // DRAG & DROP REMOVED FOR HONESTY
@@ -1350,30 +1372,6 @@ function App() {
     fetchPresets()
     fetchEngines()  // Phase 16
   }, [])
-  
-  // Watch Folders: Re-enable watch folders on startup
-  useEffect(() => {
-    if (!hasElectron || !window.electron?.startWatchFolder) return
-    
-    // Start all enabled watch folders
-    for (const wf of watchFolders) {
-      if (wf.enabled) {
-        const watchFolderConfig = {
-          id: wf.id,
-          path: wf.path,
-          enabled: wf.enabled,
-          recursive: wf.recursive,
-          preset_id: wf.preset_id,
-          include_extensions: wf.include_extensions,
-          exclude_patterns: wf.exclude_patterns,
-        }
-        window.electron.startWatchFolder(watchFolderConfig).catch(err => {
-          console.error('[APP] Failed to start watch folder on startup:', err)
-          setWatchFolderError(wf.id, `Failed to start: ${err.message || String(err)}`)
-        })
-      }
-    }
-  }, []) // Only run once on mount (empty dependency array)
 
   // ============================================
   // FIFO Execution Loop - Automatic Job Sequencing
@@ -3000,45 +2998,106 @@ function App() {
         {/* 3-Zone Rigid Layout */}
         <WorkspaceLayout
           leftZone={
-            /* LEFT ZONE: MediaWorkspace - Sources ONLY (no output/delivery controls) */
-            <MediaWorkspace
-              selectedFiles={selectedFiles}
-              onFilesChange={setSelectedFiles}
-              onSelectFilesClick={selectFiles}
-              engines={engines}
-              selectedEngine={selectedEngine}
-              onEngineChange={setSelectedEngine}
-              settingsPresets={presetManager.presets.map(p => ({
-                id: p.id,
-                name: p.name,
-                description: p.description || undefined,
-                fingerprint: p.id, // Use preset ID as fingerprint
-                settings_snapshot: p.settings,
-              }))}
-              selectedSettingsPresetId={presetManager.selectedPresetId}
-              onSettingsPresetChange={(id) => presetManager.selectPreset(id)}
-              pathFavorites={pathFavorites}
-              onAddFavorite={addPathFavorite}
-              onRemoveFavorite={removePathFavorite}
-              folderFavorites={folderFavorites}
-              onAddFolderFavorite={addFolderFavorite}
-              onRemoveFolderFavorite={removeFolderFavorite}
-              onCreateJob={createManualJob}
-              hasSubmitIntent={hasSubmitIntent}
-              onClear={() => {
-                // PROBLEM #4 FIX: Clear preview state when clearing sources
-                // SINGLE SOURCE OF TRUTH: Clear useSourceSelectionStore
-                useSourceSelectionStore.getState().clearAll()
-                // outputDirectory NOT cleared here - it lives in Delivery panel now
-                currentPreviewSource.current = null
-                tieredPreview.reset()
-              }}
-              loading={loading || ingestion.isIngesting}
-              hasElectron={hasElectron}
-              workspaceMode={workspaceMode}
-              appMode={appMode}
-              v2JobSpecSubmitted={v2JobSpecSubmitted}
-            />
+            /* LEFT ZONE: MediaWorkspace + Watch Folders (below Sources) */
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              {/* MediaWorkspace - Sources (main content, takes available space) */}
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                <MediaWorkspace
+                  selectedFiles={selectedFiles}
+                  onFilesChange={setSelectedFiles}
+                  onSelectFilesClick={selectFiles}
+                  engines={engines}
+                  selectedEngine={selectedEngine}
+                  onEngineChange={setSelectedEngine}
+                  settingsPresets={presetManager.presets.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    description: p.description || undefined,
+                    fingerprint: p.id, // Use preset ID as fingerprint
+                    settings_snapshot: p.settings,
+                  }))}
+                  selectedSettingsPresetId={presetManager.selectedPresetId}
+                  onSettingsPresetChange={(id) => presetManager.selectPreset(id)}
+                  pathFavorites={pathFavorites}
+                  onAddFavorite={addPathFavorite}
+                  onRemoveFavorite={removePathFavorite}
+                  folderFavorites={folderFavorites}
+                  onAddFolderFavorite={addFolderFavorite}
+                  onRemoveFolderFavorite={removeFolderFavorite}
+                  onCreateJob={createManualJob}
+                  hasSubmitIntent={hasSubmitIntent}
+                  onClear={() => {
+                    // PROBLEM #4 FIX: Clear preview state when clearing sources
+                    // SINGLE SOURCE OF TRUTH: Clear useSourceSelectionStore
+                    useSourceSelectionStore.getState().clearAll()
+                    // outputDirectory NOT cleared here - it lives in Delivery panel now
+                    currentPreviewSource.current = null
+                    tieredPreview.reset()
+                  }}
+                  loading={loading || ingestion.isIngesting}
+                  hasElectron={hasElectron}
+                  workspaceMode={workspaceMode}
+                  appMode={appMode}
+                  v2JobSpecSubmitted={v2JobSpecSubmitted}
+                />
+              </div>
+              
+              {/* Watch Folders Panel V2 — Below Sources/CreateJob panel */}
+              <div
+                style={{
+                  borderTop: '1px solid var(--border-primary)',
+                  background: 'var(--surface-primary)',
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setWatchFoldersPanelCollapsed(!watchFoldersPanelCollapsed)
+                  }}
+                  data-testid="watch-folders-toggle"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    background: 'var(--surface-secondary)',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span>Watch Folders ({watchFolders.length})</span>
+                  <span style={{ 
+                    transform: watchFoldersPanelCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', 
+                    transition: 'transform 0.2s' 
+                  }}>
+                    ▼
+                  </span>
+                </button>
+                
+                {!watchFoldersPanelCollapsed && (
+                  <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+                    <WatchFoldersPanel
+                      watchFolders={watchFolders}
+                      presets={presetManager.presets.map(p => ({ id: p.id, name: p.name }))}
+                      onAddWatchFolder={handleAddWatchFolder}
+                      onEnableWatchFolder={handleEnableWatchFolder}
+                      onDisableWatchFolder={handleDisableWatchFolder}
+                      onRemoveWatchFolder={handleRemoveWatchFolder}
+                      onToggleFile={handleToggleWatchFolderFile}
+                      onSelectAll={handleSelectAllWatchFolderFiles}
+                      onCreateJobs={handleCreateJobsFromWatchFolder}
+                      onClearPending={handleClearPendingFiles}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           }
           centerZone={
             /* CENTER ZONE: MonitorSurface — Full-bleed state-driven display */
@@ -3252,7 +3311,7 @@ function App() {
                 padding: '0.5rem', 
                 flex: 1, 
                 overflow: 'auto', 
-                maxHeight: '100%',
+                minHeight: 0,  /* Allow shrinking when Watch Folders expanded */
                 minWidth: 0,  /* Prevent flex item from overflowing */
               }}>
                 {filteredJobs.length === 0 ? (
@@ -3373,53 +3432,6 @@ function App() {
                       />
                     )
                   })
-                )}
-              </div>
-              
-              {/* Watch Folders Panel — Collapsible section below queue */}
-              <div
-                style={{
-                  borderTop: '1px solid var(--border-primary)',
-                  background: 'var(--surface-primary)',
-                }}
-              >
-                <button
-                  onClick={() => setWatchFoldersPanelCollapsed(!watchFoldersPanelCollapsed)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--surface-secondary)',
-                    border: 'none',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.8125rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <span>Watch Folders ({watchFolders.length})</span>
-                  <span style={{ transform: watchFoldersPanelCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
-                    ▼
-                  </span>
-                </button>
-                
-                {!watchFoldersPanelCollapsed && (
-                  <div style={{ height: '400px', overflow: 'hidden' }}>
-                    <WatchFoldersPanel
-                      watchFolders={watchFolders}
-                      presets={presetManager.presets}
-                      watchFolderEvents={watchFolderEvents}
-                      watchFolderErrors={watchFolderErrors}
-                      onAddWatchFolder={handleAddWatchFolder}
-                      onUpdateWatchFolder={handleUpdateWatchFolder}
-                      onRemoveWatchFolder={handleRemoveWatchFolder}
-                      onEnableWatchFolder={handleEnableWatchFolder}
-                      onDisableWatchFolder={handleDisableWatchFolder}
-                      onClearError={clearWatchFolderError}
-                    />
-                  </div>
                 )}
               </div>
             </div>

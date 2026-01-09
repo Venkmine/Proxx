@@ -1,655 +1,619 @@
 /**
- * WatchFoldersPanel — First-Class Watch Folder Management UI
+ * Watch Folders Panel V2
  * 
- * Provides visibility and control for automated watch folder jobs.
- * Does NOT alter execution behavior — only exposes existing functionality.
+ * INTENT.md Compliance:
+ * - Detection is automatic (files appear in pending list)
+ * - Execution is MANUAL (operator must click "Create Jobs")
+ * - No auto-retry, no silent automation
+ * - Full visibility of pending files
  * 
- * STATUS MEANINGS:
- * - OK: Watch folder enabled and monitoring
- * - DISABLED: Explicitly disabled by user
- * - ERROR: Failed to initialize or watch (details shown)
- * 
- * RESPONSIBILITIES:
- * - Display all configured watch folders
- * - CRUD operations (Add, Edit, Remove)
- * - Status visibility (OK, DISABLED, ERROR)
- * - Error display (persistent until user action)
- * - Activity tracking (job count, last activity)
- * 
- * NON-RESPONSIBILITIES:
- * - Job creation (delegated to existing integration)
- * - Execution logic (no changes to watch folder engine)
- * - Filesystem browsing (text input only)
- * - Auto-retry or auto-clear errors
+ * UI Model:
+ * - Each watch folder shows its pending files
+ * - Operator selects which pending files to process
+ * - "Create Jobs" button creates jobs from selected files
+ * - Files remain pending until explicitly processed or cleared
  */
 
-import { useState, useCallback, useMemo } from 'react'
-import { Button } from './Button'
-import type { WatchFolder } from '../types/watchFolders'
-import type { Preset } from '../hooks/usePresets'
-
-interface WatchFolderWithStatus extends WatchFolder {
-  status: 'OK' | 'DISABLED' | 'ERROR'
-  error_message?: string
-  job_count: number
-  last_activity: string | null
-}
+import React, { useState, useCallback, useEffect } from 'react'
+import type { WatchFolder, PendingFile, WatchFolderConfig } from '../types/watchFolders'
+import { DEFAULT_VIDEO_EXTENSIONS, DEFAULT_EXCLUDE_PATTERNS } from '../types/watchFolders'
 
 interface WatchFoldersPanelProps {
   watchFolders: WatchFolder[]
-  presets: Preset[]
-  watchFolderEvents: Array<{
-    watch_folder_id: string
-    timestamp: string
-    eligible: boolean
-    job_id?: string
-  }>
-  watchFolderErrors: Map<string, string>
-  onAddWatchFolder: (config: Omit<WatchFolder, 'id'>) => string
-  onUpdateWatchFolder: (id: string, updates: Partial<Omit<WatchFolder, 'id'>>) => void
-  onRemoveWatchFolder: (id: string) => void
-  onEnableWatchFolder: (id: string) => void
-  onDisableWatchFolder: (id: string) => void
-  onClearError: (id: string) => void
+  presets: Array<{ id: string; name: string }>
+  onAddWatchFolder: (config: WatchFolderConfig) => Promise<WatchFolder>
+  onEnableWatchFolder: (id: string) => Promise<boolean>
+  onDisableWatchFolder: (id: string) => Promise<boolean>
+  onRemoveWatchFolder: (id: string) => Promise<boolean>
+  onToggleFile: (watchFolderId: string, filePath: string) => Promise<boolean>
+  onSelectAll: (watchFolderId: string, selected: boolean) => Promise<boolean>
+  onCreateJobs: (watchFolderId: string, selectedFiles: PendingFile[], presetId?: string) => void
+  onClearPending: (watchFolderId: string, filePaths: string[]) => Promise<boolean>
 }
 
 export function WatchFoldersPanel({
   watchFolders,
   presets,
-  watchFolderEvents,
-  watchFolderErrors,
   onAddWatchFolder,
-  onUpdateWatchFolder,
-  onRemoveWatchFolder,
   onEnableWatchFolder,
   onDisableWatchFolder,
-  onClearError,
-}: WatchFoldersPanelProps) {
-  const [editingId, setEditingId] = useState<string | null>(null)
+  onRemoveWatchFolder,
+  onToggleFile,
+  onSelectAll,
+  onCreateJobs,
+  onClearPending,
+}: WatchFoldersPanelProps): React.ReactElement {
   const [showAddForm, setShowAddForm] = useState(false)
+  const [newFolderPath, setNewFolderPath] = useState('')
+  const [newFolderRecursive, setNewFolderRecursive] = useState(true)
+  const [newFolderPresetId, setNewFolderPresetId] = useState<string | undefined>()
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   
-  // Form state
-  const [formPath, setFormPath] = useState('')
-  const [formPresetId, setFormPresetId] = useState('')
-  const [formExtensions, setFormExtensions] = useState('')
-  const [formExcludePatterns, setFormExcludePatterns] = useState('')
-
-  // Compute watch folder statuses
-  const watchFoldersWithStatus = useMemo((): WatchFolderWithStatus[] => {
-    return watchFolders.map(wf => {
-      // Check for error
-      const error_message = watchFolderErrors.get(wf.id)
-      
-      // Determine status
-      let status: 'OK' | 'DISABLED' | 'ERROR'
-      if (error_message) {
-        status = 'ERROR'
-      } else if (!wf.enabled) {
-        status = 'DISABLED'
+  const hasElectron = typeof window !== 'undefined' && window.electron !== undefined
+  
+  const handleBrowseFolder = useCallback(async () => {
+    if (!hasElectron || !window.electron?.openFolder) return
+    const folder = await window.electron.openFolder()
+    if (folder) {
+      setNewFolderPath(folder)
+    }
+  }, [hasElectron])
+  
+  const handleAddFolder = useCallback(async () => {
+    if (!newFolderPath.trim()) return
+    
+    const config: WatchFolderConfig = {
+      path: newFolderPath.trim(),
+      enabled: true, // Start watching immediately
+      recursive: newFolderRecursive,
+      preset_id: newFolderPresetId,
+      include_extensions: DEFAULT_VIDEO_EXTENSIONS,
+      exclude_patterns: DEFAULT_EXCLUDE_PATTERNS,
+    }
+    
+    await onAddWatchFolder(config)
+    
+    // Reset form
+    setNewFolderPath('')
+    setNewFolderRecursive(true)
+    setNewFolderPresetId(undefined)
+    setShowAddForm(false)
+  }, [newFolderPath, newFolderRecursive, newFolderPresetId, onAddWatchFolder])
+  
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
       } else {
-        status = 'OK'
+        next.add(id)
       }
-      
-      // Count jobs created by this watch folder
-      const job_count = watchFolderEvents.filter(
-        e => e.watch_folder_id === wf.id && e.eligible && e.job_id
-      ).length
-      
-      // Find last activity
-      const events = watchFolderEvents.filter(e => e.watch_folder_id === wf.id)
-      const last_activity = events.length > 0 ? events[events.length - 1].timestamp : null
-      
-      return {
-        ...wf,
-        status,
-        error_message,
-        job_count,
-        last_activity,
-      }
+      return next
     })
-  }, [watchFolders, watchFolderEvents, watchFolderErrors])
-
-  const resetForm = useCallback(() => {
-    setFormPath('')
-    setFormPresetId('')
-    setFormExtensions('')
-    setFormExcludePatterns('')
-    setEditingId(null)
-    setShowAddForm(false)
   }, [])
-
-  const handleAdd = useCallback(() => {
-    if (!formPath.trim() || !formPresetId) {
-      alert('Path and preset are required')
-      return
+  
+  /**
+   * PHASE 6: Create jobs requires preset.
+   * Fails LOUDLY if no preset is configured.
+   */
+  const handleCreateJobs = useCallback((watchFolder: WatchFolder) => {
+    const selectedFiles = watchFolder.pending_files.filter(f => f.selected)
+    if (selectedFiles.length === 0) return
+    
+    // PHASE 6: Enforce preset requirement with visible error
+    if (!watchFolder.preset_id) {
+      console.error(`[PHASE 6] Watch folder ${watchFolder.id} has no preset. Cannot create jobs.`)
+      // The App.tsx handler will show the alert, but we log here too
     }
     
-    const config: Omit<WatchFolder, 'id'> = {
-      path: formPath.trim(),
-      preset_id: formPresetId,
-      enabled: true,
-      recursive: true,
-      include_extensions: formExtensions.trim() 
-        ? formExtensions.split(',').map(s => s.trim()).filter(Boolean)
-        : undefined,
-      exclude_patterns: formExcludePatterns.trim()
-        ? formExcludePatterns.split(',').map(s => s.trim()).filter(Boolean)
-        : undefined,
-    }
-    
-    onAddWatchFolder(config)
-    resetForm()
-  }, [formPath, formPresetId, formExtensions, formExcludePatterns, onAddWatchFolder, resetForm])
-
-  const handleEdit = useCallback((wf: WatchFolderWithStatus) => {
-    setEditingId(wf.id)
-    setFormPath(wf.path)
-    setFormPresetId(wf.preset_id)
-    setFormExtensions(wf.include_extensions?.join(', ') || '')
-    setFormExcludePatterns(wf.exclude_patterns?.join(', ') || '')
-    setShowAddForm(false)
-  }, [])
-
-  const handleUpdate = useCallback(() => {
-    if (!editingId || !formPath.trim() || !formPresetId) {
-      alert('Path and preset are required')
-      return
-    }
-    
-    const updates: Partial<Omit<WatchFolder, 'id'>> = {
-      path: formPath.trim(),
-      preset_id: formPresetId,
-      include_extensions: formExtensions.trim()
-        ? formExtensions.split(',').map(s => s.trim()).filter(Boolean)
-        : undefined,
-      exclude_patterns: formExcludePatterns.trim()
-        ? formExcludePatterns.split(',').map(s => s.trim()).filter(Boolean)
-        : undefined,
-    }
-    
-    onUpdateWatchFolder(editingId, updates)
-    resetForm()
-  }, [editingId, formPath, formPresetId, formExtensions, formExcludePatterns, onUpdateWatchFolder, resetForm])
-
-  const handleRemove = useCallback((id: string) => {
-    if (confirm('Remove this watch folder? This will not delete any files.')) {
-      onRemoveWatchFolder(id)
-    }
-  }, [onRemoveWatchFolder])
-
-  const handleToggleEnabled = useCallback((wf: WatchFolderWithStatus) => {
-    if (wf.enabled) {
-      onDisableWatchFolder(wf.id)
-    } else {
-      onEnableWatchFolder(wf.id)
-    }
-  }, [onEnableWatchFolder, onDisableWatchFolder])
-
-  const formatTimestamp = (timestamp: string | null): string => {
-    if (!timestamp) return 'Never'
-    const date = new Date(timestamp)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const seconds = Math.floor(diff / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-    
-    if (days > 0) return `${days}d ago`
-    if (hours > 0) return `${hours}h ago`
-    if (minutes > 0) return `${minutes}m ago`
-    return 'Just now'
+    onCreateJobs(watchFolder.id, selectedFiles, watchFolder.preset_id)
+  }, [onCreateJobs])
+  
+  const handleClearAll = useCallback(async (watchFolder: WatchFolder) => {
+    const filePaths = watchFolder.pending_files.map(f => f.path)
+    await onClearPending(watchFolder.id, filePaths)
+  }, [onClearPending])
+  
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
   }
-
-  const getPresetName = (presetId: string): string => {
-    const preset = presets.find(p => p.id === presetId)
-    return preset?.name || `Unknown (${presetId})`
+  
+  const formatPath = (fullPath: string): string => {
+    const parts = fullPath.split('/')
+    return parts[parts.length - 1] || fullPath
   }
-
-  const getStatusColor = (status: 'OK' | 'DISABLED' | 'ERROR'): string => {
-    switch (status) {
-      case 'OK': return 'var(--status-completed-fg)'
-      case 'DISABLED': return 'var(--text-dim)'
-      case 'ERROR': return 'var(--status-failed-fg)'
-    }
-  }
-
+  
   return (
-    <div
+    <div 
       data-testid="watch-folders-panel"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'var(--surface-primary)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: 'var(--radius-md)',
-        overflow: 'hidden',
+      style={{ 
+        padding: '0.5rem',
+        fontSize: '0.8125rem',
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          padding: '1rem',
-          borderBottom: '1px solid var(--border-primary)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'var(--surface-secondary)',
-        }}
-      >
-        <h2
-          style={{
-            margin: 0,
-            fontSize: '1rem',
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            fontFamily: 'var(--font-sans)',
-          }}
-        >
-          Watch Folders
-        </h2>
-        <Button
+      {/* Add Watch Folder Button */}
+      {!showAddForm && (
+        <button
           data-testid="add-watch-folder-button"
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setShowAddForm(true)
-            setEditingId(null)
-            resetForm()
+          onClick={() => setShowAddForm(true)}
+          style={{
+            width: '100%',
+            padding: '0.5rem',
+            marginBottom: '0.5rem',
+            background: 'var(--interactive-primary)',
+            border: 'none',
+            borderRadius: '4px',
+            color: 'white',
+            cursor: 'pointer',
+            fontSize: '0.8125rem',
+            fontWeight: 500,
           }}
         >
           + Add Watch Folder
-        </Button>
-      </div>
-
-      {/* Add/Edit Form */}
-      {(showAddForm || editingId) && (
-        <div
-          style={{
-            padding: '1rem',
-            background: 'var(--surface-secondary)',
-            borderBottom: '1px solid var(--border-primary)',
+        </button>
+      )}
+      
+      {/* Add Form */}
+      {showAddForm && (
+        <div 
+          data-testid="add-watch-folder-form"
+          style={{ 
+            marginBottom: '0.75rem',
+            padding: '0.75rem',
+            background: 'var(--surface-tertiary)',
+            borderRadius: '4px',
           }}
         >
-          <h3
-            style={{
-              margin: '0 0 0.75rem 0',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-            }}
-          >
-            {editingId ? 'Edit Watch Folder' : 'Add Watch Folder'}
-          </h3>
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
+              Folder Path
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                data-testid="watch-folder-path-input"
+                type="text"
+                value={newFolderPath}
+                onChange={(e) => setNewFolderPath(e.target.value)}
+                placeholder="/path/to/watch"
+                style={{
+                  flex: 1,
+                  padding: '0.375rem 0.5rem',
+                  background: 'var(--surface-primary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: '4px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8125rem',
+                }}
+              />
+              <button
+                data-testid="browse-folder-button"
+                onClick={handleBrowseFolder}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  background: 'var(--surface-secondary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: '4px',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                }}
+              >
+                Browse
+              </button>
+            </div>
+          </div>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '0.25rem',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                Folder Path *
-              </label>
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
               <input
-                type="text"
-                value={formPath}
-                onChange={e => setFormPath(e.target.value)}
-                placeholder="/path/to/watch/folder"
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  fontSize: '0.875rem',
-                  background: 'var(--surface-primary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                }}
+                data-testid="watch-folder-recursive-checkbox"
+                type="checkbox"
+                checked={newFolderRecursive}
+                onChange={(e) => setNewFolderRecursive(e.target.checked)}
               />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '0.25rem',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                Preset *
-              </label>
-              <select
-                value={formPresetId}
-                onChange={e => setFormPresetId(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  fontSize: '0.875rem',
-                  background: 'var(--surface-primary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                <option value="">Select preset...</option>
-                {presets.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '0.25rem',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                Include Extensions (comma-separated)
-              </label>
-              <input
-                type="text"
-                value={formExtensions}
-                onChange={e => setFormExtensions(e.target.value)}
-                placeholder="mov, mp4, mxf, braw"
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  fontSize: '0.875rem',
-                  background: 'var(--surface-primary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '0.25rem',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                Exclude Patterns (comma-separated)
-              </label>
-              <input
-                type="text"
-                value={formExcludePatterns}
-                onChange={e => setFormExcludePatterns(e.target.value)}
-                placeholder="/Proxy/, /\.cache/"
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  fontSize: '0.875rem',
-                  background: 'var(--surface-primary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetForm}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={editingId ? handleUpdate : handleAdd}
-              >
-                {editingId ? 'Update' : 'Add'}
-              </Button>
-            </div>
+              <span>Watch subdirectories recursively</span>
+            </label>
+          </div>
+          
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
+              Preset <span style={{ color: 'rgb(239, 68, 68)', fontWeight: 500 }}>*</span>
+              <span style={{ fontSize: '0.6875rem', marginLeft: '0.5rem', color: 'var(--text-tertiary)' }}>
+                (required for job creation)
+              </span>
+            </label>
+            <select
+              data-testid="watch-folder-preset-select"
+              value={newFolderPresetId || ''}
+              onChange={(e) => setNewFolderPresetId(e.target.value || undefined)}
+              style={{
+                width: '100%',
+                padding: '0.375rem 0.5rem',
+                background: 'var(--surface-primary)',
+                border: newFolderPresetId ? '1px solid var(--border-primary)' : '1px solid rgba(239, 68, 68, 0.5)',
+                borderRadius: '4px',
+                color: 'var(--text-primary)',
+                fontSize: '0.8125rem',
+              }}
+            >
+              <option value="">Select a preset...</option>
+              {presets.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {!newFolderPresetId && (
+              <div style={{ 
+                marginTop: '0.25rem', 
+                fontSize: '0.6875rem', 
+                color: 'rgb(239, 68, 68)' 
+              }}>
+                A preset is required to create jobs from watch folders.
+              </div>
+            )}
+          </div>
+          
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              data-testid="confirm-add-watch-folder"
+              onClick={handleAddFolder}
+              disabled={!newFolderPath.trim()}
+              style={{
+                flex: 1,
+                padding: '0.5rem',
+                background: newFolderPath.trim() ? 'var(--interactive-primary)' : 'var(--surface-secondary)',
+                border: 'none',
+                borderRadius: '4px',
+                color: 'white',
+                cursor: newFolderPath.trim() ? 'pointer' : 'not-allowed',
+                opacity: newFolderPath.trim() ? 1 : 0.5,
+              }}
+            >
+              Add & Start Watching
+            </button>
+            <button
+              data-testid="cancel-add-watch-folder"
+              onClick={() => {
+                setShowAddForm(false)
+                setNewFolderPath('')
+              }}
+              style={{
+                padding: '0.5rem 1rem',
+                background: 'var(--surface-secondary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: '4px',
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
-
-      {/* Watch Folder List */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
+      
+      {/* Watch Folders List */}
+      {watchFolders.length === 0 && !showAddForm && (
+        <div style={{ 
           padding: '1rem',
-        }}
-      >
-        {watchFoldersWithStatus.length === 0 ? (
-          <div
+          textAlign: 'center',
+          color: 'var(--text-tertiary)',
+        }}>
+          No watch folders configured.
+          <br />
+          <span style={{ fontSize: '0.75rem' }}>
+            Add a folder to automatically detect new media files.
+          </span>
+        </div>
+      )}
+      
+      {watchFolders.map(wf => {
+        const isExpanded = expandedFolders.has(wf.id)
+        const selectedCount = wf.pending_files.filter(f => f.selected).length
+        const totalPending = wf.pending_files.length
+        
+        return (
+          <div 
+            key={wf.id}
+            data-testid={`watch-folder-${wf.id}`}
             style={{
-              textAlign: 'center',
-              padding: '3rem 1rem',
-              color: 'var(--text-dim)',
-              fontSize: '0.875rem',
+              marginBottom: '0.5rem',
+              background: 'var(--surface-secondary)',
+              borderRadius: '4px',
+              overflow: 'hidden',
             }}
           >
-            No watch folders configured.
-            <br />
-            Add a watch folder to automate job creation.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {watchFoldersWithStatus.map(wf => (
-              <div
-                key={wf.id}
-                data-testid={`watch-folder-${wf.id}`}
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0.5rem',
+                gap: '0.5rem',
+                borderBottom: isExpanded ? '1px solid var(--border-primary)' : 'none',
+              }}
+            >
+              <button
+                data-testid={`toggle-watch-folder-${wf.id}`}
+                onClick={() => toggleExpanded(wf.id)}
                 style={{
-                  padding: '1rem',
-                  background: 'var(--surface-secondary)',
-                  border: `1px solid ${wf.status === 'ERROR' ? 'var(--error-border)' : 'var(--border-primary)'}`,
-                  borderRadius: 'var(--radius-md)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.15s',
                 }}
               >
-                {/* Header Row */}
-                <div
+                ▶
+              </button>
+              
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ 
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {formatPath(wf.path)}
+                </div>
+                <div style={{ 
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-tertiary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {wf.path}
+                  {wf.recursive && ' (recursive)'}
+                </div>
+              </div>
+              
+              {/* Pending count badge */}
+              {totalPending > 0 && (
+                <div 
+                  data-testid={`pending-count-${wf.id}`}
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: '0.75rem',
+                    padding: '0.125rem 0.5rem',
+                    background: 'var(--interactive-primary)',
+                    borderRadius: '10px',
+                    color: 'white',
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
                   }}
                 >
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        marginBottom: '0.25rem',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          color: getStatusColor(wf.status),
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        {wf.status}
-                      </span>
-                      {wf.status === 'OK' && (
-                        <span style={{ color: 'var(--status-completed-fg)' }}>●</span>
-                      )}
-                    </div>
-                    <div
-                      title={wf.path}
-                      style={{
-                        fontSize: '0.875rem',
-                        color: 'var(--text-primary)',
-                        fontFamily: 'var(--font-mono)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {wf.path}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleToggleEnabled(wf)}
-                    >
-                      {wf.enabled ? 'Disable' : 'Enable'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEdit(wf)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemove(wf.id)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
+                  {totalPending} pending
                 </div>
-
-                {/* Details Grid */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr 1fr',
-                    gap: '0.75rem',
+              )}
+              
+              {/* Enable/Disable toggle */}
+              <button
+                data-testid={`toggle-enabled-${wf.id}`}
+                onClick={() => wf.enabled ? onDisableWatchFolder(wf.id) : onEnableWatchFolder(wf.id)}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  background: wf.enabled ? 'var(--status-success)' : 'var(--surface-tertiary)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: wf.enabled ? 'white' : 'var(--text-secondary)',
+                  fontSize: '0.6875rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {wf.enabled ? 'Watching' : 'Paused'}
+              </button>
+              
+              {/* Remove button */}
+              <button
+                data-testid={`remove-watch-folder-${wf.id}`}
+                onClick={() => onRemoveWatchFolder(wf.id)}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  background: 'var(--status-error)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  fontSize: '0.6875rem',
+                  cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Error message */}
+            {wf.error && (
+              <div 
+                data-testid={`watch-folder-error-${wf.id}`}
+                style={{
+                  padding: '0.5rem',
+                  background: 'var(--status-error-bg)',
+                  color: 'var(--status-error)',
+                  fontSize: '0.75rem',
+                }}
+              >
+                ⚠ {wf.error}
+              </div>
+            )}
+            
+            {/* Expanded content: pending files */}
+            {isExpanded && (
+              <div style={{ padding: '0.5rem' }}>
+                {totalPending === 0 ? (
+                  <div style={{ 
+                    padding: '1rem',
+                    textAlign: 'center',
+                    color: 'var(--text-tertiary)',
                     fontSize: '0.75rem',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  <div>
-                    <div style={{ color: 'var(--text-dim)', marginBottom: '0.125rem' }}>
-                      Preset
-                    </div>
-                    <div style={{ color: 'var(--text-primary)' }}>
-                      {getPresetName(wf.preset_id)}
-                    </div>
+                  }}>
+                    No pending files.
+                    <br />
+                    {wf.enabled 
+                      ? 'New files will appear here when detected.'
+                      : 'Enable watching to detect new files.'}
                   </div>
-                  <div>
-                    <div style={{ color: 'var(--text-dim)', marginBottom: '0.125rem' }}>
-                      Jobs Created
+                ) : (
+                  <>
+                    {/* Selection controls */}
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      marginBottom: '0.5rem',
+                      paddingBottom: '0.5rem',
+                      borderBottom: '1px solid var(--border-primary)',
+                    }}>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          data-testid={`select-all-${wf.id}`}
+                          onClick={() => onSelectAll(wf.id, true)}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            background: 'var(--surface-tertiary)',
+                            border: '1px solid var(--border-primary)',
+                            borderRadius: '4px',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.6875rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Select All
+                        </button>
+                        <button
+                          data-testid={`deselect-all-${wf.id}`}
+                          onClick={() => onSelectAll(wf.id, false)}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            background: 'var(--surface-tertiary)',
+                            border: '1px solid var(--border-primary)',
+                            borderRadius: '4px',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.6875rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Deselect All
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        {selectedCount} of {totalPending} selected
+                      </div>
                     </div>
-                    <div style={{ color: 'var(--text-primary)' }}>
-                      {wf.job_count}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: 'var(--text-dim)', marginBottom: '0.125rem' }}>
-                      Last Activity
-                    </div>
-                    <div style={{ color: 'var(--text-primary)' }}>
-                      {formatTimestamp(wf.last_activity)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Error Display */}
-                {wf.error_message && (
-                  <div
-                    style={{
-                      marginTop: '0.75rem',
-                      padding: '0.75rem',
-                      background: 'var(--error-bg)',
-                      border: '1px solid var(--error-border)',
-                      borderRadius: 'var(--radius-sm)',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        gap: '0.5rem',
+                    
+                    {/* File list */}
+                    <div 
+                      style={{ 
+                        maxHeight: '150px', 
+                        overflowY: 'auto',
+                        marginBottom: '0.5rem',
                       }}
                     >
-                      <div style={{ flex: 1 }}>
+                      {wf.pending_files.map(file => (
                         <div
+                          key={file.path}
+                          data-testid={`pending-file-${file.path}`}
+                          onClick={() => onToggleFile(wf.id, file.path)}
                           style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            color: 'var(--error-fg)',
-                            marginBottom: '0.25rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.375rem 0.5rem',
+                            background: file.selected ? 'var(--surface-tertiary)' : 'transparent',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            marginBottom: '0.125rem',
                           }}
                         >
-                          ERROR
+                          <input
+                            type="checkbox"
+                            checked={file.selected}
+                            onChange={() => {}} // Handled by parent click
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontSize: '0.75rem',
+                            }}>
+                              {formatPath(file.path)}
+                            </div>
+                          </div>
+                          <div style={{ 
+                            fontSize: '0.6875rem', 
+                            color: 'var(--text-tertiary)',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {formatFileSize(file.size)}
+                          </div>
                         </div>
-                        <div
-                          style={{
-                            fontSize: '0.75rem',
-                            color: 'var(--error-fg)',
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          {wf.error_message}
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onClearError(wf.id)}
+                      ))}
+                    </div>
+                    
+                    {/* PHASE 6: Preset warning */}
+                    {!wf.preset_id && (
+                      <div 
+                        data-testid={`preset-warning-${wf.id}`}
                         style={{
-                          flexShrink: 0,
-                          color: 'var(--error-fg)',
+                          padding: '0.5rem',
+                          marginBottom: '0.5rem',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '4px',
+                          color: 'rgb(239, 68, 68)',
+                          fontSize: '0.75rem',
                         }}
                       >
-                        Clear
-                      </Button>
+                        ⚠️ No preset configured. Cannot create jobs.
+                      </div>
+                    )}
+                    
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        data-testid={`create-jobs-${wf.id}`}
+                        onClick={() => handleCreateJobs(wf)}
+                        disabled={selectedCount === 0 || !wf.preset_id}
+                        title={!wf.preset_id ? 'Configure a preset first' : undefined}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem',
+                          background: (selectedCount > 0 && wf.preset_id) ? 'var(--interactive-primary)' : 'var(--surface-tertiary)',
+                          border: !wf.preset_id ? '1px solid rgba(239, 68, 68, 0.5)' : 'none',
+                          borderRadius: '4px',
+                          color: 'white',
+                          cursor: (selectedCount > 0 && wf.preset_id) ? 'pointer' : 'not-allowed',
+                          opacity: (selectedCount > 0 && wf.preset_id) ? 1 : 0.5,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {wf.preset_id ? `Create Jobs (${selectedCount})` : 'No Preset'}
+                      </button>
+                      <button
+                        data-testid={`clear-pending-${wf.id}`}
+                        onClick={() => handleClearAll(wf)}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          background: 'var(--surface-tertiary)',
+                          border: '1px solid var(--border-primary)',
+                          borderRadius: '4px',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Clear All
+                      </button>
                     </div>
-                  </div>
-                )}
-
-                {/* Optional Details */}
-                {(wf.include_extensions || wf.exclude_patterns) && (
-                  <div
-                    style={{
-                      marginTop: '0.75rem',
-                      paddingTop: '0.75rem',
-                      borderTop: '1px solid var(--border-primary)',
-                      fontSize: '0.75rem',
-                      color: 'var(--text-dim)',
-                    }}
-                  >
-                    {wf.include_extensions && (
-                      <div>
-                        Extensions: {wf.include_extensions.join(', ')}
-                      </div>
-                    )}
-                    {wf.exclude_patterns && (
-                      <div>
-                        Exclude: {wf.exclude_patterns.join(', ')}
-                      </div>
-                    )}
-                  </div>
+                  </>
                 )}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+        )
+      })}
     </div>
   )
 }
