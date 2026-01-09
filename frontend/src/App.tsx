@@ -2854,9 +2854,25 @@ function App() {
           alignItems: 'center',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* FORGE BRANDING: Logo Icon (non-text geometric mark) + Wordmark Text */}
-          {/* See: src/branding/constants.ts for branding rules */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {/* FORGE BRANDING: Wordmark is PRIMARY, icon is accent */}
+          {/* The wordmark "FORGE" must be the dominant visual element */}
+          <span
+            data-testid="forge-wordmark"
+            data-branding-type="wordmark-text"
+            style={{
+              fontSize: '1.25rem',
+              fontWeight: 700,
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text-primary)',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              userSelect: 'none',
+            }}
+          >
+            Forge
+          </span>
+          {/* Icon as subtle accent — visually secondary to wordmark */}
           <img
             src="./branding/forge-icon.svg"
             alt=""
@@ -2864,26 +2880,13 @@ function App() {
             data-testid="forge-logo-icon"
             data-branding-type="logo-icon"
             style={{
-              height: '1.5rem',
-              width: '1.5rem',
+              height: '1rem',
+              width: '1rem',
+              opacity: 0.6,
               userSelect: 'none',
               pointerEvents: 'none',
             }}
           />
-          <span
-            data-testid="forge-wordmark"
-            data-branding-type="wordmark-text"
-            style={{
-              fontSize: '1rem',
-              fontWeight: 600,
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-primary)',
-              letterSpacing: '0.02em',
-              userSelect: 'none',
-            }}
-          >
-            Forge
-          </span>
           
           {/* System Status Indicators — Minimal, textual, low visual weight */}
           <div style={{ 

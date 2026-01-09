@@ -95,36 +95,40 @@ export function SplashScreen({
         cursor: canDismissEarly ? 'pointer' : 'default',
       }}
     >
-      {/* Wordmark Area — TEXT ONLY per branding rules */}
-      {/* See: src/branding/constants.ts */}
+      {/* Brand Area — Product launch moment, confident presence */}
       <div
         style={{
-          marginBottom: '2rem',
+          marginBottom: '2.5rem',
           textAlign: 'center',
         }}
       >
-        {/* WORDMARK TEXT ONLY — no images allowed on splash screen */}
+        {/* FORGE wordmark — large, centered, commanding */}
         <div
           data-testid="forge-wordmark"
           data-branding-type="wordmark-text"
           style={{
-            fontSize: '1.5rem',
+            fontSize: '2.5rem',
             fontWeight: 700,
-            marginBottom: '0.5rem',
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
             color: 'var(--text-primary)',
+            marginBottom: '0.75rem',
           }}
         >
           Forge
         </div>
         <div
           style={{
-            fontSize: '0.75rem',
+            fontSize: '0.6875rem',
             fontFamily: 'var(--font-mono)',
+            fontWeight: 500,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
             color: 'var(--text-muted)',
-            marginTop: '0.5rem',
+            opacity: 0.7,
           }}
         >
-          ALPHA
+          Alpha
         </div>
       </div>
       

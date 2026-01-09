@@ -695,26 +695,40 @@ export function MonitorSurface({
               gap: '2rem',
             }}
           >
-            {/* Idle state text - no logo per single-logo rule */}
-            {/* NO BRANDING in idle state — keeps monitor clean */}
-            {/* Branding appears in header only */}
+            {/* Idle state — intentional, confident, no branding */}
             <div
               style={{
                 textAlign: 'center',
-                color: 'var(--text-dim)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '0.5rem',
               }}
             >
               <span
                 style={{
-                  fontSize: '1rem',
+                  fontSize: '1.25rem',
                   fontFamily: 'var(--font-sans)',
-                  fontWeight: 400,
-                  color: 'var(--text-dim)',
-                  opacity: 0.3,
+                  fontWeight: 500,
+                  color: 'var(--text-muted)',
+                  opacity: 0.5,
                   userSelect: 'none',
+                  letterSpacing: '0.02em',
                 }}
               >
                 Drop media here
+              </span>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontFamily: 'var(--font-sans)',
+                  fontWeight: 400,
+                  color: 'var(--text-dim)',
+                  opacity: 0.4,
+                  userSelect: 'none',
+                }}
+              >
+                or use Watch Folders
               </span>
             </div>
           </div>
