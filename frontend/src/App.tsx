@@ -2848,13 +2848,13 @@ function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* AWAIRE: Primary app identity */}
+          {/* FORGE: App identity (Awaire logo is in TitleBar for Electron) */}
           <img
-            src="/branding/awaire-logo.png"
-            alt="Awaire"
-            data-testid="awaire-logo"
+            src="/branding/forge-logo.png"
+            alt="Forge"
+            data-testid="forge-app-logo"
             style={{
-              height: '2.5rem',
+              height: '1.75rem',
               width: 'auto',
               userSelect: 'none',
               pointerEvents: 'none',

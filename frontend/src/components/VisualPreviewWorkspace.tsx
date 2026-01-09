@@ -219,15 +219,14 @@ export function VisualPreviewWorkspace({
                 gap: '1rem',
               }}
             >
-              {/* Awaire / Forge Logo at 15% opacity */}
+              {/* FORGE Logo at 15% opacity — App branding for preview monitor */}
               <div style={{ opacity: 0.15, marginBottom: '0.5rem' }}>
                 <img
-                  src="/branding/awaire-logo.png"
+                  src="/branding/forge-logo.png"
                   alt="Forge"
                   style={{
                     height: '3rem',
                     width: 'auto',
-                    filter: 'grayscale(100%)',
                   }}
                   onError={(e) => {
                     // Fallback to text if image fails

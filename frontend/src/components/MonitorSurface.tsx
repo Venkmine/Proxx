@@ -718,11 +718,11 @@ export function MonitorSurface({
               gap: '2rem',
             }}
           >
-            {/* Logo (dimmed background) */}
+            {/* Logo (dimmed background) — FORGE branding for preview monitor */}
             {!logoError ? (
               <img
-                src="/branding/awaire-logo.png"
-                alt="AWAIRE"
+                src="/branding/forge-logo.png"
+                alt="Forge"
                 draggable={false}
                 style={{
                   height: '4rem',
@@ -742,12 +742,12 @@ export function MonitorSurface({
                   fontWeight: 300,
                   letterSpacing: '0.35em',
                   color: 'var(--text-dim)',
-                  opacity: 0.25,
+                  opacity: 0.15,
                   textTransform: 'uppercase',
                   userSelect: 'none',
                 }}
               >
-                AWAIRE
+                FORGE
               </span>
             )}
           </div>
