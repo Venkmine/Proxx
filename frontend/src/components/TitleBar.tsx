@@ -45,7 +45,7 @@ export function TitleBar() {
     >
       {/* App Title */}
       <img
-        src="/branding/AWAIRE_Logo_Main_PNG.png"
+        src="./branding/AWAIRE_Logo_Main_PNG.png"
         alt="Awaire"
         style={{
           height: '1rem',
