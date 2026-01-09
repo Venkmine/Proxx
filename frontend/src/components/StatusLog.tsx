@@ -102,7 +102,7 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
       data-testid="status-log"
       style={{
         position: 'fixed',
-        bottom: '32px', // Above footer
+        bottom: '232px', // Above center-bottom panel (200px min height) + footer (32px)
         left: '496px',  // Past left panel (480px) + padding
         width: '440px',  // Wider to match left panel content width
         maxHeight: `${maxHeight}px`,
