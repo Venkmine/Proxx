@@ -758,9 +758,9 @@ function App() {
     // Show toast or status message
     addStatusLogEntry({
       id: `drop-${Date.now()}`,
-      type: 'info',
+      level: 'info',
       message: `Added ${paths.length} file(s) to sources`,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(),
     })
   }, [addStatusLogEntry])
   

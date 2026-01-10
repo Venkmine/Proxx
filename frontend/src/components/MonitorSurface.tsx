@@ -928,10 +928,10 @@ export function MonitorSurface({
                     lineHeight: 1.5,
                   }}
                 >
-                  {isRaw === 'R3D' && 'RED R3D files require RED SDK for decode. FFmpeg cannot preview this format.'}
-                  {isRaw === 'BRAW' && 'Blackmagic RAW files require BRAW SDK for decode. Use DaVinci Resolve for preview.'}
-                  {isRaw === 'ARRIRAW' && 'ARRI RAW files require ARRI SDK for decode. Use ARRI tools or Resolve.'}
-                  {!['R3D', 'BRAW', 'ARRIRAW'].includes(isRaw as string) && 'This RAW format requires specialized software for preview.'}
+                  {typeof isRaw === 'string' && isRaw === 'R3D' && 'RED R3D files require RED SDK for decode. FFmpeg cannot preview this format.'}
+                  {typeof isRaw === 'string' && isRaw === 'BRAW' && 'Blackmagic RAW files require BRAW SDK for decode. Use DaVinci Resolve for preview.'}
+                  {typeof isRaw === 'string' && isRaw === 'ARRIRAW' && 'ARRI RAW files require ARRI SDK for decode. Use ARRI tools or Resolve.'}
+                  {typeof isRaw === 'string' && !['R3D', 'BRAW', 'ARRIRAW'].includes(isRaw) && 'This RAW format requires specialized software for preview.'}
                 </span>
                 <span
                   style={{
