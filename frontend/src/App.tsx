@@ -3561,8 +3561,7 @@ function App() {
       )}
       */}
       
-      {/* Status Log - bottom-left panel with plain English status messages */}
-      <StatusLog entries={statusLogEntries} demoMode={FEATURE_FLAGS.DEMO_MODE} />
+      {/* Status Log moved to rightZone (docked in Queue panel) */}
       
       {/* V1 OBSERVABILITY: Debug panel for UI event log (DEV only, toggle with Cmd+Alt+D) */}
       <DebugPanel />

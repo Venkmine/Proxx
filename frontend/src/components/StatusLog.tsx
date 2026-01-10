@@ -1,13 +1,13 @@
 /**
- * StatusLog — FLOATING Status Panel (Independent of Layout)
+ * StatusLog — DOCKED Status Panel (Bottom of Queue Column)
  * 
  * ╔════════════════════════════════════════════════════════════════════╗
- * ║  FLOATS INDEPENDENTLY — NOT PART OF 3-ZONE LAYOUT                  ║
- * ║  Uses position: fixed to overlay bottom-left corner                ║
- * ║  NEVER affects layout or zone dimensions                           ║
+ * ║  DOCKED IN QUEUE PANEL — NEVER OVERLAPS OTHER CONTROLS             ║
+ * ║  Uses flex layout, not fixed positioning                           ║
+ * ║  Collapses when empty, expands with content                        ║
  * ╚════════════════════════════════════════════════════════════════════╝
  * 
- * Bottom-left floating panel showing:
+ * Bottom of Queue panel showing:
  * - Job queued
  * - Encoding started
  * - Job completed / failed
@@ -15,9 +15,9 @@
  * Features:
  * - Plain English messages
  * - Timestamped entries
- * - Scrollable list
+ * - Scrollable list (internal scroll, never covers other UI)
+ * - Collapses to minimal height when no entries
  * - Optional "Show details" toggle for verbose logs
- * - Does NOT expose raw system logs by default
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -97,56 +97,82 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
     }
   }
 
+  // Collapse when no entries (telemetry-style: minimal when idle)
+  const hasEntries = entries.length > 0
+  const hasRecentActivity = entries.some(e => {
+    const age = Date.now() - e.timestamp.getTime()
+    return age < 30000 // Active within last 30 seconds
+  })
+  const isExpanded = hasEntries && hasRecentActivity
+
+  // Collapsed state: one-line minimal height
+  if (!isExpanded && entries.length === 0) {
+    return (
+      <div
+        data-testid="status-log"
+        style={{
+          flexShrink: 0,
+          borderTop: '1px solid var(--border-secondary)',
+          padding: '0.5rem 0.75rem',
+          background: 'rgba(20, 24, 32, 0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          fontSize: '0.6875rem',
+          color: 'var(--text-dim)',
+        }}
+      >
+        <span style={{ opacity: 0.5 }}>●</span>
+        <span>No recent activity</span>
+      </div>
+    )
+  }
+
   return (
     <div
       data-testid="status-log"
       style={{
-        position: 'fixed',
-        bottom: '232px', // Above center-bottom panel (200px min height) + footer (32px)
-        left: '496px',  // Past left panel (480px) + padding
-        width: '440px',  // Wider to match left panel content width
+        flexShrink: 0,
         maxHeight: `${maxHeight}px`,
-        background: 'rgba(16, 18, 20, 0.98)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: '6px',
+        borderTop: '1px solid var(--border-secondary)',
+        background: 'rgba(20, 24, 32, 0.95)',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
-        zIndex: 100,
+        overflow: 'hidden',
       }}
     >
-      {/* Header */}
+      {/* Header — subtle, not modal-like */}
       <div
         style={{
-          padding: '8px 12px',
-          borderBottom: '1px solid var(--border-primary)',
+          padding: '0.375rem 0.75rem',
+          borderBottom: '1px solid var(--border-secondary)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'rgba(26, 32, 44, 0.6)',
+          background: 'rgba(26, 32, 44, 0.4)',
         }}
       >
         <span
           style={{
-            fontSize: '11px',
+            fontSize: '0.625rem',
             fontWeight: 600,
-            color: 'var(--text-primary)',
+            color: 'var(--text-muted)',
             textTransform: 'uppercase',
-            letterSpacing: '0.5px',
+            letterSpacing: '0.05em',
           }}
         >
           Status
         </span>
         
         {/* Demo mode: hide details toggle for cleaner presentation */}
-        {!demoMode && (
+        {!demoMode && entries.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setShowDetails(!showDetails)}
             title={showDetails ? 'Hide details' : 'Show details'}
             style={{
-              fontSize: '10px',
+              fontSize: '0.5625rem',
               padding: '2px 6px',
               height: 'auto',
             }}
@@ -156,7 +182,7 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
         )}
       </div>
 
-      {/* Log entries */}
+      {/* Log entries — internal scroll, never exceeds container */}
       <div
         ref={scrollRef}
         data-testid="status-log-entries"
@@ -164,21 +190,21 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: '6px',
+          padding: '0.375rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: '3px',
-          minHeight: '100px',
-          maxHeight: '160px',
+          gap: '0.25rem',
+          minHeight: 0,
+          maxHeight: '120px',
         }}
       >
         {entries.length === 0 ? (
           <div
             style={{
-              padding: '16px',
+              padding: '0.75rem',
               textAlign: 'center',
               color: 'var(--text-dim)',
-              fontSize: '12px',
+              fontSize: '0.6875rem',
             }}
           >
             No status messages
@@ -190,12 +216,12 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
               data-testid="status-log-entry"
               data-level={entry.level}
               style={{
-                padding: '6px 8px',
-                background: 'rgba(30, 35, 45, 0.6)',
-                borderRadius: '4px',
-                borderLeft: `3px solid ${getLevelColor(entry.level)}`,
-                fontSize: '11px',
-                lineHeight: '1.4',
+                padding: '0.375rem 0.5rem',
+                background: 'rgba(30, 35, 45, 0.4)',
+                borderRadius: '3px',
+                borderLeft: `2px solid ${getLevelColor(entry.level)}`,
+                fontSize: '0.6875rem',
+                lineHeight: 1.4,
               }}
             >
               {/* Timestamp and level */}
@@ -203,24 +229,24 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  marginBottom: '3px',
+                  gap: '0.375rem',
+                  marginBottom: '0.125rem',
                 }}
               >
                 <span
                   style={{
                     color: getLevelColor(entry.level),
-                    fontSize: '10px',
-                    fontWeight: 700,
+                    fontSize: '0.625rem',
+                    fontWeight: 600,
                   }}
                 >
                   {getLevelIcon(entry.level)}
                 </span>
                 <span
                   style={{
-                    fontSize: '10px',
+                    fontSize: '0.5625rem',
                     color: 'var(--text-dim)',
-                    fontFamily: 'monospace',
+                    fontFamily: 'var(--font-mono)',
                   }}
                 >
                   {formatTime(entry.timestamp)}
@@ -230,7 +256,7 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
               {/* Message */}
               <div
                 style={{
-                  color: 'var(--text-primary)',
+                  color: 'var(--text-secondary)',
                   wordBreak: 'break-word',
                 }}
               >
@@ -241,12 +267,12 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
               {!demoMode && showDetails && entry.details && (
                 <div
                   style={{
-                    marginTop: '4px',
-                    paddingTop: '4px',
+                    marginTop: '0.25rem',
+                    paddingTop: '0.25rem',
                     borderTop: '1px solid var(--border-secondary)',
                     color: 'var(--text-dim)',
-                    fontSize: '10px',
-                    fontFamily: 'monospace',
+                    fontSize: '0.5625rem',
+                    fontFamily: 'var(--font-mono)',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                   }}
