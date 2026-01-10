@@ -38,6 +38,7 @@ import {
 import { WorkspaceLayout } from './components/WorkspaceLayout'
 import { CenterBottomPanel } from './components/CenterBottomPanel'
 import { OutputTab } from './components/OutputTab'
+import { MetadataPanel } from './components/MetadataPanel'
 import { AppFooter } from './components/AppFooter'
 import { SplashScreen } from './components/SplashScreen'
 import { DiscardChangesDialog } from './components/DiscardChangesDialog'
@@ -525,10 +526,21 @@ function App() {
     return saved ? JSON.parse(saved) : true
   })
   
+  // Metadata Panel: Resolve-style metadata display (LEFT-CENTER area)
+  const [metadataPanelCollapsed, setMetadataPanelCollapsed] = useState(() => {
+    const saved = localStorage.getItem('awaire_metadata_panel_collapsed')
+    return saved ? JSON.parse(saved) : false
+  })
+  
   // Persist panel collapsed state
   useEffect(() => {
     localStorage.setItem('awaire_watch_folders_panel_collapsed', JSON.stringify(watchFoldersPanelCollapsed))
   }, [watchFoldersPanelCollapsed])
+  
+  // Persist metadata panel collapsed state
+  useEffect(() => {
+    localStorage.setItem('awaire_metadata_panel_collapsed', JSON.stringify(metadataPanelCollapsed))
+  }, [metadataPanelCollapsed])
   
   // Initialize watch folders from Electron on mount
   useEffect(() => {
@@ -1100,6 +1112,34 @@ function App() {
     }
     return undefined
   }, [monitorState, selectedJobId, jobDetails, selectedFiles, monitorClipIndex])
+
+  // Convert SourceMetadata to RawMetadata for MetadataPanel
+  // This provides a bridge until we have full probe metadata from backend
+  const rawMetadataForPanel = useMemo(() => {
+    if (!monitorSourceMetadata) return null
+    
+    // Parse resolution string (e.g., "1920x1080")
+    let width: number | undefined
+    let height: number | undefined
+    if (monitorSourceMetadata.resolution) {
+      const parts = monitorSourceMetadata.resolution.split(/[x×]/)
+      if (parts.length === 2) {
+        width = parseInt(parts[0], 10)
+        height = parseInt(parts[1], 10)
+      }
+    }
+    
+    return {
+      filename: monitorSourceMetadata.filename,
+      video_codec: monitorSourceMetadata.codec,
+      width,
+      height,
+      frame_rate: monitorSourceMetadata.fps,
+      channels: monitorSourceMetadata.audioChannels ? parseInt(String(monitorSourceMetadata.audioChannels), 10) : undefined,
+      has_timecode: monitorSourceMetadata.hasSourceTimecode,
+      timecode_start: monitorSourceMetadata.hasSourceTimecode ? '00:00:00:00' : undefined,
+    }
+  }, [monitorSourceMetadata])
 
   // Derive job progress for monitor
   const monitorJobProgress = useMemo((): JobProgress | undefined => {
@@ -3293,6 +3333,56 @@ function App() {
                   appMode={appMode}
                   v2JobSpecSubmitted={v2JobSpecSubmitted}
                 />
+              </div>
+              
+              {/* Metadata Panel — Resolve-style metadata display (LEFT-CENTER) */}
+              <div
+                style={{
+                  borderTop: '1px solid var(--border-primary)',
+                  background: 'var(--surface-primary)',
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setMetadataPanelCollapsed(!metadataPanelCollapsed)
+                  }}
+                  data-testid="metadata-panel-toggle"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    background: 'var(--surface-secondary)',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span>📋 Metadata</span>
+                  <span style={{ 
+                    transform: metadataPanelCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', 
+                    transition: 'transform 0.2s' 
+                  }}>
+                    ▼
+                  </span>
+                </button>
+                
+                {!metadataPanelCollapsed && (
+                  <div style={{ maxHeight: '350px', overflow: 'auto' }}>
+                    <MetadataPanel
+                      metadata={rawMetadataForPanel}
+                      loading={loading}
+                      collapsed={metadataPanelCollapsed}
+                      onToggleCollapse={() => setMetadataPanelCollapsed(!metadataPanelCollapsed)}
+                    />
+                  </div>
+                )}
               </div>
               
               {/* Watch Folders Panel V2 — Below Sources/CreateJob panel */}

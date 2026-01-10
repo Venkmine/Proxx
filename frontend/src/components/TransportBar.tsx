@@ -398,6 +398,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 1,
     display: 'flex',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
@@ -548,6 +549,7 @@ const JUMP_INTERVALS: {
   id: string
   label: string
   interval: JumpInterval
+  isCustom?: boolean
 }[] = [
   { id: 'frame-1', label: '1 frame', interval: { type: 'frames', value: 1 } },
   { id: 'frame-5', label: '5 frames', interval: { type: 'frames', value: 5 } },
@@ -556,8 +558,10 @@ const JUMP_INTERVALS: {
   { id: 'sec-5', label: '5 seconds', interval: { type: 'seconds', value: 5 } },
   { id: 'sec-10', label: '10 seconds', interval: { type: 'seconds', value: 10 } },
   { id: 'sec-30', label: '30 seconds', interval: { type: 'seconds', value: 30 } },
-  { id: 'sec-60', label: '60 seconds', interval: { type: 'seconds', value: 60 } },
+  { id: 'sec-60', label: '1 minute', interval: { type: 'seconds', value: 60 } },
   { id: 'min-5', label: '5 minutes', interval: { type: 'seconds', value: 300 } },
+  { id: 'min-10', label: '10 minutes', interval: { type: 'seconds', value: 600 } },
+  { id: 'hour-1', label: '1 hour', interval: { type: 'seconds', value: 3600 } },
 ]
 
 // Default jump interval: 5 seconds
@@ -697,6 +701,10 @@ export function TransportBar({
   
   // Loop toggle state
   const [loopEnabled, setLoopEnabled] = useState(false)
+  
+  // Jog wheel rotation state (for visual feedback)
+  const [jogRotation, setJogRotation] = useState(0)
+  const [isJogging, setIsJogging] = useState(false)
   
   // Parse source timecode offset
   const sourceOffset = useMemo(() => 
@@ -936,12 +944,53 @@ export function TransportBar({
     setTimecodeInput(displayedTimecode)
   }, [displayedTimecode])
   
-  // Handle timecode input change
-  const handleTimecodeInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setTimecodeInput(e.target.value)
+  /**
+   * Auto-format timecode input.
+   * Accepts digits only or pre-formatted timecode.
+   * Examples:
+   * - "00000100" => "00:00:01:00"
+   * - "100" => "00:00:01:00" (pads left)
+   * - "1234" => "00:00:12:34"
+   * - "123456" => "00:12:34:56" (if valid)
+   */
+  const formatTimecodeInput = useCallback((input: string): string => {
+    // If already formatted, validate and return
+    if (input.includes(':')) {
+      const formatted = input.match(/^(\d{0,2}):?(\d{0,2}):?(\d{0,2}):?(\d{0,2})$/)
+      if (formatted) return input
+    }
+    
+    // Strip non-digits
+    const digits = input.replace(/\D/g, '')
+    
+    // Pad to 8 digits (HHMMSSFF)
+    const padded = digits.padStart(8, '0').slice(-8)
+    
+    // Format as HH:MM:SS:FF
+    return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:${padded.slice(4, 6)}:${padded.slice(6, 8)}`
   }, [])
   
-  // Handle timecode input submission
+  // Handle timecode input change with auto-formatting preview
+  const handleTimecodeInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    
+    // Allow raw digits or formatted input
+    // Strip colons for pure digit entry
+    const digitsOnly = value.replace(/\D/g, '')
+    
+    // Limit to 8 digits max
+    if (digitsOnly.length > 8) {
+      setTimecodeInput(formatTimecodeInput(digitsOnly.slice(0, 8)))
+    } else if (value.includes(':')) {
+      // User is typing formatted - allow it
+      setTimecodeInput(value)
+    } else {
+      // Pure digits - store as-is for now, format on blur/submit
+      setTimecodeInput(digitsOnly)
+    }
+  }, [formatTimecodeInput])
+  
+  // Handle timecode input submission with robust parsing
   const handleTimecodeInputSubmit = useCallback(() => {
     const video = videoRef.current
     if (!video) {
@@ -949,14 +998,26 @@ export function TransportBar({
       return
     }
     
+    // Auto-format the input first
+    const formatted = formatTimecodeInput(timecodeInput)
+    
     // Parse timecode input (format: HH:MM:SS:FF)
-    const match = timecodeInput.match(/^(\d{2}):(\d{2}):(\d{2}):(\d{2})$/)
+    const match = formatted.match(/^(\d{2}):(\d{2}):(\d{2}):(\d{2})$/)
     if (match) {
-      const [_, h, m, s, f] = match
+      const [, h, m, s, f] = match
       const hours = parseInt(h, 10)
       const minutes = parseInt(m, 10)
       const seconds = parseInt(s, 10)
       const frames = parseInt(f, 10)
+      
+      // Validate ranges
+      const maxFrames = Math.floor(fps)
+      if (minutes > 59 || seconds > 59 || frames >= maxFrames) {
+        // Invalid timecode - show error briefly (could add toast later)
+        console.warn(`[TransportBar] Invalid timecode: ${formatted} (fps=${fps})`)
+        setIsEditingTimecode(false)
+        return
+      }
       
       // Convert to seconds
       const totalSeconds = hours * 3600 + minutes * 60 + seconds + frames / fps
@@ -966,7 +1027,7 @@ export function TransportBar({
     }
     
     setIsEditingTimecode(false)
-  }, [timecodeInput, videoRef, fps, duration])
+  }, [timecodeInput, videoRef, fps, duration, formatTimecodeInput])
   
   // Handle timecode input key down (Enter/Escape)
   const handleTimecodeInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1080,6 +1141,30 @@ export function TransportBar({
           e.preventDefault()
           handleShuttleForward()
           break
+        case 'Home':
+          // Home = Go to start
+          e.preventDefault()
+          if (videoRef.current) {
+            videoRef.current.currentTime = 0
+          }
+          break
+        case 'End':
+          // End = Go to end
+          e.preventDefault()
+          if (videoRef.current && duration > 0) {
+            videoRef.current.currentTime = duration - (1 / fps) // One frame before end
+          }
+          break
+        case 'KeyI':
+          // I = Mark In (placeholder for future implementation)
+          e.preventDefault()
+          console.log('[TransportBar] Mark In at:', videoRef.current?.currentTime)
+          break
+        case 'KeyO':
+          // O = Mark Out (placeholder for future implementation)
+          e.preventDefault()
+          console.log('[TransportBar] Mark Out at:', videoRef.current?.currentTime)
+          break
       }
     }
     
@@ -1100,6 +1185,9 @@ export function TransportBar({
     isLastClip,
     onPreviousClip,
     onNextClip,
+    videoRef,
+    duration,
+    fps,
   ])
   
   // INC-CTRL-001: Transport controls must never disappear once preview is available
@@ -1224,21 +1312,31 @@ export function TransportBar({
       {/* Timeline Scrubber Row */}
       <div style={styles.scrubberRow}>
         <div style={styles.scrubberContainer}>
-          {/* Tick marks layer */}
+          {/* Tick marks layer - Enhanced visibility */}
           <div style={styles.tickMarks}>
-            {tickMarks.map((pos, i) => (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: `${pos * 100}%`,
-                  bottom: 0,
-                  width: '1px',
-                  height: i % 5 === 4 ? '6px' : '3px', // Every 5th tick is taller
-                  background: 'rgba(255, 255, 255, 0.2)',
-                }}
-              />
-            ))}
+            {tickMarks.map((pos, i) => {
+              // Every 10th tick is major (bright), every 5th is medium
+              const isMajor = i % 10 === 9
+              const isMedium = i % 5 === 4 && !isMajor
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: `${pos * 100}%`,
+                    bottom: 0,
+                    width: isMajor ? '2px' : '1px',
+                    height: isMajor ? '8px' : isMedium ? '5px' : '3px',
+                    background: isMajor 
+                      ? 'rgba(255, 255, 255, 0.5)' 
+                      : isMedium 
+                        ? 'rgba(255, 255, 255, 0.35)' 
+                        : 'rgba(255, 255, 255, 0.2)',
+                    borderRadius: isMajor ? '1px' : '0',
+                  }}
+                />
+              )
+            })}
           </div>
           
           {/* Scrubber input */}
@@ -1366,7 +1464,7 @@ export function TransportBar({
           />
         </div>
         
-        {/* Jog Control - Simple drag scrub */}
+        {/* Jog Control - Fine scrub with visual rotation feedback */}
         <div
           data-testid="transport-jog-control"
           style={{
@@ -1376,37 +1474,51 @@ export function TransportBar({
           }}
         >
           <div
+            data-testid="transport-jog-wheel"
             style={{
               width: '40px',
               height: '40px',
               borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '2px solid rgba(255, 255, 255, 0.15)',
+              background: isJogging 
+                ? 'rgba(59, 130, 246, 0.15)' 
+                : 'rgba(255, 255, 255, 0.06)',
+              border: isJogging 
+                ? '2px solid rgba(59, 130, 246, 0.5)' 
+                : '2px solid rgba(255, 255, 255, 0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: enabled ? 'ew-resize' : 'not-allowed',
               opacity: enabled ? 1 : 0.4,
               position: 'relative',
+              transform: `rotate(${jogRotation}deg)`,
+              transition: isJogging ? 'none' : 'transform 0.3s ease-out, background 0.15s, border 0.15s',
             }}
-            title={enabled ? "Jog: drag left/right to scrub" : "Jog unavailable"}
+            title={enabled ? "Jog wheel: drag left/right for fine scrub (0.05x sensitivity)" : "Jog unavailable"}
             onMouseDown={(e) => {
               if (!enabled) return
               e.preventDefault()
+              setIsJogging(true)
               const startX = e.clientX
               const startTime = videoRef.current?.currentTime || 0
+              const startRotation = jogRotation
               
               const handleMouseMove = (moveEvent: MouseEvent) => {
                 const video = videoRef.current
                 if (!video) return
                 
                 const deltaX = moveEvent.clientX - startX
-                const sensitivity = 0.05 // seconds per pixel
+                // Fine jog: 0.05 seconds per pixel (much slower than regular scrub)
+                const sensitivity = 0.05
                 const newTime = startTime + (deltaX * sensitivity)
                 video.currentTime = Math.max(0, Math.min(duration, newTime))
+                
+                // Rotate the jog wheel visually (scaled for natural feel)
+                setJogRotation(startRotation + (deltaX * 2))
               }
               
               const handleMouseUp = () => {
+                setIsJogging(false)
                 window.removeEventListener('mousemove', handleMouseMove)
                 window.removeEventListener('mouseup', handleMouseUp)
               }
@@ -1415,10 +1527,24 @@ export function TransportBar({
               window.addEventListener('mouseup', handleMouseUp)
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" opacity="0.7">
-              <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              <circle cx="10" cy="6" r="1.5" />
-              <circle cx="10" cy="14" r="1.5" />
+            {/* Jog wheel indicator marks */}
+            <svg 
+              width="24" 
+              height="24" 
+              viewBox="0 0 24 24" 
+              fill="currentColor" 
+              style={{ 
+                opacity: isJogging ? 0.9 : 0.6,
+                color: isJogging ? 'var(--accent-primary, #3b82f6)' : 'currentColor',
+              }}
+            >
+              {/* Center ring */}
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              {/* Tick marks around the wheel */}
+              <circle cx="12" cy="4" r="1.5" />
+              <circle cx="12" cy="20" r="1.5" />
+              <circle cx="4" cy="12" r="1.5" />
+              <circle cx="20" cy="12" r="1.5" />
             </svg>
           </div>
         </div>
