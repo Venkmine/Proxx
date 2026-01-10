@@ -66,8 +66,8 @@ import { useIngestion } from './hooks/useIngestion'
 import { useV2Execute } from './hooks/useV2Execute'
 import { useV2ModeStore } from './stores/v2ModeStore'
 import { V2ResultPanel } from './components/V2ResultPanel'
-// REMOVED: Drag & drop completely removed from UI for honesty
-// import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
+// UI QC PHASE 10: Drag & drop re-enabled with proper visual feedback
+import { useGlobalFileDrop } from './hooks/useGlobalFileDrop'
 import { usePresetStore } from './stores/presetStore'
 import { useWorkspaceModeStore } from './stores/workspaceModeStore'
 // Source Selection Store: Authoritative source selection state
@@ -747,11 +747,33 @@ function App() {
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   
   // ============================================
-  // DRAG & DROP REMOVED FOR HONESTY
+  // UI QC PHASE 10: Drag & Drop Re-enabled
   // ============================================
-  // Drag & drop completely removed from UI.
-  // Users must use the explicit "Select Files" and "Select Folder" buttons.
-  // This is intentional - honesty over convenience.
+  // Global drag & drop with visual feedback and confirmation
+  const handleFileDrop = useCallback((paths: string[]) => {
+    if (paths.length === 0) return
+    // Add dropped files to source selection
+    const store = useSourceSelectionStore.getState()
+    store.addPaths(paths)
+    // Show toast or status message
+    addStatusLogEntry({
+      id: `drop-${Date.now()}`,
+      type: 'info',
+      message: `Added ${paths.length} file(s) to sources`,
+      timestamp: new Date().toISOString(),
+    })
+  }, [addStatusLogEntry])
+  
+  const handleOutputDrop = useCallback((path: string) => {
+    setOutputDirectory(path)
+    localStorage.setItem('awaire_proxy_output_directory', path)
+  }, [])
+  
+  const globalFileDrop = useGlobalFileDrop({
+    onDropFiles: handleFileDrop,
+    onDropOutputDirectory: handleOutputDrop,
+    enabled: true,
+  })
 
   // Alpha: Copilot Prompt window state (hidden in Alpha, available for dev)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1115,31 +1137,56 @@ function App() {
 
   // Convert SourceMetadata to RawMetadata for MetadataPanel
   // This provides a bridge until we have full probe metadata from backend
+  // Also incorporates data from tieredPreview for better coverage
   const rawMetadataForPanel = useMemo(() => {
-    if (!monitorSourceMetadata) return null
+    // Get sourceInfo from tieredPreview (most complete source of metadata)
+    const previewInfo = tieredPreview.poster?.sourceInfo
     
-    // Parse resolution string (e.g., "1920x1080")
+    if (!monitorSourceMetadata && !previewInfo) return null
+    
+    // Parse resolution string (e.g., "1920x1080") from monitor or preview
     let width: number | undefined
     let height: number | undefined
-    if (monitorSourceMetadata.resolution) {
-      const parts = monitorSourceMetadata.resolution.split(/[x×]/)
+    const resolutionStr = monitorSourceMetadata?.resolution || previewInfo?.resolution
+    if (resolutionStr) {
+      const parts = resolutionStr.split(/[x×]/)
       if (parts.length === 2) {
         width = parseInt(parts[0], 10)
         height = parseInt(parts[1], 10)
       }
     }
+    // Override with direct values if available
+    if (previewInfo?.width) width = previewInfo.width
+    if (previewInfo?.height) height = previewInfo.height
     
     return {
-      filename: monitorSourceMetadata.filename,
-      video_codec: monitorSourceMetadata.codec,
+      // Filename - prefer monitor metadata, fallback to preview
+      filename: monitorSourceMetadata?.filename || previewInfo?.filename,
+      
+      // Video codec - from either source
+      video_codec: monitorSourceMetadata?.codec || previewInfo?.codec,
+      
+      // Dimensions
       width,
       height,
-      frame_rate: monitorSourceMetadata.fps,
-      channels: monitorSourceMetadata.audioChannels ? parseInt(String(monitorSourceMetadata.audioChannels), 10) : undefined,
-      has_timecode: monitorSourceMetadata.hasSourceTimecode,
-      timecode_start: monitorSourceMetadata.hasSourceTimecode ? '00:00:00:00' : undefined,
+      
+      // Frame rate - prefer preview (more accurate ffprobe data)
+      frame_rate: monitorSourceMetadata?.fps || (previewInfo?.fps ? String(previewInfo.fps) : undefined),
+      
+      // Duration - prefer preview (has human-readable format)
+      duration: previewInfo?.duration,
+      
+      // File size from preview
+      size: previewInfo?.file_size,
+      
+      // Audio channels
+      channels: monitorSourceMetadata?.audioChannels ? parseInt(String(monitorSourceMetadata.audioChannels), 10) : undefined,
+      
+      // Timecode
+      has_timecode: monitorSourceMetadata?.hasSourceTimecode,
+      timecode_start: monitorSourceMetadata?.hasSourceTimecode ? '00:00:00:00' : undefined,
     }
-  }, [monitorSourceMetadata])
+  }, [monitorSourceMetadata, tieredPreview.poster?.sourceInfo])
 
   // Derive job progress for monitor
   const monitorJobProgress = useMemo((): JobProgress | undefined => {
@@ -2263,113 +2310,8 @@ function App() {
     }
   }
   
-  /* REMOVED: Drag & drop completely removed from UI for honesty
-   * Use explicit "Select Files" and "Select Folder" buttons instead.
-   *
-  // Phase 4C: Drop confirmation flow handlers
-  const handleFilesDropped = useCallback((paths: string[]) => {
-    // Check for blocking conditions
-    if (workspaceMode === 'design') {
-      setError('Cannot ingest files in design mode')
-      return
-    }
-    
-    if (ingestion.isIngesting) {
-      setError('Cannot drop files while ingestion is in progress')
-      return
-    }
-    
-    if (!outputDirectory) {
-      setError('Output directory must be set before dropping files')
-      return
-    }
-    
-    // Show confirmation dialog
-    setDroppedPaths(paths)
-    setShowDropConfirmation(true)
-  }, [workspaceMode, ingestion.isIngesting, outputDirectory])
-  
-  const handleDropConfirm = useCallback(async () => {
-    setShowDropConfirmation(false)
-    
-    if (droppedPaths.length === 0) {
-      return
-    }
-    
-    // Check if any dropped paths are folders (heuristic: no file extension)
-    const folders: string[] = []
-    const files: string[] = []
-    
-    for (const path of droppedPaths) {
-      // Simple heuristic: paths without extensions or ending in / are folders
-      const hasExtension = /\.[a-zA-Z0-9]+$/.test(path)
-      if (!hasExtension || path.endsWith('/')) {
-        folders.push(path)
-      } else {
-        files.push(path)
-      }
-    }
-    
-    // If folders are present, enumerate them
-    let allFiles = [...files]
-    if (folders.length > 0) {
-      for (const folder of folders) {
-        try {
-          const response = await fetch(`${BACKEND_URL}/filesystem/enumerate?path=${encodeURIComponent(folder)}`)
-          if (!response.ok) {
-            setError(`Failed to enumerate folder: ${folder}`)
-            continue
-          }
-          const data = await response.json()
-          if (data.error) {
-            setError(`Error enumerating folder ${folder}: ${data.error}`)
-            continue
-          }
-          if (data.files.length === 0) {
-            setError(`No valid media files found in folder: ${folder}`)
-            continue
-          }
-          allFiles.push(...data.files)
-        } catch (err) {
-          setError(`Failed to enumerate folder ${folder}: ${err instanceof Error ? err.message : 'Unknown error'}`)
-          continue
-        }
-      }
-    }
-    
-    // If no valid files after enumeration, don't create job
-    if (allFiles.length === 0) {
-      setError('No valid media files to ingest')
-      setDroppedPaths([])
-      return
-    }
-    
-    // Use canonical ingestion pipeline with all enumerated files
-    const result = await ingestion.ingest({
-      sourcePaths: allFiles,
-      outputDir: outputDirectory,
-      deliverSettings: deliverSettings,
-      engine: selectedEngine,
-      presetId: presetManager.selectedPresetId,
-    })
-    
-    if (!result.success) {
-      setError(`Failed to ingest dropped files: ${result.error}`)
-    } else {
-      // Fetch jobs and select the newly created one
-      await fetchJobs()
-      setSelectedJobId(result.jobId)
-    }
-    
-    // Clear dropped paths
-    setDroppedPaths([])
-  }, [droppedPaths, outputDirectory, deliverSettings, selectedEngine, presetManager.selectedPresetId, ingestion, fetchJobs])
-  
-  const handleDropCancel = useCallback(() => {
-    setShowDropConfirmation(false)
-    setDroppedPaths([])
-  }, [])
-  */
+  // UI QC PHASE 10: Drag & drop is re-enabled with proper visual feedback
+  // The useGlobalFileDrop hook handles all drag events at document level
 
   // ============================================
   // File/Folder Selection (Electron)
@@ -3114,9 +3056,12 @@ function App() {
             color: 'var(--text-dim)',
             alignItems: 'center',
           }}>
-            {/* Backend connection indicator */}
+            {/* Backend connection indicator with tooltip */}
             <div 
               data-testid="backend-service-indicator"
+              title={backendConnected 
+                ? 'Backend Connected — FFmpeg transcoding service is available. Job processing is active.' 
+                : 'Backend Disconnected — Unable to reach transcoding service. Check that the backend server is running on port 8085.'}
               style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -3124,9 +3069,11 @@ function App() {
                 padding: '0.125rem 0.5rem',
                 background: 'rgba(255, 255, 255, 0.05)',
                 borderRadius: 'var(--radius-sm)',
+                cursor: 'help',
               }}
             >
               <div
+                title=""
                 style={{
                   width: '0.5rem',
                   height: '0.5rem',
@@ -3141,10 +3088,12 @@ function App() {
                   fontSize: '0.5625rem',
                 }}
               >
-                {backendConnected ? '●' : '○'}
+                {backendConnected ? 'FORGE' : 'OFFLINE'}
               </span>
             </div>
-            <span style={{
+            <span 
+              title="Forge is currently in Alpha. Expect bugs and incomplete features. Report issues to help us improve."
+              style={{
               padding: '0.125rem 0.375rem',
               fontSize: '0.5625rem',
               fontWeight: 600,
@@ -3154,6 +3103,7 @@ function App() {
               borderRadius: 'var(--radius-sm)',
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
+              cursor: 'help',
             }}>
               Alpha
             </span>
@@ -3822,14 +3772,53 @@ function App() {
         onResetToPreset={handleResetToPreset}
       />
       
-      {/* REMOVED: Drag & drop completely removed from UI for honesty
-      <DropConfirmationDialog
-        isOpen={showDropConfirmation}
-        paths={droppedPaths}
-        onConfirm={handleDropConfirm}
-        onCancel={handleDropCancel}
-      />
-      */}
+      {/* UI QC PHASE 10: Drag & Drop Overlay */}
+      {globalFileDrop.isDragging && (
+        <div
+          data-testid="drop-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              padding: '3rem 4rem',
+              background: 'var(--surface-secondary)',
+              border: '3px dashed var(--interactive-primary)',
+              borderRadius: '16px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ 
+              fontSize: '3rem', 
+              marginBottom: '1rem',
+            }}>
+              📁
+            </div>
+            <div style={{ 
+              fontSize: '1.25rem', 
+              fontWeight: 600, 
+              color: 'var(--text-primary)',
+              marginBottom: '0.5rem',
+            }}>
+              Drop files here
+            </div>
+            <div style={{ 
+              fontSize: '0.875rem', 
+              color: 'var(--text-secondary)',
+            }}>
+              Release to add to sources
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Phase 22: Splash Screen - shown during startup/engine detection */}
       {showSplash && (

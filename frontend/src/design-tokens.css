@@ -35,20 +35,29 @@
   --card-bg-selected: rgba(28, 36, 47, 0.7);
   --card-bg-solid: rgba(16, 18, 20, 0.9);
 
-  /* Border Colors */
-  --border-primary: rgba(51, 65, 85, 0.5);
-  --border-secondary: rgba(30, 41, 59, 0.5);
-  --border-hover: rgba(51, 65, 85, 0.7);
+  /* Border Colors - CONTRAST ENHANCED (QC Pass) */
+  /* Subtle increase for better panel definition */
+  --border-primary: rgba(61, 76, 95, 0.55);     /* Slightly brighter: was rgba(51, 65, 85, 0.5) */
+  --border-secondary: rgba(40, 52, 69, 0.55);   /* Slightly brighter: was rgba(30, 41, 59, 0.5) */
+  --border-hover: rgba(71, 85, 105, 0.7);       /* Brighter: was rgba(51, 65, 85, 0.7) */
 
-  /* Text Colors */
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-dim: #475569;
+  /* Text Colors - CONTRAST ENHANCED (QC Pass) */
+  /* Improved contrast for better readability while preserving dark theme */
+  --text-primary: #f1f5f9;      /* Brighter: was #e2e8f0, now matches Resolve contrast */
+  --text-secondary: #a1b0c4;    /* Brighter: was #94a3b8, improved for labels */
+  --text-muted: #7689a0;        /* Brighter: was #64748b, now readable */
+  --text-dim: #5a6a80;          /* Brighter: was #475569, improved for hints */
+  --text-tertiary: #4a5a6d;     /* Added: for subtle hints (dimmer than --text-dim) */
 
   /* Header/Panel Backgrounds */
   --header-bg: rgba(20, 22, 26, 0.95);
   --panel-bg: rgba(16, 18, 20, 0.4);
+  
+  /* Surface Colors - ADDED for panel consistency (QC Pass) */
+  --surface-primary: rgba(18, 20, 24, 0.9);
+  --surface-secondary: rgba(24, 28, 34, 0.85);
+  --bg-secondary: rgba(26, 32, 44, 0.8);
+  --interactive-primary: #3b82f6;
 
   /* Error Colors */
   --error-bg: rgba(127, 29, 29, 0.3);

@@ -436,9 +436,23 @@ export function WatchFoldersPanel({
            !wf.error
   }
   
+  /**
+   * Format path for display - show end-of-path summary
+   * UI QC: Show meaningful context (…/ShootA/Day03/CameraB), not blind truncation
+   */
   const formatPath = (fullPath: string): string => {
-    const parts = fullPath.split('/')
-    return parts[parts.length - 1] || fullPath
+    const parts = fullPath.split('/').filter(Boolean)
+    if (parts.length <= 3) return fullPath
+    // Show last 3 path segments with ellipsis prefix
+    const lastThree = parts.slice(-3).join('/')
+    return `…/${lastThree}`
+  }
+  
+  /**
+   * Get tooltip for full path display
+   */
+  const getFullPathTooltip = (fullPath: string): string => {
+    return fullPath
   }
   
   return (
@@ -447,6 +461,9 @@ export function WatchFoldersPanel({
       style={{ 
         padding: '0.5rem',
         fontSize: '0.8125rem',
+        minHeight: '200px',
+        maxHeight: '400px',
+        overflowY: 'auto',
       }}
     >
       {/* Add Watch Folder Button */}
@@ -534,9 +551,9 @@ export function WatchFoldersPanel({
           
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
-              Preset <span style={{ color: 'rgb(239, 68, 68)', fontWeight: 500 }}>*</span>
+              Preset
               <span style={{ fontSize: '0.6875rem', marginLeft: '0.5rem', color: 'var(--text-tertiary)' }}>
-                (required for job creation)
+                (optional, can be set later)
               </span>
             </label>
             <select
@@ -547,7 +564,7 @@ export function WatchFoldersPanel({
                 width: '100%',
                 padding: '0.375rem 0.5rem',
                 background: 'var(--surface-primary)',
-                border: newFolderPresetId ? '1px solid var(--border-primary)' : '1px solid rgba(239, 68, 68, 0.5)',
+                border: '1px solid var(--border-primary)',
                 borderRadius: '4px',
                 color: 'var(--text-primary)',
                 fontSize: '0.8125rem',
@@ -558,13 +575,14 @@ export function WatchFoldersPanel({
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
+            {/* UI QC: Neutral guidance, NOT an error state */}
             {!newFolderPresetId && (
               <div style={{ 
                 marginTop: '0.25rem', 
                 fontSize: '0.6875rem', 
-                color: 'rgb(239, 68, 68)' 
+                color: 'var(--text-tertiary)' 
               }}>
-                A preset is required to create jobs from watch folders.
+                💡 A preset is needed to create jobs. You can configure it after adding the folder.
               </div>
             )}
           </div>
@@ -676,13 +694,17 @@ export function WatchFoldersPanel({
                 ▶
               </button>
               
-              {/* Folder name and path */}
-              <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Folder name and path - with tooltip for full path */}
+              <div 
+                style={{ flex: 1, minWidth: 0 }}
+                title={getFullPathTooltip(wf.path)}
+              >
                 <div style={{ 
                   fontWeight: 500,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
+                  color: 'var(--text-primary)',
                 }}>
                   {formatPath(wf.path)}
                 </div>
@@ -692,9 +714,10 @@ export function WatchFoldersPanel({
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
+                  direction: 'rtl',
+                  textAlign: 'left',
                 }}>
-                  {wf.path}
-                  {wf.recursive && ' (recursive)'}
+                  {wf.path}{wf.recursive && ' (recursive)'}
                 </div>
               </div>
               
@@ -817,21 +840,22 @@ export function WatchFoldersPanel({
                 {/* Full counts display */}
                 <CountsDisplay counts={counts} compact={false} />
                 
-                {/* Preset warning */}
+                {/* Preset guidance - NEUTRAL state, NOT an error */}
+                {/* UI QC: Errors only appear after user attempts an action that requires preset */}
                 {!wf.preset_id && (
                   <div 
-                    data-testid={`preset-warning-${wf.id}`}
+                    data-testid={`preset-guidance-${wf.id}`}
                     style={{
                       marginTop: '0.5rem',
                       padding: '0.5rem',
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      border: '1px solid rgba(59, 130, 246, 0.25)',
                       borderRadius: '4px',
-                      color: 'rgb(239, 68, 68)',
+                      color: 'var(--text-secondary)',
                       fontSize: '0.75rem',
                     }}
                   >
-                    ⚠️ No preset configured. Cannot create jobs.
+                    💡 Select a preset to enable job creation for this watch folder.
                   </div>
                 )}
                 

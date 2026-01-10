@@ -1,5 +1,5 @@
 /**
- * Queue Execution Controls - Phase 9A
+ * Queue Execution Controls - Phase 9A + UI QC
  * 
  * Explicit execution control buttons for the job queue.
  * 
@@ -9,8 +9,14 @@
  * - Controls are always visible (never hover-only)
  * - State is reflected accurately in button states
  * 
+ * UI QC REQUIREMENTS (PHASE 10):
+ * - Primary "RUN" button MUST be visible at all times
+ * - "RUN" is the ONLY way jobs transition to RUNNING
+ * - Button clearly changes state when queue is running
+ * - No job may execute before RUN is clicked
+ * 
  * This component provides:
- * - Global queue controls: Start Queue, Pause Queue, Stop Queue
+ * - Global queue controls: RUN (primary), Pause Queue, Stop Queue
  * - Per-job controls: Start, Pause, Cancel (managed via callbacks)
  */
 
@@ -36,7 +42,7 @@ export interface QueueExecutionControlsProps {
   /** Number of jobs selected for batch operations */
   selectedJobCount: number
   
-  /** Called when user clicks Start Queue */
+  /** Called when user clicks RUN/Start Queue */
   onStartQueue: () => void
   
   /** Called when user clicks Pause Queue */
@@ -93,6 +99,42 @@ export function QueueExecutionControls({
   
   return (
     <div className="queue-execution-controls" data-testid="queue-execution-controls">
+      {/* PRIMARY RUN BUTTON — Always visible, always first */}
+      {/* UI QC: This is THE primary action button for executing jobs */}
+      <button
+        type="button"
+        className={`queue-btn queue-btn--run ${isRunning ? 'queue-btn--run-active' : ''}`}
+        onClick={onStartQueue}
+        disabled={(!canStartQueue && !canResume) || disabled}
+        data-testid="btn-run-queue"
+        title={
+          isRunning 
+            ? 'Queue is running...' 
+            : isPaused 
+              ? `Resume execution of ${queuedJobCount} queued job(s)`
+              : hasQueuedJobs 
+                ? `RUN ${queuedJobCount} queued job(s)` 
+                : 'No jobs queued'
+        }
+      >
+        {isRunning ? (
+          <>
+            <span className="queue-btn-icon queue-btn-icon--running">●</span>
+            <span className="queue-btn-label">RUNNING…</span>
+          </>
+        ) : isPaused ? (
+          <>
+            <span className="queue-btn-icon">▶</span>
+            <span className="queue-btn-label">RESUME</span>
+          </>
+        ) : (
+          <>
+            <span className="queue-btn-icon">▶</span>
+            <span className="queue-btn-label">RUN{hasQueuedJobs ? ` (${queuedJobCount})` : ''}</span>
+          </>
+        )}
+      </button>
+      
       {/* Status indicator */}
       <div className="queue-status">
         <span className={`queue-status-indicator queue-status-indicator--${queueState}`} />
@@ -101,51 +143,42 @@ export function QueueExecutionControls({
           {isRunning && `Processing (${runningJobCount} running)`}
           {isPaused && 'Queue Paused'}
         </span>
-        {hasQueuedJobs && (
+        {hasQueuedJobs && !isRunning && (
           <span className="queue-count">{queuedJobCount} queued</span>
         )}
       </div>
       
-      {/* Global queue controls - ALWAYS VISIBLE */}
+      {/* Secondary queue controls */}
       <div className="queue-global-controls">
-        {/* Start Queue / Resume */}
-        <button
-          type="button"
-          className="queue-btn queue-btn--start"
-          onClick={isPaused ? onStartQueue : onStartQueue}
-          disabled={isPaused ? !canResume : !canStartQueue}
-          data-testid="btn-start-queue"
-          title={isPaused ? 'Resume queue execution' : 'Start queue execution'}
-        >
-          <span className="queue-btn-icon">▶</span>
-          <span className="queue-btn-label">{isPaused ? 'Resume' : 'Start Queue'}</span>
-        </button>
+        {/* Pause Queue - only shown when running */}
+        {isRunning && (
+          <button
+            type="button"
+            className="queue-btn queue-btn--pause"
+            onClick={onPauseQueue}
+            disabled={!canPauseQueue}
+            data-testid="btn-pause-queue"
+            title="Pause queue (finish current job, don't start next)"
+          >
+            <span className="queue-btn-icon">⏸</span>
+            <span className="queue-btn-label">Pause</span>
+          </button>
+        )}
         
-        {/* Pause Queue */}
-        <button
-          type="button"
-          className="queue-btn queue-btn--pause"
-          onClick={onPauseQueue}
-          disabled={!canPauseQueue}
-          data-testid="btn-pause-queue"
-          title="Pause queue (finish current job, don't start next)"
-        >
-          <span className="queue-btn-icon">⏸</span>
-          <span className="queue-btn-label">Pause</span>
-        </button>
-        
-        {/* Stop Queue */}
-        <button
-          type="button"
-          className="queue-btn queue-btn--stop"
-          onClick={onStopQueue}
-          disabled={!canStopQueue}
-          data-testid="btn-stop-queue"
-          title="Stop queue and cancel all running jobs"
-        >
-          <span className="queue-btn-icon">⏹</span>
-          <span className="queue-btn-label">Stop</span>
-        </button>
+        {/* Stop Queue - only shown when running or paused */}
+        {(isRunning || isPaused) && (
+          <button
+            type="button"
+            className="queue-btn queue-btn--stop"
+            onClick={onStopQueue}
+            disabled={!canStopQueue}
+            data-testid="btn-stop-queue"
+            title="Stop queue and cancel all running jobs"
+          >
+            <span className="queue-btn-icon">⏹</span>
+            <span className="queue-btn-label">Stop</span>
+          </button>
+        )}
       </div>
       
       {/* Batch controls for selected jobs */}

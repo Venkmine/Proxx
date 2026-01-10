@@ -822,7 +822,8 @@ export function MonitorSurface({
               </div>
             )}
             
-            {/* PREVIEW FAILED — Non-blocking warning (does NOT block delivery job creation) */}
+            {/* PREVIEW FAILED — Non-blocking warning with explicit messaging */}
+            {/* UI QC: Show WHY it failed and what user can do next */}
             {tieredPreview?.previewIntent === 'failed' && tieredPreview?.videoError && (
               <div
                 data-testid="preview-failed-banner"
@@ -853,31 +854,40 @@ export function MonitorSurface({
                     color: '#ef4444',
                   }}
                 >
-                  Preview unavailable
+                  ⚠️ Preview Generation Failed
                 </span>
                 <span
                   style={{
                     fontSize: '0.75rem',
                     fontFamily: 'var(--font-sans)',
-                    color: 'rgba(239, 68, 68, 0.8)',
+                    color: 'rgba(239, 68, 68, 0.9)',
+                    lineHeight: 1.5,
                   }}
                 >
-                  {tieredPreview.videoError}
+                  {/* Make generic errors more user-friendly */}
+                  {tieredPreview.videoError.includes('ffprobe') 
+                    ? 'Unable to analyze media file. The codec may not be supported by FFmpeg, or the file may be corrupted.'
+                    : tieredPreview.videoError.includes('decode') || tieredPreview.videoError.includes('Decode')
+                    ? 'Unable to decode media. This format requires specialized software (e.g., DaVinci Resolve for BRAW, RED for R3D).'
+                    : tieredPreview.videoError}
                 </span>
                 <span
                   style={{
-                    fontSize: '0.625rem',
-                    fontFamily: 'var(--font-mono)',
-                    color: 'var(--text-muted)',
+                    fontSize: '0.6875rem',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--text-secondary)',
                     marginTop: '0.25rem',
+                    padding: '0.375rem 0.75rem',
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    borderRadius: '4px',
                   }}
                 >
-                  Delivery job still available
+                  ✓ Delivery job creation still available — metadata will be shown below
                 </span>
               </div>
             )}
 
-            {/* RAW PLAYBACK UNAVAILABLE BANNER — Shown for RAW files without proxy (previewIntent=none) */}
+            {/* RAW PLAYBACK UNAVAILABLE — UI QC: Show clear explanation and next steps */}
             {isRaw && !hasVideoProxy && tieredPreview?.previewIntent === 'none' && (
               <div
                 data-testid="raw-playback-unavailable-banner"
@@ -908,16 +918,38 @@ export function MonitorSurface({
                     color: '#eab308',
                   }}
                 >
-                  RAW media requires Preview Proxy for playback
+                  📹 RAW Format Detected — Preview Not Available
                 </span>
                 <span
                   style={{
                     fontSize: '0.75rem',
                     fontFamily: 'var(--font-sans)',
-                    color: 'rgba(234, 179, 8, 0.8)',
+                    color: 'rgba(234, 179, 8, 0.9)',
+                    lineHeight: 1.5,
                   }}
                 >
-                  Delivery does not require preview. Generate Preview Proxy to enable playback.
+                  {isRaw === 'R3D' && 'RED R3D files require RED SDK for decode. FFmpeg cannot preview this format.'}
+                  {isRaw === 'BRAW' && 'Blackmagic RAW files require BRAW SDK for decode. Use DaVinci Resolve for preview.'}
+                  {isRaw === 'ARRIRAW' && 'ARRI RAW files require ARRI SDK for decode. Use ARRI tools or Resolve.'}
+                  {!['R3D', 'BRAW', 'ARRIRAW'].includes(isRaw as string) && 'This RAW format requires specialized software for preview.'}
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.6875rem',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--text-secondary)',
+                    marginTop: '0.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.25rem',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    ✓ Metadata is shown below • ✓ Delivery jobs can still be created
+                  </span>
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: '0.625rem' }}>
+                    Click "Generate Preview Proxy" to create a viewable proxy
+                  </span>
                 </span>
               </div>
             )}

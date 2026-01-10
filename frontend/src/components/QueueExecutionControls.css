@@ -1,18 +1,73 @@
 /**
- * Queue Execution Controls Styles - Phase 9A
+ * Queue Execution Controls Styles - Phase 9A + UI QC
  * 
  * Professional render queue styling.
  * Controls are always visible, never hover-only.
+ * 
+ * UI QC: Primary RUN button is prominent and always visible.
  */
 
 .queue-execution-controls {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--bg-secondary, #1a1a1e);
   border-radius: 6px;
   border: 1px solid var(--border-subtle, #2a2a30);
+}
+
+/* PRIMARY RUN BUTTON - UI QC Requirement */
+.queue-btn--run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 2px solid var(--color-success-500, #22c55e);
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--color-success-700, #15803d) 0%, var(--color-success-800, #166534) 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
+}
+
+.queue-btn--run:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--color-success-600, #16a34a) 0%, var(--color-success-700, #15803d) 100%);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.35);
+  transform: translateY(-1px);
+}
+
+.queue-btn--run:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg-tertiary, #27272a);
+  border-color: var(--border-default, #3f3f46);
+  box-shadow: none;
+}
+
+.queue-btn--run-active {
+  background: linear-gradient(135deg, var(--color-accent-blue, #3b82f6) 0%, var(--color-accent-blue-dark, #2563eb) 100%);
+  border-color: var(--color-accent-blue, #3b82f6);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+  animation: pulse-run 1.5s ease-in-out infinite;
+}
+
+.queue-btn-icon--running {
+  animation: blink 1s ease-in-out infinite;
+}
+
+@keyframes pulse-run {
+  0%, 100% { box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35); }
+  50% { box-shadow: 0 4px 16px rgba(59, 130, 246, 0.5); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 /* Status indicator */
@@ -20,7 +75,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 180px;
+  min-width: 160px;
 }
 
 .queue-status-indicator {

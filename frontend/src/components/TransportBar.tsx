@@ -1494,7 +1494,7 @@ export function TransportBar({
               transform: `rotate(${jogRotation}deg)`,
               transition: isJogging ? 'none' : 'transform 0.3s ease-out, background 0.15s, border 0.15s',
             }}
-            title={enabled ? "Jog wheel: drag left/right for fine scrub (0.05x sensitivity)" : "Jog unavailable"}
+            title={enabled ? "Jog wheel: drag left/right for fine frame-by-frame control (0.01x sensitivity)" : "Jog unavailable"}
             onMouseDown={(e) => {
               if (!enabled) return
               e.preventDefault()
@@ -1502,19 +1502,34 @@ export function TransportBar({
               const startX = e.clientX
               const startTime = videoRef.current?.currentTime || 0
               const startRotation = jogRotation
+              const video = videoRef.current
+              
+              // Pause video during jog for true frame-by-frame control
+              if (video && !video.paused) {
+                video.pause()
+              }
+              
+              // Track accumulated pixels for quantized frame stepping
+              let accumulatedDelta = 0
+              const pixelsPerFrame = 10 // UI QC: Large mouse movement = tiny timeline movement
               
               const handleMouseMove = (moveEvent: MouseEvent) => {
-                const video = videoRef.current
                 if (!video) return
                 
                 const deltaX = moveEvent.clientX - startX
-                // Fine jog: 0.05 seconds per pixel (much slower than regular scrub)
-                const sensitivity = 0.05
-                const newTime = startTime + (deltaX * sensitivity)
-                video.currentTime = Math.max(0, Math.min(duration, newTime))
+                
+                // UI QC: Quantized frame stepping for true frame-by-frame jog
+                // Calculate how many frames to move based on accumulated delta
+                const frameTime = 1 / fps
+                const framesToMove = Math.floor(Math.abs(deltaX) / pixelsPerFrame) * Math.sign(deltaX)
+                
+                if (framesToMove !== 0) {
+                  const newTime = startTime + (framesToMove * frameTime)
+                  video.currentTime = Math.max(0, Math.min(duration, newTime))
+                }
                 
                 // Rotate the jog wheel visually (scaled for natural feel)
-                setJogRotation(startRotation + (deltaX * 2))
+                setJogRotation(startRotation + (deltaX * 0.5))
               }
               
               const handleMouseUp = () => {
