@@ -200,7 +200,7 @@ export function LicenseStatusReadOnly({
         <div style={styles.explanation}>
           <div style={styles.explanationTitle}>How enforcement works</div>
           <div style={styles.explanationText}>
-            Forge counts active workers against your license limit.
+            Active workers are counted against your license limit.
             Workers beyond the limit are marked as rejected and cannot execute jobs.
             This is explicit policy enforcement, not a technical limitation.
           </div>

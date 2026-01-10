@@ -48,9 +48,9 @@ export function AttachProxiesInfoPanel({
       {/* Expandable content */}
       {isExpanded && (
         <div style={contentStyles}>
-          {/* What Forge Does */}
+          {/* Guarantees */}
           <div style={sectionStyles}>
-            <div style={sectionTitleStyles}>What Forge Guarantees</div>
+            <div style={sectionTitleStyles}>Guaranteed</div>
             <ul style={listStyles}>
               <li style={listItemStyles}>
                 <span style={checkStyles}>✓</span>
@@ -67,9 +67,9 @@ export function AttachProxiesInfoPanel({
             </ul>
           </div>
           
-          {/* What Forge Does NOT Do */}
+          {/* Limitations */}
           <div style={sectionStyles}>
-            <div style={sectionTitleStyles}>What Forge Does NOT Do</div>
+            <div style={sectionTitleStyles}>Not Supported</div>
             <ul style={listStyles}>
               <li style={listItemStyles}>
                 <span style={crossStyles}>✗</span>

@@ -43,19 +43,7 @@ export function TitleBar() {
         zIndex: 1000,
       } as React.CSSProperties}
     >
-      {/* App Title - Text only, no logo */}
-      <div
-        style={{
-          fontSize: '0.8125rem',
-          fontFamily: 'var(--font-sans)',
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          letterSpacing: '0.03em',
-          userSelect: 'none',
-        }}
-      >
-        Forge
-      </div>
+      {/* App Title removed — branding is header-only */}
 
       {/* Window Controls (non-draggable) */}
       <div
