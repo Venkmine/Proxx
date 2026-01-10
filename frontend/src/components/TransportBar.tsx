@@ -1082,10 +1082,14 @@ export function TransportBar({
   }, [showTimecodeDropdown, showJumpIntervalDropdown])
   
   // Keyboard shortcuts
+  // PHASE 11 FIX: Always attach listener, check enabled inside handler.
+  // This prevents timing issues where the listener isn't attached when
+  // enabled changes from false to true between React render cycles.
   useEffect(() => {
-    if (!enabled) return
-    
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Only process if controls are enabled
+      if (!enabled) return
+      
       // Don't handle if focus is in an input
       if (
         e.target instanceof HTMLInputElement ||

@@ -88,7 +88,7 @@ const DEFAULT_BACKEND_URL = 'http://127.0.0.1:8085'
  */
 export const CAPABILITY_MESSAGES: Record<PlaybackCapability, string> = {
   PLAYABLE: 'Playback available',
-  METADATA_ONLY: 'Playback unavailable — requires Resolve. Generate Preview Proxy to enable playback.',
+  METADATA_ONLY: 'Browser cannot play this format. Generate Preview Proxy to enable playback.',
   NO_VIDEO: 'No video stream detected in file',
   ERROR: 'Unable to probe file for playback capability',
 }
@@ -98,7 +98,7 @@ export const CAPABILITY_MESSAGES: Record<PlaybackCapability, string> = {
  */
 export const CAPABILITY_MESSAGES_SHORT: Record<PlaybackCapability, string> = {
   PLAYABLE: 'Playback available',
-  METADATA_ONLY: 'RAW — Generate Preview Proxy to play',
+  METADATA_ONLY: 'Generate Preview Proxy to play',
   NO_VIDEO: 'No video stream',
   ERROR: 'Probe failed',
 }

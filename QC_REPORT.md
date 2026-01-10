@@ -1,14 +1,37 @@
 # UI QC Report — v2/reliable-proxy Branch
 
-**Date:** January 2026  
-**Author:** GitHub Copilot  
-**Branch:** `v2/reliable-proxy`
+**Date:** 10 January 2026  
+**Author:** GitHub Copilot (Claude Opus 4.5)  
+**Branch:** `v2/reliable-proxy`  
+**Commit:** `fae4f24`
 
 ---
 
 ## Executive Summary
 
 This report documents the UI/UX fixes implemented to address the QC findings from the UI review. All critical issues have been resolved, with emphasis on the PRIMARY BLOCKER (missing RUN button).
+
+**Phase 10 Verification:** ✅ ALL TESTS PASS (9/9)
+
+---
+
+## Phase 10 Electron-Only Verification Results
+
+All tests run exclusively in Electron with screenshot evidence.
+
+| Test | Status | Screenshot |
+|------|--------|------------|
+| A1. RUN button always visible | ✅ PASS | A1_run_button_visible.png |
+| A2. RUN button disabled when queue empty | ✅ PASS | A2_run_button_disabled.png |
+| A3. RUN button styling (green, medium font) | ✅ PASS | A3_run_button_styling.png |
+| B1. Jobs do NOT auto-execute | ✅ PASS | B1_job_queued_not_running.png |
+| C1. QueueExecutionControls renders | ✅ PASS | C1_queue_execution_controls.png |
+| D1. Transport bar visible with source | ✅ PASS | D1_transport_bar.png |
+| E1. Full app layout renders | ✅ PASS | E1_full_app_layout.png |
+| Drop zone: App as drop target | ✅ PASS | app_drop_target.png |
+| Watch folders: Neutral state | ✅ PASS | watch_folders_neutral.png |
+
+**Screenshots saved to:** `artifacts/ui/visual/2026-01-10T22-37-53/qc_phase10/`
 
 ---
 
@@ -150,17 +173,28 @@ This report documents the UI/UX fixes implemented to address the QC findings fro
 
 ## E2E Tests Added
 
-A new test file was created to verify all UI fixes:
+### Phase 10: Electron-Only Test Suite
+
+**File:** [ui_qc_phase10.spec.ts](qa/e2e/ui_qc_phase10.spec.ts)
+
+**Verification Method:** Electron app only (enforced by electron-guard.ts)
+
+**Test Coverage:**
+- RUN button visibility and state (A1, A2, A3)
+- No auto-execution verification (B1) — **CRITICAL REQUIREMENT**
+- QueueExecutionControls rendering (C1)
+- Transport bar visibility (D1)
+- Full app layout (E1)
+- Drop zone functionality
+- Watch folders neutral state
+
+**Screenshot Locations:** `artifacts/ui/visual/2026-01-10T22-37-53/qc_phase10/`
+
+### Legacy Web Tests (Deprecated)
 
 **File:** [ui_qc_fixes.spec.ts](frontend/tests/ui_qc_fixes.spec.ts)
 
-**Test Coverage:**
-- A. RUN button visibility and functionality
-- B. Drop zone functionality
-- C. Watch folder neutral state
-- D. Status indicator tooltips
-- E. Jog wheel control presence
-- F. Overall app layout
+**Note:** Web-based tests are deprecated. Electron-only verification is mandatory.
 
 **Screenshot Locations:**
 - `artifacts/ui/visual/run_button_visible.png`
@@ -221,6 +255,21 @@ A new test file was created to verify all UI fixes:
 
 ## Commit Information
 
+**Phase 10 Commit:**
+```
+Commit: fae4f24
+Branch: v2/reliable-proxy
+Message: UI QC Phase 10: RUN button integration + Electron E2E tests
+
+- Integrated QueueExecutionControls component in App.tsx right zone
+- Added 'Add to Queue' one-click button for simplified job creation
+- Demoted 'Create Job' to secondary 'Draft' action
+- Created comprehensive Electron-only E2E test suite (ui_qc_phase10.spec.ts)
+
+Tests verified (9/9 PASS)
+```
+
+**Prior Fix Commit:**
 ```
 Branch: v2/reliable-proxy
 Commit message: fix(ui): QC fixes - RUN button, drop zone, watch folders, jog wheel, contrast
@@ -235,3 +284,16 @@ Commit message: fix(ui): QC fixes - RUN button, drop zone, watch folders, jog wh
 - Improve visual contrast in design tokens
 - Add E2E tests for UI QC verification
 ```
+
+---
+
+## Model Recommendation
+
+For next iteration work on this codebase:
+
+| Model | Recommendation | Use Case |
+|-------|----------------|----------|
+| **Claude Sonnet 4.5** | ✅ Recommended | Standard development, bug fixes, straightforward E2E tests, routine changes |
+| **Claude Opus 4.5** | ⚡ Use for complex work | Multi-file refactors, complex debugging, intricate test frameworks, architectural decisions |
+
+**Reasoning:** Sonnet 4.5 provides sufficient capability for most UI/QC work at better cost efficiency. Reserve Opus 4.5 for tasks requiring deep context reasoning across many files or complex debugging sessions.

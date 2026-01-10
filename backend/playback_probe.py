@@ -48,6 +48,7 @@ See: docs/PLAYBACK_PROBE.md
 import hashlib
 import logging
 import os
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -66,6 +67,51 @@ PROBE_TIMEOUT_SECONDS = 3.0
 
 # Cache for probe results (in-memory, session-scoped)
 _probe_cache: Dict[str, 'PlaybackProbeResult'] = {}
+
+# Browser-compatible video codecs.
+# These are codecs that HTML5 <video> elements can decode natively.
+# ProRes, DNxHD, etc. are NOT browser-compatible even though FFmpeg can decode them.
+BROWSER_COMPATIBLE_CODECS = {
+    # H.264/AVC family
+    'h264', 'avc1', 'avc',
+    # H.265/HEVC family (partial browser support)
+    'hevc', 'h265', 'hvc1', 'hev1',
+    # VP8/VP9 (WebM)
+    'vp8', 'vp9',
+    # AV1 (newer browsers)
+    'av1', 'av01',
+    # MPEG-4 Part 2
+    'mpeg4', 'mp4v',
+    # Older formats with wide browser support
+    'theora',
+}
+
+# Codecs that FFmpeg can decode but browsers CANNOT play natively.
+# If ffprobe detects these, we return METADATA_ONLY instead of PLAYABLE.
+BROWSER_INCOMPATIBLE_CODECS = {
+    # ProRes family
+    'prores', 'prores_ks', 'prores_aw', 'prores_lt', 'prores_proxy', 'prores_hq', 'prores_4444', 'prores_xq',
+    # Apple Intermediate Codec
+    'aic', 'apch', 'apcn', 'apcs', 'apco', 'ap4h', 'ap4x',
+    # DNxHD/DNxHR family
+    'dnxhd', 'dnxhr',
+    # Avid codecs
+    'avid', 'avui',
+    # CineForm
+    'cfhd', 'cineform',
+    # GoPro CineForm
+    'gopro_cineform',
+    # JPEG 2000
+    'jpeg2000', 'j2k',
+    # Motion JPEG
+    'mjpeg', 'mjpegb',
+    # DPX/Cineon
+    'dpx', 'cineon',
+    # Uncompressed
+    'rawvideo', 'v210', 'v410', 'r210', 'r10k',
+    # Old QuickTime codecs
+    'svq1', 'svq3', 'rpza', 'smc', '8bps', 'qtrle',
+}
 
 
 # ============================================================================
@@ -138,6 +184,88 @@ def _cache_key_to_string(key: Tuple[str, int, float]) -> str:
     """Convert cache key tuple to string for dict key."""
     path, size, mtime = key
     return hashlib.md5(f"{path}|{size}|{mtime}".encode()).hexdigest()
+
+
+# ============================================================================
+# CODEC DETECTION
+# ============================================================================
+
+def _get_video_codec(path: str) -> Optional[str]:
+    """
+    Get the video codec name using ffprobe.
+    
+    Args:
+        path: Absolute path to media file
+        
+    Returns:
+        Lowercase codec name, or None if detection fails
+    """
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v", "quiet",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=codec_name",
+                "-of", "csv=p=0",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().lower()
+    except (subprocess.TimeoutExpired, Exception):
+        pass
+    return None
+
+
+def _is_browser_compatible_codec(codec_name: Optional[str]) -> bool:
+    """
+    Check if a video codec is browser-compatible.
+    
+    Args:
+        codec_name: Lowercase codec name from ffprobe
+        
+    Returns:
+        True if browser can play this codec, False otherwise
+    """
+    if not codec_name:
+        # Unknown codec - assume not compatible
+        return False
+    
+    codec_lower = codec_name.lower()
+    
+    # Check explicit incompatibility list first (fast reject)
+    if codec_lower in BROWSER_INCOMPATIBLE_CODECS:
+        return False
+    
+    # Check compatibility list
+    if codec_lower in BROWSER_COMPATIBLE_CODECS:
+        return True
+    
+    # Check partial matches for codec families
+    # ProRes uses various four-character codes (apch, apcn, etc.)
+    prores_prefixes = ('ap', 'prores')
+    if any(codec_lower.startswith(p) for p in prores_prefixes):
+        return False
+    
+    # H.264 variants
+    if codec_lower.startswith('h264') or codec_lower.startswith('avc'):
+        return True
+    
+    # H.265 variants
+    if codec_lower.startswith('h265') or codec_lower.startswith('hevc'):
+        return True
+    
+    # Unknown codec - assume not compatible for safety
+    logger.warning(f"[BROWSER COMPAT] Unknown codec '{codec_name}' - assuming incompatible")
+    return False
 
 
 # ============================================================================
@@ -244,16 +372,36 @@ def probe_playback_capability(path: str) -> PlaybackProbeResult:
         stderr = result.stderr.strip()
         
         if result.returncode == 0:
-            # Success — FFmpeg decoded at least 1 frame
-            probe_result = PlaybackProbeResult(
-                capability=PlaybackCapability.PLAYABLE,
-                probe_ms=elapsed_ms,
-                message="FFmpeg can decode video frames",
-                path=cache_key[0] if cache_key else path,
-                size=cache_key[1] if cache_key else 0,
-                mtime=cache_key[2] if cache_key else 0.0,
-            )
-            logger.info(f"[PLAYBACK PROBE] path={path} capability=PLAYABLE ms={elapsed_ms}")
+            # FFmpeg decoded at least 1 frame successfully.
+            # But we also need to check if the codec is browser-compatible.
+            # ProRes, DNxHD, etc. can be decoded by FFmpeg but not by browsers.
+            
+            codec_name = _get_video_codec(input_path)
+            is_browser_compatible = _is_browser_compatible_codec(codec_name)
+            
+            if is_browser_compatible:
+                # Browser can play this codec natively
+                probe_result = PlaybackProbeResult(
+                    capability=PlaybackCapability.PLAYABLE,
+                    probe_ms=elapsed_ms,
+                    message=f"FFmpeg can decode video frames (codec: {codec_name})",
+                    path=cache_key[0] if cache_key else path,
+                    size=cache_key[1] if cache_key else 0,
+                    mtime=cache_key[2] if cache_key else 0.0,
+                )
+                logger.info(f"[PLAYBACK PROBE] path={path} codec={codec_name} capability=PLAYABLE ms={elapsed_ms}")
+            else:
+                # FFmpeg can decode it, but browser cannot
+                # Return METADATA_ONLY so user gets preview proxy option
+                probe_result = PlaybackProbeResult(
+                    capability=PlaybackCapability.METADATA_ONLY,
+                    probe_ms=elapsed_ms,
+                    message=f"Codec '{codec_name}' not supported by browser. Generate preview proxy to enable playback.",
+                    path=cache_key[0] if cache_key else path,
+                    size=cache_key[1] if cache_key else 0,
+                    mtime=cache_key[2] if cache_key else 0.0,
+                )
+                logger.info(f"[PLAYBACK PROBE] path={path} codec={codec_name} capability=METADATA_ONLY (browser-incompatible) ms={elapsed_ms}")
             
         elif "Stream map '0:v:0' matches no streams" in stderr:
             # No video stream
