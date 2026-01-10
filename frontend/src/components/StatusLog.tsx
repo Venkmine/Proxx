@@ -2,9 +2,10 @@
  * StatusLog — DOCKED Status Panel (Bottom of Queue Column)
  * 
  * ╔════════════════════════════════════════════════════════════════════╗
- * ║  DOCKED IN QUEUE PANEL — NEVER OVERLAPS OTHER CONTROLS             ║
+ * ║  ALWAYS VISIBLE — NEVER HIDDEN, NEVER UNMOUNTED                    ║
  * ║  Uses flex layout, not fixed positioning                           ║
- * ║  Collapses when empty, expands with content                        ║
+ * ║  Idle: collapsed bar "Status: Idle" (min-height: 28px)             ║
+ * ║  Active: expands with entries, scrolls internally                  ║
  * ╚════════════════════════════════════════════════════════════════════╝
  * 
  * Bottom of Queue panel showing:
@@ -16,7 +17,7 @@
  * - Plain English messages
  * - Timestamped entries
  * - Scrollable list (internal scroll, never covers other UI)
- * - Collapses to minimal height when no entries
+ * - Always visible: idle bar when empty, expanded when active
  * - Optional "Show details" toggle for verbose logs
  */
 
@@ -97,23 +98,22 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
     }
   }
 
-  // Collapse when no entries (telemetry-style: minimal when idle)
+  // ALWAYS VISIBLE — never return null, never hide
+  // When idle (no entries): show collapsed bar with "Status: Idle"
+  // When active (has entries): show expanded panel with scroll
   const hasEntries = entries.length > 0
-  const hasRecentActivity = entries.some(e => {
-    const age = Date.now() - e.timestamp.getTime()
-    return age < 30000 // Active within last 30 seconds
-  })
-  const isExpanded = hasEntries && hasRecentActivity
 
-  // Collapsed state: one-line minimal height
-  if (!isExpanded && entries.length === 0) {
+  // Idle state: collapsed bar (minimum height, always visible)
+  if (!hasEntries) {
     return (
       <div
         data-testid="status-log"
+        data-state="idle"
         style={{
           flexShrink: 0,
+          minHeight: '28px',
           borderTop: '1px solid var(--border-secondary)',
-          padding: '0.5rem 0.75rem',
+          padding: '0.375rem 0.75rem',
           background: 'rgba(20, 24, 32, 0.6)',
           display: 'flex',
           alignItems: 'center',
@@ -122,17 +122,20 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
           color: 'var(--text-dim)',
         }}
       >
-        <span style={{ opacity: 0.5 }}>●</span>
-        <span>No recent activity</span>
+        <span style={{ opacity: 0.4, fontSize: '0.5rem' }}>●</span>
+        <span>Status: Idle</span>
       </div>
     )
   }
 
+  // Active state: expanded panel with entries
   return (
     <div
       data-testid="status-log"
+      data-state="active"
       style={{
         flexShrink: 0,
+        minHeight: '28px',
         maxHeight: `${maxHeight}px`,
         borderTop: '1px solid var(--border-secondary)',
         background: 'rgba(20, 24, 32, 0.95)',
