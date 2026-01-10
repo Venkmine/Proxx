@@ -63,6 +63,7 @@ export default defineConfig({
     'sacred_meta_test.spec.ts',        // @sacred - MUST RUN FIRST
     'golden_path_ui_workflow.spec.ts', // Primary golden path
     'golden_path*.spec.ts',            // Other golden path variants
+    'ui_qc_phase10.spec.ts',           // UI QC Phase 10 verification
     'watch_folder_enforcement.spec.ts', // Watch Folder E2E validation
     'phase_6_5_watch_folder_state.spec.ts', // Phase 6.5: Watch Folder State & Scalability
     'preset_persistence.spec.ts',       // Preset persistence validation

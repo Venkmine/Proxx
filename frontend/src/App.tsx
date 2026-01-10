@@ -27,6 +27,7 @@ import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
 import { MediaWorkspace } from './components/MediaWorkspace'
 import { QueueFilterBar } from './components/QueueFilterBar'
+import { QueueExecutionControls } from './components/QueueExecutionControls'
 import { VisualPreviewModal } from './components/VisualPreviewModal'
 import { 
   MonitorSurface, 
@@ -3446,6 +3447,66 @@ function App() {
                 onCollapseAll={collapseAllJobs}
               />
 
+              {/* ═══════════════════════════════════════════════════════════════════
+                  QUEUE EXECUTION CONTROLS — PRIMARY RUN BUTTON (UI QC PHASE 10)
+                  ═══════════════════════════════════════════════════════════════════
+                  This is THE button to start job execution.
+                  - ALWAYS visible (never hidden, never conditional)
+                  - Jobs NEVER auto-execute without explicit RUN click
+                  - Clear state indication (idle/running/paused)
+              */}
+              <QueueExecutionControls
+                queueState={
+                  jobs.some(j => j.status.toUpperCase() === 'RUNNING') ? 'running' :
+                  jobs.some(j => j.status.toUpperCase() === 'PAUSED') ? 'paused' : 'idle'
+                }
+                queuedJobCount={queuedJobSpecs.length + jobs.filter(j => j.status.toUpperCase() === 'PENDING').length}
+                runningJobCount={jobs.filter(j => j.status.toUpperCase() === 'RUNNING').length}
+                selectedJobCount={selectedClipIds.size}
+                onStartQueue={async () => {
+                  // Start FIFO queue execution for queued JobSpecs
+                  if (queuedJobSpecs.length > 0) {
+                    await startQueueExecution()
+                  } else {
+                    // Fall back to starting pending backend jobs
+                    try {
+                      setLoading(true)
+                      const response = await fetch(`${BACKEND_URL}/control/jobs/start-execution`, { 
+                        method: 'POST' 
+                      })
+                      if (!response.ok) {
+                        const normalized = await normalizeResponseError(response, '/control/jobs/start-execution', 'manual-execution')
+                        throw new Error(normalized.message)
+                      }
+                      const result = await response.json()
+                      addStatusLogEntry(statusMessages.executionStarted(
+                        jobs.filter(j => j.status.toUpperCase() === 'PENDING').length
+                      ))
+                      await fetchJobs()
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Failed to start execution')
+                    } finally {
+                      setLoading(false)
+                    }
+                  }
+                }}
+                onPauseQueue={async () => {
+                  // Pause all running jobs
+                  const runningJobs = jobs.filter(j => j.status.toUpperCase() === 'RUNNING')
+                  for (const job of runningJobs) {
+                    await pauseJob(job.id)
+                  }
+                }}
+                onStopQueue={async () => {
+                  // Cancel all running jobs
+                  const runningJobs = jobs.filter(j => j.status.toUpperCase() === 'RUNNING')
+                  for (const job of runningJobs) {
+                    await deleteJob(job.id)
+                  }
+                }}
+                disabled={loading}
+              />
+
               {/* Queue Header */}
               <div
                 style={{
@@ -3479,10 +3540,71 @@ function App() {
                   Execution engines are determined automatically per job.
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {/* V2 PHASE 4: Create Job button - BUILDS JobSpec ONLY, does NOT queue */}
-                  {/* DISABLED when: no sources, no output folder, or required fields missing */}
+                  {/* UI QC PHASE 10: Combined "Add to Queue" button — One-click job creation + queueing */}
+                  {/* This is the PRIMARY action for most users */}
                   <Button
-                    variant="primary"
+                    variant="success"
+                    size="sm"
+                    onClick={() => {
+                      // Combined action: Create job and immediately add to queue
+                      try {
+                        const jobSpec = buildJobSpec({
+                          sources: selectedFiles,
+                          outputPath: outputDirectory,
+                          containerFormat,
+                          filenameTemplate,
+                          deliveryType: outputDeliveryType,
+                        })
+                        
+                        // Deduplication check
+                        const existingQueued = queuedJobSpecs.find(j => j.job_id === jobSpec.job_id)
+                        if (existingQueued) {
+                          // Regenerate job_id
+                          const bytes = new Uint8Array(4)
+                          crypto.getRandomValues(bytes)
+                          jobSpec.job_id = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+                        }
+                        
+                        // Set to QUEUED state directly (skip DRAFT)
+                        jobSpec.state = 'QUEUED' as const
+                        jobSpec.execution_requested = false // Still requires RUN to execute
+                        
+                        // Add to queue
+                        setQueuedJobSpecs(prev => [...prev, jobSpec])
+                        
+                        // Log success
+                        addStatusLogEntry({
+                          id: `queue-job-${Date.now()}`,
+                          level: 'success',
+                          message: `Job ${jobSpec.job_id} added to queue — click RUN to start processing`,
+                          timestamp: new Date(),
+                        })
+                      } catch (err) {
+                        const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+                        setError(`Failed to add to queue: ${errorMsg}`)
+                      }
+                    }}
+                    disabled={
+                      selectedFiles.length === 0 || 
+                      !outputDirectory || 
+                      outputDirectory === '(not set)' ||
+                      (!outputDirectory.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(outputDirectory))
+                    }
+                    data-testid="add-to-queue-direct-button"
+                    title={
+                      selectedFiles.length === 0 
+                        ? 'Select source files to add to queue'
+                        : !outputDirectory || outputDirectory === '(not set)'
+                        ? 'Set output directory to add to queue'
+                        : 'Create job and add to queue in one step'
+                    }
+                  >
+                    ➕ Add to Queue
+                  </Button>
+                  
+                  {/* Legacy: Create Job button (advanced users) */}
+                  <Button
+                    variant="secondary"
                     size="sm"
                     onClick={handleCreateJob}
                     disabled={
@@ -3492,30 +3614,22 @@ function App() {
                       (!outputDirectory.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(outputDirectory))
                     }
                     data-testid="create-job-button"
-                    title={
-                      selectedFiles.length === 0 
-                        ? 'Select source files to create job'
-                        : !outputDirectory || outputDirectory === '(not set)'
-                        ? 'Set output directory to create job'
-                        : (!outputDirectory.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(outputDirectory))
-                        ? 'Output directory must be an absolute path'
-                        : 'Build JobSpec from current settings'
-                    }
+                    title="Create job draft (advanced: allows editing before queueing)"
                   >
-                    {preparedJobSpec ? '🔄 Rebuild Job' : '📝 Create Job'}
+                    {preparedJobSpec ? '🔄 Rebuild' : '📝 Draft'}
                   </Button>
                   
                   {/* V2 PHASE 4: Add to Queue button - QUEUES the prepared JobSpec */}
                   {/* ONLY visible when a prepared JobSpec exists */}
                   {preparedJobSpec && (
                     <Button
-                      variant="success"
+                      variant="ghost"
                       size="sm"
                       onClick={() => handleAddToQueue()}
                       data-testid="add-to-queue-button"
                       title="Add prepared job to queue"
                     >
-                      ➕ Add to Queue
+                      Queue Draft
                     </Button>
                   )}
                   
