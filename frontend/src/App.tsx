@@ -2132,6 +2132,23 @@ function App() {
   }
 
   const deleteJob = async (jobId: string) => {
+    // Phase 11: Check if this is a frontend-only queued job (not yet submitted to backend)
+    const isQueuedJob = queuedJobSpecs.some(j => j.job_id === jobId)
+    
+    if (isQueuedJob) {
+      // Frontend-only job - just remove from queuedJobSpecs, no backend call needed
+      setQueuedJobSpecs(prev => prev.filter(j => j.job_id !== jobId))
+      // Clear selection if deleted job was selected
+      if (selectedJobId === jobId) {
+        setSelectedJobId(null)
+        setSelectedClipIds(new Set())
+      }
+      setError('')
+      addStatusLogEntry(statusMessages.jobDeleted(jobId))
+      return
+    }
+    
+    // Backend job - proceed with backend deletion
     // Phase 19: No confirmation prompts - execute immediately with undo
     const jobIndex = jobOrder.indexOf(jobId)
     const jobLabel = `Job ${jobIndex + 1}`
