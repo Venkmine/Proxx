@@ -21,6 +21,7 @@
 // Do not add features that contradict it without updating that file first.
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { FORGE_LOGO_SRC, FORGE_LOGO_ALT } from './branding/forgeLogo'
 import { TitleBar } from './components/TitleBar'
 import { Button } from './components/Button'
 import { JobGroup } from './components/JobGroup'
@@ -2855,15 +2856,13 @@ function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {/* FORGE BRANDING: Icon mark only — no text in header */}
+          {/* FORGE BRANDING: Single logo image, no text */}
           <img
-            src="./branding/forge-icon.svg"
-            alt="Forge"
-            data-testid="forge-logo-icon"
-            data-branding-type="logo-icon"
+            src={FORGE_LOGO_SRC}
+            alt={FORGE_LOGO_ALT}
+            data-testid="forge-logo"
             style={{
               height: '1.25rem',
-              width: '1.25rem',
               userSelect: 'none',
               pointerEvents: 'none',
             }}

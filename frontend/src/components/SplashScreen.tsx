@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { FORGE_LOGO_SRC, FORGE_LOGO_ALT } from '../branding/forgeLogo'
 import { Button } from './Button'
 
 /**
@@ -95,28 +96,23 @@ export function SplashScreen({
         cursor: canDismissEarly ? 'pointer' : 'default',
       }}
     >
-      {/* Brand Area — Product launch moment, confident presence */}
+      {/* Brand Area — Forge logo image */}
       <div
         style={{
           marginBottom: '2.5rem',
           textAlign: 'center',
         }}
       >
-        {/* FORGE wordmark — large, centered, commanding */}
-        <div
-          data-testid="forge-wordmark"
-          data-branding-type="wordmark-text"
+        <img
+          src={FORGE_LOGO_SRC}
+          alt={FORGE_LOGO_ALT}
+          data-testid="forge-logo"
           style={{
-            fontSize: '2.5rem',
-            fontWeight: 700,
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-            color: 'var(--text-primary)',
-            marginBottom: '0.75rem',
+            height: '6rem',
+            maxWidth: '90%',
+            userSelect: 'none',
           }}
-        >
-          Forge
-        </div>
+        />
         <div
           style={{
             fontSize: '0.6875rem',
@@ -126,6 +122,7 @@ export function SplashScreen({
             textTransform: 'uppercase',
             color: 'var(--text-muted)',
             opacity: 0.7,
+            marginTop: '0.75rem',
           }}
         >
           Alpha
