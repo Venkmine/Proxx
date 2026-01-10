@@ -180,6 +180,121 @@ export interface UseTieredPreviewReturn extends TieredPreviewState {
 }
 
 // ============================================================================
+// PHASE 11: ERROR CATEGORIZATION AND HUMANIZATION
+// ============================================================================
+
+/**
+ * Error categories for preview failures.
+ * Used to provide specific, actionable error messages.
+ */
+export type PreviewErrorCategory = 
+  | 'PROBE_FAILURE'      // File corrupt or inaccessible
+  | 'DECODE_UNSUPPORTED' // FFmpeg can't handle codec
+  | 'ENGINE_REQUIRED'    // Resolve required but not detected
+  | 'FILE_NOT_FOUND'     // Source file doesn't exist
+  | 'RAW_CONFIRMATION'   // RAW format needs confirmation
+  | 'GENERATION_FAILED'  // Generic proxy generation failure
+  | 'UNKNOWN'            // Unrecognized error
+
+/**
+ * Categorize an error message from the backend.
+ */
+function categorizePreviewError(error: string): PreviewErrorCategory {
+  const lowerError = error.toLowerCase()
+  
+  // File access issues
+  if (lowerError.includes('not found') || lowerError.includes('does not exist')) {
+    return 'FILE_NOT_FOUND'
+  }
+  
+  // RAW confirmation required
+  if (lowerError.includes('raw format') && lowerError.includes('confirmation')) {
+    return 'RAW_CONFIRMATION'
+  }
+  
+  // Probe/decode failures
+  if (lowerError.includes('probe failed') || lowerError.includes('corrupt')) {
+    return 'PROBE_FAILURE'
+  }
+  
+  // Codec/decoder issues
+  if (lowerError.includes('decoder') || lowerError.includes('unsupported') || 
+      lowerError.includes('codec') && (lowerError.includes('not') || lowerError.includes("can't"))) {
+    return 'DECODE_UNSUPPORTED'
+  }
+  
+  // Engine requirements
+  if (lowerError.includes('resolve') && lowerError.includes('required')) {
+    return 'ENGINE_REQUIRED'
+  }
+  
+  // Generation failures
+  if (lowerError.includes('generation failed') || lowerError.includes('proxy failed')) {
+    return 'GENERATION_FAILED'
+  }
+  
+  return 'UNKNOWN'
+}
+
+/**
+ * Get a human-friendly error message with actionable advice.
+ * Phase 11: "No generic errors. No raw ffmpeg spew."
+ */
+export function humanizePreviewError(error: string): { message: string; action?: string } {
+  const category = categorizePreviewError(error)
+  
+  switch (category) {
+    case 'FILE_NOT_FOUND':
+      return {
+        message: 'Source file not found',
+        action: 'Check the file path and ensure the source media is accessible',
+      }
+    
+    case 'RAW_CONFIRMATION':
+      return {
+        message: 'RAW format requires confirmation',
+        action: 'RAW video preview generation is slow. Click "Generate Preview Proxy Anyway" to proceed.',
+      }
+    
+    case 'PROBE_FAILURE':
+      return {
+        message: 'Cannot read source file',
+        action: 'File may be corrupted or in an unsupported format. Try re-downloading or transcoding the source.',
+      }
+    
+    case 'DECODE_UNSUPPORTED':
+      return {
+        message: 'Codec not supported for preview',
+        action: 'This format requires DaVinci Resolve for decoding. Delivery will still work with the correct engine.',
+      }
+    
+    case 'ENGINE_REQUIRED':
+      return {
+        message: 'DaVinci Resolve required',
+        action: 'This format cannot be previewed with FFmpeg. Install and launch DaVinci Resolve for full support.',
+      }
+    
+    case 'GENERATION_FAILED':
+      return {
+        message: 'Preview generation failed',
+        action: 'The preview proxy could not be created. This does not affect delivery functionality.',
+      }
+    
+    case 'UNKNOWN':
+    default:
+      // Return original error but strip FFmpeg command output
+      const cleanedError = error
+        .replace(/ffmpeg[^\n]+/gi, '')
+        .replace(/\[.*?\]/g, '')
+        .replace(/Stream.*?\n/g, '')
+        .trim()
+      return {
+        message: cleanedError || 'Preview unavailable',
+      }
+  }
+}
+
+// ============================================================================
 // HOOK IMPLEMENTATION
 // ============================================================================
 
@@ -316,10 +431,16 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
       }
       
       if (data.error) {
+        // Phase 11: Humanize error messages
+        const humanized = humanizePreviewError(data.error)
+        const errorMessage = humanized.action 
+          ? `${humanized.message}. ${humanized.action}`
+          : humanized.message
+        
         setState(prev => ({
           ...prev,
           posterLoading: false,
-          posterError: data.error,
+          posterError: errorMessage,
           // Still store source_info even on error
           poster: data.source_info ? {
             posterUrl: '',
@@ -349,10 +470,14 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
         return
       }
       
+      // Phase 11: Humanize error messages
+      const rawError = err instanceof Error ? err.message : 'Poster request failed'
+      const humanized = humanizePreviewError(rawError)
+      
       setState(prev => ({
         ...prev,
         posterLoading: false,
-        posterError: err instanceof Error ? err.message : 'Poster request failed',
+        posterError: humanized.message,
       }))
     }
   }, [backendUrl])
@@ -381,10 +506,13 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
       }
       
       if (data.error) {
+        // Phase 11: Humanize error messages
+        const humanized = humanizePreviewError(data.error)
+        
         setState(prev => ({
           ...prev,
           burstLoading: false,
-          burstError: data.error,
+          burstError: humanized.message,
         }))
         return
       }
@@ -416,10 +544,14 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
         return
       }
       
+      // Phase 11: Humanize error messages
+      const rawError = err instanceof Error ? err.message : 'Burst request failed'
+      const humanized = humanizePreviewError(rawError)
+      
       setState(prev => ({
         ...prev,
         burstLoading: false,
-        burstError: err instanceof Error ? err.message : 'Burst request failed',
+        burstError: humanized.message,
       }))
     }
   }, [backendUrl])
@@ -479,12 +611,18 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
       }
       
       if (data.error) {
+        // Phase 11: Humanize error messages - no generic errors, no FFmpeg spew
+        const humanized = humanizePreviewError(data.error)
+        const errorMessage = humanized.action 
+          ? `${humanized.message}. ${humanized.action}`
+          : humanized.message
+        
         // Phase D1: Preview failure is a non-blocking warning
         setState(prev => ({
           ...prev,
           previewIntent: 'failed',
           videoLoading: false,
-          videoError: data.error,
+          videoError: errorMessage,
           videoRequiresConfirmation: data.requires_confirmation || false,
         }))
         return
@@ -519,12 +657,19 @@ export function useTieredPreview(backendUrl: string): UseTieredPreviewReturn {
         return
       }
       
+      // Phase 11: Humanize error messages
+      const rawError = err instanceof Error ? err.message : 'Video request failed'
+      const humanized = humanizePreviewError(rawError)
+      const errorMessage = humanized.action 
+        ? `${humanized.message}. ${humanized.action}`
+        : humanized.message
+      
       // Phase D1: Preview failure is a non-blocking warning
       setState(prev => ({
         ...prev,
         previewIntent: 'failed',
         videoLoading: false,
-        videoError: err instanceof Error ? err.message : 'Video request failed',
+        videoError: errorMessage,
       }))
     }
   }, [backendUrl])

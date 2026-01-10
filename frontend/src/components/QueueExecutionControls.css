@@ -49,6 +49,19 @@
   box-shadow: none;
 }
 
+/* PHASE 11: Blocked state - when all jobs are RAW */
+.queue-btn--run.queue-btn--blocked {
+  background: linear-gradient(135deg, var(--color-warning-700, #a16207) 0%, var(--color-warning-800, #854d0e) 100%);
+  border-color: var(--color-warning-500, #eab308);
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.25);
+}
+
+.queue-btn--run.queue-btn--blocked:disabled {
+  background: var(--bg-tertiary, #27272a);
+  border-color: var(--color-warning-500, #eab308);
+  opacity: 0.6;
+}
+
 .queue-btn--run-active {
   background: linear-gradient(135deg, var(--color-accent-blue, #3b82f6) 0%, var(--color-accent-blue-dark, #2563eb) 100%);
   border-color: var(--color-accent-blue, #3b82f6);
@@ -115,6 +128,29 @@
   padding: 2px 8px;
   background: var(--bg-tertiary, #27272a);
   border-radius: 4px;
+}
+
+/* PHASE 11: Blocked jobs warning indicator */
+.queue-blocked-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid var(--color-warning-500, #eab308);
+  border-radius: 4px;
+  cursor: help;
+}
+
+.queue-blocked-icon {
+  color: var(--color-warning-500, #eab308);
+  font-size: 14px;
+}
+
+.queue-blocked-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-warning-400, #facc15);
 }
 
 /* Global queue controls */

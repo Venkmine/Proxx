@@ -83,6 +83,10 @@ interface JobGroupProps {
     use_resolve: boolean
   }
   
+  // Phase 11: Capability status for preflight blocking
+  capabilityStatus?: 'SUPPORTED' | 'BLOCKED' | 'UNKNOWN'
+  blockedReason?: string
+  
   // Lifecycle state (derived, read-only)
   lifecycleState?: string  // IDLE | QUEUED | VALIDATING | RUNNING | COMPLETE | PARTIAL | FAILED | BLOCKED | CANCELLED
   
@@ -197,6 +201,8 @@ export function JobGroup({
   tasks,
   settingsSummary,
   executionEngines,
+  capabilityStatus,
+  blockedReason,
   lifecycleState,
   isSelected = false,
   isExpanded = true,  // Phase 4B: Default to expanded for backwards compatibility
@@ -815,6 +821,31 @@ export function JobGroup({
                 Resolve
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Phase 11: Capability Status Indicator - Shows BLOCKED when job cannot execute */}
+        {capabilityStatus === 'BLOCKED' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              padding: '0.125rem 0.5rem',
+              backgroundColor: 'rgba(245, 158, 11, 0.15)',  // Amber warning
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              fontSize: '0.625rem',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 600,
+              color: '#f59e0b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+            title={blockedReason || 'This job requires an execution engine that is not currently available'}
+          >
+            <span style={{ fontSize: '0.625rem' }}>⚠</span>
+            <span>BLOCKED</span>
           </div>
         )}
 

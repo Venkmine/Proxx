@@ -272,6 +272,9 @@ interface JobDetail {
     use_ffmpeg: boolean
     use_resolve: boolean
   }
+  // Phase 11: Capability status for preflight blocking
+  capability_status?: 'SUPPORTED' | 'BLOCKED' | 'UNKNOWN'
+  blocked_reason?: string
   // FFmpeg capabilities (read-only detection)
   ffmpeg_capabilities?: {
     hwaccels?: string[]
@@ -1570,6 +1573,30 @@ function App() {
       return
     }
     
+    // PHASE 11: Preflight capability check — block execution for unsupported formats
+    if (nextJobSpec.capability_status === 'BLOCKED') {
+      console.warn(`[FIFO] Job ${nextJobSpec.job_id} is BLOCKED: ${nextJobSpec.blocked_reason}`)
+      
+      // Update job state to show blocked status (not FAILED - it's a pre-execution block)
+      setQueuedJobSpecs(prev => prev.map(j => 
+        j.job_id === nextJobSpec.job_id 
+          ? { ...j, state: 'QUEUED' as const, execution_requested: false }
+          : j
+      ))
+      
+      // Show user-facing error with clear explanation
+      setError(`Cannot execute job: ${nextJobSpec.blocked_reason || 'RAW format requires DaVinci Resolve engine'}`)
+      
+      addStatusLogEntry({
+        id: `blocked-${Date.now()}`,
+        level: 'error',
+        message: `Job ${nextJobSpec.job_id} blocked: RAW format cannot be processed by FFmpeg`,
+        timestamp: new Date(),
+      })
+      
+      return
+    }
+    
     // RACE CONDITION FIX: Set guard BEFORE starting async operation
     fifoExecutionInFlight.current = true
     
@@ -1975,9 +2002,9 @@ function App() {
   // ============================================
   // SEMANTIC CONTRACT:
   // - Sets execution_requested = true on queued jobs
-  // - Submits jobs to backend (creates pending Job records)
-  // - Starts FIFO execution of the queue
+  // - FIFO effect (useEffect at line ~1544) handles actual submission to backend
   // - Only jobs with execution_requested=true can run
+  // - NO DIRECT BACKEND CALLS - delegate to FIFO executor
   
   const startQueueExecution = useCallback(async () => {
     if (queuedJobSpecs.length === 0) {
@@ -1993,63 +2020,50 @@ function App() {
       timestamp: new Date(),
     })
     
-    // PHASE 9B: Mark all queued jobs as execution_requested
-    setQueuedJobSpecs(prev => prev.map(job => ({
-      ...job,
-      state: 'RUNNING' as const,
-      execution_requested: true,
-    })))
+    // PHASE 11: Check for blocked jobs before starting
+    const blockedJobs = queuedJobSpecs.filter(job => job.capability_status === 'BLOCKED')
+    const executableJobs = queuedJobSpecs.filter(job => job.capability_status !== 'BLOCKED')
     
-    // Submit first job in queue to backend
-    const firstJob = queuedJobSpecs[0]
-    if (firstJob) {
-      try {
-        setLoading(true)
-        
-        // Submit JobSpec to backend — backend creates Job record
-        const response = await fetch(`${BACKEND_URL}/jobs/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(firstJob),
-        })
-        
-        if (!response.ok) {
-          const normalized = await normalizeResponseError(response, '/jobs/create', firstJob.job_id)
-          throw new Error(normalized.message)
-        }
-        
-        const result = await response.json()
-        console.log('[Start Queue] Job submitted to backend:', result.job_id || firstJob.job_id)
-        
-        // Start the job on backend
-        const startResponse = await fetch(`${BACKEND_URL}/control/jobs/${result.job_id || firstJob.job_id}/start`, {
-          method: 'POST',
-        })
-        
-        if (!startResponse.ok) {
-          const normalized = await normalizeResponseError(startResponse, '/control/jobs/start', firstJob.job_id)
-          throw new Error(normalized.message)
-        }
-        
-        addStatusLogEntry({
-          id: `start-job-${Date.now()}`,
-          level: 'success',
-          message: `Job ${firstJob.job_id} started`,
-          timestamp: new Date(),
-        })
-        
-        // Refresh job list
-        await fetchJobs()
-        
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error'
-        setError(`Failed to start queue: ${errorMsg}`)
-        console.error('[Start Queue] Failed:', errorMsg)
-      } finally {
-        setLoading(false)
-      }
+    if (blockedJobs.length > 0) {
+      // Log warning about blocked jobs
+      console.warn(`[Start Queue] ${blockedJobs.length} job(s) blocked due to RAW format requirements`)
+      addStatusLogEntry({
+        id: `blocked-jobs-${Date.now()}`,
+        level: 'warning',
+        message: `${blockedJobs.length} job(s) cannot execute: RAW format requires DaVinci Resolve`,
+        timestamp: new Date(),
+      })
     }
-  }, [queuedJobSpecs, addStatusLogEntry, fetchJobs])
+    
+    if (executableJobs.length === 0) {
+      // All jobs are blocked
+      setError('No jobs can execute: All jobs contain RAW formats that require DaVinci Resolve engine')
+      return
+    }
+    
+    // PHASE 11: Only mark SUPPORTED jobs as execution_requested=true
+    // FIFO effect handles submission to /control/jobs/create and /control/jobs/{id}/start
+    // NO duplicate endpoint calls here - single source of truth for job creation
+    setQueuedJobSpecs(prev => prev.map(job => {
+      if (job.capability_status === 'BLOCKED') {
+        // Keep blocked jobs in queue but don't execute
+        return job
+      }
+      return {
+        ...job,
+        state: 'RUNNING' as const,
+        execution_requested: true,
+      }
+    }))
+    
+    // PHASE 11: No direct backend calls here
+    // The FIFO effect (useEffect at line ~1544) will:
+    // 1. Detect execution_requested=true
+    // 2. Submit to /control/jobs/create (canonical endpoint)
+    // 3. Start job via /control/jobs/{id}/start
+    // 4. Handle errors and dequeue on success
+    
+  }, [queuedJobSpecs, addStatusLogEntry])
 
   // ============================================
   // Phase 16: New Job Actions (Start, Pause, Delete)
@@ -2918,6 +2932,9 @@ function App() {
           use_ffmpeg: jobSpec.execution_engines.use_ffmpeg,
           use_resolve: jobSpec.execution_engines.use_resolve,
         },
+        // Phase 11: Capability status for preflight blocking
+        capability_status: jobSpec.capability_status,
+        blocked_reason: jobSpec.blocked_reason,
       }
       
       newDetails.set(jobSpec.job_id, detail)
@@ -3463,6 +3480,7 @@ function App() {
                 queuedJobCount={queuedJobSpecs.length + jobs.filter(j => j.status.toUpperCase() === 'PENDING').length}
                 runningJobCount={jobs.filter(j => j.status.toUpperCase() === 'RUNNING').length}
                 selectedJobCount={selectedClipIds.size}
+                blockedJobCount={queuedJobSpecs.filter(j => j.capability_status === 'BLOCKED').length}
                 onStartQueue={async () => {
                   // Start FIFO queue execution for queued JobSpecs
                   if (queuedJobSpecs.length > 0) {
@@ -3773,6 +3791,9 @@ function App() {
                       executionPolicy: detail.execution_policy ?? null,
                       executionOutcome: detail.execution_outcome ?? null,
                     } : undefined
+                    // Phase 11: Capability status for blocked job visibility
+                    const capabilityStatus = detail?.capability_status
+                    const blockedReason = detail?.blocked_reason
                     return (
                       <JobGroup
                         key={job.id}
@@ -3792,6 +3813,8 @@ function App() {
                         tasks={detail?.tasks || []}
                         settingsSummary={settingsSummary}
                         executionEngines={executionEngines}
+                        capabilityStatus={capabilityStatus}
+                        blockedReason={blockedReason}
                         diagnostics={diagnostics}
                         isSelected={selectedJobId === job.id}
                         isExpanded={isJobExpanded(job.id, job.total_tasks, job.status)}

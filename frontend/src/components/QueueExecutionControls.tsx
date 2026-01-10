@@ -42,6 +42,9 @@ export interface QueueExecutionControlsProps {
   /** Number of jobs selected for batch operations */
   selectedJobCount: number
   
+  /** PHASE 11: Number of jobs blocked due to capability issues */
+  blockedJobCount?: number
+  
   /** Called when user clicks RUN/Start Queue */
   onStartQueue: () => void
   
@@ -70,6 +73,7 @@ export function QueueExecutionControls({
   queuedJobCount,
   runningJobCount,
   selectedJobCount,
+  blockedJobCount = 0,
   onStartQueue,
   onPauseQueue,
   onStopQueue,
@@ -84,9 +88,15 @@ export function QueueExecutionControls({
   const hasQueuedJobs = queuedJobCount > 0
   const hasRunningJobs = runningJobCount > 0
   const hasSelectedJobs = selectedJobCount > 0
+  const hasBlockedJobs = blockedJobCount > 0
+  
+  // PHASE 11: Calculate executable job count (total minus blocked)
+  const executableJobCount = Math.max(0, queuedJobCount - blockedJobCount)
+  const allJobsBlocked = hasQueuedJobs && executableJobCount === 0
   
   // Can start queue: must have queued jobs and not already running
-  const canStartQueue = hasQueuedJobs && !isRunning && !disabled
+  // PHASE 11: Also blocked if all jobs require Resolve
+  const canStartQueue = hasQueuedJobs && !isRunning && !disabled && !allJobsBlocked
   
   // Can pause queue: must be running
   const canPauseQueue = isRunning && !disabled
@@ -103,18 +113,22 @@ export function QueueExecutionControls({
       {/* UI QC: This is THE primary action button for executing jobs */}
       <button
         type="button"
-        className={`queue-btn queue-btn--run ${isRunning ? 'queue-btn--run-active' : ''}`}
+        className={`queue-btn queue-btn--run ${isRunning ? 'queue-btn--run-active' : ''} ${allJobsBlocked ? 'queue-btn--blocked' : ''}`}
         onClick={onStartQueue}
         disabled={(!canStartQueue && !canResume) || disabled}
         data-testid="btn-run-queue"
         title={
-          isRunning 
-            ? 'Queue is running...' 
-            : isPaused 
-              ? `Resume execution of ${queuedJobCount} queued job(s)`
-              : hasQueuedJobs 
-                ? `RUN ${queuedJobCount} queued job(s)` 
-                : 'No jobs queued'
+          allJobsBlocked
+            ? `Cannot run: All ${queuedJobCount} job(s) contain RAW formats that require DaVinci Resolve`
+            : isRunning 
+              ? 'Queue is running...' 
+              : isPaused 
+                ? `Resume execution of ${queuedJobCount} queued job(s)`
+                : hasQueuedJobs 
+                  ? hasBlockedJobs
+                    ? `RUN ${executableJobCount} job(s) — ${blockedJobCount} blocked (RAW format)`
+                    : `RUN ${queuedJobCount} queued job(s)` 
+                  : 'No jobs queued'
         }
       >
         {isRunning ? (
@@ -130,10 +144,26 @@ export function QueueExecutionControls({
         ) : (
           <>
             <span className="queue-btn-icon">▶</span>
-            <span className="queue-btn-label">RUN{hasQueuedJobs ? ` (${queuedJobCount})` : ''}</span>
+            <span className="queue-btn-label">
+              {allJobsBlocked ? 'BLOCKED' : `RUN${hasQueuedJobs ? ` (${executableJobCount})` : ''}`}
+            </span>
           </>
         )}
       </button>
+      
+      {/* PHASE 11: Blocked jobs warning */}
+      {hasBlockedJobs && (
+        <div 
+          className="queue-blocked-warning"
+          data-testid="queue-blocked-warning"
+          title={`${blockedJobCount} job(s) contain RAW formats that cannot be transcoded by FFmpeg. Use DaVinci Resolve or generate a proxy.`}
+        >
+          <span className="queue-blocked-icon">⚠</span>
+          <span className="queue-blocked-text">
+            {blockedJobCount} blocked (RAW)
+          </span>
+        </div>
+      )}
       
       {/* Status indicator */}
       <div className="queue-status">
@@ -144,7 +174,7 @@ export function QueueExecutionControls({
           {isPaused && 'Queue Paused'}
         </span>
         {hasQueuedJobs && !isRunning && (
-          <span className="queue-count">{queuedJobCount} queued</span>
+          <span className="queue-count">{executableJobCount} executable</span>
         )}
       </div>
       

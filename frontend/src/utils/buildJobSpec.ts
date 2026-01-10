@@ -101,6 +101,18 @@ export interface JobSpec {
     /** DaVinci Resolve engine is required */
     use_resolve: boolean
   }
+  /**
+   * PHASE 11: Execution capability status
+   * - SUPPORTED: FFmpeg can handle all sources
+   * - BLOCKED: Requires Resolve which is unavailable
+   * - UNKNOWN: Capability not yet determined
+   */
+  capability_status: 'SUPPORTED' | 'BLOCKED' | 'UNKNOWN'
+  /**
+   * PHASE 11: Human-readable reason for blocked status
+   * Only set when capability_status is BLOCKED
+   */
+  blocked_reason?: string
   /** 
    * PHASE 9B: Job state (DRAFT, QUEUED, RUNNING, etc.)
    * Created jobs start as DRAFT, require Add to Queue, then explicit Start
@@ -259,6 +271,17 @@ export function buildJobSpec(outputState: OutputState): JobSpec {
       use_ffmpeg: engineRequirements.useFFmpeg,
       use_resolve: engineRequirements.useResolve,
     },
+    
+    // PHASE 11: Capability status based on engine requirements
+    // If Resolve is required but not available (Proxy v1), job is BLOCKED
+    capability_status: engineRequirements.useResolve && !engineRequirements.useFFmpeg 
+      ? 'BLOCKED' 
+      : engineRequirements.useResolve 
+        ? 'BLOCKED'  // Mixed sources also blocked (need Resolve for RAW portion)
+        : 'SUPPORTED',
+    blocked_reason: engineRequirements.useResolve 
+      ? `This job contains RAW format(s) that cannot be transcoded by FFmpeg. ${engineRequirements.reason}. Use DaVinci Resolve engine or generate a proxy via Resolve.`
+      : undefined,
     
     // PHASE 9B: Job starts in DRAFT state, requires explicit queue and start
     state: 'DRAFT',
