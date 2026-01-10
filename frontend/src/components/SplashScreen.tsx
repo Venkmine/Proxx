@@ -41,11 +41,11 @@ export function SplashScreen({
   const [minTimeElapsed, setMinTimeElapsed] = useState(false)
   const [timeoutElapsed, setTimeoutElapsed] = useState(false)
   
-  // Minimum visibility timer (1.2s)
+  // Minimum visibility timer (3s) - splash never dismisses before this
   useEffect(() => {
     const timer = setTimeout(() => {
       setMinTimeElapsed(true)
-    }, 1200)
+    }, 3000)
     
     return () => clearTimeout(timer)
   }, [])

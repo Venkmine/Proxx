@@ -2855,34 +2855,15 @@ function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {/* FORGE BRANDING: Wordmark is PRIMARY, icon is accent */}
-          {/* The wordmark "FORGE" must be the dominant visual element */}
-          <span
-            data-testid="forge-wordmark"
-            data-branding-type="wordmark-text"
-            style={{
-              fontSize: '1.25rem',
-              fontWeight: 700,
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-primary)',
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              userSelect: 'none',
-            }}
-          >
-            Forge
-          </span>
-          {/* Icon as subtle accent — visually secondary to wordmark */}
+          {/* FORGE BRANDING: Icon mark only — no text in header */}
           <img
             src="./branding/forge-icon.svg"
-            alt=""
-            aria-hidden="true"
+            alt="Forge"
             data-testid="forge-logo-icon"
             data-branding-type="logo-icon"
             style={{
-              height: '1rem',
-              width: '1rem',
-              opacity: 0.6,
+              height: '1.25rem',
+              width: '1.25rem',
               userSelect: 'none',
               pointerEvents: 'none',
             }}
