@@ -720,11 +720,11 @@ export function MonitorSurface({
               </span>
               <span
                 style={{
-                  fontSize: '0.75rem',
+                  fontSize: '0.875rem',
                   fontFamily: 'var(--font-sans)',
                   fontWeight: 400,
                   color: 'var(--text-dim)',
-                  opacity: 0.4,
+                  opacity: 0.55,
                   userSelect: 'none',
                 }}
               >

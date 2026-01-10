@@ -41,20 +41,20 @@ export function SplashScreen({
   const [minTimeElapsed, setMinTimeElapsed] = useState(false)
   const [timeoutElapsed, setTimeoutElapsed] = useState(false)
   
-  // Minimum visibility timer (1.5s)
+  // Minimum visibility timer (1.2s)
   useEffect(() => {
     const timer = setTimeout(() => {
       setMinTimeElapsed(true)
-    }, 1500)
+    }, 1200)
     
     return () => clearTimeout(timer)
   }, [])
   
-  // Fallback timeout (5s) - allow dismiss even if backend never connects
+  // Fallback timeout (3s) - hard cap splash duration
   useEffect(() => {
     const timer = setTimeout(() => {
       setTimeoutElapsed(true)
-    }, 5000)
+    }, 3000)
     
     return () => clearTimeout(timer)
   }, [])
@@ -190,26 +190,6 @@ export function SplashScreen({
           )}
         </div>
       </div>
-      
-      {/* Tier Message */}
-      {tier === 'Basic' && (
-        <div
-          data-testid="splash-tier-message"
-          style={{
-            padding: '0.5rem 1rem',
-            background: 'rgba(255, 193, 7, 0.1)',
-            border: '1px solid rgba(255, 193, 7, 0.2)',
-            borderRadius: '4px',
-            fontSize: '0.6875rem',
-            fontFamily: 'var(--font-sans)',
-            color: 'var(--status-warning-fg)',
-            textAlign: 'center',
-            maxWidth: '280px',
-          }}
-        >
-          Basic: Camera RAW formats not supported
-        </div>
-      )}
       
       {/* Continue button when engines are missing */}
       {showContinueButton && minTimeElapsed && (
