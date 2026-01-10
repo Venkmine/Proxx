@@ -4,18 +4,25 @@
  * Read-only view of all jobs from Fabric.
  * 
  * CONSTRAINTS:
- * - No execution buttons
+ * - No execution buttons (execution controls are injected via props)
  * - No retry logic
  * - No derived logic
  * - Data rendered verbatim
  * - Errors displayed exactly as received
+ * 
+ * Phase 9A: Added multi-select support for batch operations.
+ * - Single click selects (or opens if multiSelect disabled)
+ * - Shift+click for range selection
+ * - Cmd/Ctrl+click for toggle selection
+ * - Selection state managed via useMultiSelect hook
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { fetchJobsView, DataAdapterError } from "../../data_adapter";
 import type { JobView } from "../../data_adapter/types";
 import type { JobsListProps, JobRowProps } from "./JobsList.types";
 import { formatJobStatus, getStatusIcon } from "../../../ui_utils/statusMessages";
+import { useMultiSelect } from "../../../hooks/useMultiSelect";
 import "./JobsList.css";
 
 /**
@@ -48,38 +55,68 @@ function getJobDisplayFields(job: JobView) {
 
 /**
  * Individual job row component.
+ * Phase 9A: Added selection state and optional controls.
  */
-function JobRow({ job, onClick }: JobRowProps) {
+function JobRow({ job, onClick, isSelected = false, multiSelect = false, renderControls }: JobRowProps) {
   const fields = getJobDisplayFields(job);
   const status = fields.final_status.toLowerCase();
   const isHighPriority = status === "running" || status === "failed" || status === "blocked";
   const isComplete = status === "completed";
   const isQueued = status === "queued" || status === "pending";
   
-  const handleClick = () => {
-    onClick(job.job_id);
+  const handleClick = (e: React.MouseEvent) => {
+    onClick(job.job_id, e);
   };
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      onClick(job.job_id);
+      // Create a synthetic mouse event for keyboard activation
+      onClick(job.job_id, { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey } as React.MouseEvent);
     }
+  };
+  
+  // Handle checkbox click separately to avoid nested interactive elements
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Toggle selection via synthetic mouse event with ctrl key to toggle
+    onClick(job.job_id, { shiftKey: false, metaKey: true, ctrlKey: true } as React.MouseEvent);
   };
   
   // Compact status badge (just icon + state name)
   const statusBadgeText = fields.final_status.toUpperCase();
   
+  // Build CSS classes
+  const rowClasses = [
+    "job-row",
+    `job-row--${status}`,
+    isHighPriority ? "job-row--priority" : "",
+    isSelected ? "job-row--selected" : "",
+    multiSelect ? "job-row--multiselect" : "",
+  ].filter(Boolean).join(" ");
+  
+  // Use role="row" for table rows, aria-selected is valid for role="row" in a grid
   return (
     <tr
-      className={`job-row job-row--${status} ${isHighPriority ? "job-row--priority" : ""}`}
+      className={rowClasses}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      role="button"
-      aria-label={`View job ${fields.job_id}`}
+      aria-label={`Job ${fields.job_id}`}
+      data-selected={isSelected || undefined}
       data-job-id={fields.job_id}
     >
+      {/* Phase 9A: Selection checkbox when multiSelect enabled */}
+      {multiSelect && (
+        <td className="job-cell job-cell--checkbox">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={handleCheckboxChange}
+            aria-label={`Select job ${fields.job_id}`}
+            tabIndex={-1} // Row handles keyboard, checkbox is just visual
+          />
+        </td>
+      )}
       <td className="job-cell job-cell--id" title={fields.job_id}>{fields.job_id}</td>
       <td className="job-cell job-cell--status" data-testid="job-status">
         <span className={`status-badge status-badge--${status}`}>
@@ -94,6 +131,12 @@ function JobRow({ job, onClick }: JobRowProps) {
         {fields.proxy_profile !== "(none)" ? fields.proxy_profile : "—"}
       </td>
       <td className="job-cell job-cell--annotations">{fields.annotation_count}</td>
+      {/* Phase 9A: Per-row controls - always visible, never hover-only */}
+      {renderControls && (
+        <td className="job-cell job-cell--controls">
+          {renderControls()}
+        </td>
+      )}
     </tr>
   );
 }
@@ -101,11 +144,40 @@ function JobRow({ job, onClick }: JobRowProps) {
 /**
  * Jobs List component.
  * Fetches and displays all jobs in a table.
+ * Phase 9A: Added multi-select and execution controls support.
  */
-export function JobsList({ onJobClick, className = "" }: JobsListProps) {
+export function JobsList({ 
+  onJobClick, 
+  className = "", 
+  multiSelect = false,
+  onSelectionChange,
+  renderJobControls,
+}: JobsListProps) {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<JobView[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  
+  // Phase 9A: Multi-select state
+  const {
+    isSelected,
+    handleClick: handleSelectionClick,
+    selectedCount,
+    selectAll,
+    deselectAll,
+    getSelectedIds,
+    allSelected,
+    hasSelection,
+  } = useMultiSelect({
+    items: jobs ?? [],
+    getItemId: (job) => job.job_id,
+  });
+  
+  // Notify parent of selection changes
+  useEffect(() => {
+    if (onSelectionChange && multiSelect) {
+      onSelectionChange(getSelectedIds());
+    }
+  }, [getSelectedIds, onSelectionChange, multiSelect]);
   
   useEffect(() => {
     let cancelled = false;
@@ -137,11 +209,15 @@ export function JobsList({ onJobClick, className = "" }: JobsListProps) {
     };
   }, []);
   
-  const handleJobClick = (jobId: string) => {
-    if (onJobClick) {
+  const handleJobClick = useCallback((jobId: string, event: React.MouseEvent) => {
+    if (multiSelect) {
+      // In multi-select mode, handle selection
+      handleSelectionClick(jobId, event);
+    } else if (onJobClick) {
+      // Otherwise navigate to job details
       onJobClick(jobId);
     }
-  };
+  }, [multiSelect, handleSelectionClick, onJobClick]);
   
   // Loading state
   if (loading) {
@@ -183,21 +259,76 @@ export function JobsList({ onJobClick, className = "" }: JobsListProps) {
   
   // Table view
   return (
-    <div className={`jobs-list ${className}`}>
-      <table className="jobs-table">
+    <div className={`jobs-list ${className} ${multiSelect ? "jobs-list--multiselect" : ""}`}>
+      {/* Phase 9A: Selection toolbar */}
+      {multiSelect && (
+        <div className="jobs-list__toolbar">
+          <div className="jobs-list__selection-info">
+            {hasSelection ? (
+              <span>{selectedCount} job{selectedCount !== 1 ? 's' : ''} selected</span>
+            ) : (
+              <span>No jobs selected</span>
+            )}
+          </div>
+          <div className="jobs-list__selection-actions">
+            <button 
+              type="button" 
+              className="jobs-list__btn jobs-list__btn--select-all"
+              onClick={selectAll}
+              disabled={allSelected || !jobs?.length}
+            >
+              Select All
+            </button>
+            <button 
+              type="button" 
+              className="jobs-list__btn jobs-list__btn--deselect"
+              onClick={deselectAll}
+              disabled={!hasSelection}
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
+      <table className="jobs-table" data-multiselect={multiSelect || undefined}>
         <thead>
           <tr>
+            {/* Phase 9A: Checkbox column header */}
+            {multiSelect && (
+              <th className="jobs-table__header jobs-table__header--checkbox">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={() => allSelected ? deselectAll() : selectAll()}
+                  aria-label="Select all jobs"
+                />
+              </th>
+            )}
             <th className="jobs-table__header jobs-table__header--id">ID</th>
             <th className="jobs-table__header jobs-table__header--status">State</th>
             <th className="jobs-table__header jobs-table__header--engine">Engine</th>
             <th className="jobs-table__header jobs-table__header--profile">Profile</th>
             <th className="jobs-table__header jobs-table__header--annotations">Notes</th>
+            {/* Phase 9A: Controls column header */}
+            {renderJobControls && (
+              <th className="jobs-table__header jobs-table__header--controls">Actions</th>
+            )}
           </tr>
         </thead>
         <tbody>
-          {jobs.map((job) => (
-            <JobRow key={job.job_id} job={job} onClick={handleJobClick} />
-          ))}
+          {jobs.map((job) => {
+            const status = (job.fabric_data?.final_status ?? "(unknown)").toLowerCase();
+            return (
+              <JobRow 
+                key={job.job_id} 
+                job={job} 
+                onClick={handleJobClick}
+                isSelected={isSelected(job.job_id)}
+                multiSelect={multiSelect}
+                renderControls={renderJobControls ? () => renderJobControls(job.job_id, status) : undefined}
+              />
+            );
+          })}
         </tbody>
       </table>
     </div>

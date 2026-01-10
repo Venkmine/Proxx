@@ -242,3 +242,111 @@
   font-size: 0.8rem;
   color: #999;
 }
+
+/* ========================================
+ * Phase 9A: Multi-Select Support
+ * ======================================== */
+
+/* Multi-select mode container */
+.jobs-list--multiselect {
+  /* Adjust table layout for additional columns */
+}
+
+/* Selection toolbar */
+.jobs-list__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 0;
+}
+
+.jobs-list__selection-info {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.jobs-list__selection-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.jobs-list__btn {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.jobs-list__btn:hover:not(:disabled) {
+  background-color: #f0f0f0;
+  border-color: #999;
+}
+
+.jobs-list__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.jobs-list__btn--select-all {
+  color: #0066cc;
+}
+
+.jobs-list__btn--deselect {
+  color: #666;
+}
+
+/* Checkbox column */
+.jobs-table__header--checkbox,
+.job-cell--checkbox {
+  width: 40px;
+  text-align: center;
+  padding: 0.5rem 0.25rem;
+}
+
+.job-cell--checkbox input[type="checkbox"],
+.jobs-table__header--checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* Selected row styling */
+.job-row--selected {
+  background-color: #e3f2fd !important;
+}
+
+.job-row--selected:hover {
+  background-color: #bbdefb !important;
+}
+
+/* Multi-select mode row styling */
+.job-row--multiselect {
+  user-select: none; /* Prevent text selection during shift-click */
+}
+
+/* Controls column */
+.jobs-table__header--controls {
+  width: 150px;
+  text-align: right;
+}
+
+.job-cell--controls {
+  text-align: right;
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+}
+
+/* Phase 9A: Controls are ALWAYS visible - never hover-only 
+ * This is a critical UX requirement for explicit execution control */
+.job-cell--controls .job-row-controls {
+  opacity: 1;
+  visibility: visible;
+}
+

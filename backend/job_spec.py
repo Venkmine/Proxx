@@ -170,6 +170,8 @@ class JobSpec:
         "lut_id",
         "lut_applied",
         "lut_engine",
+        # Phase 9A: Explicit Execution Control
+        "execution_requested",
     }
     
     sources: List[str]
@@ -193,6 +195,12 @@ class JobSpec:
     lut_id: Optional[str] = None
     lut_applied: bool = False
     lut_engine: Optional[str] = None  # "resolve" | "ffmpeg" | None
+    # Phase 9A: Explicit Execution Control
+    # Jobs MUST NOT execute unless this flag is True.
+    # This flag is set ONLY via explicit user action (UI click).
+    # Watch folders, automation, and job creation NEVER set this flag.
+    # Default is False - jobs are created in QUEUED state awaiting execution.
+    execution_requested: bool = False
     
     # -------------------------------------------------------------------------
     # Serialization
@@ -228,6 +236,8 @@ class JobSpec:
             "lut_id": self.lut_id,
             "lut_applied": self.lut_applied,
             "lut_engine": self.lut_engine,
+            # Phase 9A: Explicit Execution Control
+            "execution_requested": self.execution_requested,
         }
     
     def to_json(self, indent: int = 2) -> str:
@@ -390,6 +400,8 @@ class JobSpec:
             lut_id=data.get("lut_id"),
             lut_applied=data.get("lut_applied", False),
             lut_engine=data.get("lut_engine"),
+            # Phase 9A: Explicit Execution Control (default False = no auto-execute)
+            execution_requested=data.get("execution_requested", False),
         )
     
     @classmethod

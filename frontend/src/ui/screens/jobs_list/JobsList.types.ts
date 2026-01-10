@@ -8,6 +8,8 @@
  * - No business logic
  * - No derived fields
  * - Props only
+ * 
+ * Phase 9A: Extended with multi-select and execution control support.
  */
 
 import type { JobView } from "../../data_adapter/types";
@@ -26,6 +28,24 @@ export interface JobsListProps {
    * Optional CSS class name for styling.
    */
   className?: string;
+  
+  /**
+   * Phase 9A: Enable multi-select mode.
+   * When true, supports Shift+click and Cmd/Ctrl+click for selection.
+   */
+  multiSelect?: boolean;
+  
+  /**
+   * Phase 9A: Callback when selection changes.
+   * Receives array of selected job IDs.
+   */
+  onSelectionChange?: (selectedIds: string[]) => void;
+  
+  /**
+   * Phase 9A: Render execution controls in each row.
+   * If provided, this function renders controls for a job.
+   */
+  renderJobControls?: (jobId: string, status: string) => React.ReactNode;
 }
 
 /**
@@ -40,7 +60,22 @@ export interface JobRowProps {
   /**
    * Callback when row is clicked.
    */
-  onClick: (jobId: string) => void;
+  onClick: (jobId: string, event: React.MouseEvent) => void;
+  
+  /**
+   * Phase 9A: Whether this row is selected.
+   */
+  isSelected?: boolean;
+  
+  /**
+   * Phase 9A: Whether multi-select mode is enabled.
+   */
+  multiSelect?: boolean;
+  
+  /**
+   * Phase 9A: Render controls for this job.
+   */
+  renderControls?: () => React.ReactNode;
 }
 
 /**

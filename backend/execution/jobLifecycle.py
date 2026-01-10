@@ -38,21 +38,32 @@ class JobLifecycleState(str, Enum):
     These represent the current phase of a job's lifecycle for UI display.
     They are computed on-demand, not stored.
     
-    State Definitions:
-    ------------------
-    IDLE: Job created but not yet queued for execution
-    QUEUED: Job is waiting to begin validation/execution  
+    State Definitions (Phase 9A):
+    -----------------------------
+    DRAFT: Job defined but not yet queued (future: not used in current flow)
+    QUEUED: Job is waiting in queue, ready for execution
     VALIDATING: Job is undergoing pre-execution validation
     RUNNING: Job execution is in progress (at least one clip processing)
+    PAUSED: Job execution is paused (can be resumed)
     COMPLETE: Job finished successfully, all clips succeeded
     PARTIAL: Job finished with some clips succeeded, some failed
     FAILED: Job finished with all clips failed or job-level failure
-    BLOCKED: Job cannot execute due to validation failure
+    BLOCKED: Job cannot execute due to validation failure or missing execution_requested
     CANCELLED: Job was explicitly cancelled during execution
+    
+    Phase 9A Lifecycle Flow:
+    ------------------------
+    Creation → QUEUED (jobs enter queue immediately, awaiting execution request)
+    QUEUED + Start clicked → VALIDATING → RUNNING → COMPLETE/PARTIAL/FAILED
+    RUNNING + Pause clicked → PAUSED
+    PAUSED + Resume clicked → RUNNING
+    RUNNING + Cancel clicked → CANCELLED
+    
+    Jobs may ONLY transition to RUNNING via explicit user action.
     """
     
-    IDLE = "IDLE"
-    """Job created but execution has not started"""
+    DRAFT = "DRAFT"
+    """Job defined but not yet queued for execution (Phase 9A: future use)"""
     
     QUEUED = "QUEUED"
     """Job is queued and waiting for execution to begin"""
@@ -62,6 +73,9 @@ class JobLifecycleState(str, Enum):
     
     RUNNING = "RUNNING"
     """Job is actively executing (clips are being processed)"""
+    
+    PAUSED = "PAUSED"
+    """Job execution is paused, can be resumed"""
     
     COMPLETE = "COMPLETE"
     """Job completed successfully - all clips succeeded"""
@@ -73,7 +87,7 @@ class JobLifecycleState(str, Enum):
     """Job failed - all clips failed or job-level failure occurred"""
     
     BLOCKED = "BLOCKED"
-    """Job blocked from execution due to validation failure"""
+    """Job blocked from execution due to validation failure or missing execution_requested"""
     
     CANCELLED = "CANCELLED"
     """Job was cancelled during execution"""

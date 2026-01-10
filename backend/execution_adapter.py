@@ -171,6 +171,40 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     # Assert synchronous execution (no async/await)
     assert_synchronous_execution()
     
+    # STEP 0: Phase 9A - Explicit Execution Control Enforcement
+    # ----------------------------------------------------------
+    # Jobs MUST NOT execute unless execution_requested is True.
+    # This is BACKEND ENFORCEMENT - never trust the UI alone.
+    # This check happens BEFORE all other validation because:
+    #   1. A job without execution permission shouldn't even be validated for paths
+    #   2. This is a security/intent check, not a validity check
+    #   3. The user's explicit decision to NOT run takes priority
+    # 
+    # This prevents:
+    #   - Auto-execution on job creation
+    #   - Watch folder auto-execution bypass
+    #   - Background execution without user gesture
+    #   - Smart defaults that start jobs implicitly
+    if not jobspec.execution_requested:
+        logger.warning(
+            f"[EXECUTION ADAPTER] EXECUTION BLOCKED: job_id={jobspec.job_id} - "
+            "execution_requested=False. Jobs require explicit user action to execute."
+        )
+        return JobExecutionResult(
+            job_id=jobspec.job_id,
+            clips=[],
+            final_status="BLOCKED",
+            validation_error=(
+                "Job execution not authorized. "
+                "Jobs must be explicitly started via user action. "
+                "Set execution_requested=True to execute this job."
+            ),
+            validation_stage="execution-control",
+            jobspec_version=JOBSPEC_VERSION,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
     # STEP 1: Validate JobSpec
     # -------------------------
     # Validation must run BEFORE engine selection.

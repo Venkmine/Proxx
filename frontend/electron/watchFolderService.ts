@@ -26,6 +26,13 @@
  * - Watch folders structurally aligned with IngestSource model
  * - Added future copy-then-transcode schema (no behavior)
  * - No filesystem operations, no execution changes
+ * 
+ * PHASE 9A: EXPLICIT EXECUTION CONTROL (CRITICAL)
+ * - Watch folders may CREATE jobs
+ * - Watch folders may QUEUE jobs
+ * - Watch folders may NOT EXECUTE jobs
+ * - Jobs created here have execution_requested=false
+ * - Execution requires explicit user action in the Queue panel
  */
 
 import { BrowserWindow } from 'electron'
@@ -129,10 +136,18 @@ const DEFAULT_EXCLUDE_PATTERNS = [
 
 // ============================================
 // PHASE 7: Auto Job Creation Callback
+// PHASE 9A: Jobs created here are QUEUED ONLY
 // ============================================
 
 /**
- * Callback type for auto job creation when armed
+ * Callback type for auto job creation when armed.
+ * 
+ * PHASE 9A CRITICAL CONTRACT:
+ * - This callback creates jobs with execution_requested=false
+ * - Jobs are QUEUED, not EXECUTED
+ * - Execution requires explicit user action in Queue panel
+ * - If FFmpeg/Resolve runs from this callback, Phase 9A has failed
+ * 
  * Returns the created job ID or null if creation failed
  */
 type AutoJobCreationCallback = (
@@ -145,12 +160,15 @@ type AutoJobCreationCallback = (
 let autoJobCreationCallback: AutoJobCreationCallback | null = null
 
 /**
- * Register the auto job creation callback
- * Called by main.ts to wire up job creation logic
+ * Register the auto job creation callback.
+ * Called by main.ts to wire up job creation logic.
+ * 
+ * PHASE 9A: The callback MUST NOT set execution_requested=true.
+ * Jobs created via watch folders require explicit user action to execute.
  */
 export function registerAutoJobCreationCallback(callback: AutoJobCreationCallback): void {
   autoJobCreationCallback = callback
-  console.log('[WATCH FOLDER] Auto job creation callback registered')
+  console.log('[WATCH FOLDER] Auto job creation callback registered (Phase 9A: QUEUED ONLY, no auto-execute)')
 }
 
 // ============================================
@@ -270,6 +288,8 @@ function createWatcher(watchFolder: WatchFolder, mainWindow: BrowserWindow | nul
       })
       
       // PHASE 7: Auto job creation when armed
+      // PHASE 9A: Job is QUEUED only - execution_requested=false
+      // User must explicitly start execution from Queue panel
       if (watchFolder.armed && watchFolder.preset_id && autoJobCreationCallback) {
         try {
           const jobId = await autoJobCreationCallback(
@@ -280,15 +300,17 @@ function createWatcher(watchFolder: WatchFolder, mainWindow: BrowserWindow | nul
           
           if (jobId) {
             // Success: remove from pending, update counts
+            // PHASE 9A: Job is QUEUED, NOT EXECUTING
             watchFolder.pending_files = watchFolder.pending_files.filter(f => f.path !== filePath)
             watchFolder.counts.staged = Math.max(0, watchFolder.counts.staged - 1)
             watchFolder.counts.jobs_created += 1
             
-            logTrace('WATCH_FOLDER_AUTO_JOB_CREATED', watchFolder.id, {
+            logTrace('WATCH_FOLDER_AUTO_JOB_QUEUED', watchFolder.id, {
               path: filePath,
               autoJobId: jobId,
               presetId: watchFolder.preset_id,
               counts: watchFolder.counts,
+              execution_requested: false,  // Phase 9A: Explicit - no auto-execute
             })
           } else {
             // Job creation returned null - blocked but not failed

@@ -8,6 +8,14 @@ This is the main entry point for watch folder processing.
 CANONICAL INGESTION PIPELINE:
 Watch folders use IngestionService.ingest_sources() for job creation.
 This ensures consistent validation, normalization, and settings snapshot.
+
+PHASE 9A: EXPLICIT EXECUTION CONTROL
+=====================================
+Watch folders may CREATE jobs and QUEUE them, but they may NOT EXECUTE jobs.
+Execution requires explicit user action. The auto_execute flag is DEPRECATED
+and will be removed in a future release. Jobs created by watch folders always
+have execution_requested=False, meaning the backend will block execution
+until a user explicitly requests it from the Queue panel.
 """
 
 import logging
@@ -213,20 +221,19 @@ class WatchFolderEngine:
         Uses IngestionService.ingest_sources() when available.
         Falls back to direct JobEngine.create_job() for backwards compatibility.
 
-        Phase 11 behavior:
+        Phase 9A Behavior (EXPLICIT EXECUTION CONTROL):
         - One job per file
         - Bind preset if watch_folder.preset_id is set
-        - Optionally auto-execute if watch_folder.auto_execute=True
-        - Job left in PENDING state if not auto-executed
-
-        Auto-execution is mediated and subject to safety checks.
+        - Job left in PENDING/QUEUED state - NO AUTO-EXECUTION
+        - Execution requires explicit user action from Queue panel
+        - The auto_execute flag is IGNORED (deprecated)
 
         Args:
             file_path: Absolute path to stable file
             watch_folder: Watch folder configuration
 
         Returns:
-            New job (PENDING or post-execution state)
+            New job (PENDING state, awaiting explicit execution request)
         """
         # Use canonical ingestion pipeline when available
         if self.ingestion_service:
@@ -261,24 +268,24 @@ class WatchFolderEngine:
                     f"Bound preset '{watch_folder.preset_id}' to job {job.id}"
                 )
 
-        # Attempt auto-execution if enabled
-        if watch_folder.auto_execute and self.automation_mediator:
-            if not watch_folder.preset_id:
-                logger.warning(
-                    f"Watch folder '{watch_folder.id}' has auto_execute=True "
-                    "but no preset_id configured. Skipping auto-execution."
-                )
-            else:
-                success, error = self.automation_mediator.auto_execute_job(
-                    job=job,
-                    preset_id=watch_folder.preset_id,
-                )
-                
-                if not success:
-                    logger.warning(
-                        f"Auto-execution failed for job {job.id} "
-                        f"(watch folder: {watch_folder.id}): {error}"
-                    )
+        # PHASE 9A: AUTO-EXECUTION IS FORBIDDEN
+        # =====================================
+        # The auto_execute flag is DEPRECATED and IGNORED.
+        # Jobs created by watch folders are QUEUED only.
+        # Execution requires explicit user action from the Queue panel.
+        # This prevents background execution without user gesture.
+        if watch_folder.auto_execute:
+            logger.warning(
+                f"[PHASE 9A] Watch folder '{watch_folder.id}' has auto_execute=True, "
+                "but auto-execution is FORBIDDEN in Phase 9A. "
+                "Job {job.id} is QUEUED and awaits explicit execution request. "
+                "The auto_execute flag will be removed in a future release."
+            )
+
+        logger.info(
+            f"[PHASE 9A] Job {job.id} created and QUEUED (not executing). "
+            f"Source: {file_path}, Watch folder: {watch_folder.id}"
+        )
 
         return job
 
