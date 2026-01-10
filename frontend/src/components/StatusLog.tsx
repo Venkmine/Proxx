@@ -111,18 +111,23 @@ export function StatusLog({ entries, maxHeight = 200, demoMode = false }: Status
         data-state="idle"
         style={{
           flexShrink: 0,
-          minHeight: '28px',
-          borderTop: '1px solid var(--border-secondary)',
-          padding: '0.375rem 0.75rem',
-          background: 'rgba(20, 24, 32, 0.6)',
+          minHeight: '32px',
+          height: '32px',
+          borderTop: '1px solid var(--border-primary)',
+          padding: '0 0.75rem',
+          background: 'rgba(20, 24, 32, 0.95)',
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
           fontSize: '0.6875rem',
-          color: 'var(--text-dim)',
+          color: 'var(--text-secondary)',
         }}
       >
-        <span style={{ opacity: 0.4, fontSize: '0.5rem' }}>●</span>
+        <span style={{ 
+          color: 'var(--button-primary-bg)', 
+          fontSize: '0.5rem',
+          opacity: 0.6,
+        }}>●</span>
         <span>Status: Idle</span>
       </div>
     )
