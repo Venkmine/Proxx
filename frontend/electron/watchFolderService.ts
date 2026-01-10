@@ -21,6 +21,11 @@
  * - When armed: automatically creates jobs for detected files
  * - Pre-arm validation: requires preset, not paused, no errors
  * - Full QC_ACTION_TRACE for arm/disarm and auto-job events
+ * 
+ * PHASE 8: Ingest Source Alignment (Schema Only)
+ * - Watch folders structurally aligned with IngestSource model
+ * - Added future copy-then-transcode schema (no behavior)
+ * - No filesystem operations, no execution changes
  */
 
 import { BrowserWindow } from 'electron'
@@ -61,6 +66,11 @@ interface PendingFile {
   selected: boolean
 }
 
+/** PHASE 8: Ingest strategy types (schema only, no behavior) */
+type IngestStrategy = 'DIRECT' | 'COPY_THEN_PROCESS'
+type IngestSourceType = 'WATCH_FOLDER' | 'MANUAL' | 'INGEST_PIPELINE'
+type IngestSourceState = 'IDLE' | 'DETECTING' | 'READY' | 'ERROR'
+
 interface WatchFolder {
   id: string
   path: string
@@ -76,6 +86,11 @@ interface WatchFolder {
   error?: string
   created_at: string
   updated_at: string
+  // PHASE 8: Future ingest alignment (schema only, not used)
+  ingest_source_type?: IngestSourceType
+  ingest_source_state?: IngestSourceState
+  ingest_strategy?: IngestStrategy
+  staging_path?: string
 }
 
 export interface WatchFolderConfig {

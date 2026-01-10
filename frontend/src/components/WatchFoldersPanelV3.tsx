@@ -1,5 +1,5 @@
 /**
- * Watch Folders Panel V3 — PHASE 6.5: WATCH FOLDER STATE & SCALABILITY
+ * Watch Folders Panel V3 — PHASE 8: INGEST SOURCE ALIGNMENT
  * 
  * INTENT.md Compliance:
  * - Detection is automatic (files appear in staged count)
@@ -19,14 +19,23 @@
  * G) Armed Mode: Auto job creation when armed
  * H) Arm/Disarm UI: Clear visual distinction for armed state
  * I) Pre-arm Validation: UI shows why arming is blocked
+ * 
+ * PHASE 8: INGEST SOURCE ALIGNMENT (Structure Only)
+ * J) Counts-Only Display: No per-file UI (10k files = same UI as 1 file)
+ * K) IngestSource Mental Model: Watch folders as ingest sources
+ * L) Last Activity Timestamp: Show when files were last detected
+ * M) Future-Ready: Prepared for copy-then-transcode (no behavior yet)
  */
 
 import React, { useState, useCallback } from 'react'
 import type { WatchFolder, PendingFile, WatchFolderConfig, WatchFolderCounts, ArmBlockReason } from '../types/watchFolders'
 import { DEFAULT_VIDEO_EXTENSIONS, DEFAULT_EXCLUDE_PATTERNS } from '../types/watchFolders'
 
-/** Maximum files to show in staged file preview */
-const MAX_STAGED_PREVIEW = 10
+/** 
+ * PHASE 8: File list preview disabled
+ * UI now shows counts only - 1 file and 10,000 files produce identical UI
+ */
+const SHOW_FILE_LIST = false
 
 interface WatchFoldersPanelProps {
   watchFolders: WatchFolder[]
@@ -110,51 +119,25 @@ function StatusIndicator({ status, enabled }: { status: 'watching' | 'paused' | 
 
 /**
  * Counts display component - shows lifecycle counters
+ * PHASE 8: Primary UI - always visible, file lists removed
  */
 function CountsDisplay({ counts, compact = false }: { counts: WatchFolderCounts; compact?: boolean }): React.ReactElement {
   if (compact) {
-    // Compact view: only show staged if > 0
+    // Compact view: show staged count prominently
     if (counts.staged === 0) {
       return <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>No files staged</span>
     }
     return (
-      <div 
-        data-testid="counts-compact"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-        }}
-      >
-        <span
-          data-testid="staged-count-badge"
-          style={{
-            padding: '0.125rem 0.5rem',
-            background: 'var(--interactive-primary)',
-            borderRadius: '10px',
-            color: 'white',
-            fontSize: '0.6875rem',
-            fontWeight: 600,
-          }}
-        >
-          {counts.staged} staged
-        </span>
-        {counts.failed > 0 && (
-          <span
-            data-testid="failed-count-badge"
-            style={{
-              padding: '0.125rem 0.5rem',
-              background: 'var(--status-error)',
-              borderRadius: '10px',
-              color: 'white',
-              fontSize: '0.6875rem',
-              fontWeight: 600,
-            }}
-          >
-            {counts.failed} failed
-          </span>
-        )}
-      </div>
+      <span style={{ 
+        fontSize: '0.6875rem', 
+        fontWeight: 600,
+        color: 'var(--interactive-primary)',
+        padding: '0.25rem 0.5rem',
+        background: 'rgba(var(--interactive-primary-rgb, 59, 130, 246), 0.1)',
+        borderRadius: '4px',
+      }}>
+        {counts.staged} staged
+      </span>
     )
   }
   
@@ -205,149 +188,114 @@ function CountBadge({ label, value, color, highlight = false }: { label: string;
 }
 
 /**
- * Staged files preview - capped list for scalability
+ * PHASE 8: Staged files summary - counts only, no file lists
+ * UI does not grow with file count - 1 file and 10,000 files show identically
  */
-function StagedFilesPreview({ 
-  files, 
-  onToggleFile,
+function StagedFilesSummary({ 
+  fileCount,
+  selectedCount,
+  lastActivityAt,
   onSelectAll,
   watchFolderId,
 }: { 
-  files: PendingFile[]
-  onToggleFile: (path: string) => void
+  fileCount: number
+  selectedCount: number
+  lastActivityAt: string
   onSelectAll: (selected: boolean) => void
   watchFolderId: string
 }): React.ReactElement {
-  const displayFiles = files.slice(0, MAX_STAGED_PREVIEW)
-  const hiddenCount = files.length - displayFiles.length
-  const selectedCount = files.filter(f => f.selected).length
-  
-  const formatPath = (fullPath: string): string => {
-    const parts = fullPath.split('/')
-    return parts[parts.length - 1] || fullPath
-  }
-  
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  const formatTimestamp = (isoString: string): string => {
+    const date = new Date(isoString)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const seconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    
+    if (seconds < 60) return 'just now'
+    if (minutes < 60) return `${minutes}m ago`
+    if (hours < 24) return `${hours}h ago`
+    return date.toLocaleDateString()
   }
   
   return (
-    <div data-testid="staged-files-preview">
-      {/* Selection controls */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
+    <div data-testid="staged-files-summary">
+      {/* Summary card - shows counts only */}
+      <div style={{
+        padding: '0.75rem',
+        background: 'var(--surface-tertiary)',
+        borderRadius: '4px',
         marginBottom: '0.5rem',
-        paddingBottom: '0.5rem',
-        borderBottom: '1px solid var(--border-primary)',
       }}>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button
-            data-testid={`select-all-${watchFolderId}`}
-            onClick={() => onSelectAll(true)}
-            style={{
-              padding: '0.25rem 0.5rem',
-              background: 'var(--surface-tertiary)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: '4px',
-              color: 'var(--text-secondary)',
-              fontSize: '0.6875rem',
-              cursor: 'pointer',
-            }}
-          >
-            Select All
-          </button>
-          <button
-            data-testid={`deselect-all-${watchFolderId}`}
-            onClick={() => onSelectAll(false)}
-            style={{
-              padding: '0.25rem 0.5rem',
-              background: 'var(--surface-tertiary)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: '4px',
-              color: 'var(--text-secondary)',
-              fontSize: '0.6875rem',
-              cursor: 'pointer',
-            }}
-          >
-            Deselect All
-          </button>
-        </div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-          {selectedCount} of {files.length} selected
-        </div>
-      </div>
-      
-      {/* Capped file list */}
-      <div 
-        style={{ 
-          maxHeight: '150px', 
-          overflowY: 'auto',
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          alignItems: 'center',
           marginBottom: '0.5rem',
-        }}
-      >
-        {displayFiles.map(file => (
-          <div
-            key={file.path}
-            data-testid={`staged-file-${file.path}`}
-            onClick={() => onToggleFile(file.path)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.375rem 0.5rem',
-              background: file.selected ? 'var(--surface-tertiary)' : 'transparent',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              marginBottom: '0.125rem',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={file.selected}
-              onChange={() => {}} // Handled by parent click
-              style={{ cursor: 'pointer' }}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontSize: '0.75rem',
-              }}>
-                {formatPath(file.path)}
-              </div>
+        }}>
+          <div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {fileCount}
             </div>
-            <div style={{ 
-              fontSize: '0.6875rem', 
-              color: 'var(--text-tertiary)',
-              whiteSpace: 'nowrap',
-            }}>
-              {formatFileSize(file.size)}
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+              {fileCount === 1 ? 'file ready' : 'files ready'}
             </div>
           </div>
-        ))}
-      </div>
-      
-      {/* Hidden files indicator */}
-      {hiddenCount > 0 && (
-        <div 
-          data-testid="hidden-files-notice"
-          style={{
-            padding: '0.375rem',
-            textAlign: 'center',
-            color: 'var(--text-tertiary)',
-            fontSize: '0.6875rem',
-            fontStyle: 'italic',
-          }}
-        >
-          +{hiddenCount} more files (not shown for performance)
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
+              Last activity
+            </div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+              {formatTimestamp(lastActivityAt)}
+            </div>
+          </div>
         </div>
-      )}
+        
+        {/* Selection controls */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          paddingTop: '0.5rem',
+          borderTop: '1px solid var(--border-primary)',
+        }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {selectedCount} of {fileCount} selected
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              data-testid={`select-all-${watchFolderId}`}
+              onClick={() => onSelectAll(true)}
+              style={{
+                padding: '0.25rem 0.5rem',
+                background: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: '4px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.6875rem',
+                cursor: 'pointer',
+              }}
+            >
+              Select All
+            </button>
+            <button
+              data-testid={`deselect-all-${watchFolderId}`}
+              onClick={() => onSelectAll(false)}
+              style={{
+                padding: '0.25rem 0.5rem',
+                background: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: '4px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.6875rem',
+                cursor: 'pointer',
+              }}
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -372,7 +320,6 @@ export function WatchFoldersPanel({
   const [newFolderRecursive, setNewFolderRecursive] = useState(true)
   const [newFolderPresetId, setNewFolderPresetId] = useState<string | undefined>()
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
-  const [showStagedFiles, setShowStagedFiles] = useState<Set<string>>(new Set())
   const [armBlockReasons, setArmBlockReasons] = useState<Map<string, ArmBlockReason[]>>(new Map())
   
   const hasElectron = typeof window !== 'undefined' && window.electron !== undefined
@@ -407,18 +354,6 @@ export function WatchFoldersPanel({
   
   const toggleExpanded = useCallback((id: string) => {
     setExpandedFolders(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
-  
-  const toggleShowStagedFiles = useCallback((id: string) => {
-    setShowStagedFiles(prev => {
       const next = new Set(prev)
       if (next.has(id)) {
         next.delete(id)
@@ -691,7 +626,6 @@ export function WatchFoldersPanel({
       {/* Watch Folders List */}
       {watchFolders.map(wf => {
         const isExpanded = expandedFolders.has(wf.id)
-        const showFiles = showStagedFiles.has(wf.id)
         const selectedCount = wf.pending_files.filter(f => f.selected).length
         const stagedCount = wf.counts?.staged ?? wf.pending_files.length
         // Ensure counts object exists (backwards compatibility)
@@ -917,38 +851,17 @@ export function WatchFoldersPanel({
                         color: 'var(--text-secondary)',
                       }}
                     >
-                      📁 <strong>{stagedCount} files detected.</strong> Click "Create Jobs" to encode them.
+                      📁 <strong>{stagedCount} files ready.</strong> Click "Create Jobs" to encode them.
                     </div>
                     
-                    {/* View staged files toggle */}
-                    <button
-                      data-testid={`toggle-staged-files-${wf.id}`}
-                      onClick={() => toggleShowStagedFiles(wf.id)}
-                      style={{
-                        width: '100%',
-                        padding: '0.375rem',
-                        marginBottom: '0.5rem',
-                        background: 'var(--surface-tertiary)',
-                        border: '1px solid var(--border-primary)',
-                        borderRadius: '4px',
-                        color: 'var(--text-secondary)',
-                        fontSize: '0.6875rem',
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {showFiles ? '▲ Hide staged files' : `▼ View staged files (${Math.min(stagedCount, MAX_STAGED_PREVIEW)} of ${stagedCount})`}
-                    </button>
-                    
-                    {/* Staged files preview (capped) */}
-                    {showFiles && (
-                      <StagedFilesPreview
-                        files={wf.pending_files}
-                        onToggleFile={(path) => onToggleFile(wf.id, path)}
-                        onSelectAll={(selected) => onSelectAll(wf.id, selected)}
-                        watchFolderId={wf.id}
-                      />
-                    )}
+                    {/* PHASE 8: Counts-only summary (no file list) */}
+                    <StagedFilesSummary
+                      fileCount={wf.pending_files.length}
+                      selectedCount={selectedCount}
+                      lastActivityAt={wf.updated_at}
+                      onSelectAll={(selected) => onSelectAll(wf.id, selected)}
+                      watchFolderId={wf.id}
+                    />
                     
                     {/* Action buttons */}
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>

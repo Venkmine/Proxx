@@ -16,7 +16,14 @@
  * - Counters track lifecycle: Detected → Staged → Jobs Created → Completed/Failed
  * - Counts survive UI refreshes (persisted in main process)
  * - No inference from UI text - counts are explicit
+ * 
+ * PHASE 8: Ingest Source Alignment
+ * - Watch Folders structurally aligned with future IngestSource model
+ * - Added schema for copy-then-transcode (no behavior yet)
+ * - UI shows counts only (no unbounded file lists)
  */
+
+import type { IngestSourceType, IngestSourceState, IngestStrategy } from './ingestSource'
 
 /**
  * Watch folder status enum - unambiguous states
@@ -43,6 +50,7 @@ export interface WatchFolderCounts {
 
 /**
  * A watched folder configuration
+ * PHASE 8: Aligned with IngestSource model for future convergence
  */
 export interface WatchFolder {
   /** Unique identifier (UUID) */
@@ -77,6 +85,48 @@ export interface WatchFolder {
   created_at: string
   /** Timestamp when watcher was last modified */
   updated_at: string
+  
+  // ============================================
+  // PHASE 8: Ingest Source Alignment (Schema Only - No Behavior)
+  // ============================================
+  
+  /**
+   * PHASE 8: IngestSource type mapping (for future convergence)
+   * Watch folders map to 'WATCH_FOLDER' type
+   * NOT USED YET - Reserved for future IngestSource emission
+   */
+  ingest_source_type?: IngestSourceType
+  
+  /**
+   * PHASE 8: IngestSource state mapping (for future convergence)
+   * Maps internal status to IngestSource states:
+   * - 'watching' → DETECTING
+   * - 'armed' → DETECTING
+   * - 'paused' → IDLE
+   * - error present → ERROR
+   * - counts.staged > 0 → READY
+   * NOT USED YET - Reserved for future IngestSource emission
+   */
+  ingest_source_state?: IngestSourceState
+  
+  /**
+   * PHASE 8: Future ingest strategy (NOT IMPLEMENTED)
+   * When copy-then-transcode is implemented:
+   * - 'DIRECT': Files processed in-place (current behavior)
+   * - 'COPY_THEN_PROCESS': Files copied to staging first (future)
+   * 
+   * NO BEHAVIOR ATTACHED - schema placeholder only
+   */
+  ingest_strategy?: IngestStrategy
+  
+  /**
+   * PHASE 8: Future staging path (NOT IMPLEMENTED)
+   * When copy-then-transcode is implemented, files will be copied here first
+   * before job creation. Currently unused.
+   * 
+   * NO FILESYSTEM OPERATIONS - schema placeholder only
+   */
+  staging_path?: string
 }
 
 /**
