@@ -33,6 +33,13 @@
  * - Watch folders may NOT EXECUTE jobs
  * - Jobs created here have execution_requested=false
  * - Execution requires explicit user action in the Queue panel
+ * 
+ * PHASE 9C: CONTINUOUS INGEST & JOB GENERATION
+ * - Each new valid file MUST generate a new JobSpec with unique job_id
+ * - Jobs MUST accumulate (never overwrite)
+ * - ARMED = continuous listening, not single-fire
+ * - Each JobSpec includes ingest_source_id for traceability
+ * - Jobs go to DRAFT state (renderer decides queue policy)
  */
 
 import { BrowserWindow } from 'electron'
@@ -289,9 +296,16 @@ function createWatcher(watchFolder: WatchFolder, mainWindow: BrowserWindow | nul
       
       // PHASE 7: Auto job creation when armed
       // PHASE 9A: Job is QUEUED only - execution_requested=false
+      // PHASE 9C: Each file = new unique job, jobs accumulate, continuous listening
       // User must explicitly start execution from Queue panel
       if (watchFolder.armed && watchFolder.preset_id && autoJobCreationCallback) {
         try {
+          // PHASE 9C: Callback creates unique JobSpec per file
+          // Callback is responsible for:
+          // - Generating unique job_id
+          // - Setting ingest_source_id = watchFolder.id
+          // - Setting state = 'DRAFT' (or 'QUEUED' based on policy)
+          // - Accumulating jobs (never overwriting)
           const jobId = await autoJobCreationCallback(
             watchFolder.id,
             filePath,
@@ -301,6 +315,7 @@ function createWatcher(watchFolder: WatchFolder, mainWindow: BrowserWindow | nul
           if (jobId) {
             // Success: remove from pending, update counts
             // PHASE 9A: Job is QUEUED, NOT EXECUTING
+            // PHASE 9C: Watch folder remains ARMED for continuous ingest
             watchFolder.pending_files = watchFolder.pending_files.filter(f => f.path !== filePath)
             watchFolder.counts.staged = Math.max(0, watchFolder.counts.staged - 1)
             watchFolder.counts.jobs_created += 1
@@ -311,6 +326,7 @@ function createWatcher(watchFolder: WatchFolder, mainWindow: BrowserWindow | nul
               presetId: watchFolder.preset_id,
               counts: watchFolder.counts,
               execution_requested: false,  // Phase 9A: Explicit - no auto-execute
+              armed_continuous: true,      // Phase 9C: Still armed, will process next file
             })
           } else {
             // Job creation returned null - blocked but not failed

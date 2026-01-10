@@ -22,14 +22,17 @@ class JobNotFoundError(JobError):
 class InvalidStateTransitionError(JobError):
     """Raised when attempting an illegal state transition."""
     
-    def __init__(self, entity_type: str, current_state: str, target_state: str):
+    def __init__(self, entity_type: str, current_state: str, target_state: str, reason: str = None):
         self.entity_type = entity_type
         self.current_state = current_state
         self.target_state = target_state
-        super().__init__(
-            f"Invalid {entity_type} state transition: "
-            f"{current_state} -> {target_state}"
-        )
+        self.reason = reason
+        
+        message = f"Invalid {entity_type} state transition: {current_state} -> {target_state}"
+        if reason:
+            message = f"{message}. {reason}"
+        
+        super().__init__(message)
 
 
 class JobEngineError(JobError):

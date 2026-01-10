@@ -367,17 +367,27 @@ function App() {
   const [loading, setLoading] = useState<boolean>(false)
   
   // ============================================
-  // V2 PHASE 4: SEMANTIC SEPARATION OF JOB CREATION
+  // PHASE 9B: SEMANTIC SEPARATION OF JOB CREATION, QUEUEING, AND EXECUTION
   // ============================================
-  // preparedJobSpec = JobSpec built by "Create Job" button (not yet queued)
-  // queuedJobSpecs = FIFO queue of JobSpecs added by "Add to Queue" button
+  // draftJobSpecs = Jobs created via "Create Job" (DRAFT state, not queued)
+  // queuedJobSpecs = Jobs added via "Add to Queue" (QUEUED state, awaiting execution)
   // 
-  // INTENTIONAL DESIGN:
-  // - Create Job ONLY builds JobSpec, does NOT touch queue
-  // - Add to Queue ONLY adds to queue, triggered by explicit user action
-  // - FIFO queue: jobs execute in insertion order, one at a time
-  const [preparedJobSpec, setPreparedJobSpec] = useState<JobSpec | null>(null)
+  // HARD RULES (Phase 9B):
+  // ❌ Create Job MUST NOT queue
+  // ❌ Create Job MUST NOT execute
+  // ❌ Add to Queue MUST NOT execute
+  // ❌ QUEUED → RUNNING only with explicit "Start" action
+  // 
+  // STATE MACHINE:
+  // DRAFT → QUEUED (via "Add to Queue")
+  // QUEUED → RUNNING (via "Start Queue" or "Start Selected Job")
+  // DRAFT → RUNNING is BLOCKED (must queue first)
+  const [draftJobSpecs, setDraftJobSpecs] = useState<JobSpec[]>([])
   const [queuedJobSpecs, setQueuedJobSpecs] = useState<JobSpec[]>([])
+  
+  // DEPRECATED: preparedJobSpec is replaced by draftJobSpecs for multi-job support
+  // Kept for backward compatibility during transition
+  const [preparedJobSpec, setPreparedJobSpec] = useState<JobSpec | null>(null)
   
   // DOGFOOD FIX: Idempotency guards for job operations
   // React state updates are async, so rapid clicks can trigger duplicate operations
@@ -604,17 +614,22 @@ function App() {
   }, [hasElectron])
   
   /**
-   * PHASE 6: Create jobs from watch folder pending files.
+   * PHASE 9C: Create jobs from watch folder pending files.
+   * 
+   * CRITICAL PHASE 9C CONTRACT:
+   * - Each file generates a NEW JobSpec with unique job_id
+   * - Jobs ACCUMULATE, never overwrite
+   * - Jobs include ingest_source_id (watch folder ID)
+   * - Armed watch folders: jobs go to QUEUED (awaiting Start)
+   * - Unarmed watch folders: jobs go to DRAFT (manual queue action)
    * 
    * CRITICAL: preset_id is REQUIRED, not optional.
    * This function FAILS LOUDLY if no preset is configured.
-   * This is preparatory work for future auto-transcoding.
    */
   const handleCreateJobsFromWatchFolder = useCallback((watchFolderId: string, selectedFiles: PendingFile[], presetId?: string) => {
     // PHASE 6: Enforce preset requirement
     if (!presetId) {
       console.error(`[PHASE 6 VIOLATION] Watch folder ${watchFolderId} has no preset configured. Cannot create jobs.`)
-      // Show visible error to user
       alert('Cannot create jobs: Watch folder has no preset configured.\n\nPlease configure a preset for this watch folder before creating jobs.')
       return
     }
@@ -625,33 +640,59 @@ function App() {
       return
     }
     
-    // Create jobs from selected pending files
+    // PHASE 9C: Create unique job for EACH file
     const jobIds: string[] = []
-    const newJobSpecs: JobSpec[] = []
+    const newDraftJobs: JobSpec[] = []
     
     for (const file of selectedFiles) {
       try {
-        // PHASE 6: Jobs created from watch folders
-        // Preset enforcement happens before this point
-        // Full preset application will come in auto-transcode phase
+        // PHASE 9C: Build JobSpec with unique job_id
         const jobSpec = buildJobSpec({
-          sources: [file.path],
+          sources: [file.path], // Each file = one job (not batched)
           outputPath: outputDirectory || '/tmp',
-          containerFormat: 'mov',  // TODO: Apply from preset in auto-transcode phase
+          containerFormat: 'mov',  // TODO: Apply from preset
           filenameTemplate: '{source_name}_proxy',
           deliveryType: 'proxy',
         })
         
+        // PHASE 9C: Associate with ingest source (watch folder)
+        jobSpec.ingest_source_id = watchFolderId
+        jobSpec.ingest_source_type = 'watch_folder'
+        
+        // PHASE 9B: Enforce DRAFT state - no auto-queue, no auto-execute
+        jobSpec.state = 'DRAFT'
+        jobSpec.execution_requested = false
+        
+        // PHASE 9C: Deduplication by job_id
+        const existsInDraft = draftJobSpecs.some(j => j.job_id === jobSpec.job_id)
+        const existsInQueue = queuedJobSpecs.some(j => j.job_id === jobSpec.job_id)
+        if (existsInDraft || existsInQueue) {
+          console.warn(`[Watch Folder] Duplicate job_id ${jobSpec.job_id}, regenerating...`)
+          const bytes = new Uint8Array(4)
+          crypto.getRandomValues(bytes)
+          jobSpec.job_id = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+        }
+        
         jobIds.push(jobSpec.job_id)
-        newJobSpecs.push(jobSpec)
+        newDraftJobs.push(jobSpec)
+        
+        console.log(`[Watch Folder] PHASE 9C: Created job ${jobSpec.job_id} for file ${file.path} (ingest_source=${watchFolderId})`)
       } catch (err) {
         console.error(`[Watch Folder] Failed to create job for ${file.path}:`, err)
       }
     }
     
-    // Add all jobs to queue
-    if (newJobSpecs.length > 0) {
-      setQueuedJobSpecs(prev => [...prev, ...newJobSpecs])
+    // PHASE 9C: Jobs ACCUMULATE (append, never replace)
+    // Jobs go to DRAFT state - user must "Add to Queue" and "Start"
+    if (newDraftJobs.length > 0) {
+      setDraftJobSpecs(prev => [...prev, ...newDraftJobs])
+      
+      addStatusLogEntry({
+        id: `wf-jobs-${Date.now()}`,
+        level: 'success',
+        message: `Created ${newDraftJobs.length} job(s) from watch folder — add to queue to process`,
+        timestamp: new Date(),
+      })
     }
     
     // Log trace event
@@ -663,8 +704,8 @@ function App() {
     const filePaths = selectedFiles.map(f => f.path)
     handleClearPendingFiles(watchFolderId, filePaths)
     
-    console.log(`[APP] PHASE 6: Created ${jobIds.length} jobs from watch folder ${watchFolderId} with preset ${presetId}`)
-  }, [outputDirectory, hasElectron, handleClearPendingFiles])
+    console.log(`[APP] PHASE 9C: Created ${jobIds.length} DRAFT jobs from watch folder ${watchFolderId} with preset ${presetId}`)
+  }, [outputDirectory, hasElectron, handleClearPendingFiles, draftJobSpecs, queuedJobSpecs, addStatusLogEntry])
   
   // Legacy: Backend presets (kept for backwards compatibility with existing backend)
   const [backendPresets, setBackendPresets] = useState<PresetInfo[]>([])
@@ -1407,9 +1448,10 @@ function App() {
   // ============================================
   // FIFO Execution Loop - Automatic Job Sequencing
   // ============================================
+  // PHASE 9B UPDATE: ONLY executes jobs with execution_requested=true
   // INVARIANT: One job executing at a time
-  // BEHAVIOR: When no job is running AND queue has jobs → submit + start first job
-  // DEQUEUE: When job completes → remove from queue → start next job
+  // BEHAVIOR: When no job is running AND queue has executable jobs → submit + start first
+  // DEQUEUE: When job completes → remove from queue → start next executable job
   useEffect(() => {
     console.log(`[FIFO CHECK] jobs.length=${jobs.length}, queuedJobSpecs.length=${queuedJobSpecs.length}`)
     
@@ -1430,14 +1472,21 @@ function App() {
       return
     }
     
-    // Get first job in FIFO queue
-    const nextJobSpec = queuedJobSpecs[0]
+    // PHASE 9B: Find first job with execution_requested = true
+    // Jobs without execution_requested remain in queue but don't execute
+    const nextJobSpec = queuedJobSpecs.find(job => job.execution_requested === true)
+    
+    if (!nextJobSpec) {
+      // PHASE 9B: No executable jobs — queue has jobs but none are started
+      console.log(`[FIFO CHECK] No jobs with execution_requested=true, awaiting Start action`)
+      return
+    }
     
     // RACE CONDITION FIX: Set guard BEFORE starting async operation
     fifoExecutionInFlight.current = true
     
     // Submit job to backend + start execution
-    console.log(`[FIFO] Submitting and starting queued job: ${nextJobSpec.job_id}`)
+    console.log(`[FIFO] Submitting and starting queued job: ${nextJobSpec.job_id} (execution_requested=true)`)
     
     const executeJobWorkflow = async () => {
       try {
@@ -1475,7 +1524,7 @@ function App() {
           console.error(`[FIFO] Failed to create job ${nextJobSpec.job_id}: ${errorText}`)
           setError(`Failed to submit job: ${errorText}`)
           // Remove failed job from queue
-          setQueuedJobSpecs(prev => prev.slice(1))
+          setQueuedJobSpecs(prev => prev.filter(j => j.job_id !== nextJobSpec.job_id))
           return
         }
         
@@ -1488,7 +1537,7 @@ function App() {
         if (!backendJobId) {
           console.error(`[FIFO] Backend did not return job_id:`, createResult)
           setError(`Backend did not return job ID`)
-          setQueuedJobSpecs(prev => prev.slice(1))
+          setQueuedJobSpecs(prev => prev.filter(j => j.job_id !== nextJobSpec.job_id))
           return
         }
         
@@ -1496,7 +1545,7 @@ function App() {
         
         // SUCCESS: Dequeue the job spec now that it's been submitted to backend
         console.log(`[FIFO] Successfully started job ${backendJobId}, dequeuing from local queue`)
-        setQueuedJobSpecs(prev => prev.slice(1))
+        setQueuedJobSpecs(prev => prev.filter(j => j.job_id !== nextJobSpec.job_id))
         
         // Refresh jobs list to show the new job
         await fetchJobs()
@@ -1504,7 +1553,7 @@ function App() {
         console.error(`[FIFO] Job workflow error:`, err)
         setError(`Failed to execute job workflow: ${err instanceof Error ? err.message : 'Unknown error'}`)
         // Remove failed job from queue
-        setQueuedJobSpecs(prev => prev.slice(1))
+        setQueuedJobSpecs(prev => prev.filter(j => j.job_id !== nextJobSpec.job_id))
       } finally {
         // RACE CONDITION FIX: Clear guard when workflow completes (success or failure)
         fifoExecutionInFlight.current = false
@@ -1698,13 +1747,14 @@ function App() {
   }
 
   // ============================================
-  // Create Job — JobSpec Builder ONLY (No Queue Mutation)
+  // PHASE 9B: Create Job — DRAFT State Only
   // ============================================
   // SEMANTIC CONTRACT:
   // - Builds JobSpec from Output tab state
-  // - Stores in preparedJobSpec (NOT in queue)
-  // - NO EXECUTION, NO QUEUE INSERTION
-  // - Replaces any existing prepared job (one job policy)
+  // - Adds to draftJobSpecs (DRAFT state)
+  // - NO QUEUE INSERTION, NO EXECUTION
+  // - Job appears in Jobs list with DRAFT status
+  // - Multiple jobs can be created before queueing
   
   const handleCreateJob = useCallback(() => {
     try {
@@ -1717,15 +1767,33 @@ function App() {
         deliveryType: outputDeliveryType,
       })
       
-      // Store as PREPARED JobSpec (not queued yet)
+      // PHASE 9B: Deduplication - check if job_id already exists
+      const existingDraft = draftJobSpecs.find(j => j.job_id === jobSpec.job_id)
+      const existingQueued = queuedJobSpecs.find(j => j.job_id === jobSpec.job_id)
+      if (existingDraft || existingQueued) {
+        console.warn(`[Create Job] Duplicate job_id ${jobSpec.job_id}, regenerating...`)
+        // Regenerate job_id to avoid duplication
+        const bytes = new Uint8Array(4)
+        crypto.getRandomValues(bytes)
+        jobSpec.job_id = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+      }
+      
+      // PHASE 9B: Ensure job is in DRAFT state
+      jobSpec.state = 'DRAFT'
+      jobSpec.execution_requested = false
+      
+      // Add to DRAFT jobs (not queued, not executed)
+      setDraftJobSpecs(prev => [...prev, jobSpec])
+      
+      // Also set as preparedJobSpec for backward compatibility
       setPreparedJobSpec(jobSpec)
       
       // Log success
-      console.log('[Create Job] JobSpec prepared (not queued):', jobSpec.job_id)
+      console.log('[Create Job] JobSpec created in DRAFT state:', jobSpec.job_id)
       addStatusLogEntry({
         id: `create-job-${Date.now()}`,
         level: 'info',
-        message: `Job ${jobSpec.job_id} prepared with ${jobSpec.sources.length} source(s) — ready to queue`,
+        message: `Job ${jobSpec.job_id} created (DRAFT) with ${jobSpec.sources.length} source(s) — add to queue to process`,
         timestamp: new Date(),
       })
     } catch (err) {
@@ -1734,37 +1802,166 @@ function App() {
       setError(`Failed to create job: ${errorMsg}`)
       console.error('[Create Job] Failed:', errorMsg)
     }
-  }, [selectedFiles, outputDirectory, containerFormat, filenameTemplate, outputDeliveryType, addStatusLogEntry])
+  }, [selectedFiles, outputDirectory, containerFormat, filenameTemplate, outputDeliveryType, addStatusLogEntry, draftJobSpecs, queuedJobSpecs])
   
   // ============================================
   // Add to Queue — Queue Insertion Handler (FIFO)
   // ============================================
+  // PHASE 9B: Add to Queue — QUEUED State Only
+  // ============================================
   // SEMANTIC CONTRACT:
-  // - Takes prepared JobSpec and appends it to FIFO queue
-  // - Clears preparedJobSpec after queuing
-  // - Preserves insertion order (FIFO execution)
+  // - Moves job from DRAFT to QUEUED state
+  // - Appends to queuedJobSpecs (FIFO order preserved)
+  // - NO EXECUTION — requires explicit Start action
+  // - Deduplication by job_id (rejects duplicates)
   
-  const handleAddToQueue = useCallback(() => {
-    if (!preparedJobSpec) {
-      console.warn('[Add to Queue] No prepared JobSpec to queue')
+  const handleAddToQueue = useCallback((jobIdOrSpec?: string | JobSpec) => {
+    let jobToQueue: JobSpec | undefined
+    
+    // Support three modes:
+    // 1. No arg — use preparedJobSpec (backward compat)
+    // 2. String — find in draftJobSpecs by job_id
+    // 3. JobSpec — use directly
+    if (!jobIdOrSpec) {
+      // Mode 1: Use prepared job (legacy flow)
+      if (!preparedJobSpec) {
+        console.warn('[Add to Queue] No prepared JobSpec to queue')
+        return
+      }
+      jobToQueue = preparedJobSpec
+    } else if (typeof jobIdOrSpec === 'string') {
+      // Mode 2: Find by job_id in drafts
+      jobToQueue = draftJobSpecs.find(j => j.job_id === jobIdOrSpec)
+      if (!jobToQueue) {
+        console.warn(`[Add to Queue] No DRAFT job found with id ${jobIdOrSpec}`)
+        return
+      }
+    } else {
+      // Mode 3: Direct JobSpec
+      jobToQueue = jobIdOrSpec
+    }
+    
+    // PHASE 9B: Deduplication by job_id
+    const existsInQueue = queuedJobSpecs.some(j => j.job_id === jobToQueue!.job_id)
+    if (existsInQueue) {
+      console.warn(`[Add to Queue] Job ${jobToQueue.job_id} already in queue, skipping`)
+      addStatusLogEntry({
+        id: `queue-dup-${Date.now()}`,
+        level: 'warning',
+        message: `Job ${jobToQueue.job_id} is already in queue`,
+        timestamp: new Date(),
+      })
       return
     }
     
+    // PHASE 9B: Transition to QUEUED state (no execution_requested)
+    const queuedSpec: JobSpec = {
+      ...jobToQueue,
+      state: 'QUEUED',
+      execution_requested: false, // CRITICAL: Start action must set this
+    }
+    
     // Append to FIFO queue
-    setQueuedJobSpecs(prev => [...prev, preparedJobSpec])
+    setQueuedJobSpecs(prev => [...prev, queuedSpec])
     
-    // Clear prepared state
-    setPreparedJobSpec(null)
+    // Remove from drafts (if present)
+    setDraftJobSpecs(prev => prev.filter(j => j.job_id !== jobToQueue!.job_id))
     
-    // Log queue insertion
-    console.log('[Add to Queue] JobSpec queued:', preparedJobSpec.job_id)
+    // Clear prepared state (legacy backward compat)
+    if (preparedJobSpec?.job_id === jobToQueue.job_id) {
+      setPreparedJobSpec(null)
+    }
+    
+    // Log queue insertion — NO EXECUTION TRIGGERED
+    console.log('[Add to Queue] JobSpec queued (QUEUED, awaiting Start):', queuedSpec.job_id)
     addStatusLogEntry({
       id: `queue-job-${Date.now()}`,
       level: 'success',
-      message: `Job ${preparedJobSpec.job_id} added to queue`,
+      message: `Job ${queuedSpec.job_id} added to queue — click Start to execute`,
       timestamp: new Date(),
     })
-  }, [preparedJobSpec, addStatusLogEntry])
+  }, [preparedJobSpec, draftJobSpecs, queuedJobSpecs, addStatusLogEntry])
+
+  // ============================================
+  // PHASE 9B: Start Queue Execution — Explicit Start Action
+  // ============================================
+  // SEMANTIC CONTRACT:
+  // - Sets execution_requested = true on queued jobs
+  // - Submits jobs to backend (creates pending Job records)
+  // - Starts FIFO execution of the queue
+  // - Only jobs with execution_requested=true can run
+  
+  const startQueueExecution = useCallback(async () => {
+    if (queuedJobSpecs.length === 0) {
+      console.warn('[Start Queue] No jobs in queue to execute')
+      return
+    }
+    
+    console.log(`[Start Queue] Starting execution of ${queuedJobSpecs.length} queued jobs`)
+    addStatusLogEntry({
+      id: `start-queue-${Date.now()}`,
+      level: 'info',
+      message: `Starting execution of ${queuedJobSpecs.length} queued job(s)...`,
+      timestamp: new Date(),
+    })
+    
+    // PHASE 9B: Mark all queued jobs as execution_requested
+    setQueuedJobSpecs(prev => prev.map(job => ({
+      ...job,
+      state: 'RUNNING' as const,
+      execution_requested: true,
+    })))
+    
+    // Submit first job in queue to backend
+    const firstJob = queuedJobSpecs[0]
+    if (firstJob) {
+      try {
+        setLoading(true)
+        
+        // Submit JobSpec to backend — backend creates Job record
+        const response = await fetch(`${BACKEND_URL}/jobs/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(firstJob),
+        })
+        
+        if (!response.ok) {
+          const normalized = await normalizeResponseError(response, '/jobs/create', firstJob.job_id)
+          throw new Error(normalized.message)
+        }
+        
+        const result = await response.json()
+        console.log('[Start Queue] Job submitted to backend:', result.job_id || firstJob.job_id)
+        
+        // Start the job on backend
+        const startResponse = await fetch(`${BACKEND_URL}/control/jobs/${result.job_id || firstJob.job_id}/start`, {
+          method: 'POST',
+        })
+        
+        if (!startResponse.ok) {
+          const normalized = await normalizeResponseError(startResponse, '/control/jobs/start', firstJob.job_id)
+          throw new Error(normalized.message)
+        }
+        
+        addStatusLogEntry({
+          id: `start-job-${Date.now()}`,
+          level: 'success',
+          message: `Job ${firstJob.job_id} started`,
+          timestamp: new Date(),
+        })
+        
+        // Refresh job list
+        await fetchJobs()
+        
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+        setError(`Failed to start queue: ${errorMsg}`)
+        console.error('[Start Queue] Failed:', errorMsg)
+      } finally {
+        setLoading(false)
+      }
+    }
+  }, [queuedJobSpecs, addStatusLogEntry, fetchJobs])
 
   // ============================================
   // Phase 16: New Job Actions (Start, Pause, Delete)
@@ -3274,7 +3471,7 @@ function App() {
                     <Button
                       variant="success"
                       size="sm"
-                      onClick={handleAddToQueue}
+                      onClick={() => handleAddToQueue()}
                       data-testid="add-to-queue-button"
                       title="Add prepared job to queue"
                     >

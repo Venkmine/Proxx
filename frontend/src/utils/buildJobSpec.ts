@@ -101,6 +101,24 @@ export interface JobSpec {
     /** DaVinci Resolve engine is required */
     use_resolve: boolean
   }
+  /** 
+   * PHASE 9B: Job state (DRAFT, QUEUED, RUNNING, etc.)
+   * Created jobs start as DRAFT, require Add to Queue, then explicit Start
+   */
+  state: 'DRAFT' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  /** 
+   * PHASE 9B: Whether execution has been explicitly requested
+   * Only true when user clicks Start. Watch folders and auto-queue set to false.
+   */
+  execution_requested: boolean
+  /**
+   * PHASE 9C: Ingest source association for watch folder jobs
+   */
+  ingest_source_id?: string
+  /**
+   * PHASE 9C: Ingest source type (WATCH_FOLDER, MANUAL, etc.)
+   */
+  ingest_source_type?: string
 }
 
 export class JobSpecBuildError extends Error {
@@ -241,6 +259,10 @@ export function buildJobSpec(outputState: OutputState): JobSpec {
       use_ffmpeg: engineRequirements.useFFmpeg,
       use_resolve: engineRequirements.useResolve,
     },
+    
+    // PHASE 9B: Job starts in DRAFT state, requires explicit queue and start
+    state: 'DRAFT',
+    execution_requested: false,
   }
   
   return jobSpec

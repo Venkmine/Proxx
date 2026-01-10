@@ -33,12 +33,27 @@ class JobStatus(str, Enum):
     
     A job moves through these states as its clips are processed.
     
-    V1 GOLDEN PATH: Terminal states are COMPLETED, FAILED, or CANCELLED only.
-    COMPLETED_WITH_WARNINGS was intentionally removed - warnings are logged
-    but do not affect the terminal state.
+    PHASE 9B: Separate Job Creation, Queueing, and Execution
+    =========================================================
+    State machine:
+    - DRAFT: Job created but not queued (visible in Jobs list)
+    - QUEUED: Job added to queue (waiting for execution)
+    - PENDING: Legacy alias for QUEUED (for backward compatibility)
+    - RUNNING: Execution started (only via explicit Start action)
+    - PAUSED: Execution paused by user
+    - COMPLETED: All clips completed successfully
+    - FAILED: Job engine failed or any task failed
+    - CANCELLED: Cancelled by operator (terminal)
+    
+    ILLEGAL TRANSITIONS (enforced in state.py):
+    - DRAFT → RUNNING (must go through QUEUED first)
+    - QUEUED → RUNNING (only with execution_requested=True)
+    - RUNNING → QUEUED (no going back)
     """
     
-    PENDING = "pending"  # Created, not yet started
+    DRAFT = "draft"  # Phase 9B: Created, not yet queued
+    QUEUED = "queued"  # Phase 9B: Added to queue, awaiting execution
+    PENDING = "pending"  # Legacy alias for backward compatibility (treated as QUEUED)
     RUNNING = "running"  # At least one clip is being processed
     PAUSED = "paused"  # Paused by user, can be resumed
     COMPLETED = "completed"  # All clips completed successfully (output verified)

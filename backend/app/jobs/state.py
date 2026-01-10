@@ -1,9 +1,16 @@
 """
 State transition validation for jobs and tasks.
 
-GOLDEN PATH: Strictly enforces single-clip workflow.
-Job lifecycle: PENDING → RUNNING → COMPLETED | FAILED
-No pause, recovery, or cancellation allowed.
+PHASE 9B: Separate Job Creation, Queueing, and Execution
+=========================================================
+Job lifecycle: DRAFT → QUEUED → RUNNING → COMPLETED | FAILED
+
+STATE MACHINE ENFORCEMENT:
+- DRAFT → QUEUED: Allowed (Add to Queue)
+- DRAFT → RUNNING: BLOCKED (must queue first)
+- QUEUED → RUNNING: Only with execution_requested=True
+- RUNNING → QUEUED: BLOCKED (no going back)
+- RUNNING → PAUSED: Allowed
 
 INVARIANT: Terminal job states (COMPLETED, FAILED, CANCELLED)
 are immutable. Once a job enters a terminal state, no state transition is allowed.
@@ -52,28 +59,37 @@ def is_job_terminal(status: JobStatus) -> bool:
     return status in TERMINAL_JOB_STATES
 
 
-# GOLDEN PATH: Legal job state transitions (strict)
+# PHASE 9B: Legal job state transitions (strict)
+# ============================================================================
+# CRITICAL: Execution requires explicit user action via execution_requested flag.
+# QUEUED → RUNNING is only allowed when execution_requested=True (checked externally).
+# ============================================================================
 _JOB_TRANSITIONS: Set[Tuple[JobStatus, JobStatus]] = {
-    # Starting a job
+    # Phase 9B: Create Job produces DRAFT
+    # Add to Queue transitions DRAFT → QUEUED
+    (JobStatus.DRAFT, JobStatus.QUEUED),
+    
+    # Phase 9B: Start execution (with execution_requested=True check done externally)
+    (JobStatus.QUEUED, JobStatus.RUNNING),
+    
+    # Legacy: PENDING is an alias for QUEUED
     (JobStatus.PENDING, JobStatus.RUNNING),
     
-    # REMOVED: Pausing/resuming - violates golden path
-    # (JobStatus.RUNNING, JobStatus.PAUSED),
-    # (JobStatus.PAUSED, JobStatus.RUNNING),
-    # (JobStatus.RECOVERY_REQUIRED, JobStatus.RUNNING),
-    
-    # Terminal states
+    # Terminal states from RUNNING only
     (JobStatus.RUNNING, JobStatus.COMPLETED),
     (JobStatus.RUNNING, JobStatus.FAILED),
     
+    # Phase 9B: Cancellation allowed from DRAFT, QUEUED, and RUNNING
+    (JobStatus.DRAFT, JobStatus.CANCELLED),
+    (JobStatus.QUEUED, JobStatus.CANCELLED),
+    (JobStatus.RUNNING, JobStatus.CANCELLED),
+    
+    # Pause/resume (if supported)
+    (JobStatus.RUNNING, JobStatus.PAUSED),
+    (JobStatus.PAUSED, JobStatus.RUNNING),
+    
+    # REMOVED: DRAFT → RUNNING (violates Phase 9B - must queue first)
     # REMOVED: COMPLETED_WITH_WARNINGS - simplify to COMPLETED or FAILED
-    # (JobStatus.RUNNING, JobStatus.COMPLETED_WITH_WARNINGS),
-    
-    # REMOVED: Cancellation - violates golden path
-    # (JobStatus.PENDING, JobStatus.CANCELLED),
-    # (JobStatus.RUNNING, JobStatus.CANCELLED),
-    
-    # REMOVED: PAUSED/RECOVERY_REQUIRED transitions - violate golden path
 }
 
 
@@ -170,3 +186,70 @@ def validate_task_transition(from_status: TaskStatus, to_status: TaskStatus) -> 
     """
     if not can_transition_task(from_status, to_status):
         raise InvalidStateTransitionError("task", from_status.value, to_status.value)
+
+
+# ============================================================================
+# PHASE 9B: Execution Request Validation
+# ============================================================================
+
+def can_execute_job(job_status: JobStatus, execution_requested: bool) -> bool:
+    """
+    Check if a job can transition to RUNNING.
+    
+    PHASE 9B HARD RULES:
+    - Job MUST be in QUEUED state (or legacy PENDING)
+    - execution_requested MUST be True
+    - If either condition fails, execution is BLOCKED
+    
+    Args:
+        job_status: Current job status
+        execution_requested: Whether user explicitly requested execution
+        
+    Returns:
+        True if execution is allowed, False otherwise
+    """
+    # Only QUEUED (or legacy PENDING) jobs can start execution
+    if job_status not in (JobStatus.QUEUED, JobStatus.PENDING):
+        return False
+    
+    # Execution MUST be explicitly requested
+    if not execution_requested:
+        return False
+    
+    return True
+
+
+def validate_execution_request(job_status: JobStatus, execution_requested: bool) -> None:
+    """
+    Validate that a job can be executed.
+    
+    Args:
+        job_status: Current job status
+        execution_requested: Whether user explicitly requested execution
+        
+    Raises:
+        InvalidStateTransitionError: If execution is not allowed
+    """
+    if job_status == JobStatus.DRAFT:
+        raise InvalidStateTransitionError(
+            "job", 
+            job_status.value, 
+            JobStatus.RUNNING.value,
+            reason="Job is in DRAFT state. Add to Queue first before starting."
+        )
+    
+    if job_status not in (JobStatus.QUEUED, JobStatus.PENDING):
+        raise InvalidStateTransitionError(
+            "job", 
+            job_status.value, 
+            JobStatus.RUNNING.value,
+            reason=f"Job must be QUEUED to start execution. Current state: {job_status.value}"
+        )
+    
+    if not execution_requested:
+        raise InvalidStateTransitionError(
+            "job", 
+            job_status.value, 
+            JobStatus.RUNNING.value,
+            reason="Execution not requested. Press Start to begin execution."
+        )
