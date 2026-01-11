@@ -527,7 +527,20 @@ function setupIpcHandlers() {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Media Files', extensions: ['mov', 'mxf', 'mp4', 'avi', 'mkv'] },
+        // Phase 12: Include RAW formats in primary filter
+        // BRAW, R3D, ARI/ARX are now first-class citizens
+        { name: 'Media Files', extensions: [
+          // Standard video formats
+          'mov', 'mxf', 'mp4', 'avi', 'mkv', 'webm', 'ts', 'mpg',
+          // Camera RAW formats (require Resolve)
+          'braw',  // Blackmagic RAW
+          'r3d',   // RED RAW
+          'ari', 'arx',  // ARRI RAW
+          'crm',   // Canon Cinema RAW
+          'nev',   // Nikon N-RAW
+          // Image sequences
+          'dpx', 'exr', 'tiff', 'tif', 'dng'
+        ]},
         { name: 'All Files', extensions: ['*'] }
       ]
     });
@@ -568,7 +581,19 @@ function setupIpcHandlers() {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'openDirectory', 'multiSelections'],
       filters: [
-        { name: 'Media Files', extensions: ['mov', 'mxf', 'mp4', 'avi', 'mkv', 'r3d', 'braw', 'ari', 'dpx', 'exr', 'tiff', 'tif'] },
+        // Phase 12: Complete RAW format coverage
+        { name: 'Media Files', extensions: [
+          // Standard video formats
+          'mov', 'mxf', 'mp4', 'avi', 'mkv', 'webm', 'ts', 'mpg',
+          // Camera RAW formats (require Resolve)
+          'braw',  // Blackmagic RAW
+          'r3d',   // RED RAW
+          'ari', 'arx',  // ARRI RAW
+          'crm',   // Canon Cinema RAW
+          'nev',   // Nikon N-RAW
+          // Image sequences
+          'dpx', 'exr', 'tiff', 'tif', 'dng'
+        ]},
         { name: 'All Files', extensions: ['*'] }
       ]
     });

@@ -157,6 +157,32 @@ class MediaAudio(BaseModel):
         return v
 
 
+class MetadataProvenance(str, Enum):
+    """
+    Phase 12: Source of metadata extraction.
+    
+    Tells the user where this metadata came from so they know what to trust.
+    """
+    
+    FFPROBE = "ffprobe"      # Container-level metadata from ffprobe
+    RESOLVE = "resolve"      # Full RAW decode via DaVinci Resolve
+    EXIFTOOL = "exiftool"    # Embedded metadata via exiftool
+    SIDECAR = "sidecar"      # External sidecar file (.xmp, etc.)
+    UNKNOWN = "unknown"      # Source could not be determined
+
+
+class MetadataCompleteness(str, Enum):
+    """
+    Phase 12: Completeness indicator for metadata.
+    
+    Tells the user whether they have full metadata or limited info.
+    """
+    
+    COMPLETE = "complete"    # Full metadata available
+    LIMITED = "limited"      # Some fields unavailable (e.g., RAW without Resolve)
+    MINIMAL = "minimal"      # Only basic file info available
+
+
 class MediaMetadata(BaseModel):
     """
     Complete metadata for a single media file.
@@ -178,7 +204,22 @@ class MediaMetadata(BaseModel):
     skip_reason: Optional[str] = None  # Human-readable explanation if unsupported
     warnings: list[str] = []  # Non-blocking warnings (VFR, unusual bit depth, etc.)
     
+    # Phase 12: Provenance tracking
+    provenance: MetadataProvenance = MetadataProvenance.FFPROBE
+    completeness: MetadataCompleteness = MetadataCompleteness.COMPLETE
+    completeness_reason: Optional[str] = None  # Why metadata is limited
+    
     def add_warning(self, warning: str) -> None:
         """Add a validation warning."""
         if warning and warning not in self.warnings:
             self.warnings.append(warning)
+    
+    def mark_limited(self, reason: str) -> None:
+        """Mark metadata as limited with explanation."""
+        self.completeness = MetadataCompleteness.LIMITED
+        self.completeness_reason = reason
+    
+    def mark_minimal(self, reason: str) -> None:
+        """Mark metadata as minimal with explanation."""
+        self.completeness = MetadataCompleteness.MINIMAL
+        self.completeness_reason = reason

@@ -25,6 +25,8 @@ from .models import (
     MediaAudio,
     ChromaSubsampling,
     GOPType,
+    MetadataProvenance,
+    MetadataCompleteness,
 )
 from .errors import (
     MetadataExtractionError,
@@ -111,6 +113,19 @@ def extract_metadata(filepath: str) -> MediaMetadata:
     # Determine if file is supported
     is_supported, skip_reason = _determine_support(codec, image)
     
+    # Phase 12: Determine provenance and completeness
+    # FFprobe is always our source here; Resolve extraction is separate
+    provenance = MetadataProvenance.FFPROBE
+    completeness = MetadataCompleteness.COMPLETE
+    completeness_reason = None
+    
+    # Check for RAW formats where FFprobe provides LIMITED metadata
+    raw_extensions = {'.braw', '.r3d', '.ari', '.arx', '.crm', '.nev'}
+    path = Path(filepath)
+    if path.suffix.lower() in raw_extensions:
+        completeness = MetadataCompleteness.LIMITED
+        completeness_reason = "RAW format - full metadata requires DaVinci Resolve"
+    
     # Assemble metadata
     metadata = MediaMetadata(
         identity=identity,
@@ -121,6 +136,9 @@ def extract_metadata(filepath: str) -> MediaMetadata:
         is_supported=is_supported,
         skip_reason=skip_reason,
         warnings=[],
+        provenance=provenance,
+        completeness=completeness,
+        completeness_reason=completeness_reason,
     )
     
     # Add validation warnings

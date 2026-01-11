@@ -11,6 +11,7 @@ from app.routes import filesystem
 from app.routes import v2_execute  # V2 Step 3: Thin Client JobSpec execution
 from app.routes import readiness  # V2 Slice 6: First-run readiness check
 from app.routes import playback  # Deterministic playback capability probe
+from app.routes import capabilities  # Phase 12: Resolve/FFmpeg capability status
 from app.monitoring import server as monitoring
 from app.jobs.registry import JobRegistry
 from app.jobs.bindings import JobPresetBindingRegistry
@@ -126,6 +127,7 @@ app.include_router(filesystem.router)  # Phase 4A: Directory navigator
 app.include_router(v2_execute.router)  # V2 Step 3: Thin Client JobSpec execution
 app.include_router(readiness.router)  # V2 Slice 6: First-run readiness check
 app.include_router(playback.router)  # Deterministic playback capability probe
+app.include_router(capabilities.router)  # Phase 12: Resolve/FFmpeg capability status
 
 
 @app.get("/")

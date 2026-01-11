@@ -109,6 +109,14 @@ export interface RawMetadata {
   // XMP status
   xmp_available?: boolean
   xmp_read_supported?: boolean
+  
+  // Phase 12: Metadata provenance tracking
+  /** Source of metadata: 'ffprobe' | 'resolve' | 'exiftool' | 'sidecar' */
+  provenance?: 'ffprobe' | 'resolve' | 'exiftool' | 'sidecar' | 'unknown'
+  /** Completeness indicator: 'complete' | 'limited' | 'minimal' */
+  completeness?: 'complete' | 'limited' | 'minimal'
+  /** Reason for limited metadata (for RAW files etc.) */
+  completeness_reason?: string
 }
 
 interface MetadataPanelProps {
@@ -169,6 +177,58 @@ function formatBitrate(bps: number | undefined): string {
  */
 function buildMetadataSections(raw: RawMetadata): MetadataSection[] {
   const sections: MetadataSection[] = []
+  // =========================================================================
+  // Phase 12: PROVENANCE SECTION (always first to establish trust)
+  // Shows metadata source and completeness so users know what they're seeing
+  // =========================================================================
+  const provenanceFields: MetadataField[] = []
+  
+  // Determine provenance display
+  const provenanceSource = raw.provenance || 'ffprobe'
+  const provenanceLabels: Record<string, string> = {
+    'ffprobe': 'FFprobe (container)',
+    'resolve': 'DaVinci Resolve (RAW)',
+    'exiftool': 'ExifTool (embedded)',
+    'sidecar': 'Sidecar file',
+    'unknown': 'Unknown'
+  }
+  provenanceFields.push({
+    key: 'source',
+    label: 'Source',
+    value: provenanceLabels[provenanceSource] || provenanceSource,
+    tooltip: 'Where this metadata was extracted from'
+  })
+  
+  // Determine completeness display
+  const completeness = raw.completeness || 'complete'
+  const completenessLabels: Record<string, string> = {
+    'complete': '✓ COMPLETE',
+    'limited': '⚠ LIMITED',
+    'minimal': '⛔ MINIMAL'
+  }
+  const completenessTooltips: Record<string, string> = {
+    'complete': 'Full metadata available from source',
+    'limited': raw.completeness_reason || 'Some metadata fields unavailable',
+    'minimal': 'Only basic file information available'
+  }
+  provenanceFields.push({
+    key: 'completeness',
+    label: 'Completeness',
+    value: completenessLabels[completeness] || completeness,
+    tooltip: completenessTooltips[completeness]
+  })
+  
+  // Add reason for limited/minimal completeness
+  if ((completeness === 'limited' || completeness === 'minimal') && raw.completeness_reason) {
+    provenanceFields.push({
+      key: 'completeness_reason',
+      label: 'Note',
+      value: raw.completeness_reason
+    })
+  }
+  
+  // Always show provenance section (first)
+  sections.push({ id: 'provenance', label: 'Provenance', icon: '🔍', fields: provenanceFields })
   
   // Clip Details
   const clipFields: MetadataField[] = []

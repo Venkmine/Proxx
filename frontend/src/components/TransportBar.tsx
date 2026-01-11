@@ -161,6 +161,36 @@ const NextClipIcon = () => (
   </svg>
 )
 
+// Phase 12: Jump to Start/End icons
+const JumpToStartIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <rect x="2" y="3" width="2" height="10" rx="0.5" />
+    <path d="M13 3v10L7 8l6-5z" />
+  </svg>
+)
+
+const JumpToEndIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <rect x="12" y="3" width="2" height="10" rx="0.5" />
+    <path d="M3 3v10l6-5-6-5z" />
+  </svg>
+)
+
+// Phase 12: Fullscreen icons
+const FullscreenIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2 6V3.5A1.5 1.5 0 013.5 2H6M10 2h2.5A1.5 1.5 0 0114 3.5V6M14 10v2.5a1.5 1.5 0 01-1.5 1.5H10M6 14H3.5A1.5 1.5 0 012 12.5V10" 
+          stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+  </svg>
+)
+
+const ExitFullscreenIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M6 2v2.5A1.5 1.5 0 014.5 6H2M10 2v2.5A1.5 1.5 0 0011.5 6H14M14 10h-2.5a1.5 1.5 0 00-1.5 1.5V14M2 10h2.5A1.5 1.5 0 016 11.5V14" 
+          stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+  </svg>
+)
+
 // ============================================================================
 // STYLES
 // ============================================================================
@@ -706,6 +736,9 @@ export function TransportBar({
   const [jogRotation, setJogRotation] = useState(0)
   const [isJogging, setIsJogging] = useState(false)
   
+  // Phase 12: Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  
   // Parse source timecode offset
   const sourceOffset = useMemo(() => 
     parseSourceTimecode(sourceTimecodeStart, fps),
@@ -847,6 +880,43 @@ export function TransportBar({
     
     video.currentTime = Math.min(duration, video.currentTime + jumpAmount)
   }, [videoRef, jumpInterval, fps, duration])
+  
+  // Phase 12: Jump to start (|<<) and end (>>|)
+  const handleJumpToStart = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = 0
+  }, [videoRef])
+  
+  const handleJumpToEnd = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    // Jump to slightly before end to avoid pause at end issues
+    video.currentTime = Math.max(0, duration - 0.01)
+  }, [videoRef, duration])
+  
+  // Phase 12: Fullscreen toggle (Cmd+F / Ctrl+F)
+  const handleFullscreenToggle = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+      setIsFullscreen(false)
+    } else {
+      // Try to fullscreen the video element's parent container for better UX
+      const container = video.parentElement
+      if (container && container.requestFullscreen) {
+        container.requestFullscreen().catch(() => {
+          // Fallback: fullscreen just the video
+          video.requestFullscreen?.().catch(() => {})
+        })
+      } else {
+        video.requestFullscreen?.().catch(() => {})
+      }
+      setIsFullscreen(true)
+    }
+  }, [videoRef])
   
   const handleScrub = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const video = videoRef.current
@@ -1169,6 +1239,21 @@ export function TransportBar({
           e.preventDefault()
           console.log('[TransportBar] Mark Out at:', videoRef.current?.currentTime)
           break
+        case 'KeyF':
+          // Cmd/Ctrl+F = Fullscreen toggle (Phase 12)
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault()
+            handleFullscreenToggle()
+          }
+          break
+        case 'Escape':
+          // Escape = Exit fullscreen
+          if (document.fullscreenElement) {
+            e.preventDefault()
+            document.exitFullscreen().catch(() => {})
+            setIsFullscreen(false)
+          }
+          break
       }
     }
     
@@ -1185,6 +1270,7 @@ export function TransportBar({
     handleShuttleReverse,
     handleShuttlePause,
     handleShuttleForward,
+    handleFullscreenToggle,
     isFirstClip,
     isLastClip,
     onPreviousClip,
@@ -1193,6 +1279,15 @@ export function TransportBar({
     duration,
     fps,
   ])
+  
+  // Phase 12: Listen for fullscreen changes (e.g., user presses Esc via browser)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
   
   // INC-CTRL-001: Transport controls must never disappear once preview is available
   // Controls are always rendered, but may be disabled
@@ -1364,8 +1459,18 @@ export function TransportBar({
       
       {/* Main Controls Row - Centered Transport Controls */}
       <div style={styles.container}>
-        {/* Frame Step and Jump Controls: [ ⏮ ] [ < ] [ Play ] [ > ] [ ⏭ ] */}
+        {/* Phase 12: Jump to Start + Frame Step and Jump Controls */}
+        {/* Layout: [ |<< ] [ ⏮ ] [ < ] [ Play ] [ > ] [ ⏭ ] [ >>| ] */}
         <div style={styles.controlGroup}>
+          <button
+            onClick={enabled ? handleJumpToStart : undefined}
+            disabled={!enabled}
+            style={{ ...styles.button, ...disabledButtonStyle }}
+            title="Jump to start (Home)"
+            data-testid="transport-jump-to-start"
+          >
+            <JumpToStartIcon />
+          </button>
           <button
             onClick={enabled ? handleStepBack : undefined}
             disabled={!enabled}
@@ -1422,7 +1527,31 @@ export function TransportBar({
           >
             ⏭
           </button>
+          <button
+            onClick={enabled ? handleJumpToEnd : undefined}
+            disabled={!enabled}
+            style={{ ...styles.button, ...disabledButtonStyle }}
+            title="Jump to end (End)"
+            data-testid="transport-jump-to-end"
+          >
+            <JumpToEndIcon />
+          </button>
         </div>
+        
+        {/* Phase 12: Fullscreen toggle button */}
+        <button
+          onClick={enabled ? handleFullscreenToggle : undefined}
+          disabled={!enabled}
+          style={{ 
+            ...styles.button, 
+            ...disabledButtonStyle,
+            marginLeft: '0.5rem',
+          }}
+          title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen (⌘F)"}
+          data-testid="transport-fullscreen"
+        >
+          {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+        </button>
         
         {/* Volume Control — Speaker icon + horizontal slider */}
         <div

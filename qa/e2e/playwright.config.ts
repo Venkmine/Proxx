@@ -64,6 +64,8 @@ export default defineConfig({
     'golden_path_ui_workflow.spec.ts', // Primary golden path
     'golden_path*.spec.ts',            // Other golden path variants
     'ui_qc_phase10.spec.ts',           // UI QC Phase 10 verification
+    'ui_qc_phase11.spec.ts',           // UI QC Phase 11 verification
+    'phase12_resolve_execution.spec.ts', // Phase 12: Resolve RAW execution enforcement
     'watch_folder_enforcement.spec.ts', // Watch Folder E2E validation
     'phase_6_5_watch_folder_state.spec.ts', // Phase 6.5: Watch Folder State & Scalability
     'preset_persistence.spec.ts',       // Preset persistence validation
@@ -72,6 +74,7 @@ export default defineConfig({
     'button_coverage_audit.spec.ts',   // Phase 5: Zero dead UI
     'lifecycle_crosscheck.spec.ts',    // Phase 5: Truth convergence
     'regression_*.spec.ts',            // Regression tests
+    'engine_routing_enforcement.spec.ts', // Engine routing tests
   ],
   
   /* Run tests serially (Electron can only run one instance at a time) */

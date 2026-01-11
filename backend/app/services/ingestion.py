@@ -527,8 +527,14 @@ class IngestionService:
         if self.engine_registry is None:
             return  # Skip availability check if no registry
         
+        # PHASE 12: Allow all valid engines - availability is checked at execution time
+        # This enables proper Resolve routing for RAW formats
         if not self.engine_registry.is_available(engine_type):
             if engine_type == EngineType.RESOLVE:
-                raise IngestionError("Resolve engine is not available in Proxy v1")
+                # Log warning but allow job creation - execution will fail with clear message
+                logger.warning(
+                    f"Resolve engine requested but may not be available. "
+                    f"Job will fail at execution time if Resolve is unavailable."
+                )
             else:
                 raise IngestionError(f"Engine '{engine}' is not available on this system")

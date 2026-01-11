@@ -304,8 +304,29 @@ def execute_jobspec(jobspec: JobSpec) -> JobExecutionResult:
     logger.info(f"[EXECUTION ADAPTER] Determining execution engine...")
     engine_name, engine_error = _determine_job_engine(jobspec)
     
+    # =========================================================================
+    # PHASE 12 INVARIANT: Engine MUST be determined
+    # =========================================================================
+    # Execution with UNKNOWN engine is FORBIDDEN. This catches routing bugs.
+    # =========================================================================
+    if engine_name is None and engine_error is None:
+        logger.error("[EXECUTION ADAPTER] INVARIANT VIOLATION: Engine is UNKNOWN with no error")
+        return JobExecutionResult(
+            job_id=jobspec.job_id,
+            clips=[],
+            final_status="FAILED",
+            validation_error="INVARIANT VIOLATION: Engine routing returned UNKNOWN. This is a bug.",
+            validation_stage="invariant_check",
+            jobspec_version=JOBSPEC_VERSION,
+            engine_used=None,
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+    
     if engine_name:
         logger.info(f"[EXECUTION ADAPTER] Engine selected: {engine_name}")
+        # PHASE 12: Log engine selection explicitly for audit trail
+        logger.info(f"[EXECUTION ADAPTER] ═══ ENGINE LOCKED: {engine_name.upper()} ═══")
     
     if engine_error:
         # Engine routing failed (mixed job or unsupported format)

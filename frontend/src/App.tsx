@@ -1623,7 +1623,9 @@ function App() {
               naming_template: nextJobSpec.naming_template,
             },
           },
-          engine: 'ffmpeg', // Force FFmpeg - Resolve not available in Proxy v1
+          // PHASE 12: Engine selection based on source format requirements
+          // RAW formats → Resolve, standard formats → FFmpeg
+          engine: nextJobSpec.execution_engines.use_resolve ? 'resolve' : 'ffmpeg',
         }
         
         console.log('[FIFO] Submitting job to backend:', JSON.stringify(createRequest, null, 2))

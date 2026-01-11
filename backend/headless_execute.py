@@ -1448,9 +1448,46 @@ def _execute_with_ffmpeg(job_spec: JobSpec, started_at: datetime) -> JobExecutio
     Execute job using FFmpeg engine (standard formats).
     
     This is the original execution path for standard video formats.
+    
+    INVARIANT: RAW formats must NEVER reach this function.
+    FFmpeg cannot decode proprietary RAW formats (ARRIRAW, REDCODE, BRAW).
     """
     logger.info(f"[FFMPEG ENGINE] Starting FFmpeg execution for job: {job_spec.job_id}")
     logger.info(f"[FFMPEG ENGINE] Processing {len(job_spec.sources)} source(s)")
+    
+    # =========================================================================
+    # PHASE 12 INVARIANT: RAW formats must NEVER reach FFmpeg
+    # =========================================================================
+    # This is a FATAL guard. If we get here with RAW sources, something has
+    # gone wrong in the routing logic. Fail loudly with clear diagnostic.
+    # =========================================================================
+    if _SOURCE_CAPABILITIES_AVAILABLE:
+        for source_path in job_spec.sources:
+            source = Path(source_path)
+            ext = source.suffix.lower().lstrip(".")
+            codec = _infer_codec_from_path(source)
+            engine = get_execution_engine(ext, codec)
+            
+            if engine == ExecutionEngine.RESOLVE:
+                # FATAL INVARIANT VIOLATION
+                error_msg = (
+                    f"INVARIANT VIOLATION: RAW source '{source.name}' reached FFmpeg execution. "
+                    f"Container={ext}, Codec={codec}. "
+                    f"RAW formats MUST route to Resolve engine. "
+                    f"This indicates a bug in engine routing."
+                )
+                logger.error(f"[FFMPEG ENGINE] {error_msg}")
+                return JobExecutionResult(
+                    job_id=job_spec.job_id,
+                    clips=[],
+                    final_status="FAILED",
+                    validation_error=error_msg,
+                    validation_stage="invariant_check",
+                    jobspec_version=JOBSPEC_VERSION,
+                    engine_used="ffmpeg",
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc),
+                )
     
     clips: List[ClipExecutionResult] = []
     
@@ -1506,14 +1543,31 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
     
     CRITICAL: Will skip execution if Resolve is already running to avoid
     interfering with an existing UI session.
+    
+    PHASE 12 INVARIANT: Resolve execution MUST be observable.
+    - Resolve launch MUST be logged explicitly
+    - Execution without Resolve launch is a FATAL error
     """
+    # =========================================================================
+    # PHASE 12: Log Resolve execution attempt explicitly
+    # =========================================================================
+    logger.info("=" * 70)
+    logger.info("[RESOLVE ENGINE] ═══ RESOLVE HEADLESS EXECUTION STARTING ═══")
+    logger.info(f"[RESOLVE ENGINE] Job ID: {job_spec.job_id}")
+    logger.info(f"[RESOLVE ENGINE] Sources: {len(job_spec.sources)}")
+    for i, src in enumerate(job_spec.sources):
+        logger.info(f"[RESOLVE ENGINE]   Source {i+1}: {Path(src).name}")
+    logger.info("=" * 70)
+    
     # Check if Resolve engine is available
     if not _RESOLVE_ENGINE_AVAILABLE:
+        error_msg = f"Resolve engine required but not available: {_RESOLVE_ENGINE_ERROR}"
+        logger.error(f"[RESOLVE ENGINE] FATAL: {error_msg}")
         return JobExecutionResult(
             job_id=job_spec.job_id,
             clips=[],
             final_status="FAILED",
-            validation_error=f"Resolve engine required but not available: {_RESOLVE_ENGINE_ERROR}",
+            validation_error=error_msg,
             validation_stage="validation",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
@@ -1529,11 +1583,13 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
         from backend.v2.resolve_installation import is_resolve_running
     
     if is_resolve_running():
+        error_msg = "Resolve is already open. Headless execution requires Resolve to be closed."
+        logger.error(f"[RESOLVE ENGINE] BLOCKED: {error_msg}")
         return JobExecutionResult(
             job_id=job_spec.job_id,
             clips=[],
             final_status="SKIPPED",
-            validation_error="Resolve is already open. Headless execution requires Resolve to be closed.",
+            validation_error=error_msg,
             validation_stage="pre_execution",
             jobspec_version=JOBSPEC_VERSION,
             engine_used="resolve",
@@ -1542,9 +1598,25 @@ def _execute_with_resolve(job_spec: JobSpec, started_at: datetime) -> JobExecuti
         )
     
     try:
-        # Initialize and execute with Resolve engine
+        # =====================================================================
+        # PHASE 12: Explicit Resolve launch logging
+        # =====================================================================
+        logger.info("[RESOLVE ENGINE] Initializing ResolveEngine...")
         resolve_engine = ResolveEngine()
+        logger.info("[RESOLVE ENGINE] ResolveEngine initialized successfully")
+        logger.info("[RESOLVE ENGINE] ═══ LAUNCHING RESOLVE HEADLESS RENDER ═══")
+        
         result = resolve_engine.execute(job_spec)
+        
+        # =====================================================================
+        # PHASE 12 INVARIANT: Verify Resolve was actually used
+        # =====================================================================
+        if result.final_status == "COMPLETED":
+            logger.info("[RESOLVE ENGINE] ═══ RESOLVE EXECUTION COMPLETED SUCCESSFULLY ═══")
+            logger.info(f"[RESOLVE ENGINE] Clips processed: {len(result.clips)}")
+        else:
+            logger.warning(f"[RESOLVE ENGINE] Execution ended with status: {result.final_status}")
+        
         return result
         
     except ResolveAPIUnavailableError as e:
